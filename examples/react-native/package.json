@@ -1,0 +1,39 @@
+{
+  "name": "@supramark/example-react-native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "supramark 的 React Native 演示程序（react-native 示例）。",
+  "main": "index.js",
+  "scripts": {
+    "build": "echo \"skip react-native demo build\"",
+    "start": "node start.js",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@supramark/core": "0.1.0",
+    "@supramark/feature-admonition": "0.1.0",
+    "@supramark/feature-core-markdown": "0.1.0",
+    "@supramark/feature-definition-list": "0.1.0",
+    "@supramark/feature-diagram-echarts": "0.1.0",
+    "@supramark/feature-diagram-vega-lite": "0.1.0",
+    "@supramark/feature-gfm": "0.1.0",
+    "@supramark/feature-html-page": "0.1.0",
+    "@supramark/feature-map": "0.1.0",
+    "@supramark/rn": "0.1.0",
+    "@supramark/rn-diagram-worker": "0.1.0",
+    "expo": "~54",
+    "expo-status-bar": "~1.12.1",
+    "react": "18.2.0",
+    "react-native": "0.81.5",
+    "react-native-maps": "1.14.0",
+    "react-native-svg": "15.2.0",
+    "react-native-webview": "13.8.6"
+  },
+  "devDependencies": {
+    "@react-native-community/cli": "^20.0.2",
+    "@types/react": "~18.2.79",
+    "typescript": "~5.3.3"
+  }
+}

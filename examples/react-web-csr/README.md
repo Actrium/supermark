@@ -1,0 +1,112 @@
+# Supramark React Web CSR 示例
+
+这是一个使用 **Supramark** 的浏览器端（CSR - Client-Side Rendering）示例应用，展示如何在 React Web 应用中实现实时 Markdown 编辑器。
+
+## 功能特性
+
+- ✅ **实时预览**：编辑 Markdown 时实时渲染预览
+- ✅ **GFM 支持**：完整支持 GitHub Flavored Markdown
+  - 删除线（`~~text~~`）
+  - 任务列表（`- [ ]` / `- [x]`）
+  - 表格
+- ✅ **代码高亮**：支持代码块渲染
+- ✅ **响应式设计**：适配桌面和移动端
+
+## 技术栈
+
+- **构建工具**: Vite
+- **框架**: React + TypeScript
+- **Markdown 渲染**: @supramark/web (client 入口)
+
+## 快速开始
+
+### 安装依赖
+
+\`\`\`bash
+npm install
+\`\`\`
+
+### 开发模式
+
+\`\`\`bash
+npm run dev
+\`\`\`
+
+然后打开浏览器访问 \`http://localhost:5173\`
+
+### 生产构建
+
+\`\`\`bash
+npm run build
+\`\`\`
+
+构建产物将输出到 \`dist/\` 目录。
+
+### 预览构建结果
+
+\`\`\`bash
+npm run preview
+\`\`\`
+
+## 使用方法
+
+### 基础用法
+
+在 React 组件中导入并使用 Supramark：
+
+\`\`\`typescript
+import { Supramark } from '@supramark/web/client';
+
+function App() {
+  const [markdown, setMarkdown] = useState('# Hello World');
+
+  return (
+    <div>
+      <textarea
+        value={markdown}
+        onChange={(e) => setMarkdown(e.target.value)}
+      />
+      <Supramark markdown={markdown} />
+    </div>
+  );
+}
+\`\`\`
+
+### 预解析优化
+
+如果需要更好的性能，可以预先解析 AST：
+
+\`\`\`typescript
+import { Supramark, parseMarkdown } from '@supramark/web/client';
+
+// 在组件外或 useEffect 中解析
+const ast = await parseMarkdown('# Hello World');
+
+function App() {
+  return <Supramark ast={ast} markdown="" />;
+}
+\`\`\`
+
+## Vite 配置
+
+本示例使用标准的 Vite 配置，无需特殊设置。\`@supramark/web\` 已通过 package.json 的 \`exports\` 字段正确配置，可以直接导入 \`/client\` 入口。
+
+## 项目结构
+
+\`\`\`
+react-web-csr/
+├── src/
+│   ├── App.tsx          # 主应用组件
+│   ├── App.css          # 样式文件
+│   ├── main.tsx         # 入口文件
+│   └── index.css        # 全局样式
+├── package.json
+├── vite.config.ts
+└── tsconfig.json
+\`\`\`
+
+## 了解更多
+
+- [Supramark 文档](../../README.md)
+- [Vite 文档](https://vitejs.dev/)
+- [React 文档](https://react.dev/)

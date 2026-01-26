@@ -1,0 +1,20 @@
+{
+  "name": "@supramark/example-react-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "supramark 的 React Web 示例，演示在 React 应用中使用 <Supramark /> 组件渲染 Markdown。",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "nodemon start.mjs",
+    "build": "node -e \"console.log('react-web 示例无需 build，跳过')\""
+  },
+  "dependencies": {
+    "@supramark/web": "0.1.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}

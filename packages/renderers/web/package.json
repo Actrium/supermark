@@ -1,0 +1,41 @@
+{
+  "name": "@supramark/web",
+  "version": "0.1.0",
+  "description": "supramark 的 Web 渲染层：提供 <Supramark /> React 组件等工具，用于在 React Web 应用中渲染 Markdown。",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    }
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@supramark/core": "workspace:*",
+    "@supramark/web-diagram": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,120 @@
+name: Feature Quality Check
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'packages/feature-**'
+      - 'packages/core/**'
+      - 'scripts/lint-features.js'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'packages/feature-**'
+      - 'packages/core/**'
+      - 'scripts/lint-features.js'
+
+jobs:
+  lint-features:
+    name: Lint Feature Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.4'
+
+      - name: Install dependencies
+        run: bun install --no-progress
+
+      - name: Run Feature Linter
+        run: bun run lint:features
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request' && failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Feature quality check failed. Please run `bun run lint:features` locally and fix the issues.'
+            })
+
+  test-features:
+    name: Test Feature Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.4'
+
+      - name: Install dependencies
+        run: bun install --no-progress
+
+      - name: Run tests
+        run: bun run test
+
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/coverage-final.json
+          flags: features
+          name: feature-coverage
+
+  type-check:
+    name: TypeScript Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.4'
+
+      - name: Install dependencies
+        run: bun install --no-progress
+
+      - name: Build all packages
+        run: bun run build
+
+      - name: Type check
+        run: bunx tsc --noEmit
+
+  quality-gate:
+    name: Feature Quality Gate
+    runs-on: ubuntu-latest
+    needs: [lint-features, test-features, type-check]
+
+    steps:
+      - name: All checks passed
+        run: echo "✅ All feature quality checks passed!"

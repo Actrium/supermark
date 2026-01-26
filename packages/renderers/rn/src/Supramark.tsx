@@ -1,0 +1,892 @@
+import React, { useEffect, useState, useMemo, ReactNode } from 'react';
+import { Text, View, Linking, TouchableOpacity, Dimensions } from 'react-native';
+import type {
+  SupramarkRootNode,
+  SupramarkNode,
+  SupramarkParagraphNode,
+  SupramarkHeadingNode,
+  SupramarkCodeNode,
+  SupramarkMathBlockNode,
+  SupramarkInlineCodeNode,
+  SupramarkListNode,
+  SupramarkListItemNode,
+  SupramarkDiagramNode,
+  SupramarkMapNode,
+  SupramarkTextNode,
+  SupramarkStrongNode,
+  SupramarkEmphasisNode,
+  SupramarkLinkNode,
+  SupramarkImageNode,
+  SupramarkBreakNode,
+  SupramarkDeleteNode,
+  SupramarkTableNode,
+  SupramarkTableRowNode,
+  SupramarkTableCellNode,
+  SupramarkMathInlineNode,
+  SupramarkFootnoteReferenceNode,
+  SupramarkFootnoteDefinitionNode,
+  SupramarkAdmonitionNode,
+  SupramarkDefinitionListNode,
+  SupramarkDefinitionItemNode,
+  SupramarkConfig,
+  SupramarkHtmlPageNode,
+} from '@supramark/core';
+import {
+  parseMarkdown,
+  isFeatureEnabled,
+  warnIfUnknownDiagramEngine,
+  getFeatureOptionsAs,
+  getRNContainerRenderers,
+} from '@supramark/core';
+import { DiagramNode } from './DiagramNode';
+import { MathBlock } from './MathBlock';
+import {
+  type SupramarkStyles,
+  defaultStyles,
+  mergeStyles,
+  darkThemeStyles,
+  lightThemeStyles,
+} from './styles';
+import { ErrorBoundary, ErrorInfo, ErrorDisplay } from './ErrorBoundary';
+
+export interface ContainerRendererRN {
+  (args: {
+    node: any;
+    key: number;
+    styles: ReturnType<typeof mergeStyles>;
+    config?: SupramarkConfig;
+    onOpenHtmlPage?: (node: SupramarkHtmlPageNode) => void;
+    renderNode: (node: SupramarkNode, key: number) => React.ReactNode;
+    renderChildren: (children: SupramarkNode[]) => React.ReactNode;
+  }): React.ReactNode;
+}
+
+export interface SupramarkProps {
+  /** Markdown 源文本 */
+  markdown: string;
+  /** 预解析的 AST（优先级高于 markdown） */
+  ast?: SupramarkRootNode;
+  /** 自定义样式（覆盖默认样式） */
+  styles?: SupramarkStyles;
+  /** 主题：'light' | 'dark' | 自定义样式对象 */
+  theme?: 'light' | 'dark' | SupramarkStyles;
+  /** Feature 配置（用于按需启用/禁用图表等扩展能力） */
+  config?: SupramarkConfig;
+  /** 错误回调（可选） */
+  onError?: (error: Error, errorInfo?: React.ErrorInfo) => void;
+  /** 自定义错误展示组件（可选） */
+  errorFallback?: (error: ErrorInfo) => ReactNode;
+
+  /**
+   * Container 扩展渲染器注册表：node.type === 'container' 时按 node.name 委派。
+   */
+  containerRenderers?: Record<string, ContainerRendererRN>;
+
+  /**
+   * 当用户点击 HTML Page 卡片时的回调。
+   *
+   * - node.html 为完整 HTML 内容；
+   * - 宿主可以在回调中打开新的页面 / Modal / WebView。
+   */
+  onOpenHtmlPage?: (node: SupramarkHtmlPageNode) => void;
+}
+
+export const Supramark: React.FC<SupramarkProps> = ({
+  markdown,
+  ast,
+  styles: customStyles,
+  theme,
+  config,
+  onError,
+  errorFallback,
+  onOpenHtmlPage,
+  containerRenderers,
+}) => {
+  const [root, setRoot] = useState<SupramarkRootNode | null>(ast ?? null);
+  const [parseError, setParseError] = useState<ErrorInfo | null>(null);
+
+  // 合并样式：theme -> customStyles -> defaultStyles
+  const mergedStyles = useMemo(() => {
+    let themeStyles: SupramarkStyles | undefined;
+
+    if (typeof theme === 'string') {
+      themeStyles = theme === 'dark' ? darkThemeStyles : lightThemeStyles;
+    } else if (theme) {
+      themeStyles = theme;
+    }
+
+    // 如果同时提供了 theme 和 customStyles，customStyles 优先级更高
+    const finalCustomStyles = {
+      ...themeStyles,
+      ...customStyles,
+    };
+
+    return mergeStyles(finalCustomStyles);
+  }, [customStyles, theme]);
+
+  useEffect(() => {
+    if (ast) {
+      setRoot(ast);
+      setParseError(null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const parsed = await parseMarkdown(markdown, { config });
+        if (!cancelled) {
+          setRoot(parsed);
+          setParseError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const err = error as Error;
+          const errorInfo: ErrorInfo = {
+            type: 'parse',
+            message: err.message || '解析 Markdown 失败',
+            details: err.toString(),
+            stack: err.stack,
+          };
+          setParseError(errorInfo);
+          setRoot(null);
+
+          // 调用错误回调
+          if (onError) {
+            onError(err);
+          }
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [markdown, ast, onError]);
+
+  const mergedContainerRenderers = useMemo(() => {
+    const registered = getRNContainerRenderers() as Record<string, ContainerRendererRN>;
+    return { ...registered, ...(containerRenderers ?? {}) };
+  }, [containerRenderers]);
+
+  // 解析错误降级：显示错误信息或原始 markdown
+  if (parseError) {
+    if (errorFallback) {
+      return <>{errorFallback(parseError)}</>;
+    }
+    return (
+      <View>
+        <ErrorDisplay error={parseError} />
+        <View style={mergedStyles.codeBlock}>
+          <Text style={mergedStyles.code}>{markdown}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!root) {
+    // 解析中时的简单回退：直接显示原始 markdown 文本。
+    return <Text>{markdown}</Text>;
+  }
+
+  return (
+    <ErrorBoundary onError={onError} fallback={errorFallback}>
+      <View style={mergedStyles.root}>
+        {root.children.map((node, index) =>
+          renderNode(node, index, mergedStyles, config, onOpenHtmlPage, mergedContainerRenderers)
+        )}
+      </View>
+    </ErrorBoundary>
+  );
+};
+
+function renderNode(
+  node: SupramarkNode,
+  key: number,
+  styles: ReturnType<typeof mergeStyles>,
+  config?: SupramarkConfig,
+  onOpenHtmlPage?: (node: SupramarkHtmlPageNode) => void,
+  containerRenderers?: Record<string, ContainerRendererRN>
+): React.ReactNode {
+  // container 扩展优先：让新增 :::xxx 不需要修改本文件
+  if ((node as any).type === 'container') {
+    const name = (node as any).name as string;
+    const renderer = containerRenderers?.[name];
+    if (renderer) {
+      return renderer({
+        node,
+        key,
+        styles,
+        config,
+        onOpenHtmlPage,
+        renderNode: (n, k) => renderNode(n, k, styles, config, onOpenHtmlPage, containerRenderers),
+        renderChildren: (children) =>
+          (children ?? []).map((child, idx) =>
+            renderNode(child, idx, styles, config, onOpenHtmlPage, containerRenderers)
+          ),
+      });
+    }
+    return null;
+  }
+
+  switch (node.type) {
+    case 'paragraph':
+      return (
+        <Text key={key} style={styles.paragraph}>
+          {renderInlineNodes(node.children, styles, config)}
+        </Text>
+      );
+    case 'heading': {
+      const heading = node as SupramarkHeadingNode;
+      return (
+        <Text key={key} style={headingStyle(heading.depth, styles)}>
+          {renderInlineNodes(heading.children, styles, config)}
+        </Text>
+      );
+    }
+    case 'code': {
+      const codeBlock = node as SupramarkCodeNode;
+      return (
+        <View key={key} style={styles.codeBlock}>
+          <Text style={styles.code}>{codeBlock.value}</Text>
+        </View>
+      );
+    }
+    case 'math_block': {
+      const mathBlock = node as SupramarkMathBlockNode;
+      // 如果禁用了 Math Feature，则降级为普通代码块展示原始 TeX
+      if (!isFeatureGroupEnabled(config, ['@supramark/feature-math'])) {
+        return renderDisabledMathBlock(mathBlock, key, styles);
+      }
+      return <MathBlock key={key} node={mathBlock} />;
+    }
+    case 'list': {
+      const list = node as SupramarkListNode;
+      return (
+        <View key={key} style={styles.list}>
+          {list.children.map((item, index) =>
+            renderNode(item, index, styles, config, onOpenHtmlPage, containerRenderers)
+          )}
+        </View>
+      );
+    }
+    case 'list_item': {
+      const item = node as SupramarkListItemNode;
+      const isTaskList = item.checked !== undefined;
+      const checkSymbol = item.checked === true ? '☑' : '☐';
+
+      return (
+        <View key={key} style={styles.listItem}>
+          <Text style={styles.bullet}>{isTaskList ? checkSymbol : '•'}</Text>
+          <Text style={styles.listItemText}>
+            {renderInlineNodes(item.children, styles, config)}
+          </Text>
+        </View>
+      );
+    }
+    case 'diagram': {
+      const diagram = node as SupramarkDiagramNode;
+      // 如果配置中显式禁用了对应图表 Feature，则降级为代码块渲染
+      if (!isDiagramFeatureEnabled(config, diagram.engine)) {
+        return renderDisabledDiagram(diagram, key, styles);
+      }
+      return <DiagramNode key={key} node={diagram} diagramConfig={config?.diagram} />;
+    }
+    case 'map': {
+      return renderMapNode(node as SupramarkMapNode, key, styles, config);
+    }
+    case 'html_page': {
+      const htmlPage = node as SupramarkHtmlPageNode;
+      // RN 端默认仅显示占位卡片，点击由宿主通过 onOpenHtmlPage 处理
+      const title = htmlPage.title || '[HTML 页面]';
+      const content = (
+        <View style={styles.listItem}>
+          <Text style={[styles.listItemText, { fontWeight: '600' }]}>{title}</Text>
+          <Text style={styles.listItemText}>
+            点击卡片以在独立容器中打开 HTML 页面（需要宿主实现 onOpenHtmlPage 回调）。
+          </Text>
+        </View>
+      );
+
+      if (!onOpenHtmlPage) {
+        return (
+          <View key={key}>
+            {content}
+          </View>
+        );
+      }
+
+      return (
+        <TouchableOpacity
+          key={key}
+          activeOpacity={0.8}
+          onPress={() => onOpenHtmlPage(htmlPage)}
+        >
+          {content}
+        </TouchableOpacity>
+      );
+    }
+    case 'admonition': {
+      const ad = node as SupramarkAdmonitionNode;
+      const title = ad.title;
+      if (!isFeatureGroupEnabled(config, ['@supramark/feature-admonition'])) {
+        // 禁用时退化为普通段落：标题 + 内容
+        return (
+          <View key={key} style={styles.listItem}>
+            {title ? (
+              <Text style={styles.listItemText}>{title}</Text>
+            ) : null}
+            <Text style={styles.listItemText}>
+              {renderInlineNodes(ad.children, styles, config)}
+            </Text>
+          </View>
+        );
+      }
+      // 如果配置中限定了允许的 kinds，且当前 kind 不在列表中，则退化为普通段落
+      const adOptions =
+        getFeatureOptionsAs<{ kinds?: string[] }>(config, '@supramark/feature-admonition') ??
+        {};
+      if (Array.isArray(adOptions.kinds) && adOptions.kinds.length > 0) {
+        if (!adOptions.kinds.includes(ad.kind)) {
+          return (
+            <View key={key} style={styles.listItem}>
+              {title ? (
+                <Text style={styles.listItemText}>{title}</Text>
+              ) : null}
+              <Text style={styles.listItemText}>
+                {renderInlineNodes(ad.children, styles, config)}
+              </Text>
+            </View>
+          );
+        }
+      }
+      return (
+        <View key={key} style={styles.listItem}>
+          {title ? (
+            <Text style={[styles.listItemText, { fontWeight: '600' }]}>
+              {title}
+            </Text>
+          ) : null}
+          <Text style={styles.listItemText}>
+            {renderInlineNodes(ad.children, styles, config)}
+          </Text>
+        </View>
+      );
+    }
+    case 'definition_list': {
+      const list = node as SupramarkDefinitionListNode;
+      const defOptions =
+        getFeatureOptionsAs<{ compact?: boolean }>(
+          config,
+          '@supramark/feature-definition-list'
+        ) ?? {};
+      const isCompact = defOptions.compact !== false; // 默认紧凑
+      if (!isFeatureGroupEnabled(config, ['@supramark/feature-definition-list'])) {
+        // 禁用时，将定义列表退化为普通列表样式
+        return (
+          <View key={key} style={styles.list}>
+            {list.children.map((item, index) => {
+              const defItem = item as SupramarkDefinitionItemNode;
+              return (
+                <View key={index} style={styles.listItem}>
+                  <Text style={[styles.listItemText, { fontWeight: '600' }]}>
+                    {renderInlineNodes(defItem.term, styles, config)}
+                  </Text>
+                  {defItem.descriptions.map((descNodes, idx) => (
+                    <Text key={idx} style={styles.listItemText}>
+                      {renderInlineNodes(descNodes, styles, config)}
+                    </Text>
+                  ))}
+                </View>
+              );
+            })}
+          </View>
+        );
+      }
+      return (
+        <View key={key} style={styles.list}>
+          {list.children.map((item, index) => {
+            const defItem = item as SupramarkDefinitionItemNode;
+            return (
+              <View key={index} style={styles.listItem}>
+                <Text style={[styles.listItemText, { fontWeight: '600' }]}>
+                  {renderInlineNodes(defItem.term, styles, config)}
+                </Text>
+                {defItem.descriptions.map((descNodes, idx) => (
+                  <Text
+                    key={idx}
+                    style={styles.listItemText}
+                  >
+                    {renderInlineNodes(descNodes, styles, config)}
+                    {isCompact ? '' : '\n'}
+                  </Text>
+                ))}
+              </View>
+            );
+          })}
+        </View>
+      );
+    }
+    case 'footnote_definition': {
+      const def = node as SupramarkFootnoteDefinitionNode;
+      // 第一阶段：简单以「[n] 内容」形式追加在文末
+      if (!isFeatureGroupEnabled(config, ['@supramark/feature-footnote'])) {
+        // 禁用脚注 Feature 时，直接渲染为普通段落
+        return (
+          <View key={key} style={styles.listItem}>
+            <Text style={styles.listItemText}>
+              {renderInlineNodes(def.children, styles, config)}
+            </Text>
+          </View>
+        );
+      }
+      return (
+        <View key={key} style={styles.listItem}>
+          <Text style={styles.bullet}>[{def.index}]</Text>
+          <Text style={styles.listItemText}>
+            {renderInlineNodes(def.children, styles, config)}
+          </Text>
+        </View>
+      );
+    }
+    case 'table': {
+      const table = node as SupramarkTableNode;
+      return (
+        <View key={key} style={styles.table}>
+          {table.children.map((row, index) =>
+            renderNode(row, index, styles, config, onOpenHtmlPage, containerRenderers)
+          )}
+        </View>
+      );
+    }
+    case 'table_row': {
+      const row = node as SupramarkTableRowNode;
+      return (
+        <View key={key} style={styles.tableRow}>
+          {row.children.map((cell, index) =>
+            renderNode(cell, index, styles, config, onOpenHtmlPage, containerRenderers)
+          )}
+        </View>
+      );
+    }
+    case 'table_cell': {
+      const cell = node as SupramarkTableCellNode;
+      const cellStyle = [styles.tableCell, cell.header && styles.tableHeaderCell];
+      const textStyle = [
+        styles.tableCellText,
+        cell.header && styles.tableHeaderText,
+        cell.align === 'center' && styles.textCenter,
+        cell.align === 'right' && styles.textRight,
+      ];
+
+      return (
+        <View key={key} style={cellStyle}>
+         <Text style={textStyle}>{renderInlineNodes(cell.children, styles)}</Text>
+        </View>
+      );
+    }
+    case 'text':
+      return (
+        <Text key={key} style={styles.paragraph}>
+          {(node as SupramarkTextNode).value}
+        </Text>
+      );
+    default:
+      return null;
+  }
+}
+
+function renderInlineNodes(
+  nodes: SupramarkNode[],
+  styles: ReturnType<typeof mergeStyles>,
+  config?: SupramarkConfig
+): React.ReactNode {
+  return nodes.map((node, index) => renderInlineNode(node, index, styles, config));
+}
+
+function renderInlineNode(
+  node: SupramarkNode,
+  key: number,
+  styles: ReturnType<typeof mergeStyles>,
+  config?: SupramarkConfig
+): React.ReactNode {
+  switch (node.type) {
+    case 'text': {
+      const textNode = node as SupramarkTextNode;
+      return textNode.value;
+    }
+    case 'strong': {
+      const strongNode = node as SupramarkStrongNode;
+      return (
+        <Text key={key} style={styles.strong}>
+          {renderInlineNodes(strongNode.children, styles)}
+        </Text>
+      );
+    }
+    case 'emphasis': {
+      const emphasisNode = node as SupramarkEmphasisNode;
+      return (
+        <Text key={key} style={styles.emphasis}>
+          {renderInlineNodes(emphasisNode.children, styles)}
+        </Text>
+      );
+    }
+    case 'inline_code': {
+      const codeNode = node as SupramarkInlineCodeNode;
+      return (
+        <Text key={key} style={styles.inlineCode}>
+          {codeNode.value}
+        </Text>
+      );
+    }
+    case 'math_inline': {
+      const mathNode = node as SupramarkMathInlineNode;
+      // 行内公式先简单用 inlineCode 样式渲染，后续可接入 KaTeX
+      return (
+        <Text key={key} style={styles.inlineCode}>
+          {mathNode.value}
+        </Text>
+      );
+    }
+    case 'link': {
+      const linkNode = node as SupramarkLinkNode;
+      return (
+        <Text
+          key={key}
+          style={styles.link}
+          onPress={() => {
+            Linking.openURL(linkNode.url).catch((err) =>
+              console.error('Failed to open URL:', err)
+            );
+          }}
+        >
+          {renderInlineNodes(linkNode.children, styles)}
+        </Text>
+      );
+    }
+    case 'image': {
+      const imageNode = node as SupramarkImageNode;
+      // RN 中暂时用文本展示图片（未来可以用 Image 组件）
+      return (
+        <Text key={key} style={styles.imageText}>
+          [Image: {imageNode.alt || imageNode.url}]
+        </Text>
+      );
+    }
+    case 'break': {
+      return '\n';
+    }
+    case 'delete': {
+      const deleteNode = node as SupramarkDeleteNode;
+      return (
+        <Text key={key} style={styles.delete}>
+          {renderInlineNodes(deleteNode.children, styles, config)}
+        </Text>
+      );
+    }
+    case 'footnote_reference': {
+      const ref = node as SupramarkFootnoteReferenceNode;
+      const label = ref.index;
+      if (!isFeatureGroupEnabled(undefined, ['@supramark/feature-footnote'])) {
+        return `[${label}]`;
+      }
+      return (
+        <Text key={key} style={styles.inlineCode}>
+          [{label}]
+        </Text>
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+function headingStyle(
+  depth: SupramarkHeadingNode['depth'],
+  styles: ReturnType<typeof mergeStyles>
+) {
+  switch (depth) {
+    case 1:
+      return styles.h1;
+    case 2:
+      return styles.h2;
+    case 3:
+      return styles.h3;
+    case 4:
+      return styles.h4;
+    case 5:
+      return styles.h5;
+    case 6:
+      return styles.h6;
+    default:
+      return styles.h4;
+  }
+}
+
+/**
+ * 根据配置判断某个 diagram engine 是否被启用。
+ *
+ * 设计约定：
+ * - 如果未提供 config，或 config.features 为空，则视为所有内置图表功能启用；
+ * - 仅当 config 中**显式包含**相关 Feature 且 enabled 为 false 时，才视为禁用；
+ * - 这样既兼容「自动生成的完整配置」，也兼容「只配置少数 Feature」的场景。
+ */
+function isDiagramFeatureEnabled(
+  config: SupramarkConfig | undefined,
+  engine: string
+): boolean {
+  const ids = getFeatureIdsForEngine(engine);
+  if (!ids.length) {
+    // 当前 engine 尚未与具体 Feature 绑定，默认启用，但给出一次性告警
+    warnIfUnknownDiagramEngine(engine as any, 'rn:diagram-feature');
+    return true;
+  }
+  return isFeatureGroupEnabled(config, ids);
+}
+
+/**
+ * 将 diagram.engine 映射到对应的 Feature ID。
+ *
+ * 后续如果增加独立的 Mermaid / PlantUML Feature，只需在此补充映射即可。
+ */
+function getFeatureIdsForEngine(engine: string): string[] {
+  const normalized = engine.toLowerCase();
+
+  if (
+    normalized === 'vega' ||
+    normalized === 'vega-lite' ||
+    normalized === 'chart' ||
+    normalized === 'chartjs'
+  ) {
+    return ['@supramark/feature-diagram-vega-lite'];
+  }
+
+  if (normalized === 'echarts') {
+    return ['@supramark/feature-diagram-echarts'];
+  }
+
+  return [];
+}
+
+/**
+ * 判断一组 Feature ID 是否被启用。
+ *
+ * 约定：
+ * - 未提供 config 或 config.features 为空 → 视为全部启用；
+ * - 如果 config 中根本没有提到这些 ID → 视为使用默认行为（启用）；
+ * - 一旦显式配置了其中任意一个 ID，则以配置为准，只要有一个 enabled:true 就认为启用。
+ */
+function isFeatureGroupEnabled(
+  config: SupramarkConfig | undefined,
+  ids: string[]
+): boolean {
+  if (!config || !config.features || config.features.length === 0) {
+    return true;
+  }
+
+  const hasAny = ids.some((id) => config.features!.some((f) => f.id === id));
+  if (!hasAny) {
+    return true;
+  }
+
+  return ids.some((id) => isFeatureEnabled(config, id));
+}
+
+function renderDisabledDiagram(
+  diagram: SupramarkDiagramNode,
+  key: number,
+  styles: ReturnType<typeof mergeStyles>
+): React.ReactNode {
+  const header = `[diagram engine="${diagram.engine}" 已被禁用]\n\n`;
+  return (
+    <View key={key} style={styles.codeBlock}>
+      <Text style={styles.code}>{header + diagram.code}</Text>
+    </View>
+  );
+}
+
+function renderDisabledMathBlock(
+  math: SupramarkMathBlockNode,
+  key: number,
+  styles: ReturnType<typeof mergeStyles>
+): React.ReactNode {
+  const header = '[math 已被禁用]\n\n';
+  return (
+    <View key={key} style={styles.codeBlock}>
+      <Text style={styles.code}>{header + math.value}</Text>
+    </View>
+  );
+}
+
+function renderMapNode(
+  map: SupramarkMapNode,
+  key: number,
+  styles: ReturnType<typeof mergeStyles>,
+  config?: SupramarkConfig
+): React.ReactNode {
+  // 尝试使用真实的 react-native-maps
+  try {
+    // react-native-maps is an optional dependency; keep it lazy-loaded.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const MapView = require('react-native-maps').default;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { Marker } = require('react-native-maps');
+    
+    const { width } = Dimensions.get('window');
+    
+    // 解析坐标
+    const latitude = map.center?.[0] || 0;
+    const longitude = map.center?.[1] || 0;
+    const zoom = map.zoom || 12;
+    
+    // 计算地图区域 - 根据zoom调整视野范围
+    const latitudeDelta = Math.max(0.001, 0.1 * Math.pow(0.5, zoom - 8));
+    const longitudeDelta = Math.max(0.001, 0.1 * Math.pow(0.5, zoom - 8));
+    
+    const region = {
+      latitude,
+      longitude,
+      latitudeDelta,
+      longitudeDelta,
+    };
+    
+    const hasMarker = map.marker && 
+      typeof map.marker.lat === 'number' && 
+      typeof map.marker.lng === 'number';
+
+    return (
+      <View key={key} style={styles.mapCard}>
+        <View style={styles.mapCardHeader}>
+          <Text style={styles.mapCardTitle}>🗺️ 真实地图</Text>
+          <Text style={styles.mapCardSubtitle}>React Native Maps 实现</Text>
+        </View>
+        
+        <View style={styles.mapContainer}>
+          <MapView
+            style={[styles.map, { width: width - 32 }]}
+            region={region}
+            mapType="standard"
+            showsUserLocation={false}
+            showsMyLocationButton={false}
+            zoomEnabled={true}
+            scrollEnabled={true}
+            rotateEnabled={true}
+            pitchEnabled={false}
+          >
+            {/* 中心标记 */}
+            <Marker
+              coordinate={{ latitude, longitude }}
+              title="中心点"
+              description={`坐标: ${latitude}, ${longitude}`}
+              pinColor="red"
+            />
+            
+            {/* 额外标记 */}
+            {hasMarker && (
+              <Marker
+                coordinate={{
+                  latitude: map.marker!.lat,
+                  longitude: map.marker!.lng,
+                }}
+                title="标记点"
+                description={`位置: ${map.marker!.lat}, ${map.marker!.lng}`}
+                pinColor="blue"
+              />
+            )}
+          </MapView>
+        </View>
+        
+        <View style={styles.mapCardContent}>
+          <Text style={styles.mapCardInfo}>
+            📍 中心：{latitude.toFixed(4)}, {longitude.toFixed(4)}
+          </Text>
+          <Text style={styles.mapCardInfo}>
+            🔍 缩放级别：{zoom}
+          </Text>
+          {hasMarker && (
+            <Text style={styles.mapCardInfo}>
+              📌 标记：{map.marker!.lat}, {map.marker!.lng}
+            </Text>
+          )}
+          <Text style={[styles.mapCardInfo, { color: '#28a745', fontWeight: '500' }]}>
+            ✅ 真实地图已启用
+          </Text>
+        </View>
+      </View>
+    );
+    
+  } catch (error) {
+    // 如果 react-native-maps 不可用，显示智能占位卡片
+    const { width } = Dimensions.get('window');
+    const centerText = map.center
+      ? `${map.center[0]}, ${map.center[1]}`
+      : '未指定';
+    const zoom = map.zoom || 12;
+    const hasMarker = map.marker && 
+      typeof map.marker.lat === 'number' && 
+      typeof map.marker.lng === 'number';
+
+    return (
+      <View key={key} style={styles.mapCard}>
+        <View style={styles.mapCardHeader}>
+          <Text style={styles.mapCardTitle}>🗺️ 智能地图卡片</Text>
+          <Text style={styles.mapCardSubtitle}>可视化占位符 (react-native-maps 未就绪)</Text>
+        </View>
+        
+        {/* 智能地图占位区域 */}
+        <View style={styles.mapContainer}>
+          <View style={[styles.map, { width: width - 32 }]}>
+            {/* 模拟地图网格 */}
+            <View style={styles.mapGridOverlay}>
+              {Array.from({ length: 4 }, (_, i) => (
+                <View key={`h-${i}`} style={[styles.mapGridLine, { top: `${(i + 1) * 20}%` }]} />
+              ))}
+              {Array.from({ length: 4 }, (_, i) => (
+                <View key={`v-${i}`} style={[styles.mapGridLine, styles.mapGridLineVertical, { left: `${(i + 1) * 20}%` }]} />
+              ))}
+            </View>
+            
+            {/* 中心标记 */}
+            <View style={styles.mapCenterMarker}>
+              <Text style={styles.mapCenterMarkerText}>📍</Text>
+            </View>
+            
+            {/* 额外标记 */}
+            {hasMarker && (
+              <View style={[styles.mapMarker, { 
+                top: '30%', 
+                left: '60%' 
+              }]}>
+                <Text style={styles.mapMarkerText}>📌</Text>
+              </View>
+            )}
+            
+            {/* 地图信息覆盖层 */}
+            <View style={styles.mapOverlay}>
+              <Text style={styles.mapOverlayText}>
+                模拟 {zoom}x
+              </Text>
+            </View>
+          </View>
+        </View>
+        
+        <View style={styles.mapCardContent}>
+          <Text style={styles.mapCardInfo}>
+            📍 中心：{centerText}
+          </Text>
+          <Text style={styles.mapCardInfo}>
+            🔍 缩放级别：{zoom}
+          </Text>
+          {hasMarker && (
+            <Text style={styles.mapCardInfo}>
+              📌 标记：{map.marker!.lat}, {map.marker!.lng}
+            </Text>
+          )}
+          <Text style={[styles.mapCardInfo, { color: '#ffc107', fontStyle: 'italic' }]}>
+            ⚠️ 安装 react-native-maps 以启用真实地图
+          </Text>
+        </View>
+      </View>
+    );
+  }
+}

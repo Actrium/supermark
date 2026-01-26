@@ -1,0 +1,49 @@
+{
+  "name": "supramark",
+  "version": "0.1.0",
+  "private": true,
+  "description": "可扩展的 Markdown + 图表渲染集成库，面向 React Native / 小程序平台宿主。",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/core",
+    "packages/renderers/*",
+    "packages/features/*/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "gen:container-registry": "bunx tsx scripts/generate-container-registry.ts",
+    "register:features": "node scripts/register-features.js",
+    "build": "bun run --workspaces build",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "lint:features": "node scripts/lint-features.js",
+    "lint:features:strict": "node scripts/lint-features.js --strict",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\"",
+    "test": "bun run --workspaces --if-present test",
+    "test:core": "bun run --filter @supramark/core test",
+    "test:features": "bun run --filter '@supramark/feature-*' test",
+    "test:coverage": "bun run --workspaces --if-present test:coverage",
+    "quality": "node scripts/quality-check.js",
+    "create-feature": "node scripts/create-feature.js",
+    "update-feature": "node scripts/update-feature.js",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "dev:web-csr": "bun install --cwd examples/react-web-csr && bun --cwd examples/react-web-csr dev"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.50.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-react": "^7.33.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "expo": "~54.0.29",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  }
+}
