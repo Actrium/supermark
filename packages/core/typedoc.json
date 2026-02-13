@@ -2,12 +2,7 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": ["src/index.ts"],
   "out": "docs/api",
-  "exclude": [
-    "**/__tests__/**",
-    "**/*.test.ts",
-    "**/node_modules/**",
-    "**/features.*.ts"
-  ],
+  "exclude": ["**/__tests__/**", "**/*.test.ts", "**/node_modules/**", "**/features.*.ts"],
   "excludePrivate": true,
   "excludeProtected": false,
   "excludeExternals": true,
@@ -19,15 +14,7 @@
     "GitHub": "https://github.com/supramark/supramark"
   },
   "categorizeByGroup": true,
-  "categoryOrder": [
-    "Core",
-    "AST",
-    "Parser",
-    "Plugin",
-    "Feature Interface",
-    "Cache",
-    "*"
-  ],
+  "categoryOrder": ["Core", "AST", "Parser", "Plugin", "Feature Interface", "Cache", "*"],
   "sort": ["source-order"],
   "gitRevision": "main",
   "lightHighlightTheme": "light-plus",

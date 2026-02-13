@@ -36,13 +36,7 @@ import {
  *
  * 全局唯一，不能与其他 Feature 冲突。
  */
-export const ADMONITION_CONTAINER_NAMES = [
-  'note',
-  'tip',
-  'info',
-  'warning',
-  'danger',
-] as const;
+export const ADMONITION_CONTAINER_NAMES = ['note', 'tip', 'info', 'warning', 'danger'] as const;
 
 export type AdmonitionKind = (typeof ADMONITION_CONTAINER_NAMES)[number];
 

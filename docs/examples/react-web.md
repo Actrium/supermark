@@ -6,22 +6,24 @@
 
 ```bash
 cd examples/react-web
-npm install
-npm run start
+bun install
+bun run start
 ```
 
 ## Supramark 依赖
 
 - `@supramark/web` - 0.1.0
 
+## 源代码
+
 ## 项目结构
 
 ```
 examples/react-web/
-├── src/           # 源代码
-├── public/        # 静态资源
-├── package.json   # 依赖配置
-└── README.md      # 项目说明
+├── src/
+├── public/
+├── package.json
+└── README.md
 ```
 
 ## 相关资源
@@ -32,4 +34,4 @@ examples/react-web/
 
 ---
 
-*此文档由 `scripts/generate-example-docs.mjs` 自动生成*
+_此文档由 scripts/doc-gen-example.ts 自动生成_

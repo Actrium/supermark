@@ -19,10 +19,10 @@ AST 是 Markdown 文档的结构化表示，将文本解析为树状数据结构
 
 ```typescript
 // Markdown 文本
-const markdown = `# Hello World\n\nThis is **bold** text.`
+const markdown = `# Hello World\n\nThis is **bold** text.`;
 
 // 解析为 AST
-const ast = parseMarkdown(markdown)
+const ast = parseMarkdown(markdown);
 // {
 //   type: 'root',
 //   children: [
@@ -58,24 +58,24 @@ Feature 是 Supramark 的功能扩展单元，每个 Feature 提供：
 ```typescript
 interface SupramarkFeature {
   metadata: {
-    id: string
-    name: string
-    description: string
-    version: string
-  }
+    id: string;
+    name: string;
+    description: string;
+    version: string;
+  };
 
   syntax?: {
     // 语法定义
-  }
+  };
 
   renderers?: {
-    web?: WebRenderer
-    rn?: RNRenderer
-  }
+    web?: WebRenderer;
+    rn?: RNRenderer;
+  };
 
   documentation?: {
     // 文档和示例
-  }
+  };
 }
 ```
 
@@ -116,16 +116,16 @@ const config = {
 某些 Features 支持配置选项：
 
 ```typescript
-import { createMathFeatureConfig } from '@supramark/feature-math'
+import { createMathFeatureConfig } from '@supramark/feature-math';
 
 const config = {
   features: [
     createMathFeatureConfig(true, {
-      engine: 'katex',  // 或 'mathjax'
-      displayMode: true
-    })
-  ]
-}
+      engine: 'katex', // 或 'mathjax'
+      displayMode: true,
+    }),
+  ],
+};
 ```
 
 ## 渲染流程
@@ -135,9 +135,9 @@ const config = {
 Markdown 文本 → AST
 
 ```typescript
-import { parseMarkdown } from '@supramark/core'
+import { parseMarkdown } from '@supramark/core';
 
-const ast = await parseMarkdown(markdown, { config })
+const ast = await parseMarkdown(markdown, { config });
 ```
 
 ### 2. 渲染阶段
@@ -197,13 +197,13 @@ Web 和 RN 使用相同的 API：
 你可以创建自己的 Feature：
 
 ```typescript
-import { defineFeature } from '@supramark/core'
+import { defineFeature } from '@supramark/core';
 
 const myFeature = defineFeature({
   metadata: {
     id: 'my-custom-feature',
     name: 'My Custom Feature',
-    version: '1.0.0'
+    version: '1.0.0',
   },
 
   syntax: {
@@ -212,9 +212,9 @@ const myFeature = defineFeature({
 
   renderers: {
     web: MyWebRenderer,
-    rn: MyRNRenderer
-  }
-})
+    rn: MyRNRenderer,
+  },
+});
 ```
 
 详细指南：[自定义 Feature 开发](/guide/custom-features)
@@ -242,10 +242,10 @@ Supramark 自动缓存解析结果：
 
 ```typescript
 // 第一次解析
-const ast1 = await parseMarkdown(markdown)  // 较慢
+const ast1 = await parseMarkdown(markdown); // 较慢
 
 // 相同内容第二次解析
-const ast2 = await parseMarkdown(markdown)  // 从缓存获取
+const ast2 = await parseMarkdown(markdown); // 从缓存获取
 ```
 
 ### 增量渲染
@@ -278,10 +278,10 @@ const ast2 = await parseMarkdown(markdown)  // 从缓存获取
 
 ```typescript
 // ✅ 好 - 只引入需要的
-import { gfmFeature } from '@supramark/feature-gfm'
+import { gfmFeature } from '@supramark/feature-gfm';
 
 // ❌ 差 - 引入所有
-import * as features from '@supramark/features'
+import * as features from '@supramark/features';
 ```
 
 ### 2. 复用配置对象
@@ -303,11 +303,13 @@ const config = {
 使用 TypeScript 获得类型提示：
 
 ```typescript
-import type { SupramarkConfig } from '@supramark/core'
+import type { SupramarkConfig } from '@supramark/core';
 
 const config: SupramarkConfig = {
-  features: [/* ... */]
-}
+  features: [
+    /* ... */
+  ],
+};
 ```
 
 ## 下一步

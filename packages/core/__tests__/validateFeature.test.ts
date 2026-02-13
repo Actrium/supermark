@@ -40,7 +40,7 @@ describe('validateFeature', () => {
 
       const result = validateFeature(feature);
       expect(result.valid).toBe(true);
-      expect(result.errors.filter((e) => e.severity === 'error')).toHaveLength(0);
+      expect(result.errors.filter(e => e.severity === 'error')).toHaveLength(0);
     });
 
     it('应该检测到缺少 id', () => {
@@ -58,7 +58,7 @@ describe('validateFeature', () => {
 
       const result = validateFeature(feature);
       expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.code === 'metadata-id-required')).toBe(true);
+      expect(result.errors.some(e => e.code === 'metadata-id-required')).toBe(true);
     });
 
     it('应该检测到 id 格式错误', () => {
@@ -77,7 +77,7 @@ describe('validateFeature', () => {
 
       const result = validateFeature(feature);
       expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.code === 'metadata-id-format')).toBe(true);
+      expect(result.errors.some(e => e.code === 'metadata-id-format')).toBe(true);
     });
 
     it('应该检测到版本号格式错误', () => {
@@ -96,7 +96,7 @@ describe('validateFeature', () => {
 
       const result = validateFeature(feature);
       expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.code === 'metadata-version-semver')).toBe(true);
+      expect(result.errors.some(e => e.code === 'metadata-version-semver')).toBe(true);
     });
 
     it('应该检测到缺少 AST type', () => {
@@ -113,7 +113,7 @@ describe('validateFeature', () => {
 
       const result = validateFeature(feature);
       expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.code === 'ast-type-required')).toBe(true);
+      expect(result.errors.some(e => e.code === 'ast-type-required')).toBe(true);
     });
   });
 
@@ -133,8 +133,8 @@ describe('validateFeature', () => {
       };
 
       const result = validateFeature(feature);
-      expect(result.errors.some((e) => e.code === 'metadata-description-required')).toBe(true);
-      expect(result.errors.find((e) => e.code === 'metadata-description-required')?.severity).toBe(
+      expect(result.errors.some(e => e.code === 'metadata-description-required')).toBe(true);
+      expect(result.errors.find(e => e.code === 'metadata-description-required')?.severity).toBe(
         'warning'
       );
     });
@@ -160,9 +160,7 @@ describe('validateFeature', () => {
       };
 
       const result = validateFeature(feature);
-      expect(
-        result.errors.some((e) => e.code === 'ast-interface-required-nonempty')
-      ).toBe(true);
+      expect(result.errors.some(e => e.code === 'ast-interface-required-nonempty')).toBe(true);
     });
 
     it('应该警告 fields 缺少定义', () => {
@@ -187,7 +185,7 @@ describe('validateFeature', () => {
       };
 
       const result = validateFeature(feature);
-      expect(result.errors.some((e) => e.code === 'ast-interface-fields-defined')).toBe(true);
+      expect(result.errors.some(e => e.code === 'ast-interface-fields-defined')).toBe(true);
     });
   });
 
@@ -207,8 +205,8 @@ describe('validateFeature', () => {
       };
 
       const result = validateFeature(feature);
-      expect(result.errors.some((e) => e.code === 'metadata-tags-nonempty')).toBe(true);
-      expect(result.errors.find((e) => e.code === 'metadata-tags-nonempty')?.severity).toBe('info');
+      expect(result.errors.some(e => e.code === 'metadata-tags-nonempty')).toBe(true);
+      expect(result.errors.find(e => e.code === 'metadata-tags-nonempty')?.severity).toBe('info');
     });
 
     it('应该建议提供 examples', () => {
@@ -226,8 +224,8 @@ describe('validateFeature', () => {
       };
 
       const result = validateFeature(feature);
-      expect(result.errors.some((e) => e.code === 'ast-examples-provided')).toBe(true);
-      expect(result.errors.find((e) => e.code === 'ast-examples-provided')?.severity).toBe('info');
+      expect(result.errors.some(e => e.code === 'ast-examples-provided')).toBe(true);
+      expect(result.errors.find(e => e.code === 'ast-examples-provided')?.severity).toBe('info');
     });
   });
 
@@ -292,9 +290,7 @@ describe('validateFeature', () => {
 
       const result = validateFeature(feature, { production: true });
       expect(result.valid).toBe(false);
-      expect(
-        result.errors.some((e) => e.code === 'ast-interface-required-production')
-      ).toBe(true);
+      expect(result.errors.some(e => e.code === 'ast-interface-required-production')).toBe(true);
     });
 
     it('生产模式下应该要求至少一个渲染器', () => {
@@ -320,7 +316,7 @@ describe('validateFeature', () => {
 
       const result = validateFeature(feature, { production: true });
       expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.code === 'renderers-required-production')).toBe(true);
+      expect(result.errors.some(e => e.code === 'renderers-required-production')).toBe(true);
     });
 
     it('生产模式下应该建议提供测试', () => {
@@ -344,9 +340,7 @@ describe('validateFeature', () => {
       };
 
       const result = validateFeature(feature, { production: true });
-      expect(
-        result.errors.some((e) => e.code === 'testing-recommended-production')
-      ).toBe(true);
+      expect(result.errors.some(e => e.code === 'testing-recommended-production')).toBe(true);
     });
   });
 });

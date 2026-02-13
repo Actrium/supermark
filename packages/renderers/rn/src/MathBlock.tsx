@@ -26,14 +26,11 @@ export const MathBlock: React.FC<MathBlockProps> = ({ node }) => {
       code: node.value,
       options: { displayMode: true },
     })
-      .then((result) => {
+      .then(result => {
         if (cancelled) return;
 
         if (!result.success || result.format !== 'svg') {
-          const msg =
-            result.error?.message ||
-            result.payload ||
-            'Math rendering failed';
+          const msg = result.error?.message || result.payload || 'Math rendering failed';
           setError(msg);
           setLoading(false);
           return;
@@ -48,7 +45,7 @@ export const MathBlock: React.FC<MathBlockProps> = ({ node }) => {
           setLoading(false);
         }
       })
-      .catch((err) => {
+      .catch(err => {
         if (cancelled) return;
         setError(String(err));
         setLoading(false);
@@ -130,4 +127,3 @@ const styles = StyleSheet.create({
     color: '#d4380d',
   },
 });
-

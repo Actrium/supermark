@@ -103,12 +103,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       if (this.props.fallback) {
         return this.props.fallback(this.state.error);
       }
-      return (
-        <ErrorDisplay
-          error={this.state.error}
-          classNamePrefix={this.props.classNamePrefix}
-        />
-      );
+      return <ErrorDisplay error={this.state.error} classNamePrefix={this.props.classNamePrefix} />;
     }
 
     return this.props.children;

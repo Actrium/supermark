@@ -2,10 +2,10 @@
 
 本指南整理了**从零开发一个新 Feature** 的完整流程，覆盖：
 
-- 语法与 AST 设计  
-- 使用脚手架创建 Feature 包  
-- 接入 `@supramark/core` 解析管线  
-- 在 `@supramark/rn` / `@supramark/web` 中渲染  
+- 语法与 AST 设计
+- 使用脚手架创建 Feature 包
+- 接入 `@supramark/core` 解析管线
+- 在 `@supramark/rn` / `@supramark/web` 中渲染
 - 配置桥接、示例与文档、测试与质量
 
 > 推荐在动手前先阅读：
@@ -99,25 +99,20 @@ npm run build --workspace @supramark/feature-xxx
      ```
    - 通过辅助类型导出配置形态：
      ```ts
-     export type XxxFeatureConfig =
-       FeatureConfigWithOptions<XxxFeatureOptions>;
+     export type XxxFeatureConfig = FeatureConfigWithOptions<XxxFeatureOptions>;
      ```
    - 提供 helper：
+
      ```ts
      export function createXxxFeatureConfig(
        enabled = true,
-       options?: XxxFeatureOptions,
+       options?: XxxFeatureOptions
      ): XxxFeatureConfig {
        return { id: '@supramark/feature-xxx', enabled, options };
      }
 
-     export function getXxxFeatureOptions(
-       config?: SupramarkConfig,
-     ): XxxFeatureOptions | undefined {
-       return getFeatureOptionsAs<XxxFeatureOptions>(
-         config,
-         '@supramark/feature-xxx',
-       );
+     export function getXxxFeatureOptions(config?: SupramarkConfig): XxxFeatureOptions | undefined {
+       return getFeatureOptionsAs<XxxFeatureOptions>(config, '@supramark/feature-xxx');
      }
      ```
 
@@ -289,15 +284,9 @@ case 'diagram': {
 在应用层或示例中，推荐使用各 Feature 包提供的强类型 helper，而不是手写裸对象：
 
 ```ts
-import {
-  createCoreMarkdownFeatureConfig,
-} from '@supramark/feature-core-markdown';
-import {
-  createGfmFeatureConfig,
-} from '@supramark/feature-gfm';
-import {
-  createAdmonitionFeatureConfig,
-} from '@supramark/feature-admonition';
+import { createCoreMarkdownFeatureConfig } from '@supramark/feature-core-markdown';
+import { createGfmFeatureConfig } from '@supramark/feature-gfm';
+import { createAdmonitionFeatureConfig } from '@supramark/feature-admonition';
 
 const BASE_CONFIG: SupramarkConfig = {
   features: [

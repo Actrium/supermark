@@ -117,8 +117,10 @@ function parseYamlConfig(content: string): Partial<WeatherData> {
         else if (rawValue === 'false') value = false;
         else if (/^-?\d+$/.test(rawValue)) value = parseInt(rawValue, 10);
         else if (/^-?\d+\.\d+$/.test(rawValue)) value = parseFloat(rawValue);
-        else if ((rawValue.startsWith('"') && rawValue.endsWith('"')) ||
-                 (rawValue.startsWith("'") && rawValue.endsWith("'"))) {
+        else if (
+          (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
+          (rawValue.startsWith("'") && rawValue.endsWith("'"))
+        ) {
           value = rawValue.slice(1, -1);
         }
 

@@ -57,13 +57,9 @@ describe('Feature 配置系统', () => {
 
     it('应该从 Registry 生成启用所有 Feature 的配置', () => {
       // 注册两个 Features
-      FeatureRegistry.register(
-        createTestFeature('@test/feature-a', 'test-a')
-      );
+      FeatureRegistry.register(createTestFeature('@test/feature-a', 'test-a'));
 
-      FeatureRegistry.register(
-        createTestFeature('@test/feature-b', 'test-b')
-      );
+      FeatureRegistry.register(createTestFeature('@test/feature-b', 'test-b'));
 
       const config = createConfigFromRegistry(true);
 
@@ -79,9 +75,7 @@ describe('Feature 配置系统', () => {
     });
 
     it('应该支持默认禁用所有 Features', () => {
-      FeatureRegistry.register(
-        createTestFeature('@test/feature-a', 'test-a')
-      );
+      FeatureRegistry.register(createTestFeature('@test/feature-a', 'test-a'));
 
       const config = createConfigFromRegistry(false);
 
@@ -206,31 +200,27 @@ describe('Feature 配置系统', () => {
   describe('集成测试', () => {
     it('应该支持完整的配置流程', () => {
       // 1. 注册 Features
-      FeatureRegistry.register(
-        {
-          ...createTestFeature('@supramark/feature-mermaid', 'diagram'),
-          syntax: {
-            ast: {
-              type: 'diagram',
-              selector: (node: SupramarkNode) =>
-                node.type === 'diagram' && (node as any).engine === 'mermaid',
-            },
+      FeatureRegistry.register({
+        ...createTestFeature('@supramark/feature-mermaid', 'diagram'),
+        syntax: {
+          ast: {
+            type: 'diagram',
+            selector: (node: SupramarkNode) =>
+              node.type === 'diagram' && (node as any).engine === 'mermaid',
           },
-        }
-      );
+        },
+      });
 
-      FeatureRegistry.register(
-        {
-          ...createTestFeature('@supramark/feature-vega-lite', 'diagram'),
-          syntax: {
-            ast: {
-              type: 'diagram',
-              selector: (node: SupramarkNode) =>
-                node.type === 'diagram' && (node as any).engine === 'vega-lite',
-            },
+      FeatureRegistry.register({
+        ...createTestFeature('@supramark/feature-vega-lite', 'diagram'),
+        syntax: {
+          ast: {
+            type: 'diagram',
+            selector: (node: SupramarkNode) =>
+              node.type === 'diagram' && (node as any).engine === 'vega-lite',
           },
-        }
-      );
+        },
+      });
 
       // 2. 生成默认配置
       const defaultConfig = createConfigFromRegistry(true);

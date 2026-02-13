@@ -58,17 +58,18 @@ npm run preview
 import { Supramark } from '@supramark/web/client';
 
 function App() {
-  const [markdown, setMarkdown] = useState('# Hello World');
+const [markdown, setMarkdown] = useState('# Hello World');
 
-  return (
-    <div>
-      <textarea
-        value={markdown}
-        onChange={(e) => setMarkdown(e.target.value)}
-      />
-      <Supramark markdown={markdown} />
-    </div>
-  );
+return (
+
+<div>
+<textarea
+value={markdown}
+onChange={(e) => setMarkdown(e.target.value)}
+/>
+<Supramark markdown={markdown} />
+</div>
+);
 }
 \`\`\`
 
@@ -83,7 +84,7 @@ import { Supramark, parseMarkdown } from '@supramark/web/client';
 const ast = await parseMarkdown('# Hello World');
 
 function App() {
-  return <Supramark ast={ast} markdown="" />;
+return <Supramark ast={ast} markdown="" />;
 }
 \`\`\`
 
@@ -96,10 +97,10 @@ function App() {
 \`\`\`
 react-web-csr/
 ├── src/
-│   ├── App.tsx          # 主应用组件
-│   ├── App.css          # 样式文件
-│   ├── main.tsx         # 入口文件
-│   └── index.css        # 全局样式
+│ ├── App.tsx # 主应用组件
+│ ├── App.css # 样式文件
+│ ├── main.tsx # 入口文件
+│ └── index.css # 全局样式
 ├── package.json
 ├── vite.config.ts
 └── tsconfig.json
@@ -111,19 +112,19 @@ react-web-csr/
 - [Vite 文档](https://vitejs.dev/)
 - [React 文档](https://react.dev/)
 
-
 ## 快速开始
 
 ```bash
 cd examples/react-web-csr
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 ## Supramark 依赖
 
-- `@supramark/web` - file:../../packages/web
+- `@supramark/web` - file:../../packages/renderers/web
 - `@supramark/core` - file:../../packages/core
+- `@supramark/feature-weather` - file:../../packages/features/feature-weather
 
 ## 源代码
 
@@ -173,34 +174,45 @@ hello('Supramark');
 
 这是一个 [链接示例](https://github.com)
 
-### Mermaid 图表
+### Weather 卡片
 
-\`\`\`mermaid
-graph TD
-    A[开始] --> B{是否喜欢 Supramark?}
-    B -->|是| C[继续使用]
-    B -->|否| D[再试一次]
+:::weather
+city: Shanghai
+condition: Cloudy
+tempC: 22
+:::
 ```
 
 ### main.tsx
 
 ```tsx
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+const params = new URLSearchParams(window.location.search);
+const featureParam = params.get('feature');
 
+if (featureParam) {
+  const featureModule = () => import(`@supramark/feature-${featureParam}`);
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <FeaturePreview featureName={featureParam} featureImport={featureModule} />
+    </StrictMode>
+  );
+} else {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  );
+}
 ```
 
 ## 项目结构
 
 ```
 examples/react-web-csr/
-├── src/           # 源代码
-├── public/        # 静态资源
-├── package.json   # 依赖配置
-└── README.md      # 项目说明
+├── src/
+├── public/
+├── package.json
+└── README.md
 ```
 
 ## 相关资源
@@ -211,4 +223,4 @@ examples/react-web-csr/
 
 ---
 
-*此文档由 `scripts/generate-example-docs.mjs` 自动生成*
+_此文档由 scripts/doc-gen-example.ts 自动生成_

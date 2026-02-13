@@ -18,16 +18,20 @@ export interface SupramarkClassNames {
   h5?: string;
   h6?: string;
 
+  // Blockquote & thematic break
+  blockquote?: string;
+  thematicBreak?: string; // hr 元素
+
   // Code blocks
-  codeBlock?: string;      // pre 元素
-  code?: string;           // code 元素
+  codeBlock?: string; // pre 元素
+  code?: string; // code 元素
 
   // Lists
-  listOrdered?: string;    // ol 元素
-  listUnordered?: string;  // ul 元素
-  listItem?: string;       // li 元素
-  taskListItem?: string;   // 任务列表的 li
-  taskCheckbox?: string;   // 任务列表的 checkbox
+  listOrdered?: string; // ol 元素
+  listUnordered?: string; // ul 元素
+  listItem?: string; // li 元素
+  taskListItem?: string; // 任务列表的 li
+  taskCheckbox?: string; // 任务列表的 checkbox
 
   // Inline elements
   strong?: string;
@@ -39,18 +43,18 @@ export interface SupramarkClassNames {
 
   // Tables
   table?: string;
-  tableBody?: string;      // tbody 元素
-  tableRow?: string;       // tr 元素
-  tableCell?: string;      // td 元素
+  tableBody?: string; // tbody 元素
+  tableRow?: string; // tr 元素
+  tableCell?: string; // td 元素
   tableHeaderCell?: string; // th 元素
 
   // Diagram
-  diagram?: string;        // diagram 容器 div
-  diagramPre?: string;     // diagram 中的 pre
-  diagramCode?: string;    // diagram 中的 code
+  diagram?: string; // diagram 容器 div
+  diagramPre?: string; // diagram 中的 pre
+  diagramCode?: string; // diagram 中的 code
 
   // Container
-  root?: string;           // 最外层容器
+  root?: string; // 最外层容器
 }
 
 /**
@@ -88,6 +92,9 @@ export const tailwindClassNames: SupramarkClassNames = {
   h4: 'text-xl font-medium mb-2 mt-3',
   h5: 'text-lg font-medium mb-2 mt-3',
   h6: 'text-base font-medium mb-2 mt-2',
+  blockquote:
+    'border-l-4 border-gray-300 dark:border-gray-600 pl-4 my-4 text-gray-700 dark:text-gray-300',
+  thematicBreak: 'border-t border-gray-300 dark:border-gray-700 my-6',
   codeBlock: 'bg-gray-100 dark:bg-gray-800 rounded-md p-4 mb-4 overflow-x-auto',
   code: 'font-mono text-sm',
   listOrdered: 'list-decimal ml-6 mb-4',
@@ -105,7 +112,8 @@ export const tailwindClassNames: SupramarkClassNames = {
   tableBody: '',
   tableRow: 'border-b border-gray-300 dark:border-gray-700',
   tableCell: 'border border-gray-300 dark:border-gray-700 px-4 py-2',
-  tableHeaderCell: 'border border-gray-300 dark:border-gray-700 px-4 py-2 bg-gray-100 dark:bg-gray-800 font-semibold',
+  tableHeaderCell:
+    'border border-gray-300 dark:border-gray-700 px-4 py-2 bg-gray-100 dark:bg-gray-800 font-semibold',
   diagram: 'mb-4 border border-gray-300 dark:border-gray-700 rounded-md overflow-hidden',
   diagramPre: 'p-4 bg-gray-50 dark:bg-gray-900',
   diagramCode: 'font-mono text-sm',
@@ -123,6 +131,8 @@ export const minimalClassNames: SupramarkClassNames = {
   h4: 'sm-h4',
   h5: 'sm-h5',
   h6: 'sm-h6',
+  blockquote: 'sm-blockquote',
+  thematicBreak: 'sm-hr',
   codeBlock: 'sm-code-block',
   code: 'sm-code',
   listOrdered: 'sm-ol',

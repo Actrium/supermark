@@ -28,29 +28,38 @@ npm run start      # 如有需要会自动执行根目录 npm install
 
 然后根据 Expo 提示，在 iOS / Android 模拟器或真机上运行。
 
-
 ## 快速开始
 
 ```bash
 cd examples/react-native
-npm install
-npm run start
+bun install
+bun run start
 ```
 
 ## Supramark 依赖
 
 - `@supramark/core` - 0.1.0
+- `@supramark/feature-admonition` - 0.1.0
+- `@supramark/feature-core-markdown` - 0.1.0
+- `@supramark/feature-definition-list` - 0.1.0
+- `@supramark/feature-diagram-echarts` - 0.1.0
+- `@supramark/feature-diagram-vega-lite` - 0.1.0
+- `@supramark/feature-gfm` - 0.1.0
+- `@supramark/feature-html-page` - 0.1.0
+- `@supramark/feature-map` - 0.1.0
 - `@supramark/rn` - 0.1.0
 - `@supramark/rn-diagram-worker` - 0.1.0
+
+## 源代码
 
 ## 项目结构
 
 ```
 examples/react-native/
-├── src/           # 源代码
-├── public/        # 静态资源
-├── package.json   # 依赖配置
-└── README.md      # 项目说明
+├── src/
+├── public/
+├── package.json
+└── README.md
 ```
 
 ## 相关资源
@@ -61,4 +70,4 @@ examples/react-native/
 
 ---
 
-*此文档由 `scripts/generate-example-docs.mjs` 自动生成*
+_此文档由 scripts/doc-gen-example.ts 自动生成_

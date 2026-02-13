@@ -1,0 +1,2 @@
+[test]
+# resolve-alias no longer needed — packages point to src/ directly

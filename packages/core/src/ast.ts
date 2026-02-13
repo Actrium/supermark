@@ -15,20 +15,18 @@ export type SupramarkNodeType =
   | 'root'
   | 'paragraph'
   | 'heading'
-  | 'code'  // mdast: Code
+  | 'code' // mdast: Code
   | 'list'
   | 'list_item'
   | 'blockquote'
   | 'thematic_break'
   | 'diagram'
-  | 'map'
-  | 'html_page'
-  | 'container'
+  | 'container' // ::: syntax - all container extensions (map, html, admonition, etc.)
+  | 'input' // %%% syntax - input block extensions (reserved)
   | 'math_block'
   | 'footnote_definition'
   | 'definition_list'
   | 'definition_item'
-  | 'admonition'
   | 'table'
   | 'table_row'
   | 'table_cell'
@@ -36,18 +34,18 @@ export type SupramarkNodeType =
   | 'text'
   | 'strong'
   | 'emphasis'
-  | 'inline_code'  // mdast: InlineCode
+  | 'inline_code' // mdast: InlineCode
   | 'math_inline'
   | 'link'
   | 'image'
   | 'break'
-  | 'delete'  // GFM strikethrough
+  | 'delete' // GFM strikethrough
   | 'footnote_reference';
 
 export interface SupramarkBaseNode {
   type: SupramarkNodeType;
-  position?: Position;  // Optional source position information
-  data?: Record<string, unknown>;  // Plugin custom data
+  position?: Position; // Optional source position information
+  data?: Record<string, unknown>; // Plugin custom data
 }
 
 export interface SupramarkTextNode extends SupramarkBaseNode {
@@ -85,51 +83,42 @@ export interface SupramarkDiagramNode extends SupramarkBaseNode {
 }
 
 /**
- * 地图节点（由 :::map 容器生成）
- *
- * - center: 地图中心点 [lat, lng]；
- * - zoom: 缩放级别（数值越大越放大）；
- * - marker: 单个标记点坐标；
- * - meta: 预留附加配置（例如 provider / style 等），由上层运行时消费。
+ * 地图标记点类型（供 :::map 容器的 data 字段使用）
  */
 export interface SupramarkMapMarker {
   lat: number;
   lng: number;
 }
 
-export interface SupramarkMapNode extends SupramarkBaseNode {
-  type: 'map';
-  center: [number, number];
-  zoom?: number;
-  marker?: SupramarkMapMarker;
-  meta?: Record<string, unknown>;
-}
-
-/**
- * 独立 HTML 页面节点（由 :::html 容器生成）
- *
- * - html: 原始 HTML 文本（完整页面或片段）；
- * - title: 预览卡片标题（可从 HTML 中提取 <title> 或由作者显式指定）；
- * - url/meta: 供宿主在独立容器中打开页面时使用的附加信息。
- */
-export interface SupramarkHtmlPageNode extends SupramarkBaseNode {
-  type: 'html_page';
-  html: string;
-  title?: string;
-  url?: string;
-  meta?: Record<string, unknown>;
-}
-
 /**
  * 通用容器节点（统一表达 :::xxx）
  *
  * - type 固定为 'container'
- * - name 为容器语义名（例如 'admonition' / 'map' / 'html-page' 等）
+ * - name 为容器语义名（例如 'map' / 'html' / 'note' / 'weather' 等）
  * - params 为容器的参数字符串（例如 "note title..." 或 "id=1"），由具体扩展自行解释
  * - data 为扩展自定义结构化数据（可选）
+ *
+ * 所有 ::: 语法的扩展都生成此节点类型，通过 name 字段区分具体扩展。
  */
 export interface SupramarkContainerNode extends SupramarkParentNode {
   type: 'container';
+  name: string;
+  params?: string;
+  data?: Record<string, unknown>;
+}
+
+/**
+ * 输入块节点（统一表达 %%%xxx）
+ *
+ * - type 固定为 'input'
+ * - name 为输入块语义名（例如 'form' / 'survey' 等）
+ * - params 为输入块的参数字符串，由具体扩展自行解释
+ * - data 为扩展自定义结构化数据（可选）
+ *
+ * 所有 %%% 语法的扩展都生成此节点类型，通过 name 字段区分具体扩展。
+ */
+export interface SupramarkInputNode extends SupramarkParentNode {
+  type: 'input';
   name: string;
   params?: string;
   data?: Record<string, unknown>;
@@ -337,27 +326,14 @@ export interface SupramarkDefinitionItemNode extends SupramarkBaseNode {
 }
 
 /**
- * Admonition / Callout 容器块，例如：
+ * Admonition 类型常量（供 :::note, :::warning 等容器扩展使用）
  *
- * ::: note 标题
- * 内容
- * :::
+ * 注意：Admonition 现在统一使用 SupramarkContainerNode，
+ * 通过 name 字段区分类型（'note', 'tip', 'warning' 等）。
  */
-export const SUPRAMARK_ADMONITION_KINDS = [
-  'note',
-  'tip',
-  'info',
-  'warning',
-  'danger',
-] as const;
+export const SUPRAMARK_ADMONITION_KINDS = ['note', 'tip', 'info', 'warning', 'danger'] as const;
 
 export type SupramarkAdmonitionKind = (typeof SUPRAMARK_ADMONITION_KINDS)[number];
-
-export interface SupramarkAdmonitionNode extends SupramarkParentNode {
-  type: 'admonition';
-  kind: SupramarkAdmonitionKind | string;
-  title?: string;
-}
 
 export interface SupramarkListNode extends SupramarkParentNode {
   type: 'list';
@@ -434,15 +410,13 @@ export type SupramarkBlockNode =
   | SupramarkFootnoteDefinitionNode
   | SupramarkDefinitionListNode
   | SupramarkDefinitionItemNode
-  | SupramarkAdmonitionNode
   | SupramarkListNode
   | SupramarkListItemNode
   | SupramarkBlockquoteNode
   | SupramarkThematicBreakNode
   | SupramarkDiagramNode
-  | SupramarkMapNode
-  | SupramarkHtmlPageNode
-  | SupramarkContainerNode
+  | SupramarkContainerNode // ::: extensions (map, html, note, weather, etc.)
+  | SupramarkInputNode // %%% extensions (form, survey, etc.)
   | SupramarkTableNode
   | SupramarkTableRowNode
   | SupramarkTableCellNode;
@@ -459,10 +433,7 @@ export type SupramarkInlineNode =
   | SupramarkBreakNode
   | SupramarkDeleteNode;
 
-export type SupramarkNode =
-  | SupramarkRootNode
-  | SupramarkBlockNode
-  | SupramarkInlineNode;
+export type SupramarkNode = SupramarkRootNode | SupramarkBlockNode | SupramarkInlineNode;
 
 export interface SupramarkRootNode extends SupramarkParentNode {
   type: 'root';

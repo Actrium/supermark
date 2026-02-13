@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { Supramark } from '@supramark/web/client';
 
 // Register weather container hook (must be imported before using)
-import '../../../packages/features/container/feature-weather/src/index';
-
+import '@supramark/feature-weather';
 
 import './App.css';
 
@@ -91,7 +90,7 @@ function App() {
           <h2>Markdown 编辑器</h2>
           <textarea
             value={markdown}
-            onChange={(e) => setMarkdown(e.target.value)}
+            onChange={e => setMarkdown(e.target.value)}
             className="markdown-editor"
             placeholder="在此输入 Markdown..."
           />
@@ -101,7 +100,7 @@ function App() {
             <h2>实时预览</h2>
             <div className="theme-selector">
               <label>主题：</label>
-              <select value={theme} onChange={(e) => setTheme(e.target.value as ThemeOption)}>
+              <select value={theme} onChange={e => setTheme(e.target.value as ThemeOption)}>
                 <option value="none">无主题</option>
                 <option value="tailwind">Tailwind CSS</option>
                 <option value="minimal">极简主题</option>
@@ -109,10 +108,7 @@ function App() {
             </div>
           </div>
           <div className="markdown-preview">
-            <Supramark
-              markdown={markdown}
-              theme={theme === 'none' ? undefined : theme}
-            />
+            <Supramark markdown={markdown} theme={theme === 'none' ? undefined : theme} />
           </div>
         </div>
       </div>

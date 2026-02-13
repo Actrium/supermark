@@ -90,6 +90,7 @@ webpack serve --mode development
 ```
 
 特性：
+
 - Hot Module Replacement (HMR)
 - 快速的 source maps (`eval-source-map`)
 - 开发服务器（端口 3000）
@@ -103,6 +104,7 @@ webpack --mode production
 ```
 
 特性：
+
 - 代码压缩（Terser）
 - CSS 提取和压缩
 - 内容哈希文件名
@@ -133,7 +135,7 @@ plugins: [
   new webpack.DefinePlugin({
     'process.env.API_URL': JSON.stringify(process.env.API_URL),
   }),
-]
+];
 ```
 
 ### 2. Bundle 分析
@@ -149,9 +151,7 @@ npm install --save-dev webpack-bundle-analyzer
 ```javascript
 const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
 
-plugins: [
-  ...(env.analyze ? [new BundleAnalyzerPlugin()] : []),
-]
+plugins: [...(env.analyze ? [new BundleAnalyzerPlugin()] : [])];
 ```
 
 运行：
@@ -220,9 +220,7 @@ resolve: {
 **A:** 检查代码分割配置，并使用动态导入：
 
 ```typescript
-const Supramark = lazy(() =>
-  import('@supramark/web/client').then(m => ({ default: m.Supramark }))
-);
+const Supramark = lazy(() => import('@supramark/web/client').then(m => ({ default: m.Supramark })));
 ```
 
 ### Q: 开发服务器启动慢？

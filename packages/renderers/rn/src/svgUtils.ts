@@ -38,9 +38,7 @@ export function normalizeSvg(xml: string): string {
     const strokeMatch = styleContent.match(/\.node\s+rect[^}]*stroke\s*:\s*([^;}\s]+)/);
     if (strokeMatch) defaultStroke = strokeMatch[1];
 
-    const strokeWidthMatch = styleContent.match(
-      /\.node\s+rect[^}]*stroke-width\s*:\s*([^;}\s]+)/
-    );
+    const strokeWidthMatch = styleContent.match(/\.node\s+rect[^}]*stroke-width\s*:\s*([^;}\s]+)/);
     if (strokeWidthMatch) defaultStrokeWidth = strokeWidthMatch[1];
   }
 
@@ -72,7 +70,8 @@ export function normalizeSvg(xml: string): string {
 
       if (!existingStyle?.includes('fill:')) styles.push(`fill: ${defaultNodeFill}`);
       if (!existingStyle?.includes('stroke:')) styles.push(`stroke: ${defaultStroke}`);
-      if (!existingStyle?.includes('stroke-width:')) styles.push(`stroke-width: ${defaultStrokeWidth}`);
+      if (!existingStyle?.includes('stroke-width:'))
+        styles.push(`stroke-width: ${defaultStrokeWidth}`);
 
       const attrsWithSpace = attrs && attrs.trim() ? attrs + ' ' : attrs;
       return `<rect${attrsWithSpace}style="${styles.join('; ')}"`;
@@ -101,4 +100,3 @@ export function normalizeSvg(xml: string): string {
 
   return normalized;
 }
-

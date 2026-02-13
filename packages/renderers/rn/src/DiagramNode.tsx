@@ -34,7 +34,7 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
     const attemptRender = () => {
       const options = buildRenderOptions(node.engine, node.meta, diagramConfig);
       render({ engine: node.engine, code: node.code, options })
-        .then((result) => {
+        .then(result => {
           if (cancelled) return;
 
           if (!result.success) {
@@ -45,7 +45,7 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
 
             // 如果是超时错误且未达到重试上限，自动重试
             if (result.error?.code === 'timeout' && retryCount < maxRetries) {
-              console.log(`Diagram render timeout, retrying (${retryCount + 1}/${maxRetries})...`);
+              // debug: Diagram render timeout, retrying...
               setRetryCount(retryCount + 1);
               setTimeout(attemptRender, 1000); // 1秒后重试
               return;
@@ -61,7 +61,6 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
             try {
               normalized = normalizeSvg(result.payload);
             } catch (err) {
-              console.error('SVG 处理错误:', err);
               setError(`SVG 处理错误: ${err}`);
               setLoading(false);
               return;
@@ -74,7 +73,7 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
             setLoading(false);
           }
         })
-        .catch((err) => {
+        .catch(err => {
           if (cancelled) return;
           setError(String(err));
           setLoading(false);

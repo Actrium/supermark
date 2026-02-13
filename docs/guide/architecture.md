@@ -70,24 +70,24 @@ interface ParagraphNode extends BaseNode {
 支持两种解析引擎：
 
 **Unified/Remark（Node/Web）**
-```typescript
-import { unified } from 'unified'
-import remarkParse from 'remark-parse'
 
-const processor = unified()
-  .use(remarkParse)
-  .use(/* Feature plugins */)
+```typescript
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+
+const processor = unified().use(remarkParse).use(/* Feature plugins */);
 ```
 
 **Markdown-it（React Native）**
-```typescript
-import MarkdownIt from 'markdown-it'
 
-const md = new MarkdownIt()
-  .use(/* Feature plugins */)
+```typescript
+import MarkdownIt from 'markdown-it';
+
+const md = new MarkdownIt().use(/* Feature plugins */);
 ```
 
 为什么两个引擎？
+
 - Unified: Web 环境首选，生态完善
 - Markdown-it: RN 环境友好，无需 polyfill
 
@@ -95,15 +95,15 @@ const md = new MarkdownIt()
 
 ```typescript
 class FeatureRegistry {
-  private features = new Map<string, SupramarkFeature>()
+  private features = new Map<string, SupramarkFeature>();
 
   register(feature: SupramarkFeature) {
-    this.validate(feature)
-    this.features.set(feature.metadata.id, feature)
+    this.validate(feature);
+    this.features.set(feature.metadata.id, feature);
   }
 
   getFeature(id: string): SupramarkFeature | undefined {
-    return this.features.get(id)
+    return this.features.get(id);
   }
 }
 ```
@@ -115,25 +115,25 @@ class FeatureRegistry {
 ```typescript
 interface SupramarkFeature {
   // 元信息
-  metadata: FeatureMetadata
+  metadata: FeatureMetadata;
 
   // 语法定义（可选）
   syntax?: {
-    remarkPlugins?: Plugin[]
-    markdownItPlugins?: Plugin[]
-  }
+    remarkPlugins?: Plugin[];
+    markdownItPlugins?: Plugin[];
+  };
 
   // AST 节点定义
-  nodes?: ASTNodeDefinition[]
+  nodes?: ASTNodeDefinition[];
 
   // 渲染器
   renderers?: {
-    web?: WebRenderer
-    rn?: RNRenderer
-  }
+    web?: WebRenderer;
+    rn?: RNRenderer;
+  };
 
   // 文档
-  documentation?: FeatureDocumentation
+  documentation?: FeatureDocumentation;
 }
 ```
 
@@ -155,6 +155,7 @@ interface SupramarkFeature {
 - 等等...
 
 优点：
+
 - 按需安装，减小包体积
 - 独立版本管理
 - 便于第三方扩展
@@ -219,6 +220,7 @@ function renderNode(node: SupramarkNode): React.ReactNode {
 对于需要浏览器环境的功能（图表、复杂数学公式）：
 
 **Web 端**：
+
 ```typescript
 // 直接使用浏览器库
 import mermaid from 'mermaid'
@@ -230,6 +232,7 @@ function DiagramRenderer({ code }: { code: string }) {
 ```
 
 **RN 端**：
+
 ```typescript
 // 使用 Headless WebView Worker
 import { useDiagramRender } from '@supramark/rn-diagram-worker'
@@ -289,6 +292,7 @@ function DiagramRenderer({ code }: { code: string }) {
 5. RN 组件展示结果
 
 优点：
+
 - 单个 WebView 服务所有图表
 - 后台渲染，不阻塞 UI
 - 支持所有浏览器图表库
@@ -362,18 +366,18 @@ const ast = await parseMarkdown(markdown)
 ### 1. 解析缓存
 
 ```typescript
-const cache = new Map<string, SupramarkNode>()
+const cache = new Map<string, SupramarkNode>();
 
 async function parseMarkdown(markdown: string, config: Config) {
-  const cacheKey = hash(markdown + JSON.stringify(config))
+  const cacheKey = hash(markdown + JSON.stringify(config));
 
   if (cache.has(cacheKey)) {
-    return cache.get(cacheKey)!
+    return cache.get(cacheKey)!;
   }
 
-  const ast = await parse(markdown, config)
-  cache.set(cacheKey, ast)
-  return ast
+  const ast = await parse(markdown, config);
+  cache.set(cacheKey, ast);
+  return ast;
 }
 ```
 
@@ -412,28 +416,28 @@ function LazyDiagram({ code }: { code: string }) {
 ```typescript
 // 严格的类型定义
 interface SupramarkConfig {
-  features: SupramarkFeature[]
-  lazyLoad?: boolean
-  cache?: boolean
+  features: SupramarkFeature[];
+  lazyLoad?: boolean;
+  cache?: boolean;
 }
 
 // 类型推导
 const config = {
-  features: [mathFeature]  // 自动推导类型
-}
+  features: [mathFeature], // 自动推导类型
+};
 ```
 
 ### 运行时验证
 
 ```typescript
-import { validateFeature } from '@supramark/core'
+import { validateFeature } from '@supramark/core';
 
 const result = validateFeature(myFeature, {
-  mode: 'strict'
-})
+  mode: 'strict',
+});
 
 if (!result.valid) {
-  console.error(result.errors)
+  console.error(result.errors);
 }
 ```
 
@@ -444,10 +448,10 @@ if (!result.valid) {
 ```typescript
 describe('parseMarkdown', () => {
   it('should parse headings', async () => {
-    const ast = await parseMarkdown('# Title')
-    expect(ast.children[0].type).toBe('heading')
-  })
-})
+    const ast = await parseMarkdown('# Title');
+    expect(ast.children[0].type).toBe('heading');
+  });
+});
 ```
 
 ### 集成测试

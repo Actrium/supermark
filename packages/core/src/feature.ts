@@ -107,6 +107,14 @@ export interface SupramarkFeature<TNode extends SupramarkNode = SupramarkNode> {
   documentation: DocumentationDefinition;
 
   /**
+   * Feature 自描述提示信息（可选）
+   *
+   * 用于生成 System Prompt，帮助 AI Agent 理解和使用此 Feature。
+   * 包含功能描述、语法结构和示例。
+   */
+  prompt?: FeaturePromptDefinition;
+
+  /**
    * 依赖的其他功能
    *
    * 如果此 Feature 依赖其他 Feature，在这里声明
@@ -119,6 +127,38 @@ export interface SupramarkFeature<TNode extends SupramarkNode = SupramarkNode> {
    * 用于在 Feature 注册、解析、渲染等阶段执行自定义逻辑
    */
   hooks?: FeatureHooks<TNode>;
+}
+
+// ============================================================================
+// 第二层：Prompt 定义
+// ============================================================================
+
+/**
+ * Feature 自描述提示信息定义
+ */
+export interface FeaturePromptDefinition {
+  /**
+   * 功能描述
+   * 简要说明此 Feature 的用途，供 AI 理解。
+   */
+  description: string;
+
+  /**
+   * 语法结构
+   * 描述 Markdown 语法格式。
+   */
+  syntax: string;
+
+  /**
+   * 使用示例
+   * 提供 1-3 个典型的使用案例。
+   */
+  examples: Array<{
+    /** 示例说明 */
+    desc: string;
+    /** Markdown 代码 */
+    code: string;
+  }>;
 }
 
 // ============================================================================
@@ -249,8 +289,8 @@ export interface SyntaxDefinition<TNode extends SupramarkNode> {
 // 第三层：AST 节点定义
 // ----------------------------------------------------------------------------
 
- /**
-  * AST 节点定义
+/**
+ * AST 节点定义
  *
  * **节点选择器（Selector）**：
  * - 某些场景下，多个 Feature 可能共享同一个 AST 节点类型
@@ -604,13 +644,7 @@ export interface RendererDefinitions<TNode extends SupramarkNode> {
  * - 如果 Feature 复用现有渲染逻辑（如diagram），render 可以省略
  * - 实际渲染组件应该在 @supramark/rn 和 @supramark/web 包中实现
  */
-export interface PlatformRenderer<
-  TNode extends SupramarkNode,
-  TPlatform extends Platform
-> {
-  /** 目标平台 */
-  platform: TPlatform;
-
+export interface PlatformRenderer<TNode extends SupramarkNode, TPlatform extends Platform> {
   /**
    * 渲染函数（可选）
    *
@@ -663,12 +697,11 @@ export interface RenderContext<TPlatform> {
 
 /**
  * 渲染输出
+ *
+ * Core 包保持框架无关性，不直接依赖 React 类型。
+ * 上层应用会将此类型实例化为 React.ReactNode。
  */
-export type RenderOutput<TPlatform> =
-  TPlatform extends 'rn' ? React.ReactNode :
-  TPlatform extends 'web' ? React.ReactNode :
-  TPlatform extends 'cli' ? string :
-  unknown;
+export type RenderOutput<TPlatform> = TPlatform extends 'cli' ? string : any;
 
 /**
  * React Native 样式类型（简化）
@@ -1183,8 +1216,8 @@ export class FeatureRegistry {
    * @returns 包含该标签的所有 Feature
    */
   static findByTag(tag: string): Array<SupramarkFeature<SupramarkNode>> {
-    return this.list().filter((feature) =>
-      'tags' in feature.metadata && feature.metadata.tags?.includes(tag)
+    return this.list().filter(
+      feature => 'tags' in feature.metadata && feature.metadata.tags?.includes(tag)
     );
   }
 
@@ -1195,7 +1228,7 @@ export class FeatureRegistry {
    * @returns 匹配的 Feature 列表
    */
   static findByNode(node: SupramarkNode): Array<SupramarkFeature<any>> {
-    return this.list().filter((feature) => {
+    return this.list().filter(feature => {
       const ast = feature.syntax.ast;
 
       // 检查节点类型
@@ -1224,7 +1257,7 @@ export class FeatureRegistry {
 // 辅助函数
 // ============================================================================
 
-  /**
+/**
  * 创建一个完整 Feature
  *
  * 辅助函数，提供更好的类型推导
@@ -1262,7 +1295,8 @@ export function validateFeature<TNode extends SupramarkNode = SupramarkNode>(
   valid: boolean;
   errors: Array<{ code: string; message: string; severity: 'error' | 'warning' | 'info' }>;
 } {
-  const errors: Array<{ code: string; message: string; severity: 'error' | 'warning' | 'info' }> = [];
+  const errors: Array<{ code: string; message: string; severity: 'error' | 'warning' | 'info' }> =
+    [];
 
   const metadata: Partial<FeatureMetadata> = feature.metadata ?? {};
   const syntax = feature.syntax ?? {};
@@ -1373,7 +1407,7 @@ export function validateFeature<TNode extends SupramarkNode = SupramarkNode>(
   if (ast.interface) {
     const required = ast.interface.required || [];
     const fields = ast.interface.fields || {};
-    const missingFields = required.filter((field) => !(String(field) in fields));
+    const missingFields = required.filter(field => !(String(field) in fields));
     if (missingFields.length > 0) {
       errors.push({
         code: 'ast-interface-fields-defined',
@@ -1456,7 +1490,7 @@ export function validateFeature<TNode extends SupramarkNode = SupramarkNode>(
   // ============================================================================
 
   // 严格模式下，警告也算错误
-  const criticalErrors = errors.filter((e) =>
+  const criticalErrors = errors.filter(e =>
     options.strict ? e.severity !== 'info' : e.severity === 'error'
   );
 
@@ -1535,7 +1569,7 @@ export interface SupramarkConfig {
  * @returns Supramark 配置对象
  */
 export function createConfigFromRegistry(enabledByDefault = true): SupramarkConfig {
-  const features = FeatureRegistry.list().map((feature) => ({
+  const features = FeatureRegistry.list().map(feature => ({
     id: feature.metadata.id,
     enabled: enabledByDefault,
   }));
@@ -1556,9 +1590,7 @@ export function createConfigFromRegistry(enabledByDefault = true): SupramarkConf
  * @returns 启用的 Feature ID 数组
  */
 export function getEnabledFeatureIds(config: SupramarkConfig): string[] {
-  return (config.features || [])
-    .filter((f) => f.enabled)
-    .map((f) => f.id);
+  return (config.features || []).filter(f => f.enabled).map(f => f.id);
 }
 
 /**
@@ -1572,7 +1604,7 @@ export function getEnabledFeatures(
 ): Array<SupramarkFeature<SupramarkNode>> {
   const enabledIds = getEnabledFeatureIds(config);
   return enabledIds
-    .map((id) => FeatureRegistry.get(id))
+    .map(id => FeatureRegistry.get(id))
     .filter((f): f is SupramarkFeature<SupramarkNode> => f !== undefined);
 }
 
@@ -1584,7 +1616,7 @@ export function getEnabledFeatures(
  * @returns 是否启用
  */
 export function isFeatureEnabled(config: SupramarkConfig, featureId: string): boolean {
-  const featureConfig = config.features?.find((f) => f.id === featureId);
+  const featureConfig = config.features?.find(f => f.id === featureId);
   return featureConfig?.enabled ?? false;
 }
 
@@ -1599,7 +1631,7 @@ export function getFeatureOptions(
   config: SupramarkConfig,
   featureId: string
 ): Record<string, unknown> {
-  const featureConfig = config.features?.find((f) => f.id === featureId);
+  const featureConfig = config.features?.find(f => f.id === featureId);
   const raw = featureConfig?.options;
 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -1622,6 +1654,6 @@ export function getFeatureOptionsAs<TOptions>(
   if (!config || !config.features || config.features.length === 0) {
     return undefined;
   }
-  const featureConfig = config.features.find((f) => f.id === featureId);
+  const featureConfig = config.features.find(f => f.id === featureId);
   return (featureConfig?.options ?? undefined) as TOptions | undefined;
 }

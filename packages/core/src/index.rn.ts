@@ -9,7 +9,12 @@
 export * from './ast.js';
 
 // 插件系统类型
-export type { SupramarkParseContext, SupramarkPlugin, SupramarkParseOptions, SupramarkPreset } from './plugin.js';
+export type {
+  SupramarkParseContext,
+  SupramarkPlugin,
+  SupramarkParseOptions,
+  SupramarkPreset,
+} from './plugin.js';
 
 // Feature Interface - 功能扩展接口系统
 export * from './feature.js';

@@ -7,6 +7,7 @@ import deflist from 'markdown-it-deflist';
 import { full as emoji } from 'markdown-it-emoji';
 import type { SupramarkConfig } from '../feature.js';
 import { isFeatureEnabled, getFeatureOptionsAs } from '../feature.js';
+import { registerInputSyntax } from './input.js';
 
 interface GfmOptions {
   tables?: boolean;
@@ -72,7 +73,7 @@ function strikethroughPlugin(md: MarkdownIt) {
     const marker = state.src.charCodeAt(start);
 
     if (silent) return false;
-    if (marker !== 0x7E /* ~ */) return false;
+    if (marker !== 0x7e /* ~ */) return false;
 
     const scanned = state.scanDelims(start, true);
     let len = scanned.length;
@@ -115,7 +116,7 @@ function strikethroughPlugin(md: MarkdownIt) {
     for (let i = 0; i < max; i++) {
       const startDelim = delimiters[i];
 
-      if (startDelim.marker !== 0x7E /* ~ */) continue;
+      if (startDelim.marker !== 0x7e /* ~ */) continue;
       if (startDelim.end === -1) continue;
 
       const endDelim = delimiters[startDelim.end];
@@ -157,10 +158,7 @@ function strikethroughPlugin(md: MarkdownIt) {
  * - 不处理 :::container 或 ```fence（分别由 syntax-container / syntax-fence 负责）；
  * - 当未提供 config 或 features 为空时，视为所有内置扩展均启用。
  */
-export function registerMainSyntaxPlugins(
-  md: MarkdownIt,
-  config?: SupramarkConfig
-): void {
+export function registerMainSyntaxPlugins(md: MarkdownIt, config?: SupramarkConfig): void {
   const hasConfig = !!config && !!config.features && config.features.length > 0;
 
   const isFeatureOn = (id: string): boolean => {
@@ -170,8 +168,7 @@ export function registerMainSyntaxPlugins(
 
   // GFM：表格 + 任务列表 + 删除线
   if (isFeatureOn('@supramark/feature-gfm')) {
-    const gfmOptions =
-      getFeatureOptionsAs<GfmOptions>(config, '@supramark/feature-gfm') ?? {};
+    const gfmOptions = getFeatureOptionsAs<GfmOptions>(config, '@supramark/feature-gfm') ?? {};
 
     const enableTables = gfmOptions.tables !== false;
     const enableTaskList = gfmOptions.taskListItems !== false;
@@ -222,4 +219,7 @@ export function registerMainSyntaxPlugins(
       md.use(emoji as PluginWithOptions);
     }
   }
+
+  // Input 语法 (%%%)
+  registerInputSyntax(md, config);
 }

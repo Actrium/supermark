@@ -15,10 +15,18 @@
     "react-native-svg": ">=13.0.0"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": true },
-    "react-native": { "optional": true },
-    "@supramark/rn-diagram-worker": { "optional": true },
-    "react-native-svg": { "optional": true }
+    "react": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    },
+    "@supramark/rn-diagram-worker": {
+      "optional": true
+    },
+    "react-native-svg": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@supramark/core": "workspace:*"

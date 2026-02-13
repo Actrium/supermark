@@ -322,12 +322,12 @@ export function mergeStyles(customStyles?: SupramarkStyles): typeof defaultStyle
   const merged: Record<string, any> = {};
 
   // 先复制所有默认样式
-  Object.keys(defaultStyles).forEach((key) => {
+  Object.keys(defaultStyles).forEach(key => {
     merged[key] = defaultStyles[key as keyof typeof defaultStyles];
   });
 
   // 然后合并用户样式
-  Object.keys(customStyles).forEach((key) => {
+  Object.keys(customStyles).forEach(key => {
     const customStyle = customStyles[key as keyof SupramarkStyles];
     if (customStyle) {
       const defaultStyle = merged[key] || {};

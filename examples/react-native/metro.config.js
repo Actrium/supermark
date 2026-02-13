@@ -25,10 +25,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   // Metro 不支持 package.json 的 exports 条件导出,需要手动指定 RN 入口
   if (moduleName === '@supramark/core') {
     return {
-      filePath: path.resolve(
-        workspaceRoot,
-        'packages/core/dist/index.rn.js'
-      ),
+      filePath: path.resolve(workspaceRoot, 'packages/core/dist/index.rn.js'),
       type: 'sourceFile',
     };
   }
@@ -36,10 +33,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   // 处理 devlop 包的 exports 字段
   if (moduleName === 'devlop') {
     return {
-      filePath: path.resolve(
-        workspaceRoot,
-        'node_modules/devlop/lib/default.js'
-      ),
+      filePath: path.resolve(workspaceRoot, 'node_modules/devlop/lib/default.js'),
       type: 'sourceFile',
     };
   }
@@ -47,30 +41,21 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   // 处理 vfile 包的 subpath imports (以 # 开头)
   if (moduleName === '#minpath') {
     return {
-      filePath: path.resolve(
-        workspaceRoot,
-        'node_modules/vfile/lib/minpath.browser.js'
-      ),
+      filePath: path.resolve(workspaceRoot, 'node_modules/vfile/lib/minpath.browser.js'),
       type: 'sourceFile',
     };
   }
 
   if (moduleName === '#minproc') {
     return {
-      filePath: path.resolve(
-        workspaceRoot,
-        'node_modules/vfile/lib/minproc.browser.js'
-      ),
+      filePath: path.resolve(workspaceRoot, 'node_modules/vfile/lib/minproc.browser.js'),
       type: 'sourceFile',
     };
   }
 
   if (moduleName === '#minurl') {
     return {
-      filePath: path.resolve(
-        workspaceRoot,
-        'node_modules/vfile/lib/minurl.browser.js'
-      ),
+      filePath: path.resolve(workspaceRoot, 'node_modules/vfile/lib/minurl.browser.js'),
       type: 'sourceFile',
     };
   }
@@ -78,10 +63,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   // 处理 unist-util-visit-parents 的 subpath exports
   if (moduleName === 'unist-util-visit-parents/do-not-use-color') {
     return {
-      filePath: path.resolve(
-        workspaceRoot,
-        'node_modules/unist-util-visit-parents/lib/color.js'
-      ),
+      filePath: path.resolve(workspaceRoot, 'node_modules/unist-util-visit-parents/lib/color.js'),
       type: 'sourceFile',
     };
   }

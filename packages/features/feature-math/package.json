@@ -1,0 +1,46 @@
+{
+  "name": "@supramark/feature-math",
+  "version": "0.1.0",
+  "description": "LaTeX 数学公式支持",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json --emitDeclarationOnly",
+    "test": "bun test",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "keywords": [
+    "supramark",
+    "feature",
+    "math",
+    "markdown"
+  ],
+  "author": "Supramark Team",
+  "license": "Apache-2.0",
+  "peerDependencies": {
+    "@supramark/core": "*"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "typescript": "^5.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/supramark/supramark.git",
+    "directory": "packages/features/main/feature-math"
+  }
+}

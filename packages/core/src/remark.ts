@@ -14,11 +14,7 @@ import type {
   SupramarkDiagramNode,
 } from './ast.js';
 import { isDiagramFenceLanguage } from './syntax/fence.js';
-import type {
-  SupramarkParseContext,
-  SupramarkParseOptions,
-  SupramarkPlugin,
-} from './plugin.js';
+import type { SupramarkParseContext, SupramarkParseOptions, SupramarkPlugin } from './plugin.js';
 
 const processor = unified().use(remarkParse).use(remarkGfm);
 
@@ -99,10 +95,9 @@ function mapMdastNode(node: MdastContent): SupramarkNode | null {
         tight: node.spread === undefined ? undefined : !node.spread,
         children: [],
       };
-      list.children =
-        node.children
-          ?.map((item) => mapMdastNode(item as MdastContent))
-          .filter(Boolean) as SupramarkNode[];
+      list.children = node.children
+        ?.map(item => mapMdastNode(item as MdastContent))
+        .filter(Boolean) as SupramarkNode[];
       return list;
     }
     case 'listItem': {
@@ -111,17 +106,16 @@ function mapMdastNode(node: MdastContent): SupramarkNode | null {
         checked: node.checked === undefined ? undefined : !!node.checked,
         children: [],
       };
-      listItem.children =
-        node.children
-          ?.map((child) => mapMdastNode(child as MdastContent))
-          .filter(Boolean) as SupramarkNode[];
+      listItem.children = node.children
+        ?.map(child => mapMdastNode(child as MdastContent))
+        .filter(Boolean) as SupramarkNode[];
       return listItem;
     }
     default: {
       const anyNode = node as MdastContent & { children?: MdastContent[] };
       if (anyNode.children && anyNode.children.length > 0) {
         const flattened = anyNode.children
-          .map((child) => mapMdastNode(child))
+          .map(child => mapMdastNode(child))
           .filter(Boolean) as SupramarkNode[];
         if (flattened.length === 1) {
           return flattened[0];
@@ -154,15 +148,14 @@ function mapMdastInline(node: MdastContent): SupramarkNode[] {
 
 export async function parseMarkdownWithRemark(
   markdown: string,
-  options: SupramarkParseOptions = {},
+  options: SupramarkParseOptions = {}
 ): Promise<SupramarkRootNode> {
   const mdast = processor.parse(markdown) as MdastRoot;
   const root: SupramarkRootNode = createRoot();
 
-  root.children =
-    mdast.children
-      ?.map((child) => mapMdastNode(child as MdastContent))
-      .filter(Boolean) as SupramarkNode[];
+  root.children = mdast.children
+    ?.map(child => mapMdastNode(child as MdastContent))
+    .filter(Boolean) as SupramarkNode[];
 
   // 初始化插件上下文
   const context: SupramarkParseContext = {

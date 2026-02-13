@@ -35,11 +35,12 @@
  */
 
 // React 组件
-// Auto-register generated container renderers (if available)
-import './generatedContainers.js';
-
 export { Supramark } from './Supramark.js';
 export type { SupramarkWebProps } from './Supramark.js';
+
+// Diagram engine provider (for inline diagram/math rendering)
+export { DiagramEngineProvider, DiagramEngineContext } from './DiagramEngineProvider.js';
+export type { DiagramEngineProviderProps } from './DiagramEngineProvider.js';
 
 // ClassName 系统
 export type { SupramarkClassNames } from './classNames.js';
@@ -47,7 +48,7 @@ export {
   defaultClassNames,
   mergeClassNames,
   tailwindClassNames,
-  minimalClassNames
+  minimalClassNames,
 } from './classNames.js';
 
 // 核心解析功能（可选，浏览器中也可以解析 Markdown）

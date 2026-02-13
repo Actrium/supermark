@@ -27,32 +27,30 @@ export function escapeHtml(value: string): string {
 }
 
 export function astToHtml(root: SupramarkRootNode): string {
-  return root.children.map((child) => nodeToHtml(child)).join('');
+  return root.children.map(child => nodeToHtml(child)).join('');
 }
 
 function nodeToHtml(node: SupramarkNode): string {
   switch (node.type) {
     case 'paragraph':
       return `<p>${(node as SupramarkParagraphNode).children
-        .map((child) => nodeToHtml(child))
+        .map(child => nodeToHtml(child))
         .join('')}</p>`;
     case 'heading': {
       const heading = node as SupramarkHeadingNode;
       const depth = heading.depth || 1;
       const level = Math.min(Math.max(depth, 1), 6);
-      return `<h${level}>${heading.children.map((child) => nodeToHtml(child)).join(
-        '',
-      )}</h${level}>`;
+      return `<h${level}>${heading.children.map(child => nodeToHtml(child)).join('')}</h${level}>`;
     }
     case 'text':
       return escapeHtml((node as SupramarkTextNode).value || '');
     case 'strong': {
       const strong = node as SupramarkStrongNode;
-      return `<strong>${strong.children.map((child) => nodeToHtml(child)).join('')}</strong>`;
+      return `<strong>${strong.children.map(child => nodeToHtml(child)).join('')}</strong>`;
     }
     case 'emphasis': {
       const emphasis = node as SupramarkEmphasisNode;
-      return `<em>${emphasis.children.map((child) => nodeToHtml(child)).join('')}</em>`;
+      return `<em>${emphasis.children.map(child => nodeToHtml(child)).join('')}</em>`;
     }
     case 'inline_code': {
       const code = node as SupramarkInlineCodeNode;
@@ -67,7 +65,7 @@ function nodeToHtml(node: SupramarkNode): string {
       const link = node as SupramarkLinkNode;
       const href = escapeHtml(link.url || '');
       const title = link.title ? ` title="${escapeHtml(link.title)}"` : '';
-      return `<a href="${href}"${title}>${link.children.map((child) => nodeToHtml(child)).join('')}</a>`;
+      return `<a href="${href}"${title}>${link.children.map(child => nodeToHtml(child)).join('')}</a>`;
     }
     case 'image': {
       const image = node as SupramarkImageNode;
@@ -92,26 +90,23 @@ function nodeToHtml(node: SupramarkNode): string {
     case 'list': {
       const list = node as SupramarkListNode;
       const tag = list.ordered ? 'ol' : 'ul';
-      const start =
-        list.ordered && list.start != null ? ` start="${list.start.toString()}"` : '';
-      return `<${tag}${start}>${list.children
-        .map((child) => nodeToHtml(child))
-        .join('')}</${tag}>`;
+      const start = list.ordered && list.start != null ? ` start="${list.start.toString()}"` : '';
+      return `<${tag}${start}>${list.children.map(child => nodeToHtml(child)).join('')}</${tag}>`;
     }
     case 'list_item': {
       const item = node as SupramarkListItemNode;
-      return `<li>${item.children.map((child) => nodeToHtml(child)).join('')}</li>`;
+      return `<li>${item.children.map(child => nodeToHtml(child)).join('')}</li>`;
     }
     case 'diagram': {
       const diagram = node as SupramarkDiagramNode;
       const engine = escapeHtml(diagram.engine || '');
       return `<div data-suprimark-diagram="${engine}"><pre><code>${escapeHtml(
-        diagram.code || '',
+        diagram.code || ''
       )}</code></pre></div>`;
     }
     case 'root': {
       const root = node as SupramarkRootNode;
-      return root.children.map((child) => nodeToHtml(child)).join('');
+      return root.children.map(child => nodeToHtml(child)).join('');
     }
     default:
       return '';

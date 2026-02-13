@@ -27,14 +27,13 @@ import type {
   SupramarkFootnoteDefinitionNode,
   SupramarkDefinitionListNode,
   SupramarkDefinitionItemNode,
-  SupramarkAdmonitionNode,
-  SupramarkHtmlPageNode,
+  SupramarkContainerNode,
+  SupramarkBlockquoteNode,
+  SupramarkThematicBreakNode,
 } from './ast.js';
 import { type SupramarkConfig } from './feature.js';
-import {
-  registerContainerSyntax,
-  createContainerTokenProcessor,
-} from './syntax/container.js';
+import { registerContainerSyntax, createContainerTokenProcessor } from './syntax/container.js';
+import { createInputProcessor } from './syntax/input.js';
 import { registerMainSyntaxPlugins } from './syntax/main.js';
 import { mapFenceTokenToBlockNode } from './syntax/fence.js';
 
@@ -208,7 +207,7 @@ function strikethroughPlugin(md: MarkdownIt) {
     const marker = state.src.charCodeAt(start);
 
     if (silent) return false;
-    if (marker !== 0x7E /* ~ */) return false;
+    if (marker !== 0x7e /* ~ */) return false;
 
     const scanned = state.scanDelims(start, true);
     let len = scanned.length;
@@ -251,7 +250,7 @@ function strikethroughPlugin(md: MarkdownIt) {
     for (let i = 0; i < max; i++) {
       const startDelim = delimiters[i];
 
-      if (startDelim.marker !== 0x7E /* ~ */) continue;
+      if (startDelim.marker !== 0x7e /* ~ */) continue;
       if (startDelim.end === -1) continue;
 
       const endDelim = delimiters[startDelim.end];
@@ -270,8 +269,10 @@ function strikethroughPlugin(md: MarkdownIt) {
       token_c.markup = '~~';
       token_c.content = '';
 
-      if (state.tokens[endDelim.token - 1].type === 'text' &&
-          state.tokens[endDelim.token - 1].content === '~') {
+      if (
+        state.tokens[endDelim.token - 1].type === 'text' &&
+        state.tokens[endDelim.token - 1].content === '~'
+      ) {
         state.tokens[endDelim.token - 1].content = '';
       }
     }
@@ -330,7 +331,8 @@ function mapInlineTokens(tokens: Token[] | null, parent: SupramarkParentNode): v
     const current = stack[stack.length - 1];
 
     switch (token.type) {
-      case 'text': {
+      case 'text':
+      case 'emoji': {
         const textNode: SupramarkTextNode = {
           type: 'text',
           value: token.content,
@@ -532,7 +534,7 @@ function sortPluginsByDependencies(plugins: SupramarkPlugin[]): SupramarkPlugin[
 
 export async function parseMarkdown(
   markdown: string,
-  options: SupramarkParseOptions = {},
+  options: SupramarkParseOptions = {}
 ): Promise<SupramarkRootNode> {
   const root: SupramarkRootNode = createRoot();
   const stack: SupramarkParentNode[] = [root];
@@ -542,6 +544,12 @@ export async function parseMarkdown(
   const sourceLines = markdown.split(/\r?\n/);
 
   const containerProcessor = createContainerTokenProcessor({
+    config: options.config,
+    sourceLines,
+    stack,
+  });
+
+  const inputProcessor = createInputProcessor({
     config: options.config,
     sourceLines,
     stack,
@@ -560,11 +568,19 @@ export async function parseMarkdown(
       continue;
     }
 
+    // Input 语法处理 (%%%)
+    if (inputProcessor(token)) {
+      continue;
+    }
+
     const parent = stack[stack.length - 1];
 
     switch (token.type) {
       case 'heading_open': {
-        const depth = Number.parseInt(token.tag.replace(/^h/i, ''), 10) as SupramarkHeadingNode['depth'];
+        const depth = Number.parseInt(
+          token.tag.replace(/^h/i, ''),
+          10
+        ) as SupramarkHeadingNode['depth'];
         const heading: SupramarkHeadingNode = {
           type: 'heading',
           depth: (depth >= 1 && depth <= 6 ? depth : 1) as SupramarkHeadingNode['depth'],
@@ -576,6 +592,26 @@ export async function parseMarkdown(
       }
       case 'heading_close': {
         stack.pop();
+        break;
+      }
+      case 'blockquote_open': {
+        const bq: SupramarkBlockquoteNode = {
+          type: 'blockquote',
+          children: [],
+        };
+        parent.children.push(bq);
+        stack.push(bq);
+        break;
+      }
+      case 'blockquote_close': {
+        stack.pop();
+        break;
+      }
+      case 'hr': {
+        const hr: SupramarkThematicBreakNode = {
+          type: 'thematic_break',
+        };
+        parent.children.push(hr);
         break;
       }
       case 'paragraph_open': {

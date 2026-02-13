@@ -6,15 +6,9 @@ import {
   SUPRAMARK_ADMONITION_KINDS,
   type SupramarkAdmonitionKind,
   type SupramarkParentNode,
-  type SupramarkAdmonitionNode,
-  type SupramarkHtmlPageNode,
-  type SupramarkMapNode,
+  type SupramarkContainerNode,
 } from '../ast.js';
-import {
-  type SupramarkConfig,
-  isFeatureEnabled,
-  getFeatureOptionsAs,
-} from '../feature.js';
+import { type SupramarkConfig, isFeatureEnabled, getFeatureOptionsAs } from '../feature.js';
 
 interface AdmonitionOptions {
   kinds?: SupramarkAdmonitionKind[];
@@ -71,7 +65,7 @@ export function registerContainerHook(hook: ContainerHook): void {
 }
 
 function findContainerHook(name: string): ContainerHook | undefined {
-  return customContainerHooks.find((hook) => hook.name === name);
+  return customContainerHooks.find(hook => hook.name === name);
 }
 
 /**
@@ -80,12 +74,10 @@ function findContainerHook(name: string): ContainerHook | undefined {
  * 当前支持：
  * - Admonition：::: note / ::: warning 等；
  * - HTML Page：:::html；
- * - Map：:::map。
+ * - Map：:::map；
+ * - 通过 registerContainerHook() 注册的自定义容器。
  */
-export function registerContainerSyntax(
-  md: MarkdownIt,
-  config?: SupramarkConfig
-): void {
+export function registerContainerSyntax(md: MarkdownIt, config?: SupramarkConfig): void {
   const containerConfig = resolveContainerRuntimeConfig(config);
 
   // Admonition 容器块
@@ -103,6 +95,18 @@ export function registerContainerSyntax(
   // Map 容器（:::map）由 feature-map 提供语义解析，这里仅注册语法。
   if (config && isFeatureEnabled(config, '@supramark/feature-map')) {
     container(md, 'map', {});
+  }
+
+  // 自定义容器 hook（通过 registerContainerHook 注册的）
+  const registeredNames = new Set<string>([
+    ...containerConfig.admonitionKinds,
+    ...(containerConfig.htmlEnabled ? ['html'] : []),
+  ]);
+  for (const hook of customContainerHooks) {
+    if (!registeredNames.has(hook.name)) {
+      container(md, hook.name, {});
+      registeredNames.add(hook.name);
+    }
   }
 }
 
@@ -150,10 +154,7 @@ export function createContainerTokenProcessor(
           if (hook.onClose) {
             hook.onClose(hookCtx);
           }
-          if (
-            hook.opaque &&
-            opaqueContainerStack[opaqueContainerStack.length - 1] === name
-          ) {
+          if (hook.opaque && opaqueContainerStack[opaqueContainerStack.length - 1] === name) {
             opaqueContainerStack.pop();
           }
         }
@@ -161,6 +162,7 @@ export function createContainerTokenProcessor(
       }
 
       // Admonition 容器块（::: note / ::: warning 等）——透明容器，内部继续按普通 Markdown 解析
+      // 现在使用统一的 container 节点，通过 name 字段区分类型
       if (containerConfig.admonitionKinds.includes(name as SupramarkAdmonitionKind)) {
         if (phase === 'open') {
           const info = (token.info || '').trim();
@@ -168,18 +170,24 @@ export function createContainerTokenProcessor(
           // info 形如 "note 标题..."，去掉第一个单词（容器名），剩余部分作为标题
           const titleParts = parts.length > 1 ? parts.slice(1) : [];
           const title = titleParts.length > 0 ? titleParts.join(' ') : undefined;
-          const admonition: SupramarkAdmonitionNode = {
-            type: 'admonition',
-            kind: name,
-            title,
+          const admonitionContainer: SupramarkContainerNode = {
+            type: 'container',
+            name: name, // 'note', 'warning', 'tip', etc.
+            params: title,
+            data: { kind: name, title },
             children: [],
           };
           const parentForAdmonition = stack[stack.length - 1];
-          parentForAdmonition.children.push(admonition);
-          stack.push(admonition);
+          parentForAdmonition.children.push(admonitionContainer);
+          stack.push(admonitionContainer);
         } else {
-          const maybeAdmonition = stack[stack.length - 1];
-          if (maybeAdmonition.type === 'admonition') {
+          const maybeContainer = stack[stack.length - 1];
+          if (
+            maybeContainer.type === 'container' &&
+            containerConfig.admonitionKinds.includes(
+              (maybeContainer as SupramarkContainerNode).name as SupramarkAdmonitionKind
+            )
+          ) {
             stack.pop();
           }
         }
@@ -218,9 +226,7 @@ function resolveContainerRuntimeConfig(config?: SupramarkConfig): ContainerRunti
       getFeatureOptionsAs<AdmonitionOptions>(config, '@supramark/feature-admonition') ?? {};
 
     const kinds =
-      adOptions.kinds && adOptions.kinds.length > 0
-        ? adOptions.kinds
-        : SUPRAMARK_ADMONITION_KINDS;
+      adOptions.kinds && adOptions.kinds.length > 0 ? adOptions.kinds : SUPRAMARK_ADMONITION_KINDS;
 
     result.admonitionKinds = kinds.slice();
   }
@@ -238,13 +244,11 @@ function resolveContainerRuntimeConfig(config?: SupramarkConfig): ContainerRunti
  *
  * markdown-it-container 约定：
  * - token.map[0] 为起始行（含 :::name）；
- * - token.map[1] 为结束行之后的行号；
- * - 因此内部内容行范围为 [start + 1, end - 1]。
+ * - token.map[1] 为结束行号（即 ::: 关闭行）；
+ * - 因此内部内容行范围为 [start + 1, end)。
  */
 export function extractContainerInnerText(token: Token, sourceLines: string[]): string {
   if (!token.map || token.map.length !== 2) return '';
   const [start, end] = token.map;
-  const innerStart = start + 1;
-  const innerEnd = end - 1 > innerStart ? end - 1 : end;
-  return sourceLines.slice(innerStart, innerEnd).join('\n');
+  return sourceLines.slice(start + 1, end).join('\n');
 }

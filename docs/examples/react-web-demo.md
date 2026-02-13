@@ -52,6 +52,7 @@ PORT=8080 npm run start
   - `@supramark/web`：提供 `<Supramark />` React 组件、`parseMarkdown()` 和 `buildDiagramSupportScripts()` 等工具。
 
 这个示例适合用于：
+
 - 了解如何在 React 应用中集成 Supramark；
 - 学习服务端渲染（SSR）Markdown 内容的最佳实践；
 - 作为 React 单页应用（SPA）或 Next.js 等框架的参考实现。
