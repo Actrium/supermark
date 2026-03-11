@@ -645,6 +645,9 @@ export interface RendererDefinitions<TNode extends SupramarkNode> {
  * - 实际渲染组件应该在 @supramark/rn 和 @supramark/web 包中实现
  */
 export interface PlatformRenderer<TNode extends SupramarkNode, TPlatform extends Platform> {
+  /** 平台标识（兼容当前 feature 定义写法） */
+  platform?: TPlatform;
+
   /**
    * 渲染函数（可选）
    *

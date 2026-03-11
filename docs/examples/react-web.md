@@ -33,5 +33,4 @@ examples/react-web/
 - [其他示例](/examples/)
 
 ---
-
-_此文档由 scripts/doc-gen-example.ts 自动生成_
+*此文档由 scripts/doc-gen-example.ts 自动生成*

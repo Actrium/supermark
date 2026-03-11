@@ -15,13 +15,13 @@
 
 ## 项目结构
 
-- `packages/core` （npm: `@supramark/core`）
-  - 定义 supramark 的 AST、插件接口与基础解析管线；
-  - 设计上与 remark 的 mdast 结构尽量对齐，用于在 Node/Web 侧集成 unified/remark 生态；
+- `packages/core` （npm: `@supramark/core`）  
+  - 定义 supramark 的 AST、插件接口与基础解析管线；  
+  - 设计上与 remark 的 mdast 结构尽量对齐，用于在 Node/Web 侧集成 unified/remark 生态；  
   - 同时提供一个面向 RN 的 markdown-it 解析实现，作为在 React Native 环境下的默认实现（无需额外 bundler hack）。
-- `packages/rn` （npm: `@supramark/rn`）
-  - React Native 渲染层：把 supramark AST 映射为 RN 组件树，内置对基础 Markdown / Math / 脚注 / 定义列表 / Admonition / Emoji / 各类 diagram 等的默认渲染。
-- `packages/rn-diagram-worker` （npm: `@supramark/rn-diagram-worker`）
+- `packages/rn` （npm: `@supramark/rn`）  
+  - React Native 渲染层：把 supramark AST 映射为 RN 组件树，内置对基础 Markdown / Math / 脚注 / 定义列表 / Admonition / Emoji / 各类 diagram 等的默认渲染。  
+- `packages/rn-diagram-worker` （npm: `@supramark/rn-diagram-worker`）  
   - 使用单个隐藏 WebView 的图表渲染服务（headless WebView worker），统一为 Mermaid / PlantUML / Vega 等提供渲染能力，并以 Promise 形式返回 SVG/PNG 结果。
 
 其它目录：
@@ -46,7 +46,6 @@ npm run docs:build
 ```
 
 文档网站特性：
-
 - **自动生成的 Feature 文档**：从源代码的 `documentation.api` 字段自动提取
 - **TypeDoc API 参考**：完整的类型定义和 API 文档
 - **VitePress 驱动**：现代化的文档站点，支持搜索和导航
@@ -55,13 +54,12 @@ npm run docs:build
 
 ## Headless WebView 图表渲染方案（概要）
 
-- 宿主 App 内由 `@supramark/rn-diagram-worker` 自行创建并管理一个隐藏的 WebView，作为「图表渲染引擎」（worker）。
-- RN 端通过 `DiagramRenderProvider` + `useDiagramRender()` 提供 `render({ engine, code }) => Promise<{ format, payload }>` 的服务；
-- WebView 内统一接收请求（`engine` + `code`），调用各自的 JS 库（Mermaid / Vega 等）生成 **SVG 为主** 的渲染结果（必要时可降级为 PNG），再通过 `postMessage` 回传；
+- 宿主 App 内由 `@supramark/rn-diagram-worker` 自行创建并管理一个隐藏的 WebView，作为「图表渲染引擎」（worker）。  
+- RN 端通过 `DiagramRenderProvider` + `useDiagramRender()` 提供 `render({ engine, code }) => Promise<{ format, payload }>` 的服务；  
+- WebView 内统一接收请求（`engine` + `code`），调用各自的 JS 库（Mermaid / Vega 等）生成 **SVG 为主** 的渲染结果（必要时可降级为 PNG），再通过 `postMessage` 回传；  
 - 前台 supramark-RN 组件只负责展示结果（例如用 `react-native-svg` 渲染 SVG，或 `<Image />` 展示 base64 PNG），完全不关心 WebView 细节和具体图表引擎。
 
 当前仓库只包含基础骨架与接口草案，具体渲染实现和示例将在后续迭代。
-
 > 说明：当前仓库已包含核心解析 / 渲染管线，以及 RN / Web 示例应用，  
 > 仍然在持续演进中，但已经可以在真实项目中试验集成。
 
@@ -70,25 +68,21 @@ npm run docs:build
 Supramark 建立了完整的三层质量保障体系，确保每个 Feature 的质量和一致性：
 
 ### 第一层：TypeScript 类型系统
-
 - **强化的类型定义**：严格的 `FeatureMetadata`、`ASTNodeDefinition`、`NodeInterface` 类型
 - **编译时检查**：IDE 即时反馈，零运行时开销
 - **文档化的规范**：每个字段都有详细的注释和示例
 
 ### 第二层：运行时验证
-
 - **validateFeature 函数**：14+ 条验证规则，涵盖 Critical/Warning/Info 三个级别
 - **多种模式**：基本模式、严格模式、生产模式
 - **详细错误信息**：结构化的错误报告（code + message + severity）
 
 ### 第三层：静态检查与 CI
-
 - **Feature Linter**：静态分析工具，检查代码质量和文件结构
 - **质量评分**：100 分制评分系统
 - **GitHub Actions CI**：自动化检查（类型检查 + Linter + 测试 + 覆盖率）
 
 使用指南：
-
 ```bash
 # 本地检查
 npm run lint:features              # 检查所有 Features
@@ -101,7 +95,6 @@ const result = validateFeature(myFeature, { production: true });
 ```
 
 详细文档：
-
 - [Feature 质量保障体系](./docs/FEATURE_QUALITY_ASSURANCE.md)
 - [Feature Interface 强化说明](./docs/FEATURE_INTERFACE_ENHANCEMENT.md)
 
@@ -117,7 +110,7 @@ const result = validateFeature(myFeature, { production: true });
 - [x] 在 `docs/` 中为 RN 示例工程单独写一篇使用说明（`docs/examples/native-demo.md`，说明如何运行、如何切换不同插件示例）；
 - [x] 为 React Native 和 React Web 示例创建使用说明文档（`docs/examples/native-demo.md` 和 `docs/examples/react-web-demo.md`）；
 - [x] 统一两个示例项目的交互结构，均采用「目录 + 示例详情」的两页布局；
-- [x] 创建示例数据聚合（`examples/demos.js` 和 `demos.mjs`），从各个 Feature 包中导入示例数据，供所有示例项目使用。
+- [x] 创建示例数据聚合（`examples/demos.js` 和 `demos.mjs`），从各个 Feature 包中导入示例数据，供所有示例项目使用。 
 
 中期：
 

@@ -29,8 +29,6 @@
 import {
   registerContainerHook,
   extractContainerInnerText,
-  type SupramarkContainerNode,
-  type SupramarkFeature,
   type ContainerFeature,
   type ContainerHook,
   type ContainerHookContext,
@@ -117,10 +115,8 @@ function parseYamlConfig(content: string): Partial<WeatherData> {
         else if (rawValue === 'false') value = false;
         else if (/^-?\d+$/.test(rawValue)) value = parseInt(rawValue, 10);
         else if (/^-?\d+\.\d+$/.test(rawValue)) value = parseFloat(rawValue);
-        else if (
-          (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
-          (rawValue.startsWith("'") && rawValue.endsWith("'"))
-        ) {
+        else if ((rawValue.startsWith('"') && rawValue.endsWith('"')) ||
+                 (rawValue.startsWith("'") && rawValue.endsWith("'"))) {
           value = rawValue.slice(1, -1);
         }
 
@@ -332,71 +328,11 @@ function registerWeatherParser(): void {
  *
  * 天气卡片容器，支持 JSON/YAML/TOML 配置格式
  */
-export const weatherFeature: ContainerFeature & SupramarkFeature<SupramarkContainerNode> = {
+export const weatherFeature: ContainerFeature = {
   id: '@supramark/feature-weather',
   name: 'Weather',
   version: '0.1.0',
   description: '天气卡片容器，支持 JSON/YAML/TOML 配置格式',
-
-  metadata: {
-    id: '@supramark/feature-weather',
-    name: 'Weather',
-    version: '0.1.0',
-    author: 'Supramark Team',
-    description: '天气卡片容器，支持 JSON/YAML/TOML 配置格式',
-    license: 'Apache-2.0',
-    tags: ['container', 'weather', 'card'],
-    syntaxFamily: 'container',
-  },
-
-  syntax: {
-    ast: {
-      type: 'container',
-      selector: (node: SupramarkContainerNode) =>
-        node.type === 'container' && node.name === 'weather',
-      interface: {
-        required: ['type', 'name', 'children'],
-        optional: ['params', 'data'],
-        fields: {
-          type: {
-            type: 'string',
-            description: 'Node type identifier, always "container".',
-          },
-          name: {
-            type: 'string',
-            description: 'Container name, fixed to "weather".',
-          },
-          children: {
-            type: 'array',
-            description: 'Child nodes inside the weather container.',
-          },
-          params: {
-            type: 'string',
-            description: 'Raw params after container name (e.g. json/yaml/toon).',
-          },
-          data: {
-            type: 'object',
-            description: 'Parsed weather configuration data.',
-          },
-        },
-      },
-      examples: [
-        {
-          type: 'container',
-          name: 'weather',
-          params: 'yaml',
-          data: {
-            format: 'yaml',
-            location: 'Tokyo',
-            units: 'metric',
-            showForecast: true,
-            days: 3,
-          },
-          children: [],
-        } as SupramarkContainerNode,
-      ],
-    },
-  },
 
   containerNames: [...WEATHER_CONTAINER_NAMES],
 

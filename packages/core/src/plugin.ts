@@ -28,8 +28,6 @@ import type {
   SupramarkDefinitionListNode,
   SupramarkDefinitionItemNode,
   SupramarkContainerNode,
-  SupramarkBlockquoteNode,
-  SupramarkThematicBreakNode,
 } from './ast.js';
 import { type SupramarkConfig } from './feature.js';
 import { registerContainerSyntax, createContainerTokenProcessor } from './syntax/container.js';
@@ -331,8 +329,7 @@ function mapInlineTokens(tokens: Token[] | null, parent: SupramarkParentNode): v
     const current = stack[stack.length - 1];
 
     switch (token.type) {
-      case 'text':
-      case 'emoji': {
+      case 'text': {
         const textNode: SupramarkTextNode = {
           type: 'text',
           value: token.content,
@@ -592,26 +589,6 @@ export async function parseMarkdown(
       }
       case 'heading_close': {
         stack.pop();
-        break;
-      }
-      case 'blockquote_open': {
-        const bq: SupramarkBlockquoteNode = {
-          type: 'blockquote',
-          children: [],
-        };
-        parent.children.push(bq);
-        stack.push(bq);
-        break;
-      }
-      case 'blockquote_close': {
-        stack.pop();
-        break;
-      }
-      case 'hr': {
-        const hr: SupramarkThematicBreakNode = {
-          type: 'thematic_break',
-        };
-        parent.children.push(hr);
         break;
       }
       case 'paragraph_open': {

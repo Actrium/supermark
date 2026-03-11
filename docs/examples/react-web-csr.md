@@ -61,7 +61,6 @@ function App() {
 const [markdown, setMarkdown] = useState('# Hello World');
 
 return (
-
 <div>
 <textarea
 value={markdown}
@@ -111,6 +110,7 @@ react-web-csr/
 - [Supramark 文档](../../README.md)
 - [Vite 文档](https://vitejs.dev/)
 - [React 文档](https://react.dev/)
+
 
 ## 快速开始
 
@@ -203,6 +203,7 @@ if (featureParam) {
     </StrictMode>
   );
 }
+
 ```
 
 ## 项目结构
@@ -222,5 +223,4 @@ examples/react-web-csr/
 - [其他示例](/examples/)
 
 ---
-
-_此文档由 scripts/doc-gen-example.ts 自动生成_
+*此文档由 scripts/doc-gen-example.ts 自动生成*

@@ -5,7 +5,10 @@
     "version": "0.1.0",
     "description": "supramark 的 React Native 演示程序（react-native 示例）。",
     "sdkVersion": "54.0.0",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "ios": {
       "bundleIdentifier": "supramark-rn-demo"
     },

@@ -28,6 +28,7 @@ npm run start      # 如有需要会自动执行根目录 npm install
 
 然后根据 Expo 提示，在 iOS / Android 模拟器或真机上运行。
 
+
 ## 快速开始
 
 ```bash
@@ -69,5 +70,4 @@ examples/react-native/
 - [其他示例](/examples/)
 
 ---
-
-_此文档由 scripts/doc-gen-example.ts 自动生成_
+*此文档由 scripts/doc-gen-example.ts 自动生成*

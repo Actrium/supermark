@@ -23,13 +23,11 @@ config-examples/
 适用于使用 Vite 的项目（推荐）。
 
 **特点：**
-
 - ⚡ 开箱即用，无需特殊配置
 - 🚀 极快的开发服务器启动
 - 📦 优化的生产构建
 
 **查看示例：**
-
 - [vite.config.ts](./vite/vite.config.ts) - 完整配置文件
 - [README.md](./vite/README.md) - 详细使用说明
 
@@ -40,13 +38,11 @@ config-examples/
 适用于使用 Webpack 的项目（包括 Create React App）。
 
 **特点：**
-
 - 🔧 灵活的配置选项
 - 📊 强大的代码分割
 - 🛠️ 成熟的生态系统
 
 **查看示例：**
-
 - [webpack.config.js](./webpack/webpack.config.js) - 完整配置文件
 - [package.json.example](./webpack/package.json.example) - 依赖列表
 - [README.md](./webpack/README.md) - 详细使用说明
@@ -202,7 +198,9 @@ const html = astToHtml(ast);
 
 ```typescript
 // 动态导入
-const Supramark = lazy(() => import('@supramark/web/client').then(m => ({ default: m.Supramark })));
+const Supramark = lazy(() =>
+  import('@supramark/web/client').then(m => ({ default: m.Supramark }))
+);
 ```
 
 ### Q: 如何在 TypeScript 中获得完整类型支持？

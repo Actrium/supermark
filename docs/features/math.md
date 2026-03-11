@@ -12,6 +12,6 @@ bun add @supramark/core @supramark/feature-math
 
 类型: `string`
 
----
 
-_此文档由 scripts/doc-gen-features.ts 自动生成_
+---
+*此文档由 scripts/doc-gen-features.ts 自动生成*

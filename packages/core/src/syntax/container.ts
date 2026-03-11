@@ -182,12 +182,7 @@ export function createContainerTokenProcessor(
           stack.push(admonitionContainer);
         } else {
           const maybeContainer = stack[stack.length - 1];
-          if (
-            maybeContainer.type === 'container' &&
-            containerConfig.admonitionKinds.includes(
-              (maybeContainer as SupramarkContainerNode).name as SupramarkAdmonitionKind
-            )
-          ) {
+          if (maybeContainer.type === 'container' && containerConfig.admonitionKinds.includes((maybeContainer as SupramarkContainerNode).name as SupramarkAdmonitionKind)) {
             stack.pop();
           }
         }
@@ -244,11 +239,13 @@ function resolveContainerRuntimeConfig(config?: SupramarkConfig): ContainerRunti
  *
  * markdown-it-container 约定：
  * - token.map[0] 为起始行（含 :::name）；
- * - token.map[1] 为结束行号（即 ::: 关闭行）；
- * - 因此内部内容行范围为 [start + 1, end)。
+ * - token.map[1] 为结束行之后的行号；
+ * - 因此内部内容行范围为 [start + 1, end - 1]。
  */
 export function extractContainerInnerText(token: Token, sourceLines: string[]): string {
   if (!token.map || token.map.length !== 2) return '';
   const [start, end] = token.map;
-  return sourceLines.slice(start + 1, end).join('\n');
+  const innerStart = start + 1;
+  const innerEnd = end - 1 > innerStart ? end - 1 : end;
+  return sourceLines.slice(innerStart, innerEnd).join('\n');
 }

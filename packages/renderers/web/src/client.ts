@@ -38,10 +38,6 @@
 export { Supramark } from './Supramark.js';
 export type { SupramarkWebProps } from './Supramark.js';
 
-// Diagram engine provider (for inline diagram/math rendering)
-export { DiagramEngineProvider, DiagramEngineContext } from './DiagramEngineProvider.js';
-export type { DiagramEngineProviderProps } from './DiagramEngineProvider.js';
-
 // ClassName 系统
 export type { SupramarkClassNames } from './classNames.js';
 export {

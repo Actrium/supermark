@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useContext, ReactNode } from 'react';
+import React, { useEffect, useState, useMemo, ReactNode } from 'react';
 import type {
   SupramarkRootNode,
   SupramarkNode,
@@ -26,18 +26,15 @@ import type {
   SupramarkFootnoteDefinitionNode,
   SupramarkDefinitionListNode,
   SupramarkDefinitionItemNode,
-  SupramarkBlockquoteNode,
-  SupramarkThematicBreakNode,
   SupramarkConfig,
-  SUPRAMARK_ADMONITION_KINDS,
 } from '@supramark/core';
 import {
   parseMarkdown,
   isFeatureEnabled,
   warnIfUnknownDiagramEngine,
   getFeatureOptionsAs,
+  SUPRAMARK_ADMONITION_KINDS,
 } from '@supramark/core';
-import type { DiagramRenderResult, DiagramRenderService } from '@supramark/diagram-engine';
 import {
   type SupramarkClassNames,
   mergeClassNames,
@@ -45,7 +42,6 @@ import {
   minimalClassNames,
 } from './classNames.js';
 import { ErrorBoundary, ErrorInfo, ErrorDisplay } from './ErrorBoundary.js';
-import { DiagramEngineContext } from './DiagramEngineProvider.js';
 
 export interface ContainerRendererWeb {
   (args: {
@@ -84,88 +80,6 @@ export interface SupramarkWebProps {
   containerRenderers?: Record<string, ContainerRendererWeb>;
 }
 
-// ── Pre-render helpers ────────────────────────────────────────────────
-
-type RenderTask = {
-  key: string;
-  engine: string;
-  code: string;
-  options?: Record<string, unknown>;
-};
-
-/** Collect all diagram/math nodes that need async rendering. */
-function collectRenderTasks(nodes: SupramarkNode[]): RenderTask[] {
-  const tasks: RenderTask[] = [];
-
-  function walk(list: SupramarkNode[]) {
-    for (const node of list) {
-      if (node.type === 'diagram') {
-        const d = node as SupramarkDiagramNode;
-        tasks.push({ key: `d:${d.engine}:${d.code}`, engine: d.engine, code: d.code });
-      } else if (node.type === 'math_block') {
-        const m = node as SupramarkMathBlockNode;
-        tasks.push({
-          key: `m:1:${m.value}`,
-          engine: 'math',
-          code: m.value,
-          options: { displayMode: true },
-        });
-      } else if (node.type === 'math_inline') {
-        const m = node as SupramarkMathInlineNode;
-        tasks.push({
-          key: `m:0:${m.value}`,
-          engine: 'math',
-          code: m.value,
-          options: { displayMode: false },
-        });
-      }
-
-      // Recurse into children
-      if ('children' in node && Array.isArray((node as any).children)) {
-        walk((node as any).children);
-      }
-      // definition_item has term[] and descriptions[][]
-      if (node.type === 'definition_item') {
-        const di = node as SupramarkDefinitionItemNode;
-        if (di.term) walk(di.term);
-        if (di.descriptions) {
-          for (const desc of di.descriptions) {
-            if (Array.isArray(desc)) walk(desc);
-          }
-        }
-      }
-    }
-  }
-
-  walk(nodes);
-  return tasks;
-}
-
-/** Render all tasks in parallel, returning a key→result map. */
-async function preRenderAll(
-  tasks: RenderTask[],
-  engine: DiagramRenderService
-): Promise<Map<string, DiagramRenderResult>> {
-  if (tasks.length === 0) return new Map();
-
-  // Deduplicate by key (same code → same result)
-  const unique = new Map<string, RenderTask>();
-  for (const t of tasks) {
-    if (!unique.has(t.key)) unique.set(t.key, t);
-  }
-
-  const entries = [...unique.values()];
-  const results = await Promise.all(
-    entries.map(t => engine.render({ engine: t.engine, code: t.code, options: t.options }))
-  );
-
-  const map = new Map<string, DiagramRenderResult>();
-  entries.forEach((t, i) => map.set(t.key, results[i]));
-  return map;
-}
-
-// ── Component ─────────────────────────────────────────────────────────
-
 export const Supramark: React.FC<SupramarkWebProps> = ({
   markdown,
   ast,
@@ -177,9 +91,7 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
   errorClassNamePrefix = 'sm-error',
   containerRenderers,
 }) => {
-  const diagramEngine = useContext(DiagramEngineContext);
   const [root, setRoot] = useState<SupramarkRootNode | null>(ast ?? null);
-  const [rendered, setRendered] = useState<Map<string, DiagramRenderResult>>(new Map());
   const [parseError, setParseError] = useState<ErrorInfo | null>(null);
 
   // 合并 className：theme -> customClassNames -> defaultClassNames
@@ -201,65 +113,51 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
     return mergeClassNames(finalCustomClassNames);
   }, [customClassNames, theme]);
 
-  // Single async step: parse markdown → pre-render all diagrams/math → setState once
   useEffect(() => {
-    let cancelled = false;
+    if (ast) {
+      setRoot(ast);
+      setParseError(null);
+      return;
+    }
 
+    let cancelled = false;
     (async () => {
       try {
-        // 1. Parse
-        const parsed = ast ?? (await parseMarkdown(markdown, { config }));
-        if (cancelled) return;
-
-        // 2. Pre-render all diagram/math nodes in parallel
-        let renderedMap = new Map<string, DiagramRenderResult>();
-        if (diagramEngine) {
-          const tasks = collectRenderTasks(parsed.children);
-          renderedMap = await preRenderAll(tasks, diagramEngine);
+        const parsed = await parseMarkdown(markdown, { config });
+        if (!cancelled) {
+          setRoot(parsed);
+          setParseError(null);
         }
-        if (cancelled) return;
-
-        // 3. Set state once (single synchronous commit)
-        setRoot(parsed);
-        setRendered(renderedMap);
-        setParseError(null);
       } catch (error) {
-        if (cancelled) return;
-        const err = error as Error;
-        setParseError({
-          type: 'parse',
-          message: err.message || '解析 Markdown 失败',
-          details: err.toString(),
-          stack: err.stack,
-        });
-        setRoot(null);
-        if (onError) onError(err);
+        if (!cancelled) {
+          const err = error as Error;
+          const errorInfo: ErrorInfo = {
+            type: 'parse',
+            message: err.message || '解析 Markdown 失败',
+            details: err.toString(),
+            stack: err.stack,
+          };
+          setParseError(errorInfo);
+          setRoot(null);
+
+          // 调用错误回调
+          if (onError) {
+            onError(err);
+          }
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [markdown, ast, diagramEngine, config]);
+  }, [markdown, ast, onError]);
 
   const mergedContainerRenderers = useMemo(() => {
-    // 1. 从传入的 config.features 中提取
-    const fromFeatures: Record<string, ContainerRendererWeb> = {};
-    if (config?.features) {
-      config.features.forEach(f => {
-        if (f.renderers?.web) {
-          // 如果 feature.ts 中定义了 nodeName，则使用它作为 key
-          const nodeName = (f.syntax?.ast as any)?.type;
-          if (nodeName) {
-            fromFeatures[nodeName] = f.renderers.web as any;
-          }
-        }
-      });
-    }
-
-    // 2. 合并：手动传入的 containerRenderers 优先级最高
-    return { ...fromFeatures, ...(containerRenderers ?? {}) };
-  }, [containerRenderers, config]);
+    // FeatureConfig 只描述启用状态与 options，不再携带 renderer 定义。
+    // container 渲染器需要由宿主显式注入，避免运行时隐式耦合到 feature 包实现。
+    return containerRenderers ?? {};
+  }, [containerRenderers]);
 
   // 解析错误降级：显示错误信息或原始 markdown
   if (parseError) {
@@ -288,58 +186,30 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
     >
       <div className={mergedClassNames.root}>
         {root.children.map((node, index) =>
-          renderNode(node, index, mergedClassNames, config, mergedContainerRenderers, rendered)
+          renderNode(node, index, mergedClassNames, config, mergedContainerRenderers)
         )}
       </div>
     </ErrorBoundary>
   );
 };
 
-// ── Render tree (purely synchronous) ──────────────────────────────────
-
 function renderNode(
   node: SupramarkNode,
   key: number,
   classNames: SupramarkClassNames,
   config?: SupramarkConfig,
-  containerRenderers?: Record<string, ContainerRendererWeb>,
-  rendered?: Map<string, DiagramRenderResult>
+  containerRenderers?: Record<string, ContainerRendererWeb>
 ): React.ReactNode {
-  // container 扩展优先：让新增 :::xxx 不需要修改本文件
-  if (node.type === 'container') {
-    const name = (node as any).name as string;
-    const renderer = containerRenderers?.[name];
-    if (renderer) {
-      return renderer({
-        node,
-        key,
-        classNames,
-        config,
-        renderNode: (n, k) => renderNode(n, k, classNames, config, containerRenderers, rendered),
-        renderChildren: children =>
-          (children ?? []).map((child, idx) =>
-            renderNode(child, idx, classNames, config, containerRenderers, rendered)
-          ),
-      });
-    }
-    return null;
-  }
-
   switch (node.type) {
     case 'paragraph':
       return (
         <p key={key} className={classNames.paragraph}>
-          {renderInlineNodes(
-            (node as SupramarkParagraphNode).children,
-            classNames,
-            config,
-            rendered
-          )}
+          {renderInlineNodes((node as SupramarkParagraphNode).children, classNames, config)}
         </p>
       );
     case 'heading': {
       const heading = node as SupramarkHeadingNode;
-      const content = renderInlineNodes(heading.children, classNames, config, rendered);
+      const content = renderInlineNodes(heading.children, classNames, config);
       switch (heading.depth) {
         case 1:
           return (
@@ -379,19 +249,6 @@ function renderNode(
           );
       }
     }
-    case 'blockquote': {
-      const bq = node as SupramarkBlockquoteNode;
-      return (
-        <blockquote key={key} className={classNames.blockquote}>
-          {bq.children.map((child, index) =>
-            renderNode(child, index, classNames, config, containerRenderers, rendered)
-          )}
-        </blockquote>
-      );
-    }
-    case 'thematic_break': {
-      return <hr key={key} className={classNames.thematicBreak} />;
-    }
     case 'code': {
       const codeBlock = node as SupramarkCodeNode;
       return (
@@ -409,19 +266,8 @@ function renderNode(
           </pre>
         );
       }
-      const result = rendered?.get(`m:1:${mathBlock.value}`);
-      if (result?.success) {
-        return (
-          <div
-            key={key}
-            className={classNames.codeBlock}
-            dangerouslySetInnerHTML={{ __html: result.payload }}
-          />
-        );
-      }
-      // Fallback: raw TeX
       return (
-        <div key={key} className={classNames.codeBlock} data-suprimark-math="block">
+        <div key={key} data-suprimark-math="block" className={classNames.codeBlock}>
           <code className={classNames.code}>{mathBlock.value}</code>
         </div>
       );
@@ -429,7 +275,7 @@ function renderNode(
     case 'list': {
       const list = node as SupramarkListNode;
       const items = list.children.map((item, index) =>
-        renderNode(item, index, classNames, config, containerRenderers, rendered)
+        renderNode(item, index, classNames, config, containerRenderers)
       );
       return list.ordered ? (
         <ol key={key} className={classNames.listOrdered}>
@@ -456,7 +302,7 @@ function renderNode(
               className={classNames.taskCheckbox}
             />
             {item.children.map((child, index) =>
-              renderNode(child, index, classNames, config, containerRenderers, rendered)
+              renderNode(child, index, classNames, config, containerRenderers)
             )}
           </li>
         );
@@ -465,7 +311,7 @@ function renderNode(
       return (
         <li key={key} className={classNames.listItem}>
           {item.children.map((child, index) =>
-            renderNode(child, index, classNames, config, containerRenderers, rendered)
+            renderNode(child, index, classNames, config, containerRenderers)
           )}
         </li>
       );
@@ -473,55 +319,8 @@ function renderNode(
     case 'diagram': {
       const diagram = node as SupramarkDiagramNode;
       warnIfUnknownDiagramEngine(diagram.engine, 'web:diagram-render');
-      const result = rendered?.get(`d:${diagram.engine}:${diagram.code}`);
-      if (result?.success) {
-        return (
-          <div
-            key={key}
-            className={classNames.diagram}
-            dangerouslySetInnerHTML={{ __html: result.payload }}
-          />
-        );
-      }
-      if (result && !result.success) {
-        return (
-          <div key={key} className={classNames.diagram}>
-            <div
-              style={{
-                border: '1px solid #ffccc7',
-                background: '#fff2f0',
-                padding: '12px',
-                borderRadius: '4px',
-                margin: '8px 0',
-              }}
-            >
-              <div style={{ color: '#cf1322', fontWeight: 600, marginBottom: 8 }}>
-                Diagram render error
-              </div>
-              <div style={{ color: '#595959', fontSize: 13, whiteSpace: 'pre-wrap' }}>
-                {result.error?.details || result.payload}
-              </div>
-              <details style={{ marginTop: 8 }}>
-                <summary style={{ cursor: 'pointer', color: '#1890ff', fontSize: 13 }}>
-                  Show source
-                </summary>
-                <pre
-                  style={{
-                    background: '#fafafa',
-                    padding: 8,
-                    borderRadius: 4,
-                    marginTop: 8,
-                    overflow: 'auto',
-                  }}
-                >
-                  <code>{diagram.code}</code>
-                </pre>
-              </details>
-            </div>
-          </div>
-        );
-      }
-      // Fallback: no engine / SSR
+      // Web 端 diagram 渲染由脚本（@supramark/web-diagram）在浏览器中负责。
+      // 这里只渲染占位符，实际渲染由 buildDiagramSupportScripts 提供的客户端脚本完成。
       return (
         <div key={key} data-suprimark-diagram={diagram.engine} className={classNames.diagram}>
           <pre className={classNames.diagramPre}>
@@ -541,10 +340,10 @@ function renderNode(
           key,
           classNames,
           config,
-          renderNode: (n, k) => renderNode(n, k, classNames, config, containerRenderers, rendered),
-          renderChildren: children =>
+          renderNode: (n, k) => renderNode(n, k, classNames, config, containerRenderers),
+          renderChildren: (children) =>
             children.map((child, index) =>
-              renderNode(child, index, classNames, config, containerRenderers, rendered)
+              renderNode(child, index, classNames, config, containerRenderers)
             ),
         });
       }
@@ -561,7 +360,7 @@ function renderNode(
               {title ? <strong>{title}</strong> : null}
               {title ? ' ' : null}
               {container.children.map((child, index) =>
-                renderNode(child, index, classNames, config, containerRenderers, rendered)
+                renderNode(child, index, classNames, config, containerRenderers)
               )}
             </p>
           );
@@ -576,45 +375,26 @@ function renderNode(
                 {title ? <strong>{title}</strong> : null}
                 {title ? ' ' : null}
                 {container.children.map((child, index) =>
-                  renderNode(child, index, classNames, config, containerRenderers, rendered)
+                  renderNode(child, index, classNames, config, containerRenderers)
                 )}
               </p>
             );
           }
         }
 
-        const kindTheme: Record<
-          string,
-          { border: string; bg: string; color: string; icon: string }
-        > = {
-          note: { border: '#448aff', bg: '#e3f2fd', color: '#1565c0', icon: 'ℹ️' },
-          tip: { border: '#00c853', bg: '#e8f5e9', color: '#2e7d32', icon: '💡' },
-          info: { border: '#448aff', bg: '#e3f2fd', color: '#1565c0', icon: 'ℹ️' },
-          warning: { border: '#ff9100', bg: '#fff3e0', color: '#e65100', icon: '⚠️' },
-          danger: { border: '#ff1744', bg: '#fce4ec', color: '#b71c1c', icon: '🚨' },
-        };
-        const theme = kindTheme[kind] ?? kindTheme.note;
-
         return (
           <div
             key={key}
-            className={`admonition admonition-${kind}`}
-            style={{
-              borderLeft: `4px solid ${theme.border}`,
-              background: theme.bg,
-              borderRadius: '4px',
-              padding: '12px 16px',
-              margin: '12px 0',
-            }}
+            className={`admonition admonition-${kind} ${classNames.paragraph ?? ''}`.trim()}
           >
             {title ? (
-              <p style={{ margin: '0 0 8px 0', fontWeight: 600, color: theme.color }}>
-                {theme.icon} {title}
+              <p>
+                <strong>{title}</strong>
               </p>
             ) : null}
             <div>
               {container.children.map((child, index) =>
-                renderNode(child, index, classNames, config, containerRenderers, rendered)
+                renderNode(child, index, classNames, config, containerRenderers)
               )}
             </div>
           </div>
@@ -652,14 +432,11 @@ function renderNode(
 
       // 默认：渲染为通用容器块
       return (
-        <div
-          key={key}
-          className={`container container-${containerName} ${classNames.paragraph ?? ''}`.trim()}
-        >
+        <div key={key} className={`container container-${containerName} ${classNames.paragraph ?? ''}`.trim()}>
           {container.params && <div className="container-params">{container.params}</div>}
           <div className="container-content">
             {container.children.map((child, index) =>
-              renderNode(child, index, classNames, config, containerRenderers, rendered)
+              renderNode(child, index, classNames, config, containerRenderers)
             )}
           </div>
         </div>
@@ -677,13 +454,13 @@ function renderNode(
           <div key={key} className={classNames.paragraph}>
             {list.children.map((item, index) => {
               const defItem = item as SupramarkDefinitionItemNode;
-              const termContent = renderInlineNodes(defItem.term, classNames, config, rendered);
+              const termContent = renderInlineNodes(defItem.term, classNames, config);
               return (
                 <p key={index} className={classNames.paragraph}>
                   <strong>{termContent}</strong>{' '}
                   {defItem.descriptions.map((descNodes, idx) => (
                     <span key={idx}>
-                      {renderInlineNodes(descNodes, classNames, config, rendered)}
+                      {renderInlineNodes(descNodes, classNames, config)}
                       {idx < defItem.descriptions.length - 1 ? ' ' : null}
                     </span>
                   ))}
@@ -697,7 +474,7 @@ function renderNode(
         <dl key={key} className={classNames.paragraph}>
           {list.children.map((item, index) => {
             const defItem = item as SupramarkDefinitionItemNode;
-            const termContent = renderInlineNodes(defItem.term, classNames, config, rendered);
+            const termContent = renderInlineNodes(defItem.term, classNames, config);
             return (
               <React.Fragment key={index}>
                 <dt>
@@ -705,7 +482,7 @@ function renderNode(
                 </dt>
                 {defItem.descriptions.map((descNodes, idx) => (
                   <dd key={idx}>
-                    {renderInlineNodes(descNodes, classNames, config, rendered)}
+                    {renderInlineNodes(descNodes, classNames, config)}
                     {isCompact ? null : <br />}
                   </dd>
                 ))}
@@ -721,7 +498,7 @@ function renderNode(
         <table key={key} className={classNames.table}>
           <tbody className={classNames.tableBody}>
             {table.children.map((row, index) =>
-              renderNode(row, index, classNames, config, containerRenderers, rendered)
+              renderNode(row, index, classNames, config, containerRenderers)
             )}
           </tbody>
         </table>
@@ -732,7 +509,7 @@ function renderNode(
       return (
         <tr key={key} className={classNames.tableRow}>
           {row.children.map((cell, index) =>
-            renderNode(cell, index, classNames, config, containerRenderers, rendered)
+            renderNode(cell, index, classNames, config, containerRenderers)
           )}
         </tr>
       );
@@ -740,7 +517,7 @@ function renderNode(
     case 'table_cell': {
       const cell = node as SupramarkTableCellNode;
       const alignStyle = cell.align ? { textAlign: cell.align } : undefined;
-      const content = renderInlineNodes(cell.children, classNames, config, rendered);
+      const content = renderInlineNodes(cell.children, classNames, config);
 
       if (cell.header) {
         return (
@@ -758,40 +535,19 @@ function renderNode(
     }
     case 'footnote_definition': {
       const def = node as SupramarkFootnoteDefinitionNode;
+      // 简单的脚注列表项，后续可改为单独 <section> 包裹
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-footnote'])) {
+        // 禁用脚注 Feature 时，直接渲染为普通段落内容
         return (
-          <React.Fragment key={key}>
-            {def.children.map((child, index) =>
-              renderNode(child, index, classNames, config, containerRenderers, rendered)
-            )}
-          </React.Fragment>
-        );
-      }
-      // Inline [index] with the first paragraph's content, render rest as blocks
-      const first = def.children[0];
-      if (first?.type === 'paragraph') {
-        const para = first as SupramarkParagraphNode;
-        return (
-          <React.Fragment key={key}>
-            <p className={classNames.paragraph}>
-              <sup>[{def.index}]</sup>{' '}
-              {renderInlineNodes(para.children, classNames, config, rendered)}
-            </p>
-            {def.children
-              .slice(1)
-              .map((child, idx) =>
-                renderNode(child, idx + 1, classNames, config, containerRenderers, rendered)
-              )}
-          </React.Fragment>
+          <p key={key} className={classNames.paragraph}>
+            {renderInlineNodes(def.children, classNames, config)}
+          </p>
         );
       }
       return (
-        <div key={key} className={classNames.paragraph}>
-          <sup>[{def.index}]</sup>
-          {def.children.map((child, index) =>
-            renderNode(child, index, classNames, config, containerRenderers, rendered)
-          )}
-        </div>
+        <p key={key} className={classNames.paragraph}>
+          <sup>[{def.index}]</sup> {renderInlineNodes(def.children, classNames, config)}
+        </p>
       );
     }
     case 'text':
@@ -804,18 +560,16 @@ function renderNode(
 function renderInlineNodes(
   nodes: SupramarkNode[],
   classNames: SupramarkClassNames,
-  config?: SupramarkConfig,
-  rendered?: Map<string, DiagramRenderResult>
+  config?: SupramarkConfig
 ): React.ReactNode {
-  return nodes.map((node, index) => renderInlineNode(node, index, classNames, config, rendered));
+  return nodes.map((node, index) => renderInlineNode(node, index, classNames, config));
 }
 
 function renderInlineNode(
   node: SupramarkNode,
   key: number,
   classNames: SupramarkClassNames,
-  config?: SupramarkConfig,
-  rendered?: Map<string, DiagramRenderResult>
+  config?: SupramarkConfig
 ): React.ReactNode {
   switch (node.type) {
     case 'text': {
@@ -826,7 +580,7 @@ function renderInlineNode(
       const strongNode = node as SupramarkStrongNode;
       return (
         <strong key={key} className={classNames.strong}>
-          {renderInlineNodes(strongNode.children, classNames, config, rendered)}
+          {renderInlineNodes(strongNode.children, classNames)}
         </strong>
       );
     }
@@ -834,7 +588,7 @@ function renderInlineNode(
       const emphasisNode = node as SupramarkEmphasisNode;
       return (
         <em key={key} className={classNames.emphasis}>
-          {renderInlineNodes(emphasisNode.children, classNames, config, rendered)}
+          {renderInlineNodes(emphasisNode.children, classNames)}
         </em>
       );
     }
@@ -851,17 +605,6 @@ function renderInlineNode(
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-math'])) {
         return mathNode.value;
       }
-      const result = rendered?.get(`m:0:${mathNode.value}`);
-      if (result?.success) {
-        return (
-          <span
-            key={key}
-            className={classNames.inlineCode}
-            dangerouslySetInnerHTML={{ __html: result.payload }}
-          />
-        );
-      }
-      // Fallback: raw TeX
       return (
         <span key={key} data-suprimark-math="inline" className={classNames.inlineCode}>
           {mathNode.value}
@@ -872,7 +615,7 @@ function renderInlineNode(
       const linkNode = node as SupramarkLinkNode;
       return (
         <a key={key} href={linkNode.url} title={linkNode.title} className={classNames.link}>
-          {renderInlineNodes(linkNode.children, classNames, config, rendered)}
+          {renderInlineNodes(linkNode.children, classNames)}
         </a>
       );
     }
@@ -894,11 +637,11 @@ function renderInlineNode(
     case 'delete': {
       const deleteNode = node as SupramarkDeleteNode;
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-gfm'])) {
-        return renderInlineNodes(deleteNode.children, classNames, config, rendered);
+        return renderInlineNodes(deleteNode.children, classNames, config);
       }
       return (
         <del key={key} className={classNames.delete}>
-          {renderInlineNodes(deleteNode.children, classNames, config, rendered)}
+          {renderInlineNodes(deleteNode.children, classNames, config)}
         </del>
       );
     }

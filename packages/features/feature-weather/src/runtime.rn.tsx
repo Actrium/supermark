@@ -113,7 +113,10 @@ const localStyles = StyleSheet.create({
 /**
  * RN 渲染器 for :::weather
  */
-export function renderWeatherContainerRN({ node, key }: ContainerRNRenderArgs): React.ReactNode {
+export function renderWeatherContainerRN({
+  node,
+  key,
+}: ContainerRNRenderArgs): React.ReactNode {
   const data = (node?.data ?? {}) as WeatherData;
   const { format, location, units = 'metric', parseError, rawConfig } = data;
 
@@ -123,7 +126,9 @@ export function renderWeatherContainerRN({ node, key }: ContainerRNRenderArgs): 
       <View key={key} style={localStyles.error}>
         <Text style={localStyles.errorTitle}>⚠️ Weather 配置错误</Text>
         <Text style={localStyles.errorText}>{parseError}</Text>
-        {rawConfig && <Text style={localStyles.errorCode}>{rawConfig}</Text>}
+        {rawConfig && (
+          <Text style={localStyles.errorCode}>{rawConfig}</Text>
+        )}
       </View>
     );
   }
@@ -156,9 +161,7 @@ export function renderWeatherContainerRN({ node, key }: ContainerRNRenderArgs): 
       </View>
       <View style={localStyles.details}>
         <Text style={localStyles.detail}>💧 {weather.humidity}%</Text>
-        <Text style={localStyles.detail}>
-          💨 {weather.wind} {weather.windUnit}
-        </Text>
+        <Text style={localStyles.detail}>💨 {weather.wind} {weather.windUnit}</Text>
       </View>
     </View>
   );

@@ -28,8 +28,8 @@ units: metric
 ```markdown
 :::weather json
 {
-"location": "Tokyo",
-"units": "metric"
+  "location": "Tokyo",
+  "units": "metric"
 }
 :::
 ```
@@ -55,17 +55,16 @@ key[count]{field1,field2,...}:
 
 ## 配置项
 
-| 字段           | 类型                       | 说明                         |
-| -------------- | -------------------------- | ---------------------------- |
-| `location`     | string                     | **必填** 城市/位置名称       |
-| `units`        | `"metric"` \| `"imperial"` | 温度单位：摄氏（默认）或华氏 |
-| `showForecast` | boolean                    | 是否显示天气预报             |
-| `days`         | number                     | 预报天数                     |
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `location` | string | **必填** 城市/位置名称 |
+| `units` | `"metric"` \| `"imperial"` | 温度单位：摄氏（默认）或华氏 |
+| `showForecast` | boolean | 是否显示天气预报 |
+| `days` | number | 预报天数 |
 
 ## 渲染效果
 
 Weather 卡片会显示：
-
 - 📍 位置名称
 - 🌡️ 当前温度
 - ☀️/☁️/🌧️ 天气图标

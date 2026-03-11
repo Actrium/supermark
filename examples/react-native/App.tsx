@@ -11,14 +11,30 @@ import {
 import { Supramark } from '@supramark/rn';
 // import { DiagramRenderProvider } from '@supramark/rn-diagram-worker'; // 临时注释掉以避免LRUCache问题
 import type { SupramarkConfig } from '@supramark/core';
-import { createCoreMarkdownFeatureConfig } from '@supramark/feature-core-markdown';
-import { createGfmFeatureConfig } from '@supramark/feature-gfm';
-import { createAdmonitionFeatureConfig } from '@supramark/feature-admonition';
-import { createDefinitionListFeatureConfig } from '@supramark/feature-definition-list';
-import { createHtmlPageFeatureConfig } from '@supramark/feature-html-page';
-import { createMapFeatureConfig } from '@supramark/feature-map';
-import { createDiagramVegaLiteFeatureConfig } from '@supramark/feature-diagram-vega-lite';
-import { createDiagramEchartsFeatureConfig } from '@supramark/feature-diagram-echarts';
+import {
+  createCoreMarkdownFeatureConfig,
+} from '@supramark/feature-core-markdown';
+import {
+  createGfmFeatureConfig,
+} from '@supramark/feature-gfm';
+import {
+  createAdmonitionFeatureConfig,
+} from '@supramark/feature-admonition';
+import {
+  createDefinitionListFeatureConfig,
+} from '@supramark/feature-definition-list';
+import {
+  createHtmlPageFeatureConfig,
+} from '@supramark/feature-html-page';
+import {
+  createMapFeatureConfig,
+} from '@supramark/feature-map';
+import {
+  createDiagramVegaLiteFeatureConfig,
+} from '@supramark/feature-diagram-vega-lite';
+import {
+  createDiagramEchartsFeatureConfig,
+} from '@supramark/feature-diagram-echarts';
 import { DEMOS } from '../demos';
 
 // 添加全局错误处理
@@ -88,22 +104,52 @@ interface DemoItem {
 function InnerApp() {
   const [activeId, setActiveId] = useState<DemoId | null>(null);
   const [theme, setTheme] = useState<Theme>('light');
-  const activeDemo = activeId ? (DEMOS.find(d => d.id === activeId) ?? null) : null;
+  const activeDemo = activeId ? DEMOS.find((d) => d.id === activeId) ?? null : null;
 
   const isDark = theme === 'dark';
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
 
   // 动态样式
-  const containerStyle = [styles.container, isDark && { backgroundColor: '#0d1117' }];
-  const headerStyle = [styles.header, isDark && { borderBottomColor: '#30363d' }];
-  const titleStyle = [styles.title, isDark && { color: '#ffffff' }];
-  const subtitleStyle = [styles.subtitle, isDark && { color: '#8b949e' }];
-  const menuContentStyle = [styles.menuContent, isDark && { backgroundColor: '#0d1117' }];
-  const menuItemStyle = [styles.menuItem, isDark && { borderBottomColor: '#21262d' }];
-  const menuItemTitleStyle = [styles.menuItemTitle, isDark && { color: '#ffffff' }];
-  const menuItemDescStyle = [styles.menuItemDesc, isDark && { color: '#8b949e' }];
-  const themeButtonStyle = [styles.themeButton, isDark && { backgroundColor: '#21262d' }];
-  const themeButtonTextStyle = [styles.themeButtonText, isDark && { color: '#58a6ff' }];
+  const containerStyle = [
+    styles.container,
+    isDark && { backgroundColor: '#0d1117' },
+  ];
+  const headerStyle = [
+    styles.header,
+    isDark && { borderBottomColor: '#30363d' },
+  ];
+  const titleStyle = [
+    styles.title,
+    isDark && { color: '#ffffff' },
+  ];
+  const subtitleStyle = [
+    styles.subtitle,
+    isDark && { color: '#8b949e' },
+  ];
+  const menuContentStyle = [
+    styles.menuContent,
+    isDark && { backgroundColor: '#0d1117' },
+  ];
+  const menuItemStyle = [
+    styles.menuItem,
+    isDark && { borderBottomColor: '#21262d' },
+  ];
+  const menuItemTitleStyle = [
+    styles.menuItemTitle,
+    isDark && { color: '#ffffff' },
+  ];
+  const menuItemDescStyle = [
+    styles.menuItemDesc,
+    isDark && { color: '#8b949e' },
+  ];
+  const themeButtonStyle = [
+    styles.themeButton,
+    isDark && { backgroundColor: '#21262d' },
+  ];
+  const themeButtonTextStyle = [
+    styles.themeButtonText,
+    isDark && { color: '#58a6ff' },
+  ];
 
   // 菜单页：展示所有演示项列表
   if (!activeDemo) {
@@ -113,9 +159,7 @@ function InnerApp() {
           <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
               <Text style={titleStyle}>supramark Demo</Text>
-              <Text style={subtitleStyle}>
-                选择要演示的类型，进入详情查看 markdown 与渲染结果。
-              </Text>
+              <Text style={subtitleStyle}>选择要演示的类型，进入详情查看 markdown 与渲染结果。</Text>
             </View>
             <TouchableOpacity style={themeButtonStyle} onPress={toggleTheme}>
               <Text style={themeButtonTextStyle}>{isDark ? '☀️ Light' : '🌙 Dark'}</Text>
@@ -123,7 +167,7 @@ function InnerApp() {
           </View>
         </View>
         <ScrollView contentContainerStyle={menuContentStyle}>
-          {DEMOS.map(demo => (
+          {DEMOS.map((demo) => (
             <TouchableOpacity
               key={demo.id}
               style={menuItemStyle}
@@ -139,15 +183,30 @@ function InnerApp() {
   }
 
   // 详情页：展示某一类型的 markdown 源与渲染结果
-  const detailContentStyle = [styles.detailContent, isDark && { backgroundColor: '#0d1117' }];
-  const demoTitleStyle = [styles.demoTitle, isDark && { color: '#ffffff' }];
-  const demoDescriptionStyle = [styles.demoDescription, isDark && { color: '#8b949e' }];
-  const demoSectionTitleStyle = [styles.demoSectionTitle, isDark && { color: '#ffffff' }];
+  const detailContentStyle = [
+    styles.detailContent,
+    isDark && { backgroundColor: '#0d1117' },
+  ];
+  const demoTitleStyle = [
+    styles.demoTitle,
+    isDark && { color: '#ffffff' },
+  ];
+  const demoDescriptionStyle = [
+    styles.demoDescription,
+    isDark && { color: '#8b949e' },
+  ];
+  const demoSectionTitleStyle = [
+    styles.demoSectionTitle,
+    isDark && { color: '#ffffff' },
+  ];
   const sourceBlockStyle = [
     styles.sourceBlock,
     isDark && { backgroundColor: '#161b22', borderColor: '#30363d' },
   ];
-  const sourceTextStyle = [styles.sourceText, isDark && { color: '#e0e0e0' }];
+  const sourceTextStyle = [
+    styles.sourceText,
+    isDark && { color: '#e0e0e0' },
+  ];
 
   return (
     <SafeAreaView style={containerStyle}>
@@ -174,7 +233,7 @@ function InnerApp() {
             markdown={activeDemo.markdown}
             theme={theme}
             config={BASE_CONFIG}
-            onOpenHtmlPage={node => {
+            onOpenHtmlPage={(node) => {
               Alert.alert(
                 node.title || 'HTML Page',
                 '这里应该在宿主中打开独立 WebView。当前只是示意回调已触发。'
@@ -191,7 +250,7 @@ export default function App() {
   return (
     // 临时注释掉DiagramRenderProvider以避免LRUCache兼容性问题
     // <DiagramRenderProvider diagramConfig={BASE_CONFIG.diagram}>
-    <InnerApp />
+      <InnerApp />
     // </DiagramRenderProvider>
   );
 }

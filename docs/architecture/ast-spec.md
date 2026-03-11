@@ -509,6 +509,7 @@ interface SupramarkThematicBreakNode extends SupramarkBaseNode {
 
 ```markdown
 ---
+
 ---
 
 ---

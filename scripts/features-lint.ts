@@ -307,11 +307,8 @@ async function main(): Promise<void> {
   if (containerFeatures.length > 0) {
     log('\n检查 containerNames 全局唯一性...\n', 'blue');
 
-    const {
-      passed: uniquenessPassed,
-      conflicts,
-      featureContainers,
-    } = checkContainerNamesUniqueness(containerFeatures);
+    const { passed: uniquenessPassed, conflicts, featureContainers } =
+      checkContainerNamesUniqueness(containerFeatures);
 
     // 显示每个 feature 注册的 containerNames
     for (const [featureName, containers] of featureContainers) {

@@ -29,7 +29,7 @@ export default defineConfig({
           // 将 React 相关库分离到单独的 chunk
           'react-vendor': ['react', 'react-dom'],
           // 将 Supramark 分离到单独的 chunk（可选）
-          supramark: ['@supramark/web', '@supramark/core'],
+          'supramark': ['@supramark/web', '@supramark/core'],
         },
       },
     },

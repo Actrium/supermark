@@ -80,13 +80,11 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     color: 'white',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    width: '100%',
-    maxWidth: '100%',
-    boxSizing: 'border-box',
+    maxWidth: '320px',
   },
   header: {
     display: 'flex',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '12px',
   },
@@ -94,6 +92,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '18px',
     fontWeight: 600,
     margin: 0,
+  },
+  format: {
+    fontSize: '10px',
+    background: 'rgba(255,255,255,0.2)',
+    padding: '2px 6px',
+    borderRadius: '4px',
   },
   main: {
     display: 'flex',
@@ -137,9 +141,12 @@ const styles: Record<string, React.CSSProperties> = {
 /**
  * Web 渲染器 for :::weather
  */
-export function renderWeatherContainerWeb({ node, key }: ContainerWebRenderArgs): React.ReactNode {
+export function renderWeatherContainerWeb({
+  node,
+  key,
+}: ContainerWebRenderArgs): React.ReactNode {
   const data = (node?.data ?? {}) as WeatherData;
-  const { location, units = 'metric', parseError, rawConfig } = data;
+  const { format, location, units = 'metric', parseError, rawConfig } = data;
 
   // 解析错误时显示错误信息
   if (parseError) {
@@ -147,7 +154,9 @@ export function renderWeatherContainerWeb({ node, key }: ContainerWebRenderArgs)
       <div key={key} style={styles.error}>
         <div style={styles.errorTitle}>⚠️ Weather 配置错误</div>
         <div>{parseError}</div>
-        {rawConfig && <pre style={styles.errorCode}>{rawConfig}</pre>}
+        {rawConfig && (
+          <pre style={styles.errorCode}>{rawConfig}</pre>
+        )}
       </div>
     );
   }
@@ -169,6 +178,7 @@ export function renderWeatherContainerWeb({ node, key }: ContainerWebRenderArgs)
     <div key={key} style={styles.container}>
       <div style={styles.header}>
         <h4 style={styles.location}>{location}</h4>
+        <span style={styles.format}>{format.toUpperCase()}</span>
       </div>
       <div style={styles.main}>
         <WeatherIcon type={weather.condition} />
@@ -179,9 +189,7 @@ export function renderWeatherContainerWeb({ node, key }: ContainerWebRenderArgs)
       </div>
       <div style={styles.details}>
         <span>💧 {weather.humidity}%</span>
-        <span>
-          💨 {weather.wind} {weather.windUnit}
-        </span>
+        <span>💨 {weather.wind} {weather.windUnit}</span>
       </div>
     </div>
   );

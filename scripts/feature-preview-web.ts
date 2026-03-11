@@ -64,11 +64,10 @@ ${colors.blue}Examples:${colors.reset}
 
   log(`\nStarting preview for: ${selected.shortName}\n`, 'green');
 
-  // Use the workspace `dev` script so tooling stays declared in package devDependencies.
   const child = spawn(
-    process.execPath,
-    ['run', 'dev', '--', '--host', '--open', `?feature=${selected.shortName}`],
-    { cwd: CSR_DIR, stdio: 'inherit' }
+    'pnpm',
+    ['exec', 'vite', '--host', '--open', `/?feature=${selected.shortName}`],
+    { cwd: CSR_DIR, stdio: 'inherit' },
   );
 
   child.on('exit', code => process.exit(code ?? 0));

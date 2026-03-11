@@ -12,6 +12,6 @@ bun add @supramark/core @supramark/feature-gfm
 
 类型: `gfm`
 
----
 
-_此文档由 scripts/doc-gen-features.ts 自动生成_
+---
+*此文档由 scripts/doc-gen-features.ts 自动生成*

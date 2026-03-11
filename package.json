@@ -33,6 +33,9 @@
     "feature:preview:windows": "bun --cwd examples/react-native windows"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.2.79",
+    "@types/react-dom": "^18.2.25",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "eslint": "^8.50.0",

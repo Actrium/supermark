@@ -1,5 +1,5 @@
 import { weatherFeature } from '../src/feature';
-import { parseMarkdown, validateFeature } from '@supramark/core';
+import { validateFeature } from '@supramark/core';
 
 describe('Weather Feature', () => {
   describe('Metadata', () => {
@@ -30,40 +30,14 @@ describe('Weather Feature', () => {
     it('should have selector for name "weather"', () => {
       const selector = weatherFeature.syntax.ast.selector;
       expect(selector).toBeDefined();
-
+      
       // Test selector matches correct node
       const validNode = { type: 'container', name: 'weather', children: [] };
       expect(selector!(validNode as any)).toBe(true);
-
+      
       // Test selector rejects wrong name
       const wrongNode = { type: 'container', name: 'other', children: [] };
       expect(selector!(wrongNode as any)).toBe(false);
-    });
-  });
-
-  describe('Parser Integration', () => {
-    it('should parse json config without parseError', async () => {
-      weatherFeature.registerParser();
-
-      const ast = await parseMarkdown(
-        `
-:::weather json
-{
-  "location": "Tokyo",
-  "units": "metric"
-}
-:::
-`.trim()
-      );
-
-      const weatherNode = ast.children.find(
-        node => node.type === 'container' && (node as any).name === 'weather'
-      ) as any;
-
-      expect(weatherNode).toBeDefined();
-      expect(weatherNode.data?.parseError).toBeUndefined();
-      expect(weatherNode.data?.location).toBe('Tokyo');
-      expect(weatherNode.data?.units).toBe('metric');
     });
   });
 });

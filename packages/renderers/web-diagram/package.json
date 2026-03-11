@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "description": "supramark 在 Web 端的图表渲染辅助模块（Mermaid 等），用于在浏览器中就地渲染 diagram 节点为 SVG。",
   "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
   "license": "MIT",
   "scripts": {
     "build": "node -e \"process.exit(0)\""

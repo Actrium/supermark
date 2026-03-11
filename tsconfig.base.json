@@ -14,14 +14,13 @@
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "paths": {
+      "react": ["node_modules/.bun/node_modules/@types/react/index.d.ts"],
+      "react/jsx-runtime": ["node_modules/.bun/node_modules/@types/react/jsx-runtime.d.ts"],
+      "react-dom": ["node_modules/.bun/node_modules/@types/react-dom/index.d.ts"],
       "@supramark/core": ["packages/core/src/index.ts"],
       "@supramark/feature-*": ["packages/features/feature-*/src/index.ts"],
       "@supramark/web": ["packages/renderers/web/src/index.ts"],
-      "@supramark/web/client": ["packages/renderers/web/src/client.ts"],
-      "@supramark/rn": ["packages/renderers/rn/src/index.ts"],
-      "@supramark/diagram-engine": ["packages/renderers/diagram-engine/src/index.ts"],
-      "@supramark/rn-diagram-worker": ["packages/renderers/rn-diagram-worker/src/index.ts"]
+      "@supramark/rn": ["packages/renderers/rn/src/index.ts"]
     }
-  },
-  "files": ["types/diagram-optional-deps.d.ts"]
+  }
 }

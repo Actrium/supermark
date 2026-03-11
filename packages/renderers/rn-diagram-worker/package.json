@@ -1,7 +1,7 @@
 {
   "name": "@supramark/rn-diagram-worker",
-  "version": "0.2.0",
-  "description": "Diagram/math rendering service for React Native, powered by @supramark/diagram-engine (no WebView required).",
+  "version": "0.1.0",
+  "description": "基于单个隐藏 WebView 的图表渲染服务（Mermaid/PlantUML/Vega 等）的通用封装。",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "license": "MIT",
@@ -10,19 +10,16 @@
   },
   "peerDependencies": {
     "react": ">=18.0.0",
-    "react-native": ">=0.72.0"
+    "react-native": ">=0.72.0",
+    "react-native-webview": ">=13.0.0"
   },
   "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    },
-    "react-native": {
-      "optional": true
-    }
+    "react": { "optional": true },
+    "react-native": { "optional": true },
+    "react-native-webview": { "optional": true }
   },
   "dependencies": {
-    "@supramark/core": "workspace:*",
-    "@supramark/diagram-engine": "workspace:*"
+    "@supramark/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

@@ -25,3 +25,4 @@ if (!existsSync(resolve(rootDir, 'node_modules'))) {
 // 启动 Expo 开发服务器
 console.log('[supramark/native] 启动 Expo（expo start）...');
 run('bunx', ['expo', 'start'], here);
+

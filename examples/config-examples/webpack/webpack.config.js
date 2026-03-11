@@ -58,7 +58,10 @@ module.exports = (env, argv) => {
         // CSS
         {
           test: /\.css$/,
-          use: [isProduction ? MiniCssExtractPlugin.loader : 'style-loader', 'css-loader'],
+          use: [
+            isProduction ? MiniCssExtractPlugin.loader : 'style-loader',
+            'css-loader',
+          ],
         },
 
         // 图片和字体

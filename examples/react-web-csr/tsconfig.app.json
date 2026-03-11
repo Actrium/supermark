@@ -29,10 +29,8 @@
     "paths": {
       "@supramark/core": ["packages/core/src"],
       "@supramark/web": ["packages/renderers/web/src"],
-      "@supramark/web/client": ["packages/renderers/web/src/client.ts"],
-      "@supramark/diagram-engine": ["packages/renderers/diagram-engine/src"],
       "@supramark/feature-weather": ["packages/features/container/feature-weather/src"]
     }
   },
-  "include": ["src", "../../types/diagram-optional-deps.d.ts"]
+  "include": ["src"]
 }

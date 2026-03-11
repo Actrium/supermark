@@ -163,22 +163,10 @@ export const Supramark: React.FC<SupramarkProps> = ({
   }, [markdown, ast, onError]);
 
   const mergedContainerRenderers = useMemo(() => {
-    // 1. 从传入的 config.features 中提取
-    const fromFeatures: Record<string, ContainerRendererRN> = {};
-    if (config?.features) {
-      config.features.forEach(f => {
-        if (f.renderers?.rn) {
-          const nodeName = (f.syntax?.ast as any)?.type;
-          if (nodeName) {
-            fromFeatures[nodeName] = f.renderers.rn as any;
-          }
-        }
-      });
-    }
-
-    // 2. 合并：手动传入的 containerRenderers 优先级最高
-    return { ...fromFeatures, ...(containerRenderers ?? {}) };
-  }, [containerRenderers, config]);
+    // FeatureConfig 只描述启用状态与 options，不再携带 renderer 定义。
+    // container 渲染器需要由宿主显式注入，避免运行时隐式耦合到 feature 包实现。
+    return containerRenderers ?? {};
+  }, [containerRenderers]);
 
   // 解析错误降级：显示错误信息或原始 markdown
   if (parseError) {
@@ -219,6 +207,7 @@ function renderNode(
   onOpenHtmlPage?: (node: SupramarkContainerNode) => void,
   containerRenderers?: Record<string, ContainerRendererRN>
 ): React.ReactNode {
+
   switch (node.type) {
     case 'paragraph':
       return (
@@ -294,9 +283,8 @@ function renderNode(
           styles,
           config,
           onOpenHtmlPage,
-          renderNode: (n, k) =>
-            renderNode(n, k, styles, config, onOpenHtmlPage, containerRenderers),
-          renderChildren: children =>
+          renderNode: (n, k) => renderNode(n, k, styles, config, onOpenHtmlPage, containerRenderers),
+          renderChildren: (children) =>
             children.map((child, index) =>
               renderNode(child, index, styles, config, onOpenHtmlPage, containerRenderers)
             ),
@@ -365,12 +353,8 @@ function renderNode(
 
         return (
           <View key={key} style={styles.listItem}>
-            {title ? (
-              <Text style={[styles.listItemText, { fontWeight: '600' }]}>{title}</Text>
-            ) : null}
-            <Text style={styles.listItemText}>
-              {renderInlineNodes(container.children, styles, config)}
-            </Text>
+            {title ? <Text style={[styles.listItemText, { fontWeight: '600' }]}>{title}</Text> : null}
+            <Text style={styles.listItemText}>{renderInlineNodes(container.children, styles, config)}</Text>
           </View>
         );
       }
@@ -378,11 +362,7 @@ function renderNode(
       // 默认：渲染为通用容器块
       return (
         <View key={key} style={styles.listItem}>
-          {container.params && (
-            <Text style={[styles.listItemText, { fontWeight: '600' }]}>
-              {container.name}: {container.params}
-            </Text>
-          )}
+          {container.params && <Text style={[styles.listItemText, { fontWeight: '600' }]}>{container.name}: {container.params}</Text>}
           {container.children.map((child, index) =>
             renderNode(child, index, styles, config, onOpenHtmlPage, containerRenderers)
           )}
@@ -756,7 +736,8 @@ function renderMapNodeFromContainer(
       longitudeDelta,
     };
 
-    const hasMarker = marker && typeof marker.lat === 'number' && typeof marker.lng === 'number';
+    const hasMarker =
+      marker && typeof marker.lat === 'number' && typeof marker.lng === 'number';
 
     return (
       <View key={key} style={styles.mapCard}>
