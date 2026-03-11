@@ -29,13 +29,13 @@ import type {
   SupramarkBlockquoteNode,
   SupramarkThematicBreakNode,
   SupramarkConfig,
-  SUPRAMARK_ADMONITION_KINDS,
 } from '@supramark/core';
 import {
   parseMarkdown,
   isFeatureEnabled,
   warnIfUnknownDiagramEngine,
   getFeatureOptionsAs,
+  SUPRAMARK_ADMONITION_KINDS,
 } from '@supramark/core';
 import type { DiagramRenderResult, DiagramRenderService } from '@supramark/diagram-engine';
 import {
@@ -242,24 +242,10 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
     };
   }, [markdown, ast, diagramEngine, config]);
 
-  const mergedContainerRenderers = useMemo(() => {
-    // 1. 从传入的 config.features 中提取
-    const fromFeatures: Record<string, ContainerRendererWeb> = {};
-    if (config?.features) {
-      config.features.forEach(f => {
-        if (f.renderers?.web) {
-          // 如果 feature.ts 中定义了 nodeName，则使用它作为 key
-          const nodeName = (f.syntax?.ast as any)?.type;
-          if (nodeName) {
-            fromFeatures[nodeName] = f.renderers.web as any;
-          }
-        }
-      });
-    }
-
-    // 2. 合并：手动传入的 containerRenderers 优先级最高
-    return { ...fromFeatures, ...(containerRenderers ?? {}) };
-  }, [containerRenderers, config]);
+  const mergedContainerRenderers = useMemo(
+    () => ({ ...(containerRenderers ?? {}) }),
+    [containerRenderers]
+  );
 
   // 解析错误降级：显示错误信息或原始 markdown
   if (parseError) {
@@ -298,7 +284,7 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
 // ── Render tree (purely synchronous) ──────────────────────────────────
 
 function renderNode(
-  node: SupramarkNode,
+  node: any,
   key: number,
   classNames: SupramarkClassNames,
   config?: SupramarkConfig,

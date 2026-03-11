@@ -1,10 +1,21 @@
 let echartsModule: any = null;
 
+function resolveEchartsApi(mod: any): any {
+  // Different bundlers/runtimes may expose ECharts via default export.
+  if (mod && typeof mod.init === 'function') return mod;
+  if (mod?.default && typeof mod.default.init === 'function') return mod.default;
+  if (mod?.default?.default && typeof mod.default.default.init === 'function') {
+    return mod.default.default;
+  }
+  return mod;
+}
+
 async function ensureLoaded(): Promise<any> {
   if (echartsModule) return echartsModule;
   try {
     // Dynamic import of optional peer dependency
-    echartsModule = await import(/* webpackIgnore: true */ 'echarts');
+    const mod = await import(/* webpackIgnore: true */ 'echarts');
+    echartsModule = resolveEchartsApi(mod);
     return echartsModule;
   } catch (err) {
     throw new Error(
@@ -19,6 +30,9 @@ export async function renderECharts(
   options?: Record<string, unknown>
 ): Promise<string> {
   const echarts = await ensureLoaded();
+  if (!echarts || typeof echarts.init !== 'function') {
+    throw new Error('ECharts API is not available in this runtime (echarts.init missing).');
+  }
 
   let option: Record<string, unknown>;
   try {

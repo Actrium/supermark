@@ -15,6 +15,8 @@
     "test": "bun run --workspaces --if-present test",
     "test:core": "bun run --filter @supramark/core test",
     "test:features": "bun run --filter '@supramark/feature-*' test",
+    "link": "node scripts/supramark-link.js link",
+    "unlink": "node scripts/supramark-link.js unlink",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx && bun run features:lint",
     "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
     "features:lint": "bun scripts/features-lint.ts",

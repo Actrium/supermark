@@ -36,13 +36,58 @@ function encodeBytes(data: Uint8Array): string {
   return result;
 }
 
+function utf8Encode(text: string): Uint8Array {
+  const GlobalTextEncoder = (globalThis as any).TextEncoder;
+  if (typeof GlobalTextEncoder === 'function') {
+    return new GlobalTextEncoder().encode(text);
+  }
+
+  // RN/Hermes fallback when TextEncoder is unavailable.
+  const bytes: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    let codePoint = text.charCodeAt(i);
+
+    if (codePoint >= 0xd800 && codePoint <= 0xdbff && i + 1 < text.length) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        codePoint = 0x10000 + ((codePoint - 0xd800) << 10) + (next - 0xdc00);
+        i++;
+      }
+    }
+
+    if (codePoint <= 0x7f) {
+      bytes.push(codePoint);
+    } else if (codePoint <= 0x7ff) {
+      bytes.push(0xc0 | (codePoint >> 6), 0x80 | (codePoint & 0x3f));
+    } else if (codePoint <= 0xffff) {
+      bytes.push(
+        0xe0 | (codePoint >> 12),
+        0x80 | ((codePoint >> 6) & 0x3f),
+        0x80 | (codePoint & 0x3f)
+      );
+    } else {
+      bytes.push(
+        0xf0 | (codePoint >> 18),
+        0x80 | ((codePoint >> 12) & 0x3f),
+        0x80 | ((codePoint >> 6) & 0x3f),
+        0x80 | (codePoint & 0x3f)
+      );
+    }
+  }
+
+  return new Uint8Array(bytes);
+}
+
 async function deflateRaw(data: Uint8Array): Promise<Uint8Array> {
   // Browser & modern runtimes: use CompressionStream
   if (typeof CompressionStream !== 'undefined') {
     try {
       const cs = new CompressionStream('deflate-raw');
       const writer = cs.writable.getWriter();
-      writer.write(data);
+      const chunk = data.buffer instanceof ArrayBuffer
+        ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+        : Uint8Array.from(data);
+      await writer.write(chunk);
       writer.close();
       const reader = cs.readable.getReader();
       const chunks: Uint8Array[] = [];
@@ -64,13 +109,23 @@ async function deflateRaw(data: Uint8Array): Promise<Uint8Array> {
     }
   }
 
-  // Node.js / Bun fallback
-  const { deflateRawSync } = await import('node:zlib');
-  return new Uint8Array(deflateRawSync(Buffer.from(data)));
+  // React Native / non-Node fallback: pure JS deflate (pako)
+  try {
+    const pako = await import('pako');
+    const deflater = (pako as any).deflateRaw ?? (pako as any).default?.deflateRaw;
+    if (typeof deflater === 'function') {
+      const out = deflater(data);
+      return out instanceof Uint8Array ? out : new Uint8Array(out);
+    }
+  } catch {
+    // fallthrough
+  }
+
+  throw new Error('deflate-raw is not available in this runtime. Install pako or provide CompressionStream support.');
 }
 
 async function encodePlantUmlText(text: string): Promise<string> {
-  const utf8 = new TextEncoder().encode(text);
+  const utf8 = utf8Encode(text);
   const deflated = await deflateRaw(utf8);
   return encodeBytes(deflated);
 }

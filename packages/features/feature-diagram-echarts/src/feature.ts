@@ -93,6 +93,11 @@ export const diagramEchartsFeature: SupramarkFeature<SupramarkDiagramNode> = {
           version: '^13.0.0',
           type: 'npm',
         },
+        {
+          name: 'react-native-webview',
+          version: '>=11.0.0',
+          type: 'npm',
+        },
       ],
     },
     web: {
@@ -246,7 +251,7 @@ export const diagramEchartsFeature: SupramarkFeature<SupramarkDiagramNode> = {
       {
         question: 'RN 端如何渲染 ECharts？',
         answer:
-          '通过 @supramark/rn-diagram-worker 中的 headless WebView 加载 ECharts 并生成 SVG，再交给 RN 端呈现。',
+          '通过 @supramark/rn-diagram-worker 中的 EChartsWebViewBridge 组件，在隐藏的 WebView 中加载 ECharts 库并渲染为 SVG，再通过消息协议回传给 RN 端用 react-native-svg 呈现。此方案同时兼容 JSC (iOS) 和 Hermes (Android) 运行时。',
       },
     ],
   },

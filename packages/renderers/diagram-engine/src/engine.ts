@@ -117,7 +117,7 @@ export class DiagramEngine implements DiagramRenderService {
       }
       case 'dot': {
         const { renderDot } = await import('./engines/dot.js');
-        return { payload: await renderDot(code), format: 'svg' };
+        return { payload: await renderDot(code, options), format: 'svg' };
       }
       case 'echarts': {
         const { renderECharts } = await import('./engines/echarts.js');
@@ -126,7 +126,7 @@ export class DiagramEngine implements DiagramRenderService {
       case 'vega':
       case 'vega-lite': {
         const { renderVegaLite } = await import('./engines/vega-lite.js');
-        return { payload: await renderVegaLite(code, normalizedEngine), format: 'svg' };
+        return { payload: await renderVegaLite(code, normalizedEngine, options), format: 'svg' };
       }
       case 'math': {
         const { renderKatex } = await import('./engines/katex.js');

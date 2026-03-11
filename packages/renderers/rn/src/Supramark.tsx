@@ -38,6 +38,7 @@ import {
 } from '@supramark/core';
 import { DiagramNode } from './DiagramNode';
 import { MathBlock } from './MathBlock';
+import { MathInline } from './MathInline';
 import {
   type SupramarkStyles,
   defaultStyles,
@@ -162,23 +163,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
     };
   }, [markdown, ast, onError]);
 
-  const mergedContainerRenderers = useMemo(() => {
-    // 1. 从传入的 config.features 中提取
-    const fromFeatures: Record<string, ContainerRendererRN> = {};
-    if (config?.features) {
-      config.features.forEach(f => {
-        if (f.renderers?.rn) {
-          const nodeName = (f.syntax?.ast as any)?.type;
-          if (nodeName) {
-            fromFeatures[nodeName] = f.renderers.rn as any;
-          }
-        }
-      });
-    }
-
-    // 2. 合并：手动传入的 containerRenderers 优先级最高
-    return { ...fromFeatures, ...(containerRenderers ?? {}) };
-  }, [containerRenderers, config]);
+  const mergedContainerRenderers = useMemo(() => ({ ...(containerRenderers ?? {}) }), [containerRenderers]);
 
   // 解析错误降级：显示错误信息或原始 markdown
   if (parseError) {
@@ -252,25 +237,53 @@ function renderNode(
     }
     case 'list': {
       const list = node as SupramarkListNode;
+      const start = typeof list.start === 'number' ? list.start : 1;
+      const isOrdered = list.ordered === true;
+
       return (
         <View key={key} style={styles.list}>
-          {list.children.map((item, index) =>
-            renderNode(item, index, styles, config, onOpenHtmlPage, containerRenderers)
-          )}
+          {list.children.map((item, index) => {
+            if (item.type !== 'list_item') {
+              return renderNode(item, index, styles, config, onOpenHtmlPage, containerRenderers);
+            }
+
+            const listItem = item as SupramarkListItemNode;
+            const isTaskList = listItem.checked !== undefined;
+            const marker = isTaskList
+              ? listItem.checked === true
+                ? '☑'
+                : '☐'
+              : isOrdered
+                ? `${start + index}.`
+                : '•';
+
+            return (
+              <View key={index} style={styles.listItem}>
+                <Text style={styles.bullet}>{marker}</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  {listItem.children.map((child, childIndex) =>
+                    renderNode(child, childIndex, styles, config, onOpenHtmlPage, containerRenderers)
+                  )}
+                </View>
+              </View>
+            );
+          })}
         </View>
       );
     }
     case 'list_item': {
       const item = node as SupramarkListItemNode;
       const isTaskList = item.checked !== undefined;
-      const checkSymbol = item.checked === true ? '☑' : '☐';
+      const marker = isTaskList ? (item.checked === true ? '☑' : '☐') : '•';
 
       return (
         <View key={key} style={styles.listItem}>
-          <Text style={styles.bullet}>{isTaskList ? checkSymbol : '•'}</Text>
-          <Text style={styles.listItemText}>
-            {renderInlineNodes(item.children, styles, config)}
-          </Text>
+          <Text style={styles.bullet}>{marker}</Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {item.children.map((child, index) =>
+              renderNode(child, index, styles, config, onOpenHtmlPage, containerRenderers)
+            )}
+          </View>
         </View>
       );
     }
@@ -402,7 +415,7 @@ function renderNode(
             {list.children.map((item, index) => {
               const defItem = item as SupramarkDefinitionItemNode;
               return (
-                <View key={index} style={styles.listItem}>
+                <View key={index} style={{ marginBottom: 8 }}>
                   <Text style={[styles.listItemText, { fontWeight: '600' }]}>
                     {renderInlineNodes(defItem.term, styles, config)}
                   </Text>
@@ -422,7 +435,7 @@ function renderNode(
           {list.children.map((item, index) => {
             const defItem = item as SupramarkDefinitionItemNode;
             return (
-              <View key={index} style={styles.listItem}>
+              <View key={index} style={{ marginBottom: 8 }}>
                 <Text style={[styles.listItemText, { fontWeight: '600' }]}>
                   {renderInlineNodes(defItem.term, styles, config)}
                 </Text>
@@ -445,16 +458,22 @@ function renderNode(
         // 禁用脚注 Feature 时，直接渲染为普通段落
         return (
           <View key={key} style={styles.listItem}>
-            <Text style={styles.listItemText}>
-              {renderInlineNodes(def.children, styles, config)}
-            </Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              {def.children.map((child, index) =>
+                renderNode(child, index, styles, config, onOpenHtmlPage, containerRenderers)
+              )}
+            </View>
           </View>
         );
       }
       return (
         <View key={key} style={styles.listItem}>
           <Text style={styles.bullet}>[{def.index}]</Text>
-          <Text style={styles.listItemText}>{renderInlineNodes(def.children, styles, config)}</Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {def.children.map((child, index) =>
+              renderNode(child, index, styles, config, onOpenHtmlPage, containerRenderers)
+            )}
+          </View>
         </View>
       );
     }
@@ -550,11 +569,15 @@ function renderInlineNode(
     }
     case 'math_inline': {
       const mathNode = node as SupramarkMathInlineNode;
-      // 行内公式先简单用 inlineCode 样式渲染，后续可接入 KaTeX
+      if (!isFeatureGroupEnabled(config, ['@supramark/feature-math'])) {
+        return mathNode.value;
+      }
       return (
-        <Text key={key} style={styles.inlineCode}>
-          {mathNode.value}
-        </Text>
+        <MathInline
+          key={key}
+          value={mathNode.value}
+          textStyle={styles.paragraph}
+        />
       );
     }
     case 'link': {

@@ -25,6 +25,7 @@ export {
   type ContainerHookContext,
   type ContainerHook,
   registerContainerHook,
+  extractContainerInnerText,
 } from './syntax/container.js';
 
 /**
@@ -51,6 +52,11 @@ export { presetDefault, presetGFM } from './plugin.js';
  * Feature 相关工具函数
  */
 export { isFeatureEnabled, getFeatureOptionsAs } from './feature.js';
+
+/**
+ * 缓存工具（diagram-engine 在 RN 侧依赖）
+ */
+export { LRUCache, createCacheKey, simpleHash } from './cache.js';
 
 // 注意: parseMarkdownWithRemark 不在 React Native 版本中导出
 // 如需使用 remark,请在 Web/Node.js 环境中使用默认入口点

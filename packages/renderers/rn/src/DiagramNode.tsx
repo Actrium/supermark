@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Dimensions, StyleSheet, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 import type { SupramarkDiagramNode, SupramarkDiagramConfig } from '@supramark/core';
-import { useDiagramRender } from '@supramark/rn-diagram-worker';
-import { normalizeSvg } from './svgUtils';
+import type { DiagramRenderResult } from '@supramark/diagram-engine';
+import { useDiagramRender, useDiagramWebViewBridge } from '@supramark/rn-diagram-worker';
+import { normalizeSvg, normalizeSvgLight } from './svgUtils';
 
 export interface DiagramNodeProps {
   node: SupramarkDiagramNode;
@@ -18,7 +19,8 @@ export interface DiagramNodeProps {
 }
 
 export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig }) => {
-  const { render } = useDiagramRender();
+  const diagramRender = useDiagramRender();
+  const webViewBridgeRef = useDiagramWebViewBridge();
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -27,52 +29,81 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
 
   useEffect(() => {
     let cancelled = false;
+    let renderedViaBridge = false;
     setLoading(true);
     setError(null);
     setSvg(null);
 
+    const handleResult = (result: DiagramRenderResult) => {
+      if (cancelled) return;
+
+      if (!result.success) {
+        const errorMsg = result.error
+          ? `${result.error.message}: ${result.error.details || result.payload}`
+          : result.payload || '未知错误';
+
+        if (result.error?.code === 'timeout' && retryCount < maxRetries) {
+          setRetryCount(retryCount + 1);
+          setTimeout(attemptRender, 1000);
+          return;
+        }
+
+        setError(errorMsg);
+        setLoading(false);
+        return;
+      }
+
+      if (result.format === 'svg') {
+        let normalized;
+        try {
+          // WebView bridge 产出的 SVG 已内联 CSS、结构干净，用轻量清理；
+          // SSR / 远端产出（如 mermaid）可能含 <style> 块，用完整清理。
+          const useLightNormalize = renderedViaBridge;
+          normalized = useLightNormalize
+            ? normalizeSvgLight(result.payload)
+            : normalizeSvg(result.payload);
+        } catch (err) {
+          setError(`SVG 处理错误: ${err}`);
+          setLoading(false);
+          return;
+        }
+
+        setSvg(normalized);
+        setLoading(false);
+      } else {
+        setError(`Unsupported diagram format: ${result.format}`);
+        setLoading(false);
+      }
+    };
+
     const attemptRender = () => {
+      const engine = node.engine.toLowerCase();
+      const bridge = webViewBridgeRef.current;
+
+      if (bridge && bridge.engines.includes(engine)) {
+        renderedViaBridge = true;
+        bridge
+          .render({
+            engine,
+            code: node.code,
+            options: node.meta as Record<string, unknown> | undefined,
+          })
+          .then(handleResult)
+          .catch(() => {
+            if (cancelled) return;
+            renderedViaBridge = false;
+            attemptViaEngine();
+          });
+        return;
+      }
+
+      attemptViaEngine();
+    };
+
+    const attemptViaEngine = () => {
       const options = buildRenderOptions(node.engine, node.meta, diagramConfig);
-      render({ engine: node.engine, code: node.code, options })
-        .then(result => {
-          if (cancelled) return;
-
-          if (!result.success) {
-            // 渲染失败，显示错误
-            const errorMsg = result.error
-              ? `${result.error.message}: ${result.error.details || result.payload}`
-              : result.payload || '未知错误';
-
-            // 如果是超时错误且未达到重试上限，自动重试
-            if (result.error?.code === 'timeout' && retryCount < maxRetries) {
-              // debug: Diagram render timeout, retrying...
-              setRetryCount(retryCount + 1);
-              setTimeout(attemptRender, 1000); // 1秒后重试
-              return;
-            }
-
-            setError(errorMsg);
-            setLoading(false);
-            return;
-          }
-
-          if (result.format === 'svg') {
-            let normalized;
-            try {
-              normalized = normalizeSvg(result.payload);
-            } catch (err) {
-              setError(`SVG 处理错误: ${err}`);
-              setLoading(false);
-              return;
-            }
-
-            setSvg(normalized);
-            setLoading(false);
-          } else {
-            setError(`Unsupported diagram format: ${result.format}`);
-            setLoading(false);
-          }
-        })
+      diagramRender.render({ engine: node.engine, code: node.code, options })
+        .then(handleResult)
         .catch(err => {
           if (cancelled) return;
           setError(String(err));
@@ -85,7 +116,7 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
     return () => {
       cancelled = true;
     };
-  }, [node.engine, node.code, node.meta, diagramConfig, render, retryCount]);
+  }, [node.engine, node.code, node.meta, diagramConfig, diagramRender, webViewBridgeRef, retryCount]);
 
   if (loading && !svg && !error) {
     return (
@@ -105,29 +136,51 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
   }
 
   if (svg) {
-    // 从 SVG 中提取 viewBox 来计算合适的高度
+    const { width: screenWidth } = Dimensions.get('window');
+    const containerWidth = screenWidth - 32; // account for typical padding
+
+    // Try viewBox first, then fall back to width/height attributes
     const viewBoxMatch = svg.match(/viewBox="([^"]+)"/);
-    let height = 300; // 默认高度
+    const widthAttrMatch = svg.match(/<svg[^>]*\bwidth="([^"]+)"/);
+    const heightAttrMatch = svg.match(/<svg[^>]*\bheight="([^"]+)"/);
+
+    let svgWidth = 0;
+    let svgHeight = 0;
 
     if (viewBoxMatch) {
-      const viewBoxParts = viewBoxMatch[1].split(/\s+/);
-      if (viewBoxParts.length === 4) {
-        const viewBoxWidth = parseFloat(viewBoxParts[2]);
-        const viewBoxHeight = parseFloat(viewBoxParts[3]);
-        if (viewBoxWidth > 0 && viewBoxHeight > 0) {
-          // 根据 viewBox 的宽高比计算高度
-          // 假设容器宽度为 350（接近典型手机屏幕宽度）
-          const containerWidth = 350;
-          height = (viewBoxHeight / viewBoxWidth) * containerWidth;
-          // 限制最大高度为 500
-          height = Math.min(height, 500);
-        }
+      const parts = viewBoxMatch[1].split(/[\s,]+/);
+      if (parts.length === 4) {
+        svgWidth = parseFloat(parts[2]);
+        svgHeight = parseFloat(parts[3]);
       }
     }
 
+    // Fall back to explicit width/height attributes
+    if (svgWidth <= 0 && widthAttrMatch) svgWidth = parseFloat(widthAttrMatch[1]);
+    if (svgHeight <= 0 && heightAttrMatch) svgHeight = parseFloat(heightAttrMatch[1]);
+
+    let height = 300;
+    if (svgWidth > 0 && svgHeight > 0) {
+      height = (svgHeight / svgWidth) * containerWidth;
+      height = Math.min(height, 500);
+    }
+
+    // Ensure SVG has viewBox and no fixed dimensions for proper scaling
+    let scalableSvg = svg;
+    if (!viewBoxMatch && svgWidth > 0 && svgHeight > 0) {
+      scalableSvg = scalableSvg.replace(
+        /<svg([^>]*)>/,
+        `<svg$1 viewBox="0 0 ${svgWidth} ${svgHeight}">`
+      );
+    }
+    // Remove fixed width/height from SVG root so SvgXml controls sizing
+    scalableSvg = scalableSvg
+      .replace(/(<svg[^>]*)\bwidth="[^"]*"/, '$1')
+      .replace(/(<svg[^>]*)\bheight="[^"]*"/, '$1');
+
     return (
-      <View style={styles.diagram}>
-        <SvgXml xml={svg} width="100%" height={height} />
+      <View style={[styles.diagram, { width: containerWidth, height }]}>
+        <SvgXml xml={scalableSvg} width={containerWidth} height={height} />
       </View>
     );
   }

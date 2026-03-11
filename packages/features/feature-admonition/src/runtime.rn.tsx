@@ -7,8 +7,57 @@
  */
 
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import type { ContainerRNRenderArgs } from '@supramark/core';
+
+type AdmonitionKind = 'note' | 'tip' | 'info' | 'warning' | 'danger';
+
+const kindTheme: Record<
+  AdmonitionKind,
+  { border: string; bg: string; color: string; icon: string; fallbackTitle: string }
+> = {
+  note: { border: '#448aff', bg: '#e3f2fd', color: '#1565c0', icon: 'ℹ️', fallbackTitle: '提示' },
+  tip: { border: '#00c853', bg: '#e8f5e9', color: '#2e7d32', icon: '💡', fallbackTitle: '建议' },
+  info: { border: '#448aff', bg: '#e3f2fd', color: '#1565c0', icon: 'ℹ️', fallbackTitle: '信息' },
+  warning: {
+    border: '#ff9100',
+    bg: '#fff3e0',
+    color: '#e65100',
+    icon: '⚠️',
+    fallbackTitle: '警告',
+  },
+  danger: { border: '#ff1744', bg: '#fce4ec', color: '#b71c1c', icon: '🚨', fallbackTitle: '危险' },
+};
+
+function resolveKind(node: any): AdmonitionKind {
+  const raw = String(node?.data?.kind ?? '').toLowerCase();
+  if (raw === 'note' || raw === 'tip' || raw === 'info' || raw === 'warning' || raw === 'danger') {
+    return raw;
+  }
+  return 'note';
+}
+
+function normalizeNode(node: React.ReactNode, keyPrefix: string): React.ReactNode {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return <Text key={`${keyPrefix}_txt`}>{String(node)}</Text>;
+  }
+  if (Array.isArray(node)) {
+    return (
+      <React.Fragment key={`${keyPrefix}_arr`}>
+        {node.map((item, idx) => normalizeNode(item, `${keyPrefix}_${idx}`))}
+      </React.Fragment>
+    );
+  }
+  if (React.isValidElement(node)) {
+    return <React.Fragment key={`${keyPrefix}_el`}>{node}</React.Fragment>;
+  }
+  return null;
+}
+
+function normalizeChildren(children: React.ReactNode[] | undefined): React.ReactNode[] {
+  const nodes = children ?? [];
+  return nodes.map((child, index) => normalizeNode(child, `node_${index}`));
+}
 
 /**
  * RN 渲染器 for :::note, :::tip, :::warning 等
@@ -16,13 +65,16 @@ import type { ContainerRNRenderArgs } from '@supramark/core';
 export function renderAdmonitionContainerRN({
   node,
   key,
-  styles,
   config,
   renderChildren,
 }: ContainerRNRenderArgs): React.ReactNode {
-  const title = node?.data?.title;
+  const kind = resolveKind(node);
+  const theme = kindTheme[kind];
+  const title = String(node?.data?.title ?? '').trim() || theme.fallbackTitle;
 
-  // Feature enable 检查：如果禁用，退化为普通样式
+  const renderedChildren = normalizeChildren(renderChildren(node.children ?? []));
+
+  // Feature enable 检查：如果禁用，退化为普通块
   const isEnabled =
     !config || !config.features || config.features.length === 0
       ? true
@@ -31,17 +83,65 @@ export function renderAdmonitionContainerRN({
 
   if (!isEnabled) {
     return (
-      <View key={key} style={styles.listItem}>
-        {title ? <Text style={styles.listItemText}>{title}</Text> : null}
-        <Text style={styles.listItemText}>{renderChildren(node.children ?? [])}</Text>
+      <View key={key} style={localStyles.fallbackBlock}>
+        {title ? <Text style={localStyles.fallbackTitle}>{title}</Text> : null}
+        <View style={localStyles.content}>{renderedChildren}</View>
       </View>
     );
   }
 
   return (
-    <View key={key} style={styles.listItem}>
-      {title ? <Text style={[styles.listItemText, { fontWeight: '600' }]}>{title}</Text> : null}
-      <Text style={styles.listItemText}>{renderChildren(node.children ?? [])}</Text>
+    <View
+      key={key}
+      style={[
+        localStyles.card,
+        {
+          borderLeftColor: theme.border,
+          backgroundColor: theme.bg,
+        },
+      ]}
+    >
+      <View style={localStyles.header}>
+        <Text style={localStyles.icon}>{theme.icon}</Text>
+        <Text style={[localStyles.title, { color: theme.color }]}>{title}</Text>
+      </View>
+      <View style={localStyles.content}>{renderedChildren}</View>
     </View>
   );
 }
+
+const localStyles = StyleSheet.create({
+  card: {
+    width: '100%',
+    borderLeftWidth: 4,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  icon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  content: {
+    width: '100%',
+  },
+  fallbackBlock: {
+    width: '100%',
+    marginBottom: 8,
+  },
+  fallbackTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+});

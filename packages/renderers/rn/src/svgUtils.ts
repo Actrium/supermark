@@ -2,6 +2,36 @@
 // 调整为更适合 react-native-svg 渲染的形式。
 
 /**
+ * Lightweight SVG cleanup for engines (like ECharts) that already produce
+ * well-formed SVG with inline styles.
+ *
+ * Only strips XML prolog / doctype / comments / metadata that
+ * react-native-svg cannot handle. Does NOT inject default
+ * Mermaid-oriented fills/strokes, and does NOT strip inter-tag text
+ * nodes aggressively.
+ */
+export function normalizeSvgLight(xml: string): string {
+  let normalized = xml;
+
+  normalized = normalized
+    .replace(/<\?xml[\s\S]*?\?>/gi, '')
+    .replace(/<\?[\s\S]*?\?>/g, '')
+    .replace(/<!doctype[\s\S]*?>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<title[\s\S]*?<\/title>/gi, '')
+    .replace(/<desc[\s\S]*?<\/desc>/gi, '')
+    .replace(/<metadata[\s\S]*?<\/metadata>/gi, '');
+
+  // Remove <style> blocks (already inlined by WebView bridge)
+  normalized = normalized.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+
+  // Collapse whitespace-only text nodes between tags (safe)
+  normalized = normalized.replace(/>\s+</g, '><');
+
+  return normalized;
+}
+
+/**
  * 规范化 SVG：
  * - 移除 <style> 标签（react-native-svg 不支持内联 CSS）
  * - 为常见元素添加一些默认样式（主要针对 Mermaid 导出的图表）
@@ -11,6 +41,31 @@
  */
 export function normalizeSvg(xml: string): string {
   let normalized = xml;
+
+  // Preserve semantic text nodes first. We'll strip other inter-tag raw text later.
+  const preservedTextNodes: string[] = [];
+  normalized = normalized.replace(/<text\b[\s\S]*?<\/text>/gi, match => {
+    const token = `<smtext_placeholder data-i="${preservedTextNodes.length}" />`;
+    preservedTextNodes.push(match);
+    return token;
+  });
+
+  // Remove XML prolog / doctype / metadata-ish nodes that react-native-svg may not handle.
+  normalized = normalized
+    .replace(/<\?xml[\s\S]*?\?>/gi, '')
+    .replace(/<\?[\s\S]*?\?>/g, '')
+    .replace(/<!doctype[\s\S]*?>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<title[\s\S]*?<\/title>/gi, '')
+    .replace(/<desc[\s\S]*?<\/desc>/gi, '')
+    .replace(/<metadata[\s\S]*?<\/metadata>/gi, '');
+
+  // Collapse inter-tag whitespace text nodes, which can otherwise become
+  // raw string children in react-native-svg AST rendering.
+  normalized = normalized.replace(/>\s+</g, '><');
+  // Drop any remaining raw text nodes between tags (outside preserved <text> nodes),
+  // because RN SVG AST cannot host bare string children in many containers.
+  normalized = normalized.replace(/>[^<]+</g, '><');
 
   const styleMatch = normalized.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
   let defaultTextFill = '#333';
@@ -96,6 +151,12 @@ export function normalizeSvg(xml: string): string {
 
       return `<path ${attrs}style="${styles.join('; ')}"`;
     }
+  );
+
+  // Restore preserved text-bearing SVG nodes.
+  normalized = normalized.replace(
+    /<smtext_placeholder\s+data-i="(\d+)"\s*\/>/g,
+    (_m, indexText) => preservedTextNodes[Number(indexText)] ?? ''
   );
 
   return normalized;

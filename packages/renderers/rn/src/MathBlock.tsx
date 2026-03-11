@@ -2,73 +2,70 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 import type { SupramarkMathBlockNode } from '@supramark/core';
-import { useDiagramRender } from '@supramark/rn-diagram-worker';
 import { normalizeSvg } from './svgUtils';
+
+/**
+ * 公共 LaTeX → SVG 渲染服务。
+ * RN 环境无法直接运行 KaTeX（输出 HTML，RN 不支持），
+ * 因此通过远程服务将 TeX 转换为 SVG，再用 react-native-svg 渲染。
+ */
+const LATEX_SVG_BASE = 'https://latex.codecogs.com/svg.latex';
 
 interface MathBlockProps {
   node: SupramarkMathBlockNode;
 }
 
 export const MathBlock: React.FC<MathBlockProps> = ({ node }) => {
-  const { render } = useDiagramRender();
   const [svg, setSvg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError(null);
     setSvg(null);
 
-    render({
-      engine: 'math',
-      code: node.value,
-      options: { displayMode: true },
-    })
-      .then(result => {
+    // 拼接 \displaystyle 以块级模式渲染，提升 DPI 适配高分屏
+    const tex = `\\dpi{200} \\displaystyle ${node.value}`;
+    const url = `${LATEX_SVG_BASE}?${encodeURIComponent(tex)}`;
+
+    fetch(url)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then(svgText => {
         if (cancelled) return;
-
-        if (!result.success || result.format !== 'svg') {
-          const msg = result.error?.message || result.payload || 'Math rendering failed';
-          setError(msg);
-          setLoading(false);
-          return;
+        if (!svgText.includes('<svg')) {
+          throw new Error('Response is not valid SVG');
         }
-
         try {
-          const normalized = normalizeSvg(result.payload);
+          const normalized = normalizeSvg(svgText);
           setSvg(normalized);
-          setLoading(false);
         } catch (err) {
-          setError(String(err));
-          setLoading(false);
+          if (__DEV__) {
+            console.error('[Supramark MathBlock] normalize svg failed, fallback to TeX:', err);
+          }
         }
+        setLoading(false);
       })
       .catch(err => {
         if (cancelled) return;
-        setError(String(err));
+        if (__DEV__) {
+          console.error('[Supramark MathBlock] fetch SVG failed, fallback to TeX:', err);
+        }
         setLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [node.value, render]);
+  }, [node.value]);
 
-  if (loading && !svg && !error) {
+  if (loading && !svg) {
     return (
       <View style={styles.placeholder}>
         <ActivityIndicator size="small" />
         <Text style={styles.placeholderText}>正在渲染公式...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.placeholder}>
-        <Text style={styles.errorText}>公式渲染错误：{error}</Text>
       </View>
     );
   }
@@ -96,10 +93,10 @@ export const MathBlock: React.FC<MathBlockProps> = ({ node }) => {
     );
   }
 
-  // 完全没有结果时，回退为原始 TeX 文本
+  // 统一降级：源码文本
   return (
-    <View style={styles.placeholder}>
-      <Text style={styles.placeholderText}>{node.value}</Text>
+    <View style={styles.codeBlock}>
+      <Text style={styles.codeText}>{node.value}</Text>
     </View>
   );
 };
@@ -122,8 +119,15 @@ const styles = StyleSheet.create({
     color: '#666',
     marginLeft: 6,
   },
-  errorText: {
+  codeBlock: {
+    backgroundColor: '#f5f5f5',
+    padding: 8,
+    borderRadius: 4,
+    marginVertical: 8,
+  },
+  codeText: {
+    fontFamily: 'Menlo',
     fontSize: 12,
-    color: '#d4380d',
+    color: '#262626',
   },
 });

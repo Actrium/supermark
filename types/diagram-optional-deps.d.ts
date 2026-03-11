@@ -1,7 +1,6 @@
-// Ambient type declarations for optional diagram engine peer dependencies.
-// These modules may not be installed — runtime errors are handled by
-// try/catch in the lazy-loading wrappers within @supramark/diagram-engine.
+// Ambient type declarations for optional/runtime-loaded dependencies.
 
+// Diagram engine optional deps
 declare module 'echarts' {
   export function init(
     dom: null,
@@ -26,3 +25,11 @@ declare module 'vega' {
 declare module 'vega-lite' {
   export function compile(spec: any): { spec: any };
 }
+
+// markdown-it ecosystem deps without @types
+declare module 'markdown-it-container';
+declare module 'markdown-it-texmath';
+declare module 'markdown-it-footnote';
+declare module 'markdown-it-deflist';
+
+declare module 'pako';

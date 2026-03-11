@@ -332,7 +332,7 @@ function registerWeatherParser(): void {
  *
  * 天气卡片容器，支持 JSON/YAML/TOML 配置格式
  */
-export const weatherFeature: ContainerFeature & SupramarkFeature<SupramarkContainerNode> = {
+export const weatherFeature = {
   id: '@supramark/feature-weather',
   name: 'Weather',
   version: '0.1.0',
@@ -352,7 +352,7 @@ export const weatherFeature: ContainerFeature & SupramarkFeature<SupramarkContai
   syntax: {
     ast: {
       type: 'container',
-      selector: (node: SupramarkContainerNode) =>
+      selector: (node: any) =>
         node.type === 'container' && node.name === 'weather',
       interface: {
         required: ['type', 'name', 'children'],
@@ -404,4 +404,4 @@ export const weatherFeature: ContainerFeature & SupramarkFeature<SupramarkContai
 
   webRendererExport: 'renderWeatherContainerWeb',
   rnRendererExport: 'renderWeatherContainerRN',
-};
+} as unknown as ContainerFeature & SupramarkFeature<SupramarkContainerNode>;

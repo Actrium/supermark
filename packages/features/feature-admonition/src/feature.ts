@@ -101,7 +101,7 @@ function registerAdmonitionParser(): void {
  *
  * 提示框容器块语法支持（note/tip/warning 等）
  */
-export const admonitionFeature: ContainerFeature & SupramarkFeature<SupramarkContainerNode> = {
+export const admonitionFeature = {
   // 元数据（ContainerFeature 兼容 + SupramarkFeature）
   id: '@supramark/feature-admonition',
   name: 'Admonition',
@@ -122,7 +122,7 @@ export const admonitionFeature: ContainerFeature & SupramarkFeature<SupramarkCon
   syntax: {
     ast: {
       type: 'container',
-      selector: (node: SupramarkContainerNode) =>
+      selector: (node: any) =>
         node.type === 'container' && node.name === 'admonition',
       interface: {
         required: ['type', 'name', 'children'],
@@ -171,7 +171,7 @@ export const admonitionFeature: ContainerFeature & SupramarkFeature<SupramarkCon
   // 渲染器导出名
   webRendererExport: 'renderAdmonitionContainerWeb',
   rnRendererExport: 'renderAdmonitionContainerRN',
-};
+} as unknown as ContainerFeature & SupramarkFeature<SupramarkContainerNode>;
 
 // ============================================================================
 // 兼容性导出（保持向后兼容）

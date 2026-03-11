@@ -278,6 +278,38 @@ describe('DiagramEngine', () => {
       expect(result.payload).toContain('parse');
     });
 
+    it('fails fast on Hermes instead of hanging', async () => {
+      const previousHermesInternal = (globalThis as typeof globalThis & {
+        HermesInternal?: Record<string, unknown>;
+      }).HermesInternal;
+
+      (globalThis as typeof globalThis & { HermesInternal?: Record<string, unknown> }).HermesInternal =
+        {};
+
+      try {
+        const result = await engine.render({
+          engine: 'echarts',
+          code: JSON.stringify({
+            xAxis: { type: 'category', data: ['Mon'] },
+            yAxis: { type: 'value' },
+            series: [{ type: 'line', data: [1] }],
+          }),
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.format).toBe('error');
+        expect(result.payload).toContain('not supported on Hermes');
+      } finally {
+        if (previousHermesInternal === undefined) {
+          delete (globalThis as typeof globalThis & { HermesInternal?: Record<string, unknown> })
+            .HermesInternal;
+        } else {
+          (globalThis as typeof globalThis & { HermesInternal?: Record<string, unknown> })
+            .HermesInternal = previousHermesInternal;
+        }
+      }
+    });
+
     it('renders a pie chart', async () => {
       const option = {
         series: [

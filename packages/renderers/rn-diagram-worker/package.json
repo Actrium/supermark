@@ -1,7 +1,7 @@
 {
   "name": "@supramark/rn-diagram-worker",
-  "version": "0.2.0",
-  "description": "Diagram/math rendering service for React Native, powered by @supramark/diagram-engine (no WebView required).",
+  "version": "0.3.0",
+  "description": "Diagram/math rendering service for React Native, powered by @supramark/diagram-engine. Uses a headless WebView for ECharts on Hermes.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "license": "MIT",
@@ -10,13 +10,17 @@
   },
   "peerDependencies": {
     "react": ">=18.0.0",
-    "react-native": ">=0.72.0"
+    "react-native": ">=0.72.0",
+    "react-native-webview": ">=11.0.0"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true
     },
     "react-native": {
+      "optional": true
+    },
+    "react-native-webview": {
       "optional": true
     }
   },
