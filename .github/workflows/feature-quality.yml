@@ -4,15 +4,17 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - 'packages/feature-**'
+      - 'packages/features/**'
       - 'packages/core/**'
-      - 'scripts/lint-features.js'
+      - 'scripts/feature-lint.ts'
+      - 'scripts/features-lint.ts'
   pull_request:
     branches: [main, develop]
     paths:
-      - 'packages/feature-**'
+      - 'packages/features/**'
       - 'packages/core/**'
-      - 'scripts/lint-features.js'
+      - 'scripts/feature-lint.ts'
+      - 'scripts/features-lint.ts'
 
 jobs:
   lint-features:
@@ -37,7 +39,7 @@ jobs:
         run: bun install --no-progress
 
       - name: Run Feature Linter
-        run: bun run lint:features
+        run: bun run features:lint
 
       - name: Comment PR with results
         if: github.event_name == 'pull_request' && failure()
@@ -48,7 +50,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '❌ Feature quality check failed. Please run `bun run lint:features` locally and fix the issues.'
+              body: '❌ Feature quality check failed. Please run `bun run features:lint` locally and fix the issues.'
             })
 
   test-features:
@@ -73,7 +75,7 @@ jobs:
         run: bun install --no-progress
 
       - name: Run tests
-        run: bun run test
+        run: bun run test:features
 
       - name: Upload coverage
         if: always()
@@ -104,11 +106,8 @@ jobs:
       - name: Install dependencies
         run: bun install --no-progress
 
-      - name: Build all packages
+      - name: TypeScript workspace build
         run: bun run build
-
-      - name: Type check
-        run: bunx tsc --noEmit
 
   quality-gate:
     name: Feature Quality Gate

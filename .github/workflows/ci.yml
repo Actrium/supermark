@@ -50,7 +50,7 @@ jobs:
 
       - name: Quality check
         if: matrix.node-version == '20.x'
-        run: node scripts/quality-check.js
+        run: bun run quality
 
   # 生成和部署 API 文档
   docs:
