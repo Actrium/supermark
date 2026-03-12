@@ -3,7 +3,14 @@ import type { SupramarkDiagramConfig } from '@supramark/core';
 import { createDiagramEngine, type DiagramRenderService } from '@supramark/diagram-engine';
 import { DiagramWebViewBridge } from './DiagramWebViewBridge';
 import type { DiagramWebViewBridgeHandle } from './DiagramWebViewBridge';
-import { createDotBridge, createEChartsBridge, createMermaidBridge, createVegaBridge, createVegaLiteBridge } from './bridges';
+import {
+  createDotBridge,
+  createEChartsBridge,
+  createMathBridge,
+  createMermaidBridge,
+  createVegaBridge,
+  createVegaLiteBridge,
+} from './bridges';
 import type { BridgeEngine } from './bridges';
 
 interface DiagramRenderProviderProps {
@@ -31,14 +38,14 @@ export const DiagramRenderProvider: React.FC<DiagramRenderProviderProps> = ({
   diagramConfig,
 }) => {
   const bridgeRef = useRef<DiagramWebViewBridgeHandle | null>(null);
+  const resolvedCache = {
+    maxSize: cacheOptions.maxSize ?? diagramConfig?.defaultCache?.maxSize ?? 100,
+    ttl: cacheOptions.ttl ?? diagramConfig?.defaultCache?.ttl ?? 300000,
+    enabled: cacheOptions.enabled ?? diagramConfig?.defaultCache?.enabled ?? true,
+  };
 
   const service = useMemo<DiagramRenderService>(() => {
     const effectiveTimeout = timeout ?? diagramConfig?.defaultTimeoutMs ?? 10000;
-    const resolvedCache = {
-      maxSize: cacheOptions.maxSize ?? diagramConfig?.defaultCache?.maxSize ?? 100,
-      ttl: cacheOptions.ttl ?? diagramConfig?.defaultCache?.ttl ?? 300000,
-      enabled: cacheOptions.enabled ?? diagramConfig?.defaultCache?.enabled ?? true,
-    };
     const plantumlServer = diagramConfig?.engines?.plantuml?.server;
     return createDiagramEngine({
       timeout: effectiveTimeout,
@@ -57,6 +64,7 @@ export const DiagramRenderProvider: React.FC<DiagramRenderProviderProps> = ({
     return [
       createDotBridge(dotCdn),
       createEChartsBridge(echartsCdn),
+      createMathBridge(),
       createMermaidBridge(mermaidCdn),
       createVegaBridge(vegaCdn),
       createVegaLiteBridge(vegaLiteCdn, vegaCdn),
@@ -76,6 +84,7 @@ export const DiagramRenderProvider: React.FC<DiagramRenderProviderProps> = ({
         ref={bridgeRef}
         engines={bridgeEngines}
         timeoutMs={bridgeTimeout}
+        cacheOptions={resolvedCache}
       />
       {children}
     </DiagramRenderContext.Provider>
@@ -96,6 +105,11 @@ export function useDiagramWebViewBridge(): React.RefObject<DiagramWebViewBridgeH
     throw new Error('useDiagramWebViewBridge must be used within DiagramRenderProvider');
   }
   return ctx.webViewBridge;
+}
+
+export function useOptionalDiagramWebViewBridge(): React.RefObject<DiagramWebViewBridgeHandle | null> | null {
+  const ctx = useContext(DiagramRenderContext);
+  return ctx?.webViewBridge ?? null;
 }
 
 export type { DiagramRenderService };

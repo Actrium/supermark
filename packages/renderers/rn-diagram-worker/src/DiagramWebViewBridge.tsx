@@ -6,6 +6,7 @@ import React, {
   forwardRef,
 } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { LRUCache, createCacheKey, simpleHash } from '@supramark/core';
 import type { DiagramRenderResult, DiagramRenderFormat } from '@supramark/diagram-engine';
 import type { BridgeEngine } from './bridges/types';
 
@@ -15,6 +16,7 @@ import type { BridgeEngine } from './bridges/types';
 
 interface PendingRequest {
   readonly engine: string;
+  readonly cacheKey: string;
   readonly resolve: (result: DiagramRenderResult) => void;
   readonly timer: ReturnType<typeof setTimeout>;
 }
@@ -144,6 +146,25 @@ const DEFAULT_TIMEOUT_MS = 15000;
 export interface DiagramWebViewBridgeProps {
   engines: readonly BridgeEngine[];
   timeoutMs?: number;
+  cacheOptions?: {
+    maxSize?: number;
+    ttl?: number;
+    enabled?: boolean;
+  };
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) {
+    return `[${value.map(stableSerialize).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, entryValue]) => `${key}:${stableSerialize(entryValue)}`);
+    return `{${entries.join(',')}}`;
+  }
+  return String(value);
 }
 
 /**
@@ -157,7 +178,7 @@ export interface DiagramWebViewBridgeProps {
 export const DiagramWebViewBridge = forwardRef<
   DiagramWebViewBridgeHandle,
   DiagramWebViewBridgeProps
->(function DiagramWebViewBridge({ engines, timeoutMs }, ref) {
+>(function DiagramWebViewBridge({ engines, timeoutMs, cacheOptions }, ref) {
   const webViewRef = useRef<any>(null);
   const [isReady, setIsReady] = useState(false);
   const pendingRef = useRef<Map<string, PendingRequest>>(new Map());
@@ -165,6 +186,13 @@ export const DiagramWebViewBridge = forwardRef<
   const seqRef = useRef(0);
   const effectiveTimeout = timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const engineNames = engines.map(e => e.name);
+  const cacheEnabled = cacheOptions?.enabled !== false;
+  const cacheRef = useRef(
+    new LRUCache<DiagramRenderResult>({
+      maxSize: cacheOptions?.maxSize ?? 100,
+      ttl: cacheOptions?.ttl ?? 300000,
+    }),
+  );
 
   const flushQueue = useCallback(() => {
     const q = queueRef.current;
@@ -227,9 +255,12 @@ export const DiagramWebViewBridge = forwardRef<
               details: msg.error,
             },
           };
+      if (result.success && cacheEnabled) {
+        cacheRef.current.set(entry.cacheKey, result);
+      }
       entry.resolve(result);
     }
-  }, [flushQueue]);
+  }, [cacheEnabled, flushQueue]);
 
   const render = useCallback(
     (params: {
@@ -237,6 +268,26 @@ export const DiagramWebViewBridge = forwardRef<
       code: string;
       options?: Record<string, unknown>;
     }): Promise<DiagramRenderResult> => {
+      const cacheKey = createCacheKey(
+        'dwvb',
+        params.engine,
+        simpleHash(params.code),
+        simpleHash(stableSerialize(params.options ?? {})),
+      );
+      if (cacheEnabled) {
+        const cached = cacheRef.current.get(cacheKey);
+        if (cached) {
+          return Promise.resolve({
+            ...cached,
+            id: `dwvb_cache_${Date.now()}_${seqRef.current++}`,
+            performance: {
+              ...(cached.performance ?? { renderTime: 0 }),
+              cacheHit: true,
+            },
+          });
+        }
+      }
+
       const id = `dwvb_${Date.now()}_${seqRef.current++}`;
       const message = JSON.stringify({
         type: 'render',
@@ -262,7 +313,7 @@ export const DiagramWebViewBridge = forwardRef<
           });
         }, effectiveTimeout);
 
-        const pending: PendingRequest = { engine: params.engine, resolve, timer };
+        const pending: PendingRequest = { engine: params.engine, cacheKey, resolve, timer };
 
         if (isReady && webViewRef.current) {
           pendingRef.current.set(id, pending);
@@ -272,7 +323,7 @@ export const DiagramWebViewBridge = forwardRef<
         }
       });
     },
-    [isReady, effectiveTimeout],
+    [cacheEnabled, isReady, effectiveTimeout],
   );
 
   useImperativeHandle(

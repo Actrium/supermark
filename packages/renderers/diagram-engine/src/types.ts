@@ -16,7 +16,7 @@ export interface DiagramRenderRequest {
   options?: Record<string, unknown>;
 }
 
-export type DiagramRenderFormat = 'svg' | 'html' | 'error';
+export type DiagramRenderFormat = 'svg' | 'png' | 'html' | 'error';
 
 export interface DiagramErrorInfo {
   code: 'syntax_error' | 'timeout' | 'render_error' | 'engine_not_available' | 'unknown';

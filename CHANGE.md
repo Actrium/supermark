@@ -5,6 +5,8 @@
 - RN diagram worker 已注册的浏览器型引擎统一优先走 headless WebView。
 - Vega / Vega-Lite 已接入 headless WebView，本地在 WebView 内完成编译与 SVG 渲染，不再走 Kroki 远端服务。
 - DOT / Graphviz 已接入 headless WebView，本地通过 Viz.js 生成 SVG，不再走 Kroki 远端服务。
+- RN Math 已切为本地 headless WebView 渲染：`math_block` 通过 MathJax 3 生成 SVG，`math_inline` 通过 MathJax 3 生成 SVG 后在 WebView 内转 PNG；Web 端继续保持 KaTeX 不变。
+- RN headless WebView bridge 已增加统一内存缓存，覆盖 Math / DOT / Mermaid / Vega / ECharts 等浏览器型渲染结果。
 
 ---
 
