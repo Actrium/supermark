@@ -10,6 +10,7 @@ import { coreMarkdownFeature } from '@supramark/feature-core-markdown';
 import { definitionListFeature } from '@supramark/feature-definition-list';
 import { diagramDotFeature } from '@supramark/feature-diagram-dot';
 import { diagramEchartsFeature } from '@supramark/feature-diagram-echarts';
+import { diagramMermaidFeature } from '@supramark/feature-diagram-mermaid';
 import { diagramPlantUmlFeature } from '@supramark/feature-diagram-plantuml';
 import { diagramVegaLiteFeature } from '@supramark/feature-diagram-vega-lite';
 import { emojiFeature } from '@supramark/feature-emoji';
@@ -24,6 +25,7 @@ export const allFeatures = [
   definitionListFeature,
   diagramDotFeature,
   diagramEchartsFeature,
+  diagramMermaidFeature,
   diagramPlantUmlFeature,
   diagramVegaLiteFeature,
   emojiFeature,

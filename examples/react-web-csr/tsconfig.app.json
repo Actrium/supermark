@@ -31,6 +31,7 @@
       "@supramark/web": ["packages/renderers/web/src"],
       "@supramark/web/client": ["packages/renderers/web/src/client.ts"],
       "@supramark/diagram-engine": ["packages/renderers/diagram-engine/src"],
+      "@supramark/feature-diagram-mermaid": ["packages/features/feature-diagram-mermaid/src/index.ts"],
       "@supramark/feature-weather": ["packages/features/container/feature-weather/src"]
     }
   },

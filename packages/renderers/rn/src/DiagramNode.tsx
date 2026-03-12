@@ -135,7 +135,7 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
   if (error) {
     return (
       <View style={styles.placeholder}>
-        <Text style={styles.errorText}>图表渲染错误：{error}</Text>
+        <Text style={styles.errorText}>图表渲染错误？：{error}</Text>
       </View>
     );
   }
@@ -206,7 +206,7 @@ function normalizeBridgeEngineName(engine: string): string {
 }
 
 function isBridgeOnlyEngine(engine: string): boolean {
-  return engine === 'vega' || engine === 'vega-lite';
+  return engine === 'vega' || engine === 'vega-lite' || engine === 'mermaid';
 }
 
 /**

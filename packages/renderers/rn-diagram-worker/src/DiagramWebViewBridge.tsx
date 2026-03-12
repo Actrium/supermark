@@ -64,16 +64,45 @@ function buildHtml(engines: readonly BridgeEngine[]): string {
     })
     .join(',\n    ');
 
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<style>html,body{margin:0;padding:0;background:transparent;}</style>
-${scriptTags}
-<script>
+  // Collect headExtra fragments (e.g. <script type="module"> for ESM imports)
+  const headExtras = engines
+    .map(e => e.headExtra ?? '')
+    .filter(Boolean)
+    .join('\n');
+
+  const bootstrapScript = `<script>
 function send(msg) {
   window.ReactNativeWebView.postMessage(JSON.stringify(msg));
 }
 
+// Forward WebView console & errors to RN for debugging.
+// This must run before any engine-specific headExtra scripts so early load
+// failures are surfaced to RN instead of degrading into silent timeouts.
+window.onerror = function(msg, src, line, col, err) {
+  send({ type: 'console', level: 'error', text: '[onerror] ' + msg + ' at ' + src + ':' + line + ':' + col });
+};
+window.addEventListener('unhandledrejection', function(e) {
+  send({ type: 'console', level: 'error', text: '[unhandledrejection] ' + (e.reason || e) });
+});
+var _origConsole = { log: console.log, warn: console.warn, error: console.error };
+['log','warn','error'].forEach(function(level) {
+  console[level] = function() {
+    _origConsole[level].apply(console, arguments);
+    try {
+      send({ type: 'console', level: level, text: Array.prototype.slice.call(arguments).join(' ') });
+    } catch(_e) {}
+  };
+});
+<\/script>`;
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>html,body{margin:0;padding:0;background:transparent;}</style>
+${bootstrapScript}
+${scriptTags}
+${headExtras}
+<script>
 ${handlerBodies}
 
 var _handlers = {
@@ -151,6 +180,18 @@ export const DiagramWebViewBridge = forwardRef<
     try {
       msg = JSON.parse(event.nativeEvent.data);
     } catch {
+      return;
+    }
+
+    if (msg.type === 'console') {
+      const prefix = '[DiagramWebView]';
+      if (msg.level === 'error') {
+        console.error(prefix, msg.text);
+      } else if (msg.level === 'warn') {
+        console.warn(prefix, msg.text);
+      } else {
+        console.log(prefix, msg.text);
+      }
       return;
     }
 
@@ -254,7 +295,7 @@ export const DiagramWebViewBridge = forwardRef<
     <View style={styles.hidden} pointerEvents="none">
       <WebView
         ref={webViewRef}
-        source={{ html }}
+        source={{ html, baseUrl: 'https://cdn.jsdelivr.net/' }}
         originWhitelist={['*']}
         javaScriptEnabled
         onMessage={onMessage}
@@ -278,4 +319,3 @@ const styles = StyleSheet.create({
     height: 600,
   },
 });
-

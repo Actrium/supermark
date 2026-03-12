@@ -17,6 +17,7 @@
     "@supramark/feature-definition-list": "workspace:*",
     "@supramark/feature-diagram-dot": "workspace:*",
     "@supramark/feature-diagram-echarts": "workspace:*",
+    "@supramark/feature-diagram-mermaid": "workspace:*",
     "@supramark/feature-diagram-plantuml": "workspace:*",
     "@supramark/feature-diagram-vega-lite": "workspace:*",
     "@supramark/feature-emoji": "workspace:*",

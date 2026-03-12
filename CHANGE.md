@@ -137,3 +137,33 @@ rn-diagram-worker/src/
 ├── types.ts
 └── index.ts
 ```
+
+### Mermaid / beautiful-mermaid 补充说明
+
+Mermaid 在 RN 端同样接入了 headless WebView，但实现上和 Vega / ECharts 不同：
+
+- `beautiful-mermaid` npm 包自带的 `dist/index.js` 仍然是 ESM，并且保留了对 `entities`、`elkjs` 的裸 `import`
+- 因此它不能像 Vega / ECharts 那样直接通过普通 `<script src="...">` 以全局变量模式加载
+- 之前尝试使用 jsDelivr 的 `+esm` 入口，但该入口在 WebView 中仍会继续级联加载其它模块，容易触发 origin / 二级 import / 依赖入口兼容问题
+- 最终改为先用本地 `esbuild` 将 `beautiful-mermaid` 预打包成单文件 IIFE bundle，并在 WebView 内注入后挂到 `window.BeautifulMermaid`
+- 该 bundle 作为 generated vendor 文件放在 `src/vendor/beautifulMermaidBundle.ts`
+- 新增生成脚本 `scripts/build-beautiful-mermaid-bundle.js`，通过 `bun run build:beautiful-mermaid-bundle` 再生成，避免手工维护大文件
+
+这样做的目的不是绕过 Hermes，而是把 Mermaid 运行时完全放到 WebView 内执行，避免 RN / Hermes 直接承载 `beautiful-mermaid` 的 ESM 依赖链。
+
+另外，`beautiful-mermaid` 生成的 SVG 大量依赖 CSS 变量和 `<style>` 块，例如 `fill="var(--_arrow)"`、`stroke="var(--_line)"`、`fill="var(--_node-fill)"`。
+这些写法在浏览器 / WebView 中可正常解析，但 `react-native-svg` 不支持把 `var(--...)` 当作颜色值，因此会在 RN 侧出现：
+
+- `"var(--_arrow)" is not a valid color or brush`
+- `"var(--bg)" is not a valid color or brush`
+- `"var(--_text-sec)" is not a valid color or brush`
+
+为解决这个问题，Mermaid 的 WebView bridge 在回传 SVG 前新增了一层“样式实化”处理：
+
+- 先把 `beautiful-mermaid` 返回的 SVG 挂到 WebView DOM
+- 使用 `getComputedStyle()` 读取节点的最终样式
+- 解析 SVG 根节点上的 `--bg` / `--fg` / `--accent` 等 CSS 变量，并补算 `--_arrow` / `--_text-sec` / `--_node-fill` 等派生变量
+- 将节点上的 `fill` / `stroke` / `color` / `stop-color` 等属性中的 `var(--...)` 替换为具体色值
+- 删除 `<style>` 和根节点上的 CSS 变量依赖后，再把最终 SVG 通过 postMessage 传回 RN
+
+这样 iOS / Android 侧接收到的是已经内联样式、去掉 CSS 变量依赖的静态 SVG，`react-native-svg` 才能稳定显示。

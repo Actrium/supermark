@@ -6,7 +6,8 @@
   "types": "src/index.ts",
   "license": "MIT",
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "build:beautiful-mermaid-bundle": "node ../../../scripts/build-beautiful-mermaid-bundle.js"
   },
   "peerDependencies": {
     "react": ">=18.0.0",

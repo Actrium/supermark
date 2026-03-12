@@ -26,4 +26,10 @@ export interface BridgeEngine {
    * 实现需要调用 send({ type:'result', id, success, format?, payload?, error? })
    */
   readonly handleRenderJs: string;
+
+  /**
+   * 额外的 HTML 片段，注入到 <head> 中（在 CDN script 标签之后）。
+   * 用于需要 <script type="module"> 等特殊加载方式的 engine。
+   */
+  readonly headExtra?: string;
 }

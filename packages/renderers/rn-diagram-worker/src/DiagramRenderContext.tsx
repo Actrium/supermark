@@ -3,7 +3,7 @@ import type { SupramarkDiagramConfig } from '@supramark/core';
 import { createDiagramEngine, type DiagramRenderService } from '@supramark/diagram-engine';
 import { DiagramWebViewBridge } from './DiagramWebViewBridge';
 import type { DiagramWebViewBridgeHandle } from './DiagramWebViewBridge';
-import { createDotBridge, createEChartsBridge, createVegaBridge, createVegaLiteBridge } from './bridges';
+import { createDotBridge, createEChartsBridge, createMermaidBridge, createVegaBridge, createVegaLiteBridge } from './bridges';
 import type { BridgeEngine } from './bridges';
 
 interface DiagramRenderProviderProps {
@@ -50,12 +50,14 @@ export const DiagramRenderProvider: React.FC<DiagramRenderProviderProps> = ({
   const bridgeEngines = useMemo<readonly BridgeEngine[]>(() => {
     const dotCdn = (diagramConfig?.engines?.dot as any)?.cdnUrl as string | undefined;
     const echartsCdn = (diagramConfig?.engines?.echarts as any)?.cdnUrl as string | undefined;
+    const mermaidCdn = (diagramConfig?.engines?.mermaid as any)?.cdnUrl as string | undefined;
     const vegaCdn = (diagramConfig?.engines?.vega as any)?.cdnUrl as string | undefined;
     const vegaLiteCdn = (diagramConfig?.engines?.['vega-lite'] as any)?.cdnUrl as string | undefined;
 
     return [
       createDotBridge(dotCdn),
       createEChartsBridge(echartsCdn),
+      createMermaidBridge(mermaidCdn),
       createVegaBridge(vegaCdn),
       createVegaLiteBridge(vegaLiteCdn, vegaCdn),
     ];

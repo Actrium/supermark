@@ -30,6 +30,10 @@ export default defineConfig({
     alias: [
       { find: 'react-native', replacement: resolve(__dirname, 'src/__mocks__/react-native.ts') },
       { find: '@react-native', replacement: resolve(__dirname, 'src/__mocks__/react-native.ts') },
+      {
+        find: '@supramark/feature-diagram-mermaid',
+        replacement: resolve(__dirname, '../../packages/features/feature-diagram-mermaid/src/index.ts'),
+      },
     ],
     dedupe: ['react', 'react-dom'],
     mainFields: ['module', 'main', 'types'],
@@ -49,6 +53,7 @@ export default defineConfig({
       '@supramark/diagram-engine',
       '@supramark/feature-admonition',
       '@supramark/feature-admonition/web',
+      '@supramark/feature-diagram-mermaid',
       '@supramark/feature-weather',
       '@supramark/feature-weather/web',
     ],

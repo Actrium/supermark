@@ -81,6 +81,12 @@ const FEATURE_LIST: FeatureEntry[] = [
     category: 'diagram',
   },
   {
+    shortName: 'diagram-mermaid',
+    displayName: 'Diagram Mermaid',
+    description: 'Mermaid 图表',
+    category: 'diagram',
+  },
+  {
     shortName: 'diagram-plantuml',
     displayName: 'Diagram PlantUML',
     description: 'PlantUML 图表（SVG 远程渲染）',
@@ -102,6 +108,7 @@ const featureLoaders: Record<string, () => Promise<FeatureModule>> = {
   'definition-list': () => import('@supramark/feature-definition-list'),
   'diagram-dot': () => import('@supramark/feature-diagram-dot'),
   'diagram-echarts': () => import('@supramark/feature-diagram-echarts'),
+  'diagram-mermaid': () => import('@supramark/feature-diagram-mermaid'),
   'diagram-plantuml': () => import('@supramark/feature-diagram-plantuml'),
   'diagram-vega-lite': () => import('@supramark/feature-diagram-vega-lite'),
   emoji: () => import('@supramark/feature-emoji'),
