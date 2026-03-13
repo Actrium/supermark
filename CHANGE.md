@@ -2,6 +2,18 @@
 
 ## 最新增量
 
+- RN LaTeX / Math 渲染方案已切换为本地 MathJax：
+  - `math_block` 与 `math_inline` 均不再通过 headless WebView 渲染；
+  - 不再依赖远端数学公式服务；
+  - React Native 侧直接在本地将 TeX 转为 SVG，再由 `react-native-svg` 呈现。
+- RN 数学公式 SVG 兼容层已补充：
+  - 对 MathJax 产出的细横线元素做 RN 兼容处理，避免分数线、根号横线丢失；
+  - 对 `\\xrightarrow` 一类包含嵌套 SVG 的结构做额外兼容，降低箭头错位风险；
+  - 块级公式按实际容器宽度缩放，避免宽公式在卡片或气泡中溢出。
+- Web 端 LaTeX 方案保持不变：
+  - 继续沿用现有 KaTeX / Web 渲染路径；
+  - 本次调整仅影响 React Native 数学公式渲染链路。
+
 - RN diagram worker 已注册的浏览器型引擎统一优先走 headless WebView。
 - Vega / Vega-Lite 已接入 headless WebView，本地在 WebView 内完成编译与 SVG 渲染，不再走 Kroki 远端服务。
 - DOT / Graphviz 已接入 headless WebView，本地通过 Viz.js 生成 SVG，不再走 Kroki 远端服务。

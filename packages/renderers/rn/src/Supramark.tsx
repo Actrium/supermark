@@ -37,8 +37,7 @@ import {
   SUPRAMARK_ADMONITION_KINDS,
 } from '@supramark/core';
 import { DiagramNode } from './DiagramNode';
-import { MathBlock } from './MathBlock';
-import { MathInline } from './MathInline';
+import { MathBlock, MathInline } from './math';
 import {
   type SupramarkStyles,
   defaultStyles,

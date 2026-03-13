@@ -1,48 +1,39 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 import type { SupramarkMathBlockNode } from '@supramark/core';
-import { useOptionalDiagramWebViewBridge } from '@supramark/rn-diagram-worker';
-import { normalizeSvg } from './svgUtils';
+import { normalizeSvgLight } from '../svgUtils';
+import { getSvgViewBoxSize, renderMathJaxSvg } from './mathjax';
 
 interface MathBlockProps {
   node: SupramarkMathBlockNode;
 }
 
 export const MathBlock: React.FC<MathBlockProps> = ({ node }) => {
-  const webViewBridgeRef = useOptionalDiagramWebViewBridge();
   const [svg, setSvg] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [containerWidth, setContainerWidth] = useState<number>(0);
+  const handleLayout = (event: LayoutChangeEvent) => {
+    const nextWidth = Math.max(0, Math.floor(event.nativeEvent.layout.width));
+    setContainerWidth(prev => (prev === nextWidth ? prev : nextWidth));
+  };
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setSvg(null);
 
-    const bridge = webViewBridgeRef?.current;
-    if (!bridge || !bridge.engines.includes('math')) {
-      setLoading(false);
-      return;
-    }
-
-    bridge.render({
-      engine: 'math',
-      code: node.value,
-      options: { displayMode: true },
-    })
+    renderMathJaxSvg(node.value, { displayMode: true })
       .then(result => {
         if (cancelled) return;
-        if (!result.success || result.format !== 'svg' || !result.payload.includes('<svg')) {
-          throw new Error(result.error?.details || result.payload || 'Math SVG render failed');
-        }
-        const normalized = normalizeSvg(result.payload);
+        const normalized = normalizeSvgLight(result);
         setSvg(normalized);
         setLoading(false);
       })
       .catch(err => {
         if (cancelled) return;
         if (__DEV__) {
-          console.error('[Supramark MathBlock] MathJax WebView render failed, fallback to TeX:', err);
+          console.error('[Supramark MathBlock] Local MathJax render failed, fallback to TeX:', err);
         }
         setLoading(false);
       });
@@ -50,7 +41,7 @@ export const MathBlock: React.FC<MathBlockProps> = ({ node }) => {
     return () => {
       cancelled = true;
     };
-  }, [node.value, webViewBridgeRef]);
+  }, [node.value]);
 
   if (loading && !svg) {
     return (
@@ -62,31 +53,26 @@ export const MathBlock: React.FC<MathBlockProps> = ({ node }) => {
   }
 
   if (svg) {
-    const viewBoxMatch = svg.match(/viewBox="([^"]+)"/);
+    const effectiveWidth = containerWidth > 0 ? containerWidth : 320;
     let height = 80;
+    const size = getSvgViewBoxSize(svg);
 
-    if (viewBoxMatch) {
-      const parts = viewBoxMatch[1].split(/\s+/);
-      if (parts.length === 4) {
-        const w = parseFloat(parts[2]);
-        const h = parseFloat(parts[3]);
-        if (w > 0 && h > 0) {
-          const containerWidth = 300;
-          height = Math.min((h / w) * containerWidth, 200);
-        }
-      }
+    if (size) {
+      height = Math.min((size.height / size.width) * effectiveWidth, 240);
+      // Leave a little headroom so thin radicals/fraction bars do not get clipped.
+      height += 8;
     }
 
     return (
-      <View style={styles.mathContainer}>
-        <SvgXml xml={svg} width="100%" height={height} />
+      <View style={styles.mathContainer} onLayout={handleLayout}>
+        <SvgXml xml={svg} width={effectiveWidth} height={height} />
       </View>
     );
   }
 
   // 统一降级：源码文本
   return (
-    <View style={styles.codeBlock}>
+    <View style={styles.codeBlock} onLayout={handleLayout}>
       <Text style={styles.codeText}>{node.value}</Text>
     </View>
   );

@@ -147,10 +147,9 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
 
       // 基础设施需求
       infrastructure: {
-        // RN 端需要 WebView Worker 渲染 LaTeX 为 SVG
-        needsWorker: true,
-        workerType: 'webview',
-        // 需要缓存（WebView 渲染较慢）
+        // RN 端本地使用 MathJax 直接渲染为 SVG
+        needsWorker: false,
+        // 需要缓存（MathJax 首次初始化与复杂公式渲染成本较高）
         needsCache: true,
         cacheConfig: {
           maxSize: 100,
@@ -167,8 +166,8 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
           optional: false,
         },
         {
-          name: 'react-native-webview',
-          version: '^11.0.0',
+          name: 'mathjax-full',
+          version: '^3.2.2',
           type: 'npm',
           optional: false,
         },

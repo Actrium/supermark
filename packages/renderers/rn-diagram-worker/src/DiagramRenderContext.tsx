@@ -6,7 +6,6 @@ import type { DiagramWebViewBridgeHandle } from './DiagramWebViewBridge';
 import {
   createDotBridge,
   createEChartsBridge,
-  createMathBridge,
   createMermaidBridge,
   createVegaBridge,
   createVegaLiteBridge,
@@ -64,7 +63,6 @@ export const DiagramRenderProvider: React.FC<DiagramRenderProviderProps> = ({
     return [
       createDotBridge(dotCdn),
       createEChartsBridge(echartsCdn),
-      createMathBridge(),
       createMermaidBridge(mermaidCdn),
       createVegaBridge(vegaCdn),
       createVegaLiteBridge(vegaLiteCdn, vegaCdn),

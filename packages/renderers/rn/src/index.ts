@@ -3,6 +3,6 @@ export * from './generatedContainers';
 
 export * from './Supramark';
 export * from './DiagramNode';
-export * from './MathInline';
+export * from './math';
 export * from './styles';
 export * from './ErrorBoundary';
