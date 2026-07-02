@@ -1151,6 +1151,10 @@ fn render_single_column_table_action(
 /// close the shape, drawn through `borderColor.apply(stroke).bg(backColor)`.
 /// stroke-width comes from the activity diamond style (0.5px in stable
 /// PlantUML 1.2026.x).
+///
+/// When `node.text` is non-empty (e.g. a `while (condition)` diamond), the
+/// condition text is centred inside the diamond — matching Java's
+/// `FtileDiamondInside` behaviour for `while` loop conditions.
 fn render_diamond(sg: &mut SvgGraphic, node: &ActivityNodeLayout, bg: &str, border: &str) {
     let x = node.x;
     let y = node.y;
@@ -1162,6 +1166,43 @@ fn render_diamond(sg: &mut SvgGraphic, node: &ActivityNodeLayout, bg: &str, bord
         points: vec![cx, y, x + w, cy, cx, y + h, x, cy, cx, y],
     }
     .draw(sg, &DrawStyle::filled(bg, border, 0.5));
+
+    // Condition text centred inside the diamond (11pt sans-serif, matching the
+    // hexagon/if-diamond condition font size).  Only drawn when present, so
+    // the empty `repeat` start diamond is unaffected.
+    if !node.text.is_empty() {
+        let font_size = HEXAGON_LABEL_FONT_SIZE_RENDER;
+        let line_h = font_metrics::line_height("SansSerif", font_size, false, false);
+        let ascent = font_metrics::ascent("SansSerif", font_size, false, false);
+        // Split on `\n` and draw each line separately — `svg_text` emits a
+        // single `<text>` that does not line-break, so a multi-line
+        // `node.text` (e.g. ElseIf's `{condition}\n[{label}]`) would otherwise
+        // collapse to one stretched line.
+        let lines: Vec<&str> = node.text.split('\n').collect();
+        let total_h = line_h * lines.len() as f64;
+        let top_y = y + (h - total_h) / 2.0;
+        sg.set_fill_color(TEXT_COLOR);
+        for (i, line) in lines.iter().enumerate() {
+            let text_w = font_metrics::text_width(line, "SansSerif", font_size, false, false);
+            let text_x = x + (w - text_w) / 2.0;
+            let text_y = top_y + i as f64 * line_h + ascent;
+            sg.svg_text(
+                line,
+                text_x,
+                text_y,
+                Some("sans-serif"),
+                font_size,
+                None,
+                None,
+                None,
+                text_w,
+                crate::klimt::svg::LengthAdjust::Spacing,
+                None,
+                0,
+                None,
+            );
+        }
+    }
 }
 
 /// Hexagonal diamond used by `repeat while (cond) is (label)`.
@@ -1792,10 +1833,14 @@ fn render_edge(
         render_arrowhead(sg, fx, fy, tx, ty, arrow_color);
     }
 
-    // Edge label (centered on midpoint)
+    // Edge label (centered on midpoint, or at label_xy if set)
     if !edge.label.is_empty() {
-        let mid = edge.points.len() / 2;
-        let (mx, my) = edge.points[mid];
+        let (mx, my) = if let Some(xy) = edge.label_xy {
+            xy
+        } else {
+            let mid = edge.points.len() / 2;
+            edge.points[mid]
+        };
         let tl = font_metrics::text_width(&edge.label, "SansSerif", ACTION_FONT_SIZE, false, false);
         sg.set_fill_color(text_color);
         sg.svg_text(
@@ -2390,6 +2435,7 @@ mod tests {
             label: String::new(),
             points: vec![(100.0, 30.0), (100.0, 80.0)],
             kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
         });
         let (svg, _raw_dim) = render_activity(&diagram, &layout, &SkinParams::default(), None)
             .expect("render failed");
@@ -2415,6 +2461,7 @@ mod tests {
             label: "yes".to_string(),
             points: vec![(100.0, 30.0), (100.0, 80.0)],
             kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
         });
         let (svg, _raw_dim) = render_activity(&diagram, &layout, &SkinParams::default(), None)
             .expect("render failed");
@@ -2431,6 +2478,7 @@ mod tests {
             label: String::new(),
             points: vec![(50.0, 20.0), (50.0, 50.0), (100.0, 50.0), (100.0, 80.0)],
             kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
         });
         let (svg, _raw_dim) = render_activity(&diagram, &layout, &SkinParams::default(), None)
             .expect("render failed");
@@ -2633,6 +2681,7 @@ mod tests {
             label: String::new(),
             points: vec![(100.0, 50.0), (100.0, 80.0), (300.0, 80.0), (300.0, 110.0)],
             kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
         });
         let (svg, _raw_dim) = render_activity(&diagram, &layout, &SkinParams::default(), None)
             .expect("render failed");
@@ -2739,6 +2788,7 @@ mod tests {
             label: String::new(),
             points: vec![(60.0, 40.0), (60.0, 60.0)],
             kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
         });
         layout.edges.push(ActivityEdgeLayout {
             from_index: 1,
@@ -2746,6 +2796,7 @@ mod tests {
             label: String::new(),
             points: vec![(60.0, 80.0), (60.0, 85.0), (180.0, 85.0), (180.0, 100.0)],
             kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
         });
         layout.edges.push(ActivityEdgeLayout {
             from_index: 2,
@@ -2753,6 +2804,7 @@ mod tests {
             label: String::new(),
             points: vec![(180.0, 120.0), (180.0, 125.0), (60.0, 125.0), (60.0, 140.0)],
             kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
         });
         layout.edges.push(ActivityEdgeLayout {
             from_index: 3,
@@ -2760,6 +2812,7 @@ mod tests {
             label: String::new(),
             points: vec![(60.0, 160.0), (60.0, 180.0)],
             kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
         });
 
         let (svg, _raw_dim) = render_activity(&diagram, &layout, &SkinParams::default(), None)

@@ -1,0 +1,10 @@
+@startuml
+start
+:Open queue;
+while (queue empty?) is (no)
+  :Handle message;
+  :Acknowledge message;
+endwhile (yes)
+:Close queue;
+stop
+@enduml
