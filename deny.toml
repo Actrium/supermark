@@ -127,4 +127,19 @@ ignore = [
     # impl and is a larger tracking task; allow it here for now so
     # cargo-deny stops blocking CI.
     "RUSTSEC-2026-0192",
+
+    # quick-xml < 0.41 carries two DoS advisories on crafted XML input:
+    #   RUSTSEC-2026-0194 — quadratic time checking a start tag for duplicate
+    #                       attribute names
+    #   RUSTSEC-2026-0195 — unbounded namespace-declaration allocation in
+    #                       NsReader (memory-exhaustion DoS)
+    # Reached only transitively (syntect -> plist -> quick-xml) and only to
+    # parse the bundled, trusted .tmTheme / .tmLanguage theme assets — never
+    # attacker-controlled XML (users supply code to highlight, not theme
+    # files), so neither DoS is reachable here. The real fix is quick-xml
+    # >= 0.41, but plist 1.9.0 (the latest release) pins `quick-xml = "^0.39.2"`
+    # and no newer plist / syntect release uses 0.41 yet; revisit once the
+    # upstream chain bumps quick-xml.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
 ]
