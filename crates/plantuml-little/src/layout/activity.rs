@@ -2598,6 +2598,35 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         kind: ActivityEdgeKindLayout::Normal,
                     });
                 }
+            } else if !die.then_branch.has_break {
+                // 1b. Then-branch merge (normal end): last then node → next flow
+                // node.  Symmetric to the else merge below (step 4) — without
+                // this, a `then` branch that ends normally never connects back
+                // to the merge point, so the diagram is missing the then-side
+                // merge leg (issue #30: 8 lines instead of the official 10).
+                if let (Some(last_idx), Some(next)) =
+                    (die.then_branch.nodes.last(), next_flow_idx)
+                {
+                    let last = &nodes[*last_idx];
+                    let last_cx = last.x + last.width / 2.0;
+                    let last_bottom = last.y + last.height;
+                    let merge_mid_y = die.merge_y + 5.0;
+                    let next_node = &nodes[next];
+                    let next_top = next_node.y;
+                    let next_cx = next_node.x + next_node.width / 2.0;
+                    edges.push(ActivityEdgeLayout {
+                        from_index: *last_idx,
+                        to_index: next,
+                        label: String::new(),
+                        points: vec![
+                            (last_cx, last_bottom),
+                            (last_cx, merge_mid_y),
+                            (next_cx, merge_mid_y),
+                            (next_cx, next_top),
+                        ],
+                        kind: ActivityEdgeKindLayout::IfMerge,
+                    });
+                }
             }
 
             // 2. Then branch connection (diamond left → first node)
