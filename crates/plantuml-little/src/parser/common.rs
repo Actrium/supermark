@@ -1785,7 +1785,7 @@ Class01 \"1\" *-- \"many\" Class02 : contains\n\
 Class03 o-- Class04 : aggregation\n\
 Class05 --> \"1\" Class06\n\
 @enduml";
-        assert_eq!(detect_diagram_type(src), DiagramHint::Class);
+        assert!(matches!(detect_diagram_type(src), DiagramHint::Class));
     }
 
     // ── detect_diagram_type: review #44 regression ──────────────────────
@@ -1799,7 +1799,7 @@ Class05 --> \"1\" Class06\n\
 Alice -> Bob : items[0]\n\
 Bob --> Alice : ok\n\
 @enduml";
-        assert_eq!(detect_diagram_type(src), DiagramHint::Sequence);
+        assert!(matches!(detect_diagram_type(src), DiagramHint::Sequence));
     }
 
     // `actor`-declared sequence diagrams must stay Sequence — the `actor`
@@ -1811,6 +1811,6 @@ Bob --> Alice : ok\n\
 actor User\n\
 User -> API : fetch[0]\n\
 @enduml";
-        assert_eq!(detect_diagram_type(src), DiagramHint::Sequence);
+        assert!(matches!(detect_diagram_type(src), DiagramHint::Sequence));
     }
 }
