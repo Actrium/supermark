@@ -208,6 +208,14 @@ pub fn detect_diagram_type(content: &str) -> DiagramHint {
     let mut has_seq_lifecycle = false;
     let mut has_class_kw = false;
     let mut has_class_relation = false;
+    // Class-EXCLUSIVE relations only (`*--`, `o--`, `<|`, `|>`, …) — the token
+    // list that unambiguously marks a class diagram.  Distinct from
+    // `has_class_relation`, which ALSO covers the broad `[`…`]` bracket
+    // heuristic and therefore fires on innocent sequence messages like
+    // `Alice -> Bob : items[0]`.  Only the exclusive set is allowed to win
+    // over a `-->` sequence arrow (see issue #29), so the bracket heuristic
+    // can no longer force a sequence diagram into Class.
+    let mut has_exclusive_class_relation = false;
     let mut in_bracket_display = false;
 
     let mut in_note_block = false;
@@ -481,6 +489,26 @@ pub fn detect_diagram_type(content: &str) -> DiagramHint {
             || trimmed.contains("..+")
         {
             has_class_relation = true;
+            // Class-EXCLUSIVE: only the `*` (composition) / `o` (aggregation)
+            // / `<|` / `|>` (inheritance/realization) markers unambiguously
+            // mark a class diagram.  The `+` visibility variants (`+--`,
+            // `--+`, `+..`, `..+`) are NOT exclusive — `--+` is a substring of
+            // the sequence create/destroy token `--++` (e.g. `A -> B --++:
+            // …`), so including it here would regress such sequence diagrams
+            // to Class (TeozTimelineIssues_0005 golden expects Sequence).
+            if trimmed.contains("<|")
+                || trimmed.contains("|>")
+                || trimmed.contains(" o--")
+                || trimmed.contains("--o")
+                || trimmed.contains(" *--")
+                || trimmed.contains("--*")
+                || trimmed.contains(" o..")
+                || trimmed.contains("..o")
+                || trimmed.contains(" *..")
+                || trimmed.contains("..*")
+            {
+                has_exclusive_class_relation = true;
+            }
         }
         if trimmed.contains('[')
             && trimmed.contains(']')
@@ -542,8 +570,18 @@ pub fn detect_diagram_type(content: &str) -> DiagramHint {
         }
         return DiagramHint::Component;
     }
-    // Sequence arrows override class relations when no class keywords present
-    if has_seq_arrow && !has_class_kw {
+    // Sequence arrows override plain class associations when no class keywords
+    // are present — BUT a class-exclusive relation (`*--`, `o--`, `<|`, `|>`,
+    // …) unambiguously marks a class diagram, so it must win over the
+    // ambiguous `-->`/`->` arrow.  Without this guard, `Class01 *-- Class02`
+    // combined with `Class05 --> Class06` was misdetected as a sequence
+    // diagram (see issue #29).
+    //
+    // NOTE: only the exclusive token set is allowed to override here.  The
+    // broader `has_class_relation` (which also includes the `[`…`]` bracket
+    // heuristic) must NOT win over a sequence arrow, or an innocent sequence
+    // message like `Alice -> Bob : items[0]` regresses to Class (review #44).
+    if has_seq_arrow && !has_class_kw && !has_exclusive_class_relation {
         return DiagramHint::Sequence;
     }
     if has_class_kw || has_class_relation {
@@ -1754,5 +1792,58 @@ mod tests {
         );
         assert!(!cleaned.contains("sprite"));
         assert!(cleaned.contains("rectangle A"));
+    }
+
+    // ── detect_diagram_type: issue #29 ──────────────────────────────────
+    // A class-exclusive relation (`*--`, `o--`, …) must win over an ambiguous
+    // `-->`/`->` arrow, so a class diagram is not misdetected as Sequence.
+    #[test]
+    fn detect_class_with_star_relation_and_arrow_is_class() {
+        let src = "@startuml\n\
+Class01 \"1\" *-- \"many\" Class02 : contains\n\
+Class03 o-- Class04 : aggregation\n\
+Class05 --> \"1\" Class06\n\
+@enduml";
+        assert!(matches!(detect_diagram_type(src), DiagramHint::Class));
+    }
+
+    // ── detect_diagram_type: review #44 regression ──────────────────────
+    // A plain sequence message that happens to contain `[...]` brackets
+    // (e.g. `items[0]`) must NOT trip the class-relation heuristic and force
+    // the diagram into Class.  Before the exclusive-relation split this
+    // regressed to Class.
+    #[test]
+    fn detect_sequence_message_with_brackets_is_sequence() {
+        let src = "@startuml\n\
+Alice -> Bob : items[0]\n\
+Bob --> Alice : ok\n\
+@enduml";
+        assert!(matches!(detect_diagram_type(src), DiagramHint::Sequence));
+    }
+
+    // `actor`-declared sequence diagrams must stay Sequence — the `actor`
+    // check sits after the class return, so a too-broad guard would regress
+    // these too.
+    #[test]
+    fn detect_actor_sequence_with_brackets_is_sequence() {
+        let src = "@startuml\n\
+actor User\n\
+User -> API : fetch[0]\n\
+@enduml";
+        assert!(matches!(detect_diagram_type(src), DiagramHint::Sequence));
+    }
+
+    // `--++` is the sequence create+destroy token (e.g. `A -> B --++: …`).
+    // It contains the substring `--+`, which also appears in the class
+    // visibility-variant `+--`/`--+` token list — but `+` is a visibility
+    // marker, not a class-exclusive relation, so this must stay Sequence.
+    #[test]
+    fn detect_sequence_create_destroy_stays_sequence() {
+        let src = "@startuml\n\
+dummy -> A ++: first step\n\
+A -> B --++: second step\n\
+B -> C--: third step\n\
+@enduml";
+        assert!(matches!(detect_diagram_type(src), DiagramHint::Sequence));
     }
 }
