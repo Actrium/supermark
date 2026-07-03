@@ -103,8 +103,12 @@ const CLASS_FONT_SIZE: f64 = 14.0;
 /// FontParam.CLASS_ATTRIBUTE = 10pt.
 #[allow(dead_code)] // Java-ported constant for class attribute sizing
 const CLASS_ATTR_FONT_SIZE: f64 = 10.0;
-/// MethodsOrFieldsArea: empty compartment = margin_top(4) + margin_bottom(4).
-const LINE_HEIGHT_PT: f64 = 8.0;
+/// MethodsOrFieldsArea member row height.  Must match the renderer's member
+/// advance (MEMBER_ROW_HEIGHT = SansSerif 14pt ascent+descent) — previously
+/// 8.0 (just the empty-compartment margin), which made legacy-sized entities
+/// (enum/annotation) far too short: members spilled past the box bottom
+/// (issue #37).
+const LINE_HEIGHT_PT: f64 = MEMBER_ROW_HEIGHT;
 /// EntityImageClassHeader.java:150 — withMargin(circledChar, left=4, ...).
 const CIRCLE_LEFT_PAD: f64 = 4.0;
 /// SkinParam.circledCharacterRadius = 17/3+6 = 11. Diameter = 2 * 11 = 22.
