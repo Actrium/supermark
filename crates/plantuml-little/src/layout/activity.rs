@@ -164,6 +164,9 @@ pub struct ActivityEdgeLayout {
     pub label: String,
     pub points: Vec<(f64, f64)>,
     pub kind: ActivityEdgeKindLayout,
+    /// Optional explicit label position; when set, the renderer places the
+    /// label here instead of at the polyline midpoint.
+    pub label_xy: Option<(f64, f64)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -870,6 +873,23 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
     let mut deferred_if_edges: Vec<DeferredIfEdges> = Vec::new();
     // Deferred break edges: (from_node_idx, from_y, exit_diamond_idx)
     let mut deferred_break_edges: Vec<(usize, f64, usize)> = Vec::new();
+
+    // While-loop tracking.  Each `while (cond) is (label)` opens a frame that
+    // remembers the condition hexagon's geometry and collects the loop-body
+    // node indices; the matching `endwhile (label)` closes it (without
+    // creating a node) and records the loop-back (body bottom → while right)
+    // plus the exit edge (while left → next) with the `is` / `endwhile`
+    // labels.  Mirrors the if/else branch machinery: the while hexagon is a
+    // two-way branch — down into the body (`is` label), left out to the next
+    // flow node (`endwhile` label) — matching official PlantUML.
+    struct WhileFrame {
+        while_idx: usize,
+        is_label: String,
+        body_nodes: Vec<usize>,
+    }
+    let mut while_stack: Vec<WhileFrame> = Vec::new();
+    // Closed while frames: (while_idx, body_nodes, is_label, endwhile_label, merge_y)
+    let mut while_loopbacks: Vec<(usize, Vec<usize>, String, String, f64)> = Vec::new();
     // Pre-scan: for each `If` event, determine whether it has a matching `Else`.
     // This is needed so we can decide the branch layout direction up front.
     let if_has_else: HashMap<usize, bool> = {
@@ -1046,6 +1066,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 }
                 let (w, h) = estimate_text_size(text);
                 let in_if = !if_stack.is_empty();
+                let in_while = !while_stack.is_empty();
                 let cx = if in_if {
                     let frame = if_stack.last().unwrap();
                     if frame.has_else {
@@ -1070,7 +1091,9 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 };
                 let x = cx - w / 2.0;
                 let y = y_cursor;
-                log::debug!("  node[{node_index}] Action \"{text}\" @ ({x:.1}, {y:.1}) {w}x{h}, in_if={in_if}");
+                log::debug!(
+                    "  node[{node_index}] Action \"{text}\" @ ({x:.1}, {y:.1}) {w}x{h}, in_if={in_if} in_while={in_while}"
+                );
                 nodes.push(ActivityNodeLayout {
                     index: node_index,
                     kind: ActivityNodeKindLayout::Action,
@@ -1079,8 +1102,12 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     width: w,
                     height: h,
                     text: text.clone(),
-                    skip_in_flow: in_if,
+                    skip_in_flow: in_if || in_while,
                 });
+                // Track node in while-body
+                if let Some(frame) = while_stack.last_mut() {
+                    frame.body_nodes.push(node_index);
+                }
                 // Track node in if-branch
                 if let Some(frame) = if_stack.last_mut() {
                     if let Some(ref mut else_branch) = frame.else_branch {
@@ -1377,12 +1404,10 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
 
             // ---- While / EndWhile → diamonds ---------------------------------
             ActivityEvent::While { condition, label } => {
-                let combined = if label.is_empty() {
-                    condition.clone()
-                } else {
-                    format!("{condition}\n[{label}]")
-                };
-                let (w, h) = diamond_size(&combined);
+                // Condition text lives inside the diamond; the `is (label)` is
+                // rendered on the arrow entering the loop body (see loop-back
+                // pass), so it is NOT folded into the condition text here.
+                let (w, h) = diamond_size(&condition);
                 let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
                 let x = cx - w / 2.0;
                 let y = y_cursor;
@@ -1394,8 +1419,13 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     y,
                     width: w,
                     height: h,
-                    text: combined,
+                    text: condition.clone(),
                     skip_in_flow: false,
+                });
+                while_stack.push(WhileFrame {
+                    while_idx: node_index,
+                    is_label: label.clone(),
+                    body_nodes: Vec::new(),
                 });
                 last_flow_node_idx = Some(node_index);
                 node_index += 1;
@@ -1403,29 +1433,38 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             }
 
             ActivityEvent::EndWhile { label } => {
-                let text = if label.is_empty() {
-                    String::new()
-                } else {
-                    format!("[{label}]")
-                };
-                let (w, h) = diamond_size(if text.is_empty() { "end" } else { &text });
-                let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
-                let x = cx - w / 2.0;
-                let y = y_cursor;
-                log::debug!("  node[{node_index}] EndWhile diamond @ ({x:.1}, {y:.1})");
-                nodes.push(ActivityNodeLayout {
-                    index: node_index,
-                    kind: ActivityNodeKindLayout::Diamond,
-                    x,
-                    y,
-                    width: w,
-                    height: h,
-                    text,
-                    skip_in_flow: false,
-                });
-                last_flow_node_idx = Some(node_index);
-                node_index += 1;
-                y_cursor += h + node_gap;
+                // `endwhile` does NOT create a node — official PlantUML treats
+                // the while hexagon as a two-way branch (down into the body,
+                // left out to the next flow node), so the exit path leaves from
+                // the while's left side, not from a separate merge diamond.
+                if let Some(frame) = while_stack.pop() {
+                    // merge_y = bottom of the body (or while bottom if empty),
+                    // used to route the exit edge's horizontal segment.
+                    let body_bottom = frame
+                        .body_nodes
+                        .last()
+                        .and_then(|&i| nodes.get(i))
+                        .map(|n| n.y + n.height)
+                        .unwrap_or_else(|| {
+                            nodes
+                                .get(frame.while_idx)
+                                .map(|n| n.y + n.height)
+                                .unwrap_or(y_cursor)
+                        });
+                    let merge_y = body_bottom + node_gap;
+                    while_loopbacks.push((
+                        frame.while_idx,
+                        frame.body_nodes,
+                        frame.is_label,
+                        label.clone(),
+                        merge_y,
+                    ));
+                    // Reserve vertical space for the exit/loop-back routing so
+                    // the next flow node is placed below the merge band.
+                    y_cursor = merge_y + node_gap;
+                }
+                // last_flow_node_idx stays as the while diamond (the branch
+                // point) so the next flow node after endwhile connects from it.
             }
 
             // ---- Repeat / RepeatWhile → diamond at end -----------------------
@@ -2039,6 +2078,16 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             .filter(|n| is_flow_node(&n.kind) && !n.skip_in_flow)
             .map(|n| n.width / 2.0)
             .fold(0.0_f64, f64::max);
+        // Also consider while-loop body node widths — the body sits on the
+        // centreline under the while diamond, so the widest body node's half
+        // width must be covered by the centre margin.
+        for &(_, ref body_nodes, ..) in &while_loopbacks {
+            let body_max_w = body_nodes
+                .iter()
+                .map(|&i| nodes.get(i).map(|n| n.width).unwrap_or(0.0))
+                .fold(0.0_f64, f64::max);
+            max_half_w = max_half_w.max(body_max_w / 2.0);
+        }
         // Also consider if-block total width (diamond + left branch + right branch)
         for die in &deferred_if_edges {
             if die.has_else {
@@ -2113,6 +2162,16 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 for &node_idx in &die.then_branch.nodes {
                     nodes[node_idx].x = cx - nodes[node_idx].width / 2.0;
                 }
+            }
+        }
+        // Position while-loop body nodes at the while diamond's centre x.
+        // Body nodes are skip_in_flow=true (edges built manually in Pass 3d),
+        // so the first centering pass skipped them; place them now, directly
+        // under the while diamond on the centreline.
+        for &(while_idx, ref body_nodes, ..) in &while_loopbacks {
+            let while_cx = nodes[while_idx].x + nodes[while_idx].width / 2.0;
+            for &node_idx in body_nodes {
+                nodes[node_idx].x = while_cx - nodes[node_idx].width / 2.0;
             }
         }
     }
@@ -2515,6 +2574,29 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         });
     }
 
+    // Remove the build_edges edge that jumps from a while diamond straight
+    // down to the first post-while flow node — it would cut through the loop
+    // body (body nodes are skip_in_flow, so build_edges skips them but still
+    // links while → next).  The exit edge is rebuilt properly in Pass 3d.
+    if !while_loopbacks.is_empty() {
+        let while_ranges: Vec<(usize, usize)> = while_loopbacks
+            .iter()
+            .map(|&(while_idx, _, _, _, _)| {
+                let post_idx = nodes
+                    .iter()
+                    .find(|n| n.index > while_idx && is_flow_node(&n.kind) && !n.skip_in_flow)
+                    .map(|n| n.index)
+                    .unwrap_or(while_idx);
+                (while_idx, post_idx)
+            })
+            .collect();
+        edges.retain(|edge| {
+            !while_ranges.iter().any(|&(while_idx, post_idx)| {
+                edge.from_index == while_idx && edge.to_index >= post_idx
+            })
+        });
+    }
+
     // --- Pass 3-break: break edges (before if-branch edges) ------------------
     // Break edges connect from a break source (inside an if-block within a
     // repeat) to the repeat's exit diamond.  In Java these are drawn as part
@@ -2542,6 +2624,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 (exit_left, exit_cy),
             ],
             kind: ActivityEdgeKindLayout::BreakEdge,
+            label_xy: None,
         });
     }
 
@@ -2596,6 +2679,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         label: String::new(),
                         points: vec![(last_cx, last_bottom), (last_cx, goto_y)],
                         kind: ActivityEdgeKindLayout::Normal,
+                        label_xy: None,
                     });
                 }
             }
@@ -2615,6 +2699,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         (then_cx, node_top),
                     ],
                     kind: ActivityEdgeKindLayout::IfBranch,
+                    label_xy: None,
                 });
             }
             // Inter-then-branch-node edges
@@ -2631,6 +2716,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     label: String::new(),
                     points: vec![(from_cx, from_bottom), (to_cx, to_top)],
                     kind: ActivityEdgeKindLayout::Normal,
+                    label_xy: None,
                 });
             }
 
@@ -2650,6 +2736,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                             (else_cx, node_top),
                         ],
                         kind: ActivityEdgeKindLayout::IfBranch,
+                        label_xy: None,
                     });
                 }
                 // Inter-else-branch-node edges
@@ -2666,6 +2753,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         label: String::new(),
                         points: vec![(from_cx, from_bottom), (to_cx, to_top)],
                         kind: ActivityEdgeKindLayout::Normal,
+                        label_xy: None,
                     });
                 }
 
@@ -2691,6 +2779,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                                 (next_cx, next_top),
                             ],
                             kind: ActivityEdgeKindLayout::IfMerge,
+                            label_xy: None,
                         });
                     }
                 }
@@ -2707,6 +2796,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     label: String::new(),
                     points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
                     kind: ActivityEdgeKindLayout::Normal,
+                    label_xy: None,
                 });
             }
         } else {
@@ -2724,6 +2814,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         label: String::new(),
                         points: vec![(diamond_cx, diamond_bottom_y), (node_cx, node_top)],
                         kind: ActivityEdgeKindLayout::Normal,
+                        label_xy: None,
                     });
                 }
             }
@@ -2740,6 +2831,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     label: String::new(),
                     points: vec![(from_cx, from_bottom), (to_cx, to_top)],
                     kind: ActivityEdgeKindLayout::Normal,
+                    label_xy: None,
                 });
             }
             // Then branch end: if has_break, the break edge connects to repeat exit
@@ -2769,6 +2861,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                             label: String::new(),
                             points: vec![(last_cx, last_bottom), (next_cx, next_top)],
                             kind: ActivityEdgeKindLayout::Normal,
+                            label_xy: None,
                         });
                     }
                 }
@@ -2806,6 +2899,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                             (next_cx, next_top),
                         ],
                         kind: ActivityEdgeKindLayout::IfMergeEmphasize,
+                        label_xy: None,
                     });
                 }
             }
@@ -2821,6 +2915,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     label: String::new(),
                     points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
                     kind: ActivityEdgeKindLayout::Normal,
+                    label_xy: None,
                 });
             }
         }
@@ -2864,6 +2959,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         (main_cx, *label_y),
                     ],
                     kind: ActivityEdgeKindLayout::GotoNoArrow,
+                    label_xy: None,
                 });
             }
         }
@@ -2903,6 +2999,111 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             }
             // Add both edges as a single frame entry
             loopback_info.push((diamond1_idx, hex_idx, edges_pair));
+        }
+    }
+
+    // --- Pass 3d: `while`/`endwhile` branch + loop-back + exit edges --------
+    // Official PlantUML treats the while diamond as a two-way branch:
+    //   • down  into the loop body   — `is` label
+    //   • left  out to the next node — `endwhile` label
+    // The loop-back snakes from the body's bottom up the right side back to
+    // the while diamond's right point.  There is NO separate endwhile node.
+    for &(while_idx, ref body_nodes, ref is_label, ref end_label, merge_y) in &while_loopbacks {
+        let while_node = &nodes[while_idx];
+        let while_cx = while_node.x + while_node.width / 2.0;
+        let while_cy = while_node.y + while_node.height / 2.0;
+        let while_left_x = while_node.x;
+        let while_bottom_y = while_node.y + while_node.height;
+
+        // Next flow node after the while block (exit target).
+        let next_idx = nodes
+            .iter()
+            .find(|n| {
+                n.index > while_idx
+                    && is_flow_node(&n.kind)
+                    && !n.skip_in_flow
+                    && n.y >= merge_y - 1.0
+            })
+            .map(|n| n.index);
+
+        // 1. while → first body node (down), stamped with the `is` label.
+        if let Some(&first_body) = body_nodes.first() {
+            let first_node = &nodes[first_body];
+            let first_top = first_node.y;
+            let first_cx = first_node.x + first_node.width / 2.0;
+            // Place the `is` label just below the while diamond's right point,
+            // matching official PlantUML (label sits beside the entry arrow).
+            let label_xy = Some((while_cx + 4.0, while_bottom_y + 12.0));
+            edges.push(ActivityEdgeLayout {
+                from_index: while_idx,
+                to_index: first_body,
+                label: is_label.clone(),
+                label_xy,
+                points: vec![(while_cx, while_bottom_y), (first_cx, first_top)],
+                kind: ActivityEdgeKindLayout::Normal,
+            });
+        }
+
+        // 2. Body-internal edges between consecutive body nodes.
+        for pair in body_nodes.windows(2) {
+            let from = &nodes[pair[0]];
+            let to = &nodes[pair[1]];
+            let from_cx = from.x + from.width / 2.0;
+            let from_bottom = from.y + from.height;
+            let to_cx = to.x + to.width / 2.0;
+            let to_top = to.y;
+            edges.push(ActivityEdgeLayout {
+                from_index: pair[0],
+                to_index: pair[1],
+                label: String::new(),
+                points: vec![(from_cx, from_bottom), (to_cx, to_top)],
+                kind: ActivityEdgeKindLayout::Normal,
+                label_xy: None,
+            });
+        }
+
+        // 3. Loop-back edge: body bottom → right → up → while right.
+        if !body_nodes.is_empty() {
+            if let Some((loopback_edge, extra)) =
+                build_while_loopback_edge(&nodes, while_idx, body_nodes)
+            {
+                log::debug!(
+                    "  while loop-back while={while_idx} ← body={:?} extra_right={extra}",
+                    body_nodes.last()
+                );
+                if extra > loopback_extra_right {
+                    loopback_extra_right = extra;
+                }
+                edges.push(loopback_edge);
+            }
+        }
+
+        // 4. Exit edge: while left → left → down → right → next, stamped with
+        //    the `endwhile` label.  Routed to the left of the while diamond,
+        //    matching official PlantUML's left-side exit path.
+        if let Some(next) = next_idx {
+            let next_node = &nodes[next];
+            let next_top = next_node.y;
+            let next_cx = next_node.x + next_node.width / 2.0;
+            let exit_left_x = (while_left_x - 40.0).max(10.0);
+            // Label the exit edge on its first (top) horizontal segment, beside
+            // the while diamond's left point — matches official PlantUML, which
+            // places the `endwhile` label just left of the while shape.
+            let label_xy = Some(((while_left_x + exit_left_x) / 2.0, while_cy - 4.0));
+            edges.push(ActivityEdgeLayout {
+                from_index: while_idx,
+                to_index: next,
+                label: end_label.clone(),
+                label_xy,
+                points: vec![
+                    (while_left_x, while_cy),
+                    (exit_left_x, while_cy),
+                    (exit_left_x, merge_y),
+                    (next_cx, merge_y),
+                    (next_cx, next_top),
+                ],
+                kind: ActivityEdgeKindLayout::Normal,
+            });
         }
     }
 
@@ -3261,6 +3462,7 @@ fn build_edges(nodes: &[ActivityNodeLayout]) -> Vec<ActivityEdgeLayout> {
             label: String::new(),
             points,
             kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
         });
     }
     edges
@@ -3355,6 +3557,7 @@ fn build_repeat_loopback_edge(
             label: String::new(),
             points,
             kind: ActivityEdgeKindLayout::LoopBackSimple2 { up_arrow_y },
+            label_xy: None,
         },
         extra_right,
     ))
@@ -3390,6 +3593,7 @@ fn build_backward_loopback_edges(
         label: String::new(),
         points: vec![(x1, y1), (bw_cx, y1), (bw_cx, bw_bottom)],
         kind: ActivityEdgeKindLayout::LoopBackBackward1,
+        label_xy: None,
     };
 
     // Edge 2: backward top → diamond1 right (ConnectionBackBackward2)
@@ -3403,11 +3607,68 @@ fn build_backward_loopback_edges(
         label: String::new(),
         points: vec![(bw_cx, bw_top), (bw_cx, d1_mid_y), (d1_right, d1_mid_y)],
         kind: ActivityEdgeKindLayout::LoopBackBackward2,
+        label_xy: None,
     };
 
     // The backward box is already in the node bounds, so no extra width
     // is needed beyond what compute_bounds already provides.
     Some((vec![edge1, edge2], 0.0))
+}
+
+/// Build the `while`/`endwhile` loop-back edge: from the last loop-body
+/// node's bottom-centre, snaking right and up to the `while` diamond's right
+/// side (arrow pointing back at `while`).  Returns the edge plus the extra
+/// right-side width the snake needs beyond the current content bounds.
+///
+/// This mirrors `build_repeat_loopback_edge` but for the simpler `while` loop:
+/// there is no hexagon and no East `is` label on the shape, so the path is a
+/// plain 4-point snake rendered as a `Normal` edge (polyline + end arrowhead).
+fn build_while_loopback_edge(
+    nodes: &[ActivityNodeLayout],
+    while_idx: usize,
+    body_nodes: &[usize],
+) -> Option<(ActivityEdgeLayout, f64)> {
+    let wd = nodes.get(while_idx)?;
+    let &body_last_idx = body_nodes.last()?;
+    let bd = nodes.get(body_last_idx)?;
+    let while_right = wd.x + wd.width;
+    let while_cy = wd.y + wd.height / 2.0;
+    let body_cx = bd.x + bd.width / 2.0;
+    let body_bottom = bd.y + bd.height;
+
+    // Scan ALL body nodes (not just the last) for the rightmost edge — a wider
+    // intermediate body node would otherwise have the loop-back routed through
+    // it.  Matches `build_repeat_loopback_edge`'s scan.
+    let body_max_right = body_nodes
+        .iter()
+        .filter_map(|&i| nodes.get(i).map(|n| n.x + n.width))
+        .fold(0.0_f64, f64::max);
+
+    // Snake out to the right of whichever is wider (while or body), then up to
+    // the while diamond's vertical centre, then back left to its right point.
+    let max_right = while_right.max(body_max_right);
+    let loop_x = max_right + 20.0;
+    // Extra width beyond the current content right edge.
+    let extra_right = (loop_x - max_right) + 6.0;
+
+    let points = vec![
+        (body_cx, body_bottom),
+        (body_cx, body_bottom + 10.0),
+        (loop_x, body_bottom + 10.0),
+        (loop_x, while_cy),
+        (while_right, while_cy),
+    ];
+    Some((
+        ActivityEdgeLayout {
+            from_index: body_last_idx,
+            to_index: while_idx,
+            label: String::new(),
+            points,
+            kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
+        },
+        extra_right,
+    ))
 }
 
 /// Compute a render-order permutation so the inner repeat body (the interior
@@ -3996,6 +4257,7 @@ fn layout_old_style_activity_graph(
             label: link.label.clone().unwrap_or_default(),
             points: shifted_points,
             kind: ActivityEdgeKindLayout::Normal,
+            label_xy: None,
         });
         let from_uid = node_uid_by_id
             .get(&link.from_id)
@@ -4560,12 +4822,13 @@ mod tests {
             },
         ]);
         let layout = layout_activity(&d).unwrap();
-        assert_eq!(layout.nodes.len(), 3);
+        // EndWhile no longer creates a node — the while diamond is a two-way
+        // branch (down into the body, left out to the next node), matching
+        // official PlantUML.  Only the while diamond + body action remain.
+        assert_eq!(layout.nodes.len(), 2);
 
         let while_node = &layout.nodes[0];
-        let end_while_node = &layout.nodes[2];
         assert_eq!(while_node.kind, ActivityNodeKindLayout::Diamond);
-        assert_eq!(end_while_node.kind, ActivityNodeKindLayout::Diamond);
         assert!(while_node.text.contains("count < 10"));
     }
 
