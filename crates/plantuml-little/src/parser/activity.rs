@@ -555,6 +555,27 @@ pub fn parse_activity_diagram(source: &str) -> Result<ActivityDiagram> {
             continue;
         }
 
+        // --- switch (condition) / case (label) / endswitch ---
+        if lower.starts_with("switch") {
+            let rest = trimmed[6..].trim();
+            let condition = extract_parenthesized(rest).unwrap_or_default();
+            debug!("line {line_num}: switch ({condition})");
+            events.push(ActivityEvent::Switch { condition });
+            continue;
+        }
+        if lower.starts_with("case") {
+            let rest = trimmed[4..].trim();
+            let label = extract_parenthesized(rest).unwrap_or_default();
+            debug!("line {line_num}: case ({label})");
+            events.push(ActivityEvent::Case { label });
+            continue;
+        }
+        if lower == "endswitch" || lower == "end switch" {
+            debug!("line {line_num}: endswitch");
+            events.push(ActivityEvent::EndSwitch);
+            continue;
+        }
+
         // --- detach ---
         if lower == "detach" {
             debug!("line {line_num}: detach");

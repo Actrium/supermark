@@ -862,6 +862,9 @@ fn render_node(
             render_action(sg, node, act_bg, act_border, act_font)
         }
         ActivityNodeKindLayout::Diamond => render_diamond(sg, node, diamond_bg, diamond_border),
+        ActivityNodeKindLayout::SwitchDiamond => {
+            render_switch_diamond(sg, node, diamond_bg, diamond_border, act_font)
+        }
         ActivityNodeKindLayout::Hexagon {
             east_lines,
             south_lines,
@@ -1162,6 +1165,56 @@ fn render_diamond(sg: &mut SvgGraphic, node: &ActivityNodeLayout, bg: &str, bord
         points: vec![cx, y, x + w, cy, cx, y + h, x, cy, cx, y],
     }
     .draw(sg, &DrawStyle::filled(bg, border, 0.5));
+}
+
+/// Square diamond used by `switch (cond)`.  Draws the diamond polygon and
+/// centres the condition text (in `node.text`) inside, using the same 11pt
+/// sans-serif styling as the if-diamond's condition text.
+fn render_switch_diamond(
+    sg: &mut SvgGraphic,
+    node: &ActivityNodeLayout,
+    bg: &str,
+    border: &str,
+    font_color: &str,
+) {
+    let x = node.x;
+    let y = node.y;
+    let w = node.width;
+    let h = node.height;
+    let cx = x + w / 2.0;
+    let cy = y + h / 2.0;
+
+    // 1. Diamond polygon.
+    PolygonShape {
+        points: vec![cx, y, x + w, cy, cx, y + h, x, cy, cx, y],
+    }
+    .draw(sg, &DrawStyle::filled(bg, border, 0.5));
+
+    // 2. Condition text centred inside the diamond.
+    if !node.text.is_empty() {
+        let font_size = HEXAGON_LABEL_FONT_SIZE_RENDER;
+        let text_w = font_metrics::text_width(&node.text, "SansSerif", font_size, false, false);
+        let line_h = font_metrics::line_height("SansSerif", font_size, false, false);
+        let ascent = font_metrics::ascent("SansSerif", font_size, false, false);
+        let text_x = x + (w - text_w) / 2.0;
+        let text_y = y + (h - line_h) / 2.0 + ascent;
+        sg.set_fill_color(font_color);
+        sg.svg_text(
+            &node.text,
+            text_x,
+            text_y,
+            Some("sans-serif"),
+            font_size,
+            None,
+            None,
+            None,
+            text_w,
+            crate::klimt::svg::LengthAdjust::Spacing,
+            None,
+            0,
+            None,
+        );
+    }
 }
 
 /// Hexagonal diamond used by `repeat while (cond) is (label)`.
@@ -1749,6 +1802,35 @@ fn render_edge(
         ActivityEdgeKindLayout::IfBranch | ActivityEdgeKindLayout::IfMerge
     ) {
         render_polyline_with_arrow(sg, &edge.points, arrow_color);
+        // Render edge label (used by switch/case branch labels; empty for
+        // regular if/else branches so existing output is unchanged).
+        if !edge.label.is_empty() {
+            let mid = edge.points.len() / 2;
+            let (mx, my) = edge.points[mid];
+            let tl = font_metrics::text_width(
+                &edge.label,
+                "SansSerif",
+                ACTION_FONT_SIZE,
+                false,
+                false,
+            );
+            sg.set_fill_color(text_color);
+            sg.svg_text(
+                &edge.label,
+                mx,
+                my,
+                Some("sans-serif"),
+                ACTION_FONT_SIZE,
+                None,
+                None,
+                None,
+                tl,
+                LengthAdjust::Spacing,
+                None,
+                0,
+                Some("middle"),
+            );
+        }
         return;
     }
 

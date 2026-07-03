@@ -69,6 +69,12 @@ pub enum ActivityEvent {
     ForkAgain,
     /// end fork
     EndFork,
+    /// `switch (condition)` — multi-way branch header
+    Switch { condition: String },
+    /// `case (label)` — one branch of a switch
+    Case { label: String },
+    /// `endswitch` — close the switch
+    EndSwitch,
     /// Swimlane switch
     Swimlane { name: String },
     /// Note

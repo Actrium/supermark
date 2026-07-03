@@ -111,6 +111,10 @@ pub enum ActivityNodeKindLayout {
     GotoLines {
         segments: Vec<(f64, f64, f64, f64)>,
     },
+    /// Square diamond used by `switch (cond)` — the condition text lives in
+    /// `node.text` and is centred inside the diamond.  Case labels are rendered
+    /// as edge labels on the branch connections from the diamond's sides.
+    SwitchDiamond,
 }
 
 /// Note position in the layout coordinate space.
@@ -868,6 +872,43 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         post_merge_node_idx: Option<usize>,
     }
     let mut deferred_if_edges: Vec<DeferredIfEdges> = Vec::new();
+
+    // --- Switch/Case/EndSwitch branch tracking --------------------------------
+    // Stack of open `switch` blocks.  Each frame tracks the diamond node and
+    // N case branches (one per `case (label)`).  Like the if-frame, edges are
+    // deferred to a post-placement pass so the diamond and all case nodes can
+    // be connected with properly routed polylines.
+    struct CaseBranch {
+        label: String,
+        nodes: Vec<usize>,
+        last_node_idx: Option<usize>,
+        bottom_y: f64,
+    }
+    #[allow(dead_code)] // fields used by deferred pass
+    struct SwitchFrame {
+        diamond_idx: usize,
+        diamond_cx: f64,
+        diamond_cy: f64,
+        diamond_left_x: f64,
+        diamond_right_x: f64,
+        diamond_bottom_y: f64,
+        cases: Vec<CaseBranch>,
+        saved_y_cursor: f64,
+        saved_last_flow_node_idx: Option<usize>,
+    }
+    #[allow(dead_code)] // diamond side coords kept for parity with DeferredIfEdges
+    struct DeferredSwitchEdges {
+        diamond_idx: usize,
+        diamond_cx: f64,
+        diamond_cy: f64,
+        diamond_left_x: f64,
+        diamond_right_x: f64,
+        diamond_bottom_y: f64,
+        cases: Vec<CaseBranch>,
+        merge_y: f64,
+    }
+    let mut switch_stack: Vec<SwitchFrame> = Vec::new();
+    let mut deferred_switch_edges: Vec<DeferredSwitchEdges> = Vec::new();
     // Deferred break edges: (from_node_idx, from_y, exit_diamond_idx)
     let mut deferred_break_edges: Vec<(usize, f64, usize)> = Vec::new();
     // Pre-scan: for each `If` event, determine whether it has a matching `Else`.
@@ -1046,6 +1087,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 }
                 let (w, h) = estimate_text_size(text);
                 let in_if = !if_stack.is_empty();
+                let in_switch = !switch_stack.is_empty();
                 let cx = if in_if {
                     let frame = if_stack.last().unwrap();
                     if frame.has_else {
@@ -1065,12 +1107,16 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                             frame.diamond_right_x + 10.0
                         }
                     }
+                } else if in_switch {
+                    // Inside a switch case: place at the diamond's centre for
+                    // now; the centering pass spreads case branches horizontally.
+                    switch_stack.last().unwrap().diamond_cx
                 } else {
                     swimlane_center_x(&swimlane_layouts, current_lane_idx)
                 };
                 let x = cx - w / 2.0;
                 let y = y_cursor;
-                log::debug!("  node[{node_index}] Action \"{text}\" @ ({x:.1}, {y:.1}) {w}x{h}, in_if={in_if}");
+                log::debug!("  node[{node_index}] Action \"{text}\" @ ({x:.1}, {y:.1}) {w}x{h}, in_if={in_if}, in_switch={in_switch}");
                 nodes.push(ActivityNodeLayout {
                     index: node_index,
                     kind: ActivityNodeKindLayout::Action,
@@ -1079,7 +1125,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     width: w,
                     height: h,
                     text: text.clone(),
-                    skip_in_flow: in_if,
+                    skip_in_flow: in_if || in_switch,
                 });
                 // Track node in if-branch
                 if let Some(frame) = if_stack.last_mut() {
@@ -1087,6 +1133,12 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         else_branch.nodes.push(node_index);
                     } else {
                         frame.then_branch.nodes.push(node_index);
+                    }
+                }
+                // Track node in the current switch case branch
+                if let Some(frame) = switch_stack.last_mut() {
+                    if let Some(case) = frame.cases.last_mut() {
+                        case.nodes.push(node_index);
                     }
                 }
                 // Update repeat frame bookkeeping: record the first inner node
@@ -1372,6 +1424,103 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     last_flow_node_idx = Some(node_index);
                     node_index += 1;
                     y_cursor += h + node_gap;
+                }
+            }
+
+            // ---- Switch / Case / EndSwitch → multi-way branch ----------------
+            ActivityEvent::Switch { condition } => {
+                // Create a square diamond with the condition text inside.
+                let (w, h) = diamond_size(condition);
+                let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
+                let x = cx - w / 2.0;
+                let y = y_cursor;
+                log::debug!(
+                    "  node[{node_index}] SwitchDiamond \"{condition}\" @ ({x:.1}, {y:.1}) {w}x{h}"
+                );
+                nodes.push(ActivityNodeLayout {
+                    index: node_index,
+                    kind: ActivityNodeKindLayout::SwitchDiamond,
+                    x,
+                    y,
+                    width: w,
+                    height: h,
+                    text: condition.clone(),
+                    skip_in_flow: true, // edges built manually in deferred pass
+                });
+                let diamond_idx = node_index;
+                node_index += 1;
+
+                switch_stack.push(SwitchFrame {
+                    diamond_idx,
+                    diamond_cx: cx,
+                    diamond_cy: y + h / 2.0,
+                    diamond_left_x: x,
+                    diamond_right_x: x + w,
+                    diamond_bottom_y: y + h,
+                    cases: Vec::new(),
+                    saved_y_cursor: y_cursor,
+                    saved_last_flow_node_idx: last_flow_node_idx,
+                });
+
+                // First case starts a bit below the diamond.
+                y_cursor = y + h + 10.0;
+                last_flow_node_idx = Some(diamond_idx);
+            }
+
+            ActivityEvent::Case { label } => {
+                if let Some(frame) = switch_stack.last_mut() {
+                    // Finalize the previous case's bottom_y (if any).
+                    if let Some(prev) = frame.cases.last_mut() {
+                        prev.bottom_y = y_cursor;
+                        prev.last_node_idx = last_flow_node_idx;
+                    }
+                    // Start a new case branch.  All case action nodes are
+                    // initially placed at the diamond's centre x; the
+                    // centering pass spreads them horizontally.
+                    let case_start_y = frame.diamond_bottom_y + 10.0;
+                    frame.cases.push(CaseBranch {
+                        label: label.clone(),
+                        nodes: Vec::new(),
+                        last_node_idx: None,
+                        bottom_y: case_start_y,
+                    });
+                    // Reset y_cursor to the case start so every branch begins
+                    // at the same vertical position (branches are side by side).
+                    y_cursor = case_start_y;
+                    last_flow_node_idx = Some(frame.diamond_idx);
+                    log::debug!("  Case \"{label}\" started at y={y_cursor:.1}");
+                }
+            }
+
+            ActivityEvent::EndSwitch => {
+                if let Some(mut frame) = switch_stack.pop() {
+                    // Finalize the last case.
+                    if let Some(last_case) = frame.cases.last_mut() {
+                        last_case.bottom_y = y_cursor;
+                        last_case.last_node_idx = last_flow_node_idx;
+                    }
+                    // Merge y = max of all case bottom_y values.
+                    let merge_y = frame
+                        .cases
+                        .iter()
+                        .map(|c| c.bottom_y)
+                        .fold(frame.diamond_bottom_y, f64::max);
+                    y_cursor = merge_y + node_gap;
+                    last_flow_node_idx = frame.saved_last_flow_node_idx;
+                    log::debug!(
+                        "  EndSwitch: merge_y={merge_y:.1}, cases={}",
+                        frame.cases.len()
+                    );
+                    deferred_switch_edges.push(DeferredSwitchEdges {
+                        diamond_idx: frame.diamond_idx,
+                        diamond_cx: frame.diamond_cx,
+                        diamond_cy: frame.diamond_cy,
+                        diamond_left_x: frame.diamond_left_x,
+                        diamond_right_x: frame.diamond_right_x,
+                        diamond_bottom_y: frame.diamond_bottom_y,
+                        cases: frame.cases,
+                        merge_y,
+                    });
                 }
             }
 
@@ -2070,6 +2219,25 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 max_half_w = max_half_w.max(diamond.width / 2.0);
             }
         }
+        // Also consider switch-block total width (diamond + all case branches).
+        for dse in &deferred_switch_edges {
+            let diamond = &nodes[dse.diamond_idx];
+            let n = dse.cases.len();
+            if n == 0 {
+                max_half_w = max_half_w.max(diamond.width / 2.0);
+                continue;
+            }
+            let max_case_w = dse
+                .cases
+                .iter()
+                .flat_map(|c| c.nodes.iter().map(|&i| nodes[i].width))
+                .fold(0.0_f64, f64::max)
+                .max(40.0);
+            let case_spacing = max_case_w + 20.0;
+            // The outermost case (first or last) is farthest from centre.
+            let half_span = ((n as f64 - 1.0) / 2.0) * case_spacing + max_case_w / 2.0;
+            max_half_w = max_half_w.max(half_span).max(diamond.width / 2.0);
+        }
         // When there are break edges, the break path extends to x=10 which
         // needs more left margin (20px instead of 10px).
         let left_margin = if !deferred_break_edges.is_empty() {
@@ -2112,6 +2280,31 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 // No else: then branch at center
                 for &node_idx in &die.then_branch.nodes {
                     nodes[node_idx].x = cx - nodes[node_idx].width / 2.0;
+                }
+            }
+        }
+        // Third pass: position switch diamonds and spread case branches.
+        for dse in &deferred_switch_edges {
+            let diamond = &mut nodes[dse.diamond_idx];
+            diamond.x = cx - diamond.width / 2.0;
+            let diamond_cx = diamond.x + diamond.width / 2.0;
+            let n = dse.cases.len();
+            if n == 0 {
+                continue;
+            }
+            // Find the widest action across all cases so we can space branches
+            // without overlap.
+            let max_case_w = dse
+                .cases
+                .iter()
+                .flat_map(|c| c.nodes.iter().map(|&i| nodes[i].width))
+                .fold(0.0_f64, f64::max)
+                .max(40.0);
+            let case_spacing = max_case_w + 20.0; // 20px gutter between branches
+            for (i, case) in dse.cases.iter().enumerate() {
+                let case_cx = diamond_cx + (i as f64 - (n as f64 - 1.0) / 2.0) * case_spacing;
+                for &node_idx in &case.nodes {
+                    nodes[node_idx].x = case_cx - nodes[node_idx].width / 2.0;
                 }
             }
         }
@@ -2189,6 +2382,9 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 | ActivityEvent::Fork
                 | ActivityEvent::ForkAgain
                 | ActivityEvent::EndFork
+                | ActivityEvent::Switch { .. }
+                | ActivityEvent::Case { .. }
+                | ActivityEvent::EndSwitch
                 | ActivityEvent::Note { .. }
                 | ActivityEvent::FloatingNote { .. }
                 | ActivityEvent::Detach
@@ -2515,6 +2711,26 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         });
     }
 
+    // Remove edges that jump across a switch-block (same rationale as if-block).
+    if !deferred_switch_edges.is_empty() {
+        let switch_ranges: Vec<(usize, usize)> = deferred_switch_edges
+            .iter()
+            .map(|dse| {
+                let post_idx = nodes
+                    .iter()
+                    .find(|n| n.index > dse.diamond_idx && is_flow_node(&n.kind) && !n.skip_in_flow)
+                    .map(|n| n.index)
+                    .unwrap_or(dse.diamond_idx);
+                (dse.diamond_idx, post_idx)
+            })
+            .collect();
+        edges.retain(|edge| {
+            !switch_ranges
+                .iter()
+                .any(|&(diamond_idx, post_idx)| edge.from_index < diamond_idx && edge.to_index >= post_idx)
+        });
+    }
+
     // --- Pass 3-break: break edges (before if-branch edges) ------------------
     // Break edges connect from a break source (inside an if-block within a
     // repeat) to the repeat's exit diamond.  In Java these are drawn as part
@@ -2824,6 +3040,165 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 });
             }
         }
+    }
+
+    // --- Pass 3e: switch/case branch edges -------------------------------------
+    // For each switch, build:
+    //   1. prev flow node → switch diamond (incoming)
+    //   2. switch diamond → each case's first node (with case label on edge)
+    //   3. intra-case edges (between consecutive nodes in a case)
+    //   4. each case's last node → next flow node (merge)
+    for dse in &deferred_switch_edges {
+        let diamond = &nodes[dse.diamond_idx];
+        let diamond_cx = diamond.x + diamond.width / 2.0;
+        let diamond_cy = diamond.y + diamond.height / 2.0;
+        let diamond_left_x = diamond.x;
+        let diamond_right_x = diamond.x + diamond.width;
+        let diamond_bottom_y = diamond.y + diamond.height;
+
+        // Find the previous and next flow nodes for this switch-block.
+        let prev_flow_idx = if dse.diamond_idx > 0 {
+            nodes[..dse.diamond_idx]
+                .iter()
+                .rev()
+                .find(|n| is_flow_node(&n.kind) && !n.skip_in_flow)
+                .map(|n| n.index)
+        } else {
+            None
+        };
+        let next_flow_idx = nodes
+            .iter()
+            .find(|n| {
+                n.index > dse.diamond_idx
+                    && is_flow_node(&n.kind)
+                    && !n.skip_in_flow
+                    && n.y >= dse.merge_y - 1.0
+            })
+            .map(|n| n.index);
+
+        let n = dse.cases.len();
+        // 1. Diamond → each case's first node, with the case label as edge label.
+        //    We route from the diamond bottom along a horizontal "bus" to each
+        //    case's centre x, then down into the first node.
+        let bus_y = diamond_bottom_y + 5.0;
+        for (i, case) in dse.cases.iter().enumerate() {
+            if let Some(&first_idx) = case.nodes.first() {
+                let first = &nodes[first_idx];
+                let case_cx = first.x + first.width / 2.0;
+                let case_top = first.y;
+                // Edge label = case label text.
+                let label = case.label.clone();
+                edges.push(ActivityEdgeLayout {
+                    from_index: dse.diamond_idx,
+                    to_index: first_idx,
+                    label,
+                    points: vec![
+                        (diamond_cx, diamond_bottom_y),
+                        (diamond_cx, bus_y),
+                        (case_cx, bus_y),
+                        (case_cx, case_top),
+                    ],
+                    kind: ActivityEdgeKindLayout::IfBranch,
+                });
+            } else {
+                // Empty case: draw a stub from the bus down to the merge so the
+                // case label is still visible.
+                if let Some(next) = next_flow_idx {
+                    let next_node = &nodes[next];
+                    let next_top = next_node.y;
+                    let next_cx = next_node.x + next_node.width / 2.0;
+                    let case_cx = if n == 1 {
+                        diamond_cx
+                    } else {
+                        // Spread empty cases too
+                        let max_case_w = 40.0_f64;
+                        let spacing = max_case_w + 20.0;
+                        diamond_cx + (i as f64 - (n as f64 - 1.0) / 2.0) * spacing
+                    };
+                    edges.push(ActivityEdgeLayout {
+                        from_index: dse.diamond_idx,
+                        to_index: next,
+                        label: case.label.clone(),
+                        points: vec![
+                            (diamond_cx, diamond_bottom_y),
+                            (diamond_cx, bus_y),
+                            (case_cx, bus_y),
+                            (case_cx, dse.merge_y + 5.0),
+                            (next_cx, dse.merge_y + 5.0),
+                            (next_cx, next_top),
+                        ],
+                        kind: ActivityEdgeKindLayout::IfMerge,
+                    });
+                }
+            }
+        }
+
+        // 2. Intra-case edges (between consecutive nodes in each case).
+        for case in &dse.cases {
+            for pair in case.nodes.windows(2) {
+                let from = &nodes[pair[0]];
+                let to = &nodes[pair[1]];
+                let from_cx = from.x + from.width / 2.0;
+                let from_bottom = from.y + from.height;
+                let to_cx = to.x + to.width / 2.0;
+                let to_top = to.y;
+                edges.push(ActivityEdgeLayout {
+                    from_index: pair[0],
+                    to_index: pair[1],
+                    label: String::new(),
+                    points: vec![(from_cx, from_bottom), (to_cx, to_top)],
+                    kind: ActivityEdgeKindLayout::Normal,
+                });
+            }
+        }
+
+        // 3. Each case's last node → next flow node (merge).
+        //    All merges join at a common horizontal merge_y, then drop into the
+        //    next flow node.
+        if let Some(next) = next_flow_idx {
+            let next_node = &nodes[next];
+            let next_top = next_node.y;
+            let next_cx = next_node.x + next_node.width / 2.0;
+            let merge_mid_y = dse.merge_y + 5.0;
+            for case in &dse.cases {
+                if let Some(&last_idx) = case.nodes.last() {
+                    let last = &nodes[last_idx];
+                    let last_cx = last.x + last.width / 2.0;
+                    let last_bottom = last.y + last.height;
+                    edges.push(ActivityEdgeLayout {
+                        from_index: last_idx,
+                        to_index: next,
+                        label: String::new(),
+                        points: vec![
+                            (last_cx, last_bottom),
+                            (last_cx, merge_mid_y),
+                            (next_cx, merge_mid_y),
+                            (next_cx, next_top),
+                        ],
+                        kind: ActivityEdgeKindLayout::IfMerge,
+                    });
+                }
+            }
+        }
+
+        // 4. Incoming: prev flow node → diamond (last, to match Java draw order).
+        if let Some(prev) = prev_flow_idx {
+            let prev_node = &nodes[prev];
+            let prev_cx = prev_node.x + prev_node.width / 2.0;
+            let prev_bottom = prev_node.y + prev_node.height;
+            let diamond_top_y = diamond.y;
+            edges.push(ActivityEdgeLayout {
+                from_index: prev,
+                to_index: dse.diamond_idx,
+                label: String::new(),
+                points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
+                kind: ActivityEdgeKindLayout::Normal,
+            });
+        }
+
+        // Suppress unused-variable warnings for the diamond side coordinates
+        // (kept for parity with the if-branch implementation and future use).
+        let _ = (diamond_left_x, diamond_right_x, diamond_cy);
     }
 
     // --- Pass 3a2: goto loop-back edges ----------------------------------------
@@ -3191,7 +3566,8 @@ fn limitfinder_x_bounds(node: &ActivityNodeLayout) -> (f64, f64) {
         ActivityNodeKindLayout::Diamond => (node.x - 10.0, node.x + node.width + 10.0),
         ActivityNodeKindLayout::Hexagon { .. }
         | ActivityNodeKindLayout::IfDiamond { .. }
-        | ActivityNodeKindLayout::GotoLines { .. } => (node.x - 1.0, node.x + node.width - 1.0),
+        | ActivityNodeKindLayout::GotoLines { .. }
+        | ActivityNodeKindLayout::SwitchDiamond => (node.x - 1.0, node.x + node.width - 1.0),
         ActivityNodeKindLayout::Start
         | ActivityNodeKindLayout::Stop
         | ActivityNodeKindLayout::End
@@ -4512,6 +4888,73 @@ mod tests {
 
         assert_eq!(fork.width, FORK_BAR_WIDTH);
         assert_eq!(fork.height, FORK_BAR_HEIGHT);
+    }
+
+    // 8b. Switch / Case / EndSwitch -------------------------------------------
+
+    #[test]
+    fn switch_case() {
+        let d = diagram(vec![
+            ActivityEvent::Action {
+                text: "Receive webhook".into(),
+            },
+            ActivityEvent::Switch {
+                condition: "event type?".into(),
+            },
+            ActivityEvent::Case {
+                label: "payment.succeeded".into(),
+            },
+            ActivityEvent::Action {
+                text: "Mark invoice paid".into(),
+            },
+            ActivityEvent::Case {
+                label: "invoice.failed".into(),
+            },
+            ActivityEvent::Action {
+                text: "Notify customer".into(),
+            },
+            ActivityEvent::Case {
+                label: "other".into(),
+            },
+            ActivityEvent::Action {
+                text: "Ignore event".into(),
+            },
+            ActivityEvent::EndSwitch,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+
+        // 1 action + 1 switch diamond + 3 case actions = 5 nodes.
+        assert_eq!(layout.nodes.len(), 5);
+
+        // The switch diamond is node index 1 (after the leading action).
+        let switch_node = &layout.nodes[1];
+        assert!(
+            matches!(switch_node.kind, ActivityNodeKindLayout::SwitchDiamond),
+            "expected SwitchDiamond, got {:?}",
+            switch_node.kind
+        );
+        assert_eq!(switch_node.text, "event type?");
+
+        // The three case action nodes carry their action text.
+        let action_texts: Vec<&str> = layout.nodes[2..5].iter().map(|n| n.text.as_str()).collect();
+        assert_eq!(
+            action_texts,
+            vec!["Mark invoice paid", "Notify customer", "Ignore event"]
+        );
+
+        // Edges should include the 3 diamond→case branch edges (labelled with
+        // the case labels) and 3 case→merge edges.
+        let branch_labels: Vec<&str> = layout
+            .edges
+            .iter()
+            .filter(|e| !e.label.is_empty())
+            .map(|e| e.label.as_str())
+            .collect();
+        assert_eq!(
+            branch_labels,
+            vec!["payment.succeeded", "invoice.failed", "other"],
+            "case labels should appear on branch edges"
+        );
     }
 
     // 9. Text sizing ---------------------------------------------------------
