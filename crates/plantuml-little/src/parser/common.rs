@@ -489,7 +489,26 @@ pub fn detect_diagram_type(content: &str) -> DiagramHint {
             || trimmed.contains("..+")
         {
             has_class_relation = true;
-            has_exclusive_class_relation = true;
+            // Class-EXCLUSIVE: only the `*` (composition) / `o` (aggregation)
+            // / `<|` / `|>` (inheritance/realization) markers unambiguously
+            // mark a class diagram.  The `+` visibility variants (`+--`,
+            // `--+`, `+..`, `..+`) are NOT exclusive — `--+` is a substring of
+            // the sequence create/destroy token `--++` (e.g. `A -> B --++:
+            // …`), so including it here would regress such sequence diagrams
+            // to Class (TeozTimelineIssues_0005 golden expects Sequence).
+            if trimmed.contains("<|")
+                || trimmed.contains("|>")
+                || trimmed.contains(" o--")
+                || trimmed.contains("--o")
+                || trimmed.contains(" *--")
+                || trimmed.contains("--*")
+                || trimmed.contains(" o..")
+                || trimmed.contains("..o")
+                || trimmed.contains(" *..")
+                || trimmed.contains("..*")
+            {
+                has_exclusive_class_relation = true;
+            }
         }
         if trimmed.contains('[')
             && trimmed.contains(']')
@@ -1810,6 +1829,20 @@ Bob --> Alice : ok\n\
         let src = "@startuml\n\
 actor User\n\
 User -> API : fetch[0]\n\
+@enduml";
+        assert!(matches!(detect_diagram_type(src), DiagramHint::Sequence));
+    }
+
+    // `--++` is the sequence create+destroy token (e.g. `A -> B --++: …`).
+    // It contains the substring `--+`, which also appears in the class
+    // visibility-variant `+--`/`--+` token list — but `+` is a visibility
+    // marker, not a class-exclusive relation, so this must stay Sequence.
+    #[test]
+    fn detect_sequence_create_destroy_stays_sequence() {
+        let src = "@startuml\n\
+dummy -> A ++: first step\n\
+A -> B --++: second step\n\
+B -> C--: third step\n\
 @enduml";
         assert!(matches!(detect_diagram_type(src), DiagramHint::Sequence));
     }
