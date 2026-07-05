@@ -29,6 +29,11 @@ pub mod d2_go_emulation;
 #[cfg(target_arch = "wasm32")]
 pub mod d2_host_metrics;
 
+// Target-agnostic pure helper for the wasm host-canvas label-height
+// formula. Kept out of the `wasm32`-gated `d2_host_metrics` module so its
+// unit tests actually run under `cargo test -p d2-little`.
+pub mod host_label_height;
+
 // Markdown walker is target-agnostic — pure traversal over &dyn D2Metrics.
 // Both D2GoEmulationMetrics::measure_markdown (native, byte-equal Go) and
 // D2HostMetrics::measure_markdown (wasm, host-canvas via caller-side

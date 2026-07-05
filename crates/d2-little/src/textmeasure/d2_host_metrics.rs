@@ -38,7 +38,7 @@ use std::cell::Cell;
 
 use font_metrics_core::{Measured, Metrics, host_callback::HostCallbackMetrics};
 
-use super::{D2Metrics, MarkdownOptions};
+use super::{D2Metrics, MarkdownOptions, host_label_height::single_line_height};
 use crate::fonts::{Font, FontFamily, FontStyle};
 
 /// Adapter that bridges d2's [`D2Metrics`] surface to the host
@@ -158,8 +158,9 @@ impl D2Metrics for D2HostMetrics {
         let single_h = {
             let m = self.inner.measure(lines[0], family, size_f, bold, italic);
             // Use `size_f` (the requested font size) as the ascent proxy
-            // instead of `m.ascent` (see `single_line_height` doc).
-            single_line_height(size_f, m.ascent, m.descent)
+            // instead of `m.ascent` (see `host_label_height::single_line_height`
+            // doc for why this approximates — not matches — the native path).
+            single_line_height(size_f, m.descent)
         };
         let composed_h = single_h + ((n - 1) as f64) * self.line_height_factor.get() * size_f;
         (max_w, composed_h)
@@ -204,40 +205,5 @@ impl D2Metrics for D2HostMetrics {
         );
         self.line_height_factor.set(original_lh);
         result
-    }
-}
-
-/// Single-line label height used by `measure_precise`.
-///
-/// The renderer places the label baseline at `label_tl.y + font_size`
-/// (`svg_render/mod.rs`), which assumes `ascent ≈ font_size`.  Under
-/// host-canvas metrics, `m.ascent` is the tight glyph bounding-box ascent
-/// (often < font_size for lowercase / x-height-only labels), so using
-/// `ascent + descent` here made `label_height` too small and the label
-/// overlapped the container's top border (issue #27).  Using
-/// `font_size + descent` matches the native `D2GoEmulationMetrics`
-/// convention and keeps the breathing gap above the box.
-fn single_line_height(font_size: f64, _ascent: f64, descent: f64) -> f64 {
-    font_size + descent
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn single_line_height_uses_font_size_not_ascent() {
-        // issue #27: a 28px label with a tight glyph ascent of 22 (x-height
-        // only) and descent 6.  The buggy `ascent + descent` would give 28;
-        // the fix gives `font_size + descent` = 34, matching the native path.
-        assert_eq!(single_line_height(28.0, 22.0, 6.0), 34.0);
-    }
-
-    #[test]
-    fn single_line_height_matches_native_when_ascent_equals_font_size() {
-        // Native D2GoEmulationMetrics has ascent ≈ font_size, so the two
-        // formulas agree there — this asserts the fix doesn't diverge on the
-        // native path's values.
-        assert_eq!(single_line_height(28.0, 28.0, 7.65625), 35.65625);
     }
 }
