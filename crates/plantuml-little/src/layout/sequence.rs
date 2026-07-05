@@ -180,6 +180,17 @@ pub struct ParticipantLayout {
     pub box_height: f64,
     pub kind: ParticipantKind,
     pub color: Option<String>,
+    /// True when the participant is created by a `create` directive (Java
+    /// `LifeEventType.CREATE`). Such participants have no head box at the top;
+    /// the head is drawn at `create_head_y` and the lifeline starts at
+    /// `lifeline_start_y`.
+    pub created: bool,
+    /// Top y of the create head box (only meaningful when `created`).
+    pub create_head_y: f64,
+    /// Y where this participant's lifeline begins. For non-created participants
+    /// this equals `lifeline_top`; for created participants it is the create
+    /// position (head-box bottom).
+    pub lifeline_start_y: f64,
 }
 
 /// Message layout info
@@ -219,6 +230,10 @@ pub struct MessageLayout {
     pub cross_to: bool,
     /// Bidirectional arrow: arrowheads at both ends
     pub bidirectional: bool,
+    /// True when this message creates its target participant (Java
+    /// `Message.isCreate()`). The renderer draws the target's head box at the
+    /// create level and skips a message id so subsequent ids match Java.
+    pub is_create: bool,
     /// Text horizontal offset for boundary arrows.
     /// Java CommunicationExoTile uses textDeltaX to shift text when the arrow
     /// area extends to the diagram edge but text remains near the participant.
@@ -1194,6 +1209,9 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
             box_height: box_heights[i],
             kind: p.kind.clone(),
             color: p.color.clone(),
+            created: false,
+            create_head_y: 0.0,
+            lifeline_start_y: 0.0,
         });
 
         prev_center = Some(center_x);
@@ -1250,6 +1268,11 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
     // at the self-message return y, not at y_cursor (which has already advanced
     // to the next message position).  Keyed by participant name.
     let mut pending_self_return_y: HashMap<String, f64> = HashMap::new();
+
+    // `create <name>` sets this; the next message targeting `name` becomes a
+    // create message (Java: SequenceDiagram.pendingCreate). Cleared on the
+    // creating message or if a non-matching message follows.
+    let mut pending_create: Option<String> = None;
 
     // Track the y of the most recent message for note back-offset positioning.
     // In Java PlantUML, notes following a message are placed alongside it
@@ -1332,6 +1355,20 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                 let mut from_x = find_participant_x(&participants, &msg.from);
                 let mut to_x = find_participant_x(&participants, &msg.to);
                 let is_self = msg.from == msg.to;
+                // A pending `create <name>` is consumed by the next message
+                // targeting that participant (Java: compatibleForCreate).
+                let mut is_create = false;
+                if let Some(ref pname) = pending_create {
+                    if pname == &msg.to {
+                        is_create = true;
+                    } else {
+                        log::warn!(
+                            "create '{pname}' not followed by a message to '{pname}' (got '{}'); ignoring create",
+                            msg.to
+                        );
+                    }
+                    pending_create = None;
+                }
                 let is_dashed = msg.arrow_style == SeqArrowStyle::Dashed
                     || msg.arrow_style == SeqArrowStyle::Dotted;
                 let is_left = if is_self {
@@ -1468,6 +1505,31 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                     log::debug!("self-msg: text_lines={}, num_extra={num_extra_lines}, extra_height={extra_height}, y_cursor_before={y_cursor}, msg_y={msg_y}", text_lines.len());
                 }
 
+                // `create` tile geometry (Java: ArrowAndParticipant).
+                // The create tile height = max(arrowPH, headHeight + linePH/2)
+                // where headHeight is the participant head preferred height and
+                // linePH is the lifeline line preferred height (20). The head box
+                // is drawn at tile_start + linePH/2; the lifeline starts at
+                // tile_start + tileHeight/2 + linePH (the head-box bottom).
+                let line_half = rose::line_preferred_size().height / 2.0;
+                let line_ph = rose::line_preferred_size().height;
+                let create_part_height = find_participant_idx(&part_name_to_idx, &msg.to)
+                    .and_then(|i| participants.get(i))
+                    .map(|p| p.box_height)
+                    .unwrap_or(lp.participant_height);
+                let create_tile_height =
+                    lp.message_spacing.max(create_part_height + line_half + 1.0);
+                // Java's freeY at the create tile. Our `lp.arrow_y_point` is the
+                // arrow-component y-point (textHeight + paddingY); Java's full
+                // freeY→arrowY offset additionally includes linePH/2, so the tile
+                // start is msg_y - arrow_y_point - line_half.
+                let create_tile_start = msg_y - lp.arrow_y_point - line_half;
+                // Head box top = tile_start + linePH/2 = msg_y - arrow_y_point.
+                let create_head_y = create_tile_start + line_half;
+                // Lifeline starts at the head-box bottom (Java: create position =
+                // freeY + tileHeight/2, then drawLineU22 adds linePH).
+                let create_lifeline_start = create_tile_start + create_tile_height / 2.0 + line_ph;
+
                 let msg_autonumber = if autonumber_enabled {
                     let num = format!("{autonumber_counter}");
                     autonumber_counter += 1;
@@ -1574,6 +1636,7 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                     cross_from: msg.cross_from,
                     cross_to: msg.cross_to,
                     bidirectional: msg.bidirectional,
+                    is_create,
                     text_delta_x: 0.0,
                     active_level: 0,
                     delta_x1: 0.0,
@@ -1663,7 +1726,21 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                     pending_self_return_y.insert(msg.from.clone(), pending_y);
                 } else {
                     lifeline_extend_y = msg_y + 18.0;
-                    y_cursor = msg_y + lp.message_spacing;
+                    // A create message occupies a taller tile (head box drawn
+                    // inside it); advance y_cursor by the create tile height
+                    // instead of the normal message spacing.
+                    let tile_advance = if is_create {
+                        // Record create geometry on the target participant.
+                        if let Some(pi) = part_name_to_idx.get(&msg.to as &str).copied() {
+                            participants[pi].created = true;
+                            participants[pi].create_head_y = create_head_y;
+                            participants[pi].lifeline_start_y = create_lifeline_start;
+                        }
+                        create_tile_height
+                    } else {
+                        lp.message_spacing
+                    };
+                    y_cursor = msg_y + tile_advance;
                     pending_self_return_y.clear();
                 }
             }
@@ -1728,10 +1805,16 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
 
             SeqEvent::Destroy(name) => {
                 let px = find_participant_x(&participants, name);
-                // For self-messages, the destroy should be at the return y
+                // Java attaches a standalone `destroy` to the preceding message
+                // (LifeEvent.setMessage(lastMessage)) and draws the X centered
+                // on message.getPosYendLevel() — the arrow y for non-self
+                // messages, the return y for self-messages. We already honor
+                // the self-message case via pending_self_return_y; for non-self
+                // messages fall back to the last message's y (not y_cursor,
+                // which has advanced one row past it).
                 let destroy_y = pending_self_return_y
                     .remove(name.as_str())
-                    .unwrap_or(y_cursor);
+                    .unwrap_or_else(|| last_event_msg_y.unwrap_or(y_cursor));
                 destroys.push(DestroyLayout {
                     x: px,
                     y: destroy_y,
@@ -1763,6 +1846,18 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                 y_cursor = destroy_y + lp.message_spacing;
                 last_message_y = None;
                 log::debug!("destroy '{name}' at y={destroy_y:.1}");
+            }
+
+            SeqEvent::Create(name) => {
+                // Mark for the next message targeting `name`. Java requires the
+                // very next message to target the created participant; if a
+                // non-matching message arrives we drop the pending create with a
+                // warning (Java returns an error in that case).
+                if pending_create.is_some() {
+                    log::warn!("create '{name}' follows an unresolved create; ignoring prior");
+                }
+                pending_create = Some(name.clone());
+                log::debug!("pending create: {name}");
             }
 
             SeqEvent::NoteRight {
@@ -2552,6 +2647,15 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
         .fold(lp.participant_height, f64::max);
     let lifeline_top = MARGIN + max_participant_height + 1.0;
     let lifeline_bottom = lifeline_extend_y;
+
+    // Default lifeline start/end to the full lifeline span for participants
+    // that were not created/destroyed. Created participants keep the
+    // create-position start assigned during message layout.
+    for p in &mut participants {
+        if !p.created {
+            p.lifeline_start_y = lifeline_top;
+        }
+    }
 
     // Java DrawableSetInitializer tracks `freeX` directly and then ImageBuilder
     // adds the document right margin once. The classic layout here already
@@ -3394,12 +3498,13 @@ mod tests {
         let d = &layout.destroys[0];
         let bob_x = layout.participants[1].x;
         assert!((d.x - bob_x).abs() < 0.01);
-        // Invariant: destroy y = message y + message_spacing
-        let lp = LayoutParams::compute("SansSerif", MSG_FONT_SIZE, FONT_SIZE);
-        let expected_y = layout.messages[0].y + lp.message_spacing;
+        // Java attaches a standalone `destroy` to the preceding message and
+        // draws the X centered on that message's y (getPosYendLevel), so the
+        // destroy y equals the message y — it does NOT advance past it.
+        let expected_y = layout.messages[0].y;
         assert!(
             (d.y - expected_y).abs() < 0.01,
-            "destroy y ({:.2}) should equal msg.y + spacing ({:.2})",
+            "destroy y ({:.2}) should equal msg.y ({:.2})",
             d.y,
             expected_y
         );

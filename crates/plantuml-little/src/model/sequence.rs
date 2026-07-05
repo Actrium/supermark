@@ -130,6 +130,11 @@ pub enum SeqEvent {
     Activate(String, Option<String>),
     Deactivate(String),
     Destroy(String),
+    /// `create <participant>` — the next message targeting this participant
+    /// creates it: the head box is drawn at that message's level (not at the
+    /// top) and the lifeline starts there. Java: `LifeEventType.CREATE` attached
+    /// to the creating message via `pendingCreate`.
+    Create(String),
     NoteRight {
         participant: String,
         text: String,

@@ -1,0 +1,12 @@
+@startuml
+participant Client
+participant Worker
+
+Client -> Worker: enqueue(job)
+create Job
+Worker -> Job: new(job)
+Worker -> Job: run()
+Job --> Worker: result
+destroy Job
+Worker --> Client: completed
+@enduml

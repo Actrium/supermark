@@ -796,6 +796,10 @@ reference_test!(
     "fixtures/sequence/a0001.puml"
 );
 reference_test!(
+    reference_fixtures_sequence_issue36_create_destroy_puml,
+    "fixtures/sequence/issue36_create_destroy.puml"
+);
+reference_test!(
     reference_fixtures_sequence_a0006_puml,
     "fixtures/sequence/a0006.puml"
 );

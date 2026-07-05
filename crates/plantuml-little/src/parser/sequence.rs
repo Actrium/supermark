@@ -337,6 +337,22 @@ pub fn parse_sequence_diagram_with_original(
                 events.push(SeqEvent::Destroy(name));
                 continue;
             }
+            // `create <name>` — marks the participant as created by the next
+            // message that targets it. Java: SequenceDiagram.pendingCreate.
+            if lower.starts_with("create ") {
+                let name = trimmed[7..].trim().to_string();
+                if !name.is_empty() {
+                    debug!("parsed create: {name}");
+                    ensure_participant(
+                        &mut declared_participants,
+                        &mut auto_participants,
+                        &name,
+                        source_line,
+                    );
+                    events.push(SeqEvent::Create(name));
+                    continue;
+                }
+            }
         }
 
         // Parse note right/left/over (single-line or start multiline block)
@@ -1587,6 +1603,26 @@ mod tests {
         let diagram = parse_sequence_diagram(src).unwrap();
 
         assert!(matches!(&diagram.events[1], SeqEvent::Destroy(ref n) if n == "Bob"));
+    }
+
+    /// 6b. Parse create directive (issue #36)
+    #[test]
+    fn parse_create() {
+        let src = "@startuml\nClient -> Worker: enqueue\ncreate Job\nWorker -> Job: new\n@enduml";
+        let diagram = parse_sequence_diagram(src).unwrap();
+
+        // `create Job` emits a Create event before the creating message.
+        let create = diagram
+            .events
+            .iter()
+            .find_map(|e| match e {
+                SeqEvent::Create(n) => Some(n.clone()),
+                _ => None,
+            })
+            .expect("expected a Create event");
+        assert_eq!(create, "Job");
+        // The created participant is registered so it gets a column + tail box.
+        assert!(diagram.participants.iter().any(|p| p.name == "Job"));
     }
 
     /// 7. Parse participant declaration with color
