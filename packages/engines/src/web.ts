@@ -22,8 +22,50 @@ interface WasmRenderModule {
   default?: unknown;
   init?: unknown;
   convert?: unknown;
-  render?: unknown;
+  // d2's `render` export is the elk bridge (handle, layoutJson). Other
+  // wasm modules use `render` as a convert-fallback name; `pickWasmConvert`
+  // casts it to WasmConvertFn in that case.
+  render?: (handle: number, layoutJson: string) => string;
   renderSvg?: unknown;
+  // elk layout bridge exports (added alongside `convert`):
+  prepare?: (input: string) => D2PrepareResult;
+  drop_prepared?: (handle: number) => void;
+}
+
+/** Result of the wasm `prepare` export (wasm-bindgen class with getters). */
+interface D2PrepareResult {
+  handle: number;
+  request: string;
+}
+
+// --- elk layout bridge DTO (mirrors crates/d2-little/src/layout_bridge.rs) ---
+
+interface D2BoardRequest {
+  token: string;
+  has_sequence: boolean;
+  has_grid: boolean;
+  has_near: boolean;
+  has_containers: boolean;
+  objects: { id: string; width: number; height: number; parent_id: string | null }[];
+  edges: {
+    id: string;
+    src: string;
+    dst: string;
+    has_label: boolean;
+    label_width: number;
+    label_height: number;
+  }[];
+}
+interface D2LayoutRequest {
+  multi_board: boolean;
+  boards: D2BoardRequest[];
+}
+interface D2LayoutResult {
+  boards: {
+    token: string;
+    objects: { id: string; x: number; y: number }[];
+    edges: { id: string; route: [number, number][]; is_curve?: boolean }[];
+  }[];
 }
 
 /** A loaded `@actrium/graphviz-anywhere-web` Graphviz instance. */
@@ -49,7 +91,10 @@ function pickWasmInit(mod: WasmRenderModule): WasmInitFn | null {
 /** Probe a wasm-bindgen module for a `convert`/`render`/`renderSvg` entry. */
 function pickWasmConvert(mod: WasmRenderModule): WasmConvertFn | null {
   if (typeof mod.convert === 'function') return mod.convert as WasmConvertFn;
-  if (typeof mod.render === 'function') return mod.render as WasmConvertFn;
+  // `render` on d2's module is the elk bridge ((handle, json) => svg), not a
+  // convert entry; d2 always exposes `convert`, so this fallback is only hit
+  // for other modules that name their convert-fn `render`.
+  if (typeof mod.render === 'function') return mod.render as unknown as WasmConvertFn;
   if (typeof mod.renderSvg === 'function') return mod.renderSvg as WasmConvertFn;
   return null;
 }
@@ -252,6 +297,24 @@ async function loadWebD2Render(): Promise<DiagramRenderFn> {
   }
 
   return async (code: string): Promise<string> => {
+    // `layout-engine: elk` is routed to the elkjs bridge (host-driven
+    // layered layout) instead of d2-little's built-in dagre. The bridge
+    // falls back to dagre for inputs it can't handle yet (multi-board,
+    // sequence / grid / containers / `near:`), so users always get a
+    // rendered diagram. See `loadWebD2ElkLayout`.
+    if (requestsElkLayout(code) && typeof d2.prepare === 'function' && typeof d2.render === 'function') {
+      try {
+        const elkSvg = await renderD2ViaElk(d2, code);
+        if (elkSvg != null) {
+          return injectD2Dimensions(elkSvg);
+        }
+        // `null` ⇒ prepare flagged an unsupported feature; fall through to dagre.
+      } catch (err) {
+        // Don't leave a prepared graph pinned in wasm memory.
+        console.warn('[d2] elk layout failed, falling back to dagre:', err);
+      }
+    }
+
     // `convert` is synchronous (wasm-bindgen-generated) but `await` handles
     // both sync and async return shapes uniformly.
     const svg = await convert(code);
@@ -267,6 +330,125 @@ async function loadWebD2Render(): Promise<DiagramRenderFn> {
     // so the SVG renders at its intrinsic size (CSS can shrink it if needed).
     return injectD2Dimensions(normalized);
   };
+}
+
+/** Does the D2 source request the elk layout engine? */
+function requestsElkLayout(code: string): boolean {
+  return /layout-engine\s*:\s*elk\b/i.test(code);
+}
+
+/**
+ * Drive the elkjs layered layout through d2-little's prepare/render bridge.
+ * Returns the rendered SVG, or `null` when the input carries a feature the
+ * MVP can't lay out externally (in which case the caller falls back to the
+ * dagre `convert` path).
+ *
+ * Lazy-loads `elkjs` on first use; non-elk D2 never pays the cost.
+ */
+async function renderD2ViaElk(d2: WasmRenderModule, code: string): Promise<string | null> {
+  const prepared = d2.prepare!(code);
+  let handle = prepared.handle;
+  try {
+    const request = JSON.parse(prepared.request) as D2LayoutRequest;
+    const board = request.boards[0];
+    if (
+      request.multi_board ||
+      !board ||
+      board.has_sequence ||
+      board.has_grid ||
+      board.has_near ||
+      board.has_containers
+    ) {
+      return null; // fall back to dagre
+    }
+
+    const elk = await loadElkLayout();
+    const elkGraph = buildElkGraph(board);
+    const laid = await elk.layout(elkGraph);
+    const layoutResult = elkResultToD2(laid);
+    const svg = d2.render!(handle, JSON.stringify(layoutResult));
+    handle = -1; // render consumed the handle
+    if (!String(svg).includes('<svg')) {
+      throw new Error('D2 elk bridge did not return SVG output.');
+    }
+    return String(svg);
+  } finally {
+    if (handle !== -1 && typeof d2.drop_prepared === 'function') {
+      d2.drop_prepared(handle);
+    }
+  }
+}
+
+/** Lazy elkjs loader — mirrors the echarts/vega dynamic-import pattern. */
+async function loadElkLayout(): Promise<{ layout(graph: unknown): Promise<unknown> }> {
+  // `elkjs/lib/elk.bundled.js` is the browser-safe build (no Node deps).
+  const mod = (await import('elkjs/lib/elk.bundled.js' as string)) as {
+    default?: new () => { layout(graph: unknown): Promise<unknown> };
+  };
+  const ELK = mod.default;
+  if (!ELK) throw new Error('elkjs bundled build did not export a default ELK constructor.');
+  return new ELK();
+}
+
+/** Build the elkjs input graph from a flat d2 board request (MVP: no nesting). */
+function buildElkGraph(board: D2BoardRequest): unknown {
+  return {
+    id: 'root',
+    layoutOptions: {
+      'elk.algorithm': 'layered',
+      'elk.direction': 'DOWN',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '40',
+      'elk.spacing.nodeNode': '40',
+    },
+    children: board.objects.map(o => ({
+      id: o.id,
+      width: o.width,
+      height: o.height,
+    })),
+    edges: board.edges.map(e => ({
+      id: e.id,
+      sources: [e.src],
+      targets: [e.dst],
+    })),
+  };
+}
+
+/** Map elkjs output back into the d2 layout-result DTO. */
+function elkResultToD2(laid: unknown): D2LayoutResult {
+  const root = laid as {
+    children?: {
+      id: string;
+      // elkjs places positions either nested (`position`) or flat on the
+      // node depending on version / build; accept both.
+      position?: { x: number; y: number };
+      x?: number;
+      y?: number;
+    }[];
+    edges?: {
+      id: string;
+      sections?: {
+        startPoint: { x: number; y: number };
+        endPoint: { x: number; y: number };
+        bendPoints?: { x: number; y: number }[];
+      }[];
+    }[];
+  };
+  const objects = (root.children ?? []).map(c => ({
+    id: c.id,
+    x: c.position?.x ?? c.x ?? 0,
+    y: c.position?.y ?? c.y ?? 0,
+  }));
+  const edges = (root.edges ?? []).map(e => {
+    const section = e.sections?.[0];
+    const route: [number, number][] = [];
+    if (section) {
+      route.push([section.startPoint.x, section.startPoint.y]);
+      for (const bp of section.bendPoints ?? []) route.push([bp.x, bp.y]);
+      route.push([section.endPoint.x, section.endPoint.y]);
+    }
+    return { id: e.id, route, is_curve: false };
+  });
+  return { boards: [{ token: 'root', objects, edges }] };
 }
 
 function injectD2Dimensions(svg: string): string {

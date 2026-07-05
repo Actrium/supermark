@@ -25,6 +25,7 @@ pub mod graph;
 pub mod grid;
 pub mod ir;
 pub mod label;
+pub mod layout_bridge;
 pub mod latex;
 pub mod parser;
 pub mod sequence;
@@ -236,6 +237,25 @@ pub fn compile(
         data: config_data,
     });
 
+    let svg = render_diagram(&diagram, theme_id, dark_theme_id, pad, sketch, center)?;
+
+    Ok((diagram, svg))
+}
+
+/// Render a compiled [`crate::target::Diagram`] to SVG bytes. Shared by
+/// [`compile`] (full dagre pipeline) and the elk layout bridge's render
+/// step so both emit identical SVG for the same post-layout diagram.
+///
+/// `diagram.config` must already be backfilled (see [`compile`]) so the
+/// theme overrides that `RenderOpts` reads are populated.
+fn render_diagram(
+    diagram: &crate::target::Diagram,
+    theme_id: i64,
+    dark_theme_id: Option<i64>,
+    pad: Option<i64>,
+    sketch: bool,
+    center: bool,
+) -> Result<Vec<u8>, String> {
     // Step 6: render
     //
     // Mirrors the Go e2e pipeline (`d2/e2etests/e2e_test.go`):
@@ -266,26 +286,32 @@ pub fn compile(
         render_opts.master_id = diagram.hash_id(None);
     }
 
-    let boards = crate::svg_render::render_multiboard(&diagram, &render_opts)?;
+    let boards = crate::svg_render::render_multiboard(diagram, &render_opts)?;
 
     let svg = if boards.len() == 1 {
         boards.into_iter().next().unwrap()
     } else {
-        crate::svg_render::wrap(&diagram, &boards, &render_opts, 1000)?
+        crate::svg_render::wrap(diagram, &boards, &render_opts, 1000)?
     };
 
-    Ok((diagram, svg))
+    Ok(svg)
 }
 
 /// Recursively compile a graph into a diagram: apply theme, set dimensions,
 /// run layout, export, then recurse into layers/scenarios/steps.
 /// Mirrors Go d2lib.compile.
-fn compile_graph(
+/// Apply the theme and run text measurement (`set_dimensions`) on `g`.
+/// This is everything that runs BEFORE layout in [`compile_graph`]; it is
+/// factored out so the elkjs layout bridge can prepare a graph, hand its
+/// geometry to the host for external layout, and later inject the result
+/// (see `layout_bridge::apply_layout`) without running the built-in dagre
+/// layout. `compile_graph` calls this followed by [`layout_nested`].
+fn prepare_graph_for_layout(
     g: &mut Graph,
     theme_id: i64,
     sketch: bool,
     metrics: &dyn crate::textmeasure::D2Metrics,
-) -> Result<crate::target::Diagram, String> {
+) -> Result<(), String> {
     // Apply theme
     if let Some(theme) = crate::themes::catalog::find(theme_id) {
         g.theme = Some(theme.clone());
@@ -303,7 +329,21 @@ fn compile_graph(
                 None
             },
         )?;
+    }
 
+    Ok(())
+}
+
+fn compile_graph(
+    g: &mut Graph,
+    theme_id: i64,
+    sketch: bool,
+    metrics: &dyn crate::textmeasure::D2Metrics,
+) -> Result<crate::target::Diagram, String> {
+    // Apply theme + measure text dimensions (no layout yet).
+    prepare_graph_for_layout(g, theme_id, sketch, metrics)?;
+
+    if g.objects.len() > 1 || !g.edges.is_empty() {
         // Layout with nested diagram support
         layout_nested(g)?;
     }
@@ -1521,6 +1561,145 @@ pub fn d2_to_svg(input: &str) -> Result<Vec<u8>, String> {
 }
 
 // ---------------------------------------------------------------------------
+// External-layout bridge (elkjs): prepare a graph for layout, then render
+// with host-supplied positions/routes. See `layout_bridge`.
+// ---------------------------------------------------------------------------
+
+/// A graph that has been parsed, themed, and measured (`set_dimensions`)
+/// but NOT laid out. The host runs an external layout engine against the
+/// paired [`crate::layout_bridge::LayoutRequest`], then hands the result
+/// back to [`render_with_external_layout`] to finish export + SVG render.
+///
+/// Held opaquely by the wasm wrapper between the `prepare` and `render`
+/// calls so the host never re-parses or re-measures (which could drift if
+/// the host metrics bridge returns different values on a second call).
+pub struct PreparedLayout {
+    graph: Graph,
+    theme_id: i64,
+    dark_theme_id: Option<i64>,
+    pad: Option<i64>,
+    sketch: bool,
+    center: bool,
+    /// Parsed source config, for diagram.config backfill at render time.
+    config: Option<crate::target::Config>,
+}
+
+/// Run parse + compile + theme + `set_dimensions` on `input`, WITHOUT
+/// invoking the built-in dagre layout. Returns the prepared graph state
+/// plus a [`crate::layout_bridge::LayoutRequest`] describing the geometry
+/// the host layout engine must place. The host falls back to [`d2_to_svg`]
+/// when the request is multi-board or carries an unsupported feature flag
+/// (`has_sequence` / `has_grid` / `has_near` / `has_containers`).
+pub fn prepare_for_external_layout(
+    input: &str,
+    opts: &CompileOptions,
+) -> Result<(PreparedLayout, crate::layout_bridge::LayoutRequest), String> {
+    let (mut g, config) =
+        crate::compiler::compile_with_config("", input).map_err(|e| format!("{}", e))?;
+
+    let mut theme_id = opts.theme_id;
+    let mut dark_theme_id = opts.dark_theme_id;
+    let mut pad = opts.pad;
+    let mut center = opts.center;
+    let mut sketch = opts.sketch;
+    if let Some(config) = config.as_ref() {
+        if theme_id.is_none() {
+            theme_id = config.theme_id;
+        }
+        if dark_theme_id.is_none() {
+            dark_theme_id = config.dark_theme_id;
+        }
+        if pad.is_none() {
+            pad = config.pad;
+        }
+        if !center {
+            center = config.center.unwrap_or(false);
+        }
+        if !sketch {
+            sketch = config.sketch.unwrap_or(false);
+        }
+    }
+    let theme_id = theme_id.unwrap_or(0);
+
+    let owned_metrics: Option<Box<dyn crate::textmeasure::D2Metrics>> = if opts.metrics.is_some() {
+        None
+    } else {
+        Some(crate::textmeasure::default_d2_metrics().map_err(|e| format!("metrics init: {}", e))?)
+    };
+    let metrics: &dyn crate::textmeasure::D2Metrics = match opts.metrics.as_deref() {
+        Some(m) => m,
+        None => owned_metrics
+            .as_deref()
+            .expect("owned_metrics set when opts.metrics is None"),
+    };
+
+    prepare_graph_for_layout(&mut g, theme_id, sketch, metrics)?;
+    let request = crate::layout_bridge::build_layout_request(&g);
+
+    Ok((
+        PreparedLayout {
+            graph: g,
+            theme_id,
+            dark_theme_id,
+            pad,
+            sketch,
+            center,
+            config,
+        },
+        request,
+    ))
+}
+
+/// Apply an externally-computed layout to a [`PreparedLayout`] and render
+/// to SVG bytes. Mirrors the export + render tail of [`compile`]. Only the
+/// root board is laid out from `result` — multi-board diagrams must have
+/// fallen back to dagre already.
+pub fn render_with_external_layout(
+    prepared: PreparedLayout,
+    result: &crate::layout_bridge::LayoutResult,
+) -> Result<Vec<u8>, String> {
+    let PreparedLayout {
+        mut graph,
+        theme_id,
+        dark_theme_id,
+        pad,
+        sketch,
+        center,
+        config,
+    } = prepared;
+
+    let board = result
+        .boards
+        .first()
+        .ok_or_else(|| "layout_bridge: LayoutResult has no boards".to_string())?;
+    crate::layout_bridge::apply_layout(&mut graph, board)?;
+
+    let font_family = if sketch {
+        Some(crate::fonts::FontFamily::HandDrawn)
+    } else {
+        None
+    };
+    let mut diagram = crate::exporter::export(&mut graph, font_family, None)?;
+
+    diagram.config = Some(crate::target::Config {
+        sketch: Some(sketch),
+        theme_id: Some(theme_id),
+        dark_theme_id,
+        pad: config.as_ref().and_then(|c| c.pad),
+        center: config.as_ref().and_then(|c| c.center),
+        layout_engine: config.as_ref().and_then(|c| c.layout_engine.clone()),
+        theme_overrides: config.as_ref().and_then(|c| c.theme_overrides.clone()),
+        dark_theme_overrides: config.as_ref().and_then(|c| c.dark_theme_overrides.clone()),
+        data: config
+            .as_ref()
+            .map(|c| c.data.clone())
+            .unwrap_or_default(),
+    });
+
+    render_diagram(&diagram, theme_id, dark_theme_id, pad, sketch, center)
+}
+
+// ---------------------------------------------------------------------------
 // set_dimensions: measure text and assign object/edge dimensions
 // ---------------------------------------------------------------------------
 
@@ -2398,5 +2577,67 @@ mod tests {
         let ast = parse("a -> b").unwrap();
         // The AST should have nodes/edges
         assert!(!ast.nodes.is_empty());
+    }
+
+    #[test]
+    fn external_layout_bridge_renders_svg() {
+        // End-to-end exercise of the elkjs bridge contract (without elkjs
+        // itself): prepare a graph, feed a synthetic flat layout back, and
+        // confirm export + render still produce a valid SVG with the
+        // objects placed at the supplied positions.
+        let opts = CompileOptions { pad: Some(0), ..CompileOptions::default() };
+        let (prepared, request) =
+            prepare_for_external_layout("a -> b", &opts).expect("prepare");
+
+        let board_req = &request.boards[0];
+        assert!(!board_req.has_containers);
+        assert_eq!(board_req.objects.len(), 2);
+
+        // Echo the request back as a result with arbitrary-but-valid flat
+        // positions and straight 2-point routes.
+        use crate::layout_bridge::{BoardLayout, EdgeRoute, LayoutResult, ObjPos};
+        let objects: Vec<ObjPos> = board_req
+            .objects
+            .iter()
+            .enumerate()
+            .map(|(i, o)| ObjPos {
+                id: o.id.clone(),
+                x: i as f64 * 120.0,
+                y: 0.0,
+            })
+            .collect();
+        let edges: Vec<EdgeRoute> = board_req
+            .edges
+            .iter()
+            .map(|e| EdgeRoute {
+                id: e.id.clone(),
+                route: vec![(40.0, 20.0), (140.0, 20.0)],
+                is_curve: false,
+            })
+            .collect();
+        let result = LayoutResult {
+            boards: vec![BoardLayout {
+                token: "root".to_string(),
+                objects,
+                edges,
+            }],
+        };
+
+        let svg_bytes = render_with_external_layout(prepared, &result).expect("render");
+        let svg = String::from_utf8_lossy(&svg_bytes);
+        assert!(svg.contains("<svg"), "no <svg tag: {svg}");
+        assert!(svg.contains(">a<"), "missing label a: {svg}");
+        assert!(svg.contains(">b<"), "missing label b: {svg}");
+    }
+
+    #[test]
+    fn external_layout_bridge_flags_multi_board() {
+        // layers/scenarios/steps must surface as multi_board so the host
+        // falls back to dagre rather than feeding a partial layout.
+        let opts = CompileOptions { pad: Some(0), ..CompileOptions::default() };
+        // A multi-board diagram (layers create separate boards).
+        let src = "a -> b\n\nlayers: {\n  one: {\n    c -> d\n  }\n}\n";
+        let (_prepared, request) = prepare_for_external_layout(src, &opts).expect("prepare");
+        assert!(request.multi_board, "expected multi_board=true");
     }
 }

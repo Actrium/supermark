@@ -26,3 +26,6 @@ wasm-opt = false
 [dependencies]
 d2-little = { path = "../.." }
 wasm-bindgen = "0.2"
+# Serialise the elk layout request/result across the wasm boundary.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
