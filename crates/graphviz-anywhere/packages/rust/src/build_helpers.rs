@@ -35,11 +35,9 @@ pub fn target_triple_to_asset_name(target: &str) -> Option<&'static str> {
         "x86_64-apple-ios" => Some("graphviz-native-ios-sim-x86_64.tar.gz"),
 
         // ── Windows ────────────────────────────────────────────────────────────
-        // Windows ships a .zip with a different layout; not auto-extracted here yet.
-        // TODO: windows zip extraction — implement curl+unzip logic for these.
         "x86_64-pc-windows-msvc"
-        | "x86_64-pc-windows-gnu" => Some("graphviz-native-windows-x86_64.zip"),
-        "aarch64-pc-windows-msvc" => Some("graphviz-native-windows-arm64.zip"),
+        | "x86_64-pc-windows-gnu" => Some("graphviz-native-windows-x86_64.tar.gz"),
+        "aarch64-pc-windows-msvc" => Some("graphviz-native-windows-arm64.tar.gz"),
 
         _ => None,
     }
@@ -129,7 +127,7 @@ pub fn is_ios_target(target: &str) -> bool {
 /// Returns `true` for targets where the release asset uses `.a` (static archive)
 /// rather than `.so` / `.dylib`.
 pub fn asset_is_static(target: &str) -> bool {
-    is_ios_target(target)
+    is_ios_target(target) || target.contains("windows")
 }
 
 /// Returns the lib filename to expect inside the extracted release archive.
@@ -139,7 +137,6 @@ pub fn asset_lib_filename(target: &str) -> &'static str {
         | "aarch64-apple-darwin"
         | "universal-apple-darwin" => "libgraphviz_api.dylib",
         t if is_ios_target(t) => "libgraphviz_api.a",
-        // Windows is not auto-extracted; this value is unused in practice.
         t if t.contains("windows") => "graphviz_api.lib",
         _ => "libgraphviz_api.so",
     }
@@ -229,7 +226,15 @@ mod tests {
     fn windows_arm64_asset() {
         assert_eq!(
             target_triple_to_asset_name("aarch64-pc-windows-msvc"),
-            Some("graphviz-native-windows-arm64.zip")
+            Some("graphviz-native-windows-arm64.tar.gz")
+        );
+    }
+
+    #[test]
+    fn windows_x86_64_asset() {
+        assert_eq!(
+            target_triple_to_asset_name("x86_64-pc-windows-msvc"),
+            Some("graphviz-native-windows-x86_64.tar.gz")
         );
     }
 
@@ -327,6 +332,11 @@ mod tests {
         assert_eq!(asset_lib_filename("x86_64-unknown-linux-gnu"), "libgraphviz_api.so");
     }
 
+    #[test]
+    fn asset_lib_filename_windows_is_static_import_name() {
+        assert_eq!(asset_lib_filename("x86_64-pc-windows-msvc"), "graphviz_api.lib");
+    }
+
     // ── is_ios_target ────────────────────────────────────────────────────────────
 
     #[test]
@@ -341,18 +351,18 @@ mod tests {
     // ── asset_is_static (static vs. dynamic link policy) ─────────────────────────
 
     #[test]
-    fn asset_is_static_only_for_ios() {
-        // iOS is the only target linked statically.
+    fn asset_is_static_for_ios_and_windows() {
+        // iOS and Windows release assets are linked statically.
         assert!(asset_is_static("aarch64-apple-ios"));
         assert!(asset_is_static("aarch64-apple-ios-sim"));
         assert!(asset_is_static("x86_64-apple-ios"));
-        // The published release asset for desktop/Android is the self-contained
-        // shared library (.so/.dylib), not a static archive.
+        assert!(asset_is_static("x86_64-pc-windows-msvc"));
+        // The published release asset for Linux/macOS/Android is the
+        // self-contained shared library (.so/.dylib), not a static archive.
         assert!(!asset_is_static("x86_64-unknown-linux-gnu"));
         assert!(!asset_is_static("aarch64-unknown-linux-gnu"));
         assert!(!asset_is_static("aarch64-apple-darwin"));
         assert!(!asset_is_static("x86_64-apple-darwin"));
-        assert!(!asset_is_static("x86_64-pc-windows-msvc"));
         assert!(!asset_is_static("aarch64-linux-android"));
     }
 
@@ -365,8 +375,10 @@ mod tests {
             "x86_64-unknown-linux-gnu",
             "aarch64-apple-darwin",
             "aarch64-linux-android",
+            "x86_64-pc-windows-msvc",
         ] {
-            let ships_archive = asset_lib_filename(target).ends_with(".a");
+            let lib_name = asset_lib_filename(target);
+            let ships_archive = lib_name.ends_with(".a") || lib_name.ends_with(".lib");
             assert_eq!(
                 asset_is_static(target),
                 ships_archive,
