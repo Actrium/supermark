@@ -3,7 +3,9 @@
 ## Source repo
 - **Upstream:** https://github.com/Actrium/d2-little
 - **Pinned commit (at merge time):** `a8db3b23f3ba2f89e031e70525ace34b1d3f0226`
-- **Pinned tag:** `v0.7.2`
+- **Port crate source tag:** `v0.7.2`
+- **Ported Terrastruct D2 version:** `v0.7.1`
+- **Crates.io version policy:** `{terrastruct-d2-version}-{port-revision}`; current crate version is `0.7.1-1`.
 - **Merged into supramark on:** 2026-05-09 (step 3 of the super-monorepo plan)
 
 ## License relationship
@@ -52,7 +54,7 @@
 
 ## Sync cadence
 - **Upstream activity:** Active, kookyleo's project. Tagged releases.
-- **Sync strategy:** subtree pull on each tagged release.
+- **Sync strategy:** subtree pull on each tagged release. Crates.io releases use the ported Terrastruct D2 version plus a port revision (for example `0.7.1-1`), matching mermaid-little / plantuml-little style.
   ```
   git fetch subtree-d2
   git subtree pull --prefix=crates/d2-little subtree-d2 main

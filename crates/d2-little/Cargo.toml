@@ -4,7 +4,7 @@
 
 [package]
 name = "d2-little"
-version = "0.7.2"
+version = "0.7.1-1"
 edition = "2024"
 license = "MPL-2.0"
 authors = ["kookyleo <kookyleo@gmail.com>"]
@@ -56,7 +56,7 @@ log = "0.4"
 # convention set by plantuml-little / mermaid-little; the rename leaves
 # the `font_metrics` namespace free for any future d2-little wrapper
 # module without crate-root shadowing.
-font_metrics_core = { package = "font-metrics", path = "../font-metrics", version = "0.1" }
+font_metrics_core = { package = "supramark-font-metrics", path = "../font-metrics", version = "0.1" }
 # Unified diagram engine abstraction (DiagramEngine / EngineAst etc.).
 supramark-diagram-core = { path = "../supramark-diagram-core", version = "0.1" }
 
