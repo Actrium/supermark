@@ -296,7 +296,17 @@ function fmtCoord(value: number): string {
 function recenterMermaidEdgeLabels(svg: string): string {
   return svg.replace(
     /<g class="edgeLabel" transform="translate\(([^,)]+),\s*([^)]+)\)"><g class="label" data-id="([^"]*)" transform="translate\(([^,)]+),\s*([^)]+)\)"><g><rect class="background"(?: style="([^"]*)")? x="-2" y="-2" width="([^"]+)" height="([^"]+)"><\/rect>/g,
-    (_match, lx, ly, did, _tx, ty, rs, w, h) => {
+    (
+      _match: string,
+      lx: string,
+      ly: string,
+      did: string,
+      _tx: string,
+      ty: string,
+      rs: string | undefined,
+      w: string,
+      h: string,
+    ) => {
       const width = parseFloat(w);
       const rectX = -width / 2;
       const styleAttr = rs !== undefined ? ` style="${rs}"` : '';
