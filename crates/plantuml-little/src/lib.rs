@@ -4,6 +4,10 @@
 // heavily; rewriting 200+ call sites is out of scope for the
 // graphviz-anywhere swap.
 #![allow(clippy::collapsible_match)]
+#![allow(clippy::manual_c_str_literals)]
+#![allow(clippy::needless_borrow)]
+#![allow(clippy::needless_borrowed_reference)]
+#![allow(clippy::needless_return)]
 #![allow(clippy::useless_conversion)]
 
 use std::path::Path;

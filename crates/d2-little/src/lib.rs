@@ -27,6 +27,7 @@ pub mod ir;
 pub mod label;
 pub mod latex;
 pub mod parser;
+pub mod semantic;
 pub mod sequence;
 pub mod shape;
 pub mod sketch;
@@ -35,7 +36,6 @@ pub mod svg_render;
 pub mod target;
 pub mod textmeasure;
 pub mod themes;
-pub mod semantic;
 pub use semantic::{D2Engine, D2Semantic};
 
 use std::collections::{HashMap, HashSet};

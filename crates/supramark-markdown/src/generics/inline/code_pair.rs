@@ -34,11 +34,11 @@
 //! This generic structure follows exact rules of code span in CommonMark:
 //!
 //! 1. Literal marker character sequence can be used inside of structure if its length
-//! doesn't match length of the opening/closing sequence (e.g. with `%` defined
-//! as a marker, `%%foo%bar%%` gets parsed as `Node("foo%bar")`).
+//!    doesn't match length of the opening/closing sequence (e.g. with `%` defined
+//!    as a marker, `%%foo%bar%%` gets parsed as `Node("foo%bar")`).
 //!
 //! 2. Single space inside is trimmed to allow you to write `% %%foo %` to be parsed as
-//! `Node("%%foo")`.
+//!    `Node("%%foo")`.
 //!
 //! If you define two structures with the same marker, only the first one will work.
 //!

@@ -10,7 +10,7 @@
 
 use serde::Serialize;
 
-use crate::graph::{Edge, Graph, Object, ObjId, Style};
+use crate::graph::{Edge, Graph, ObjId, Object, Style};
 
 /// Semantic style subset of a single node.
 ///
@@ -131,7 +131,10 @@ pub struct D2Semantic {
 /// Resolve an ObjId to its abs_id string; out-of-bounds returns an empty string
 /// for robustness.
 fn abs_id_of(g: &Graph, id: ObjId) -> String {
-    g.objects.get(id).map(|o| o.abs_id.clone()).unwrap_or_default()
+    g.objects
+        .get(id)
+        .map(|o| o.abs_id.clone())
+        .unwrap_or_default()
 }
 
 /// Project a single `Object` into a `D2Node` (semantic fields only).
@@ -185,9 +188,7 @@ pub fn project(g: &Graph) -> D2Semantic {
 // DiagramEngine implementation
 // ---------------------------------------------------------------------------
 
-use supramark_diagram_core::{
-    DiagramEngine, DiagramError, EngineAst, RenderOutput,
-};
+use supramark_diagram_core::{DiagramEngine, DiagramError, EngineAst, RenderOutput};
 
 /// d2 diagram engine: wires into supramark's unified `DiagramEngine` abstraction.
 pub struct D2Engine;
@@ -236,7 +237,10 @@ mod tests {
 
         let nodes = ast.data.get("nodes").and_then(|v| v.as_array()).unwrap();
         let edges = ast.data.get("edges").and_then(|v| v.as_array()).unwrap();
-        assert!(nodes.len() >= 2, "should project at least the two nodes a and b");
+        assert!(
+            nodes.len() >= 2,
+            "should project at least the two nodes a and b"
+        );
         assert_eq!(edges.len(), 1, "should project a single a -> b edge");
 
         let edge = &edges[0];
@@ -246,10 +250,7 @@ mod tests {
 
     #[test]
     fn semantic_json_excludes_layout_fields() {
-        let ast = D2Engine
-            .semantic("a -> b: hello")
-            .unwrap()
-            .unwrap();
+        let ast = D2Engine.semantic("a -> b: hello").unwrap().unwrap();
         let json = serde_json::to_string(&ast.data).unwrap();
         // Layout coordinate keys must not appear in the projection.
         for forbidden in ["top_left", "topLeft", "width", "height", "box_", "route"] {

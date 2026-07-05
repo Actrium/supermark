@@ -38,12 +38,12 @@ impl DiagramEngine for GraphvizEngine {
         })?;
 
         // Default layout engine dot + SVG output format.
-        let bytes = ctx
-            .render(source, Engine::Dot, Format::Svg)
-            .map_err(|e| DiagramError::Render {
-                engine: "graphviz",
-                message: e.to_string(),
-            })?;
+        let bytes =
+            ctx.render(source, Engine::Dot, Format::Svg)
+                .map_err(|e| DiagramError::Render {
+                    engine: "graphviz",
+                    message: e.to_string(),
+                })?;
 
         Ok(RenderOutput::svg(bytes))
     }
@@ -65,7 +65,10 @@ mod tests {
             .expect("render minimal dot should succeed");
 
         assert_eq!(out.mime, "image/svg+xml");
-        assert!(!out.bytes.is_empty(), "rendered SVG bytes should be non-empty");
+        assert!(
+            !out.bytes.is_empty(),
+            "rendered SVG bytes should be non-empty"
+        );
     }
 
     #[test]
