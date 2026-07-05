@@ -7,7 +7,21 @@
 //! against the static DejaVu fixtures.
 
 fn render_fixture(source: &str, id: &str) -> String {
-    mermaid_little::convert_with_id(source, id).expect("convert")
+    let pre = mermaid_little::preprocess::preprocess(source).expect("preprocess");
+    let theme_name = pre.config.theme.as_deref().unwrap_or("default");
+    let mut theme = mermaid_little::theme::get_theme(theme_name);
+    if let Some(tv) = pre.config.theme_variables.as_ref() {
+        mermaid_little::theme::apply_theme_variables(&mut theme, tv);
+    }
+    let d = mermaid_little::parser::gantt::parse(source).expect("parse");
+    let effective_theme = if let Some(name) = d.theme_name.as_deref() {
+        mermaid_little::theme::get_theme(name)
+    } else {
+        theme
+    };
+    let l =
+        mermaid_little::layout::gantt::layout_with_width(&d, &effective_theme, 0).expect("layout");
+    mermaid_little::render::svg_gantt::render(&d, &l, &effective_theme, id).expect("render")
 }
 
 fn assert_fixture(source_path: &str, reference_path: &str, id: &str) {
@@ -156,3 +170,27 @@ fn demos_07() {
 demos!(demos_08, "08");
 demos!(demos_09, "09");
 demos!(demos_10, "10");
+
+#[test]
+fn convert_uses_nonzero_server_width() {
+    let source = r#"gantt
+    title Documentation release
+    dateFormat  YYYY-MM-DD
+    section Draft
+    Outline      :a1, 2026-06-01, 2d
+    Write        :a2, after a1, 4d
+    section Review
+    Visual diff  :a3, after a2, 2d
+    Publish      :a4, after a3, 1d
+"#;
+    let svg = mermaid_little::convert_with_id(source, "gantt-nonzero-width").expect("convert");
+    assert!(svg.contains("<svg"), "{svg}");
+    assert!(
+        !svg.contains(r#"viewBox="0 0 0 "#),
+        "production conversion must not emit a zero-width Gantt SVG: {svg}"
+    );
+    assert!(
+        svg.contains(r#"viewBox="0 0 1000 "#),
+        "expected the server fallback width in the Gantt viewBox: {svg}"
+    );
+}

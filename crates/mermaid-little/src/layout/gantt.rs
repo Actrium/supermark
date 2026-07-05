@@ -3,11 +3,9 @@
 //! Upstream reference: `packages/mermaid/src/diagrams/gantt/{ganttRenderer.js, ganttDb.js}`.
 //!
 //! The renderer in upstream is normally driven by a real DOM: it reads
-//! `elem.parentElement.offsetWidth` to size the chart. Under the test
-//! harness (jsdom / our headless reference run) that property is 0, so
-//! the SVG width is 0, the time scale's range collapses to `[0, -150]`,
-//! and most coordinates end up negative. The reference SVGs preserve
-//! exactly that; we replicate it bit-for-bit here.
+//! `elem.parentElement.offsetWidth` to size the chart. Reference fixtures
+//! generated under jsdom may observe `0`, but production server-side renders
+//! need a real fallback width so the time scale does not collapse.
 
 use crate::error::Result;
 use crate::model::gantt::{GanttDiagram, Task};
@@ -24,6 +22,7 @@ pub(crate) const GRID_LINE_START_PADDING: i32 = 35;
 pub(crate) const FONT_SIZE: i32 = 11;
 pub(crate) const SECTION_FONT_SIZE: i32 = 11;
 pub(crate) const NUMBER_SECTION_STYLES: i32 = 4;
+pub(crate) const DEFAULT_RENDER_WIDTH: i32 = 1_000;
 
 /// Resolved task with absolute times in milliseconds since epoch.
 #[derive(Debug, Clone)]
@@ -72,7 +71,7 @@ pub struct AxisTick {
 /// Full gantt layout ready for rendering.
 #[derive(Debug, Clone, Default)]
 pub struct GanttLayout {
-    /// width = 0 (matches reference output under jsdom).
+    /// Render width used for the SVG viewBox and time scale.
     pub width: i32,
     /// total height including padding.
     pub height: i32,
@@ -98,8 +97,16 @@ pub enum TodayMarker {
 }
 
 pub fn layout(d: &GanttDiagram, _theme: &ThemeVariables) -> Result<GanttLayout> {
+    layout_with_width(d, _theme, DEFAULT_RENDER_WIDTH)
+}
+
+pub fn layout_with_width(
+    d: &GanttDiagram,
+    _theme: &ThemeVariables,
+    render_width: i32,
+) -> Result<GanttLayout> {
     let mut layout = GanttLayout {
-        width: 0,
+        width: render_width.max(0),
         ..Default::default()
     };
 
