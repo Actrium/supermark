@@ -1,6 +1,6 @@
 [package]
 name = "supramark-plantuml-native"
-version = "1.2026.2-3"
+version = "1.2026.2-4"
 edition = "2024"
 rust-version = "1.85"
 # Inherit the upstream multi-licence disjunction. Downstream consumers
@@ -36,4 +36,4 @@ plantuml-little = { path = "../..", default-features = false, features = ["metri
 # Re-export `supramark_install_metrics_callback` and `MeasureTextFfi`
 # from the same `cdylib` so a single `dlopen` / static-link surface
 # satisfies the host's "install metrics, then render" sequence.
-font-metrics = { path = "../../../font-metrics", default-features = false, features = ["metrics-ffi-callback"] }
+font-metrics = { package = "supramark-font-metrics", path = "../../../font-metrics", default-features = false, features = ["metrics-ffi-callback"] }
