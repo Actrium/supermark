@@ -219,6 +219,27 @@ jobs:
       - name: cargo test -p plantuml-little (lib unit tests)
         run: cargo test -p plantuml-little --lib
 
+  # d2-little's Rust unit tests (text-measurement / Go-emulation ruler /
+  # layout) had no CI job — the "Test & Build" job only exercises the RN
+  # JS wrapper and the wasm build, never `cargo test -p d2-little`. That
+  # left both the native d2_go_emulation unit tests and any host-path
+  # helpers (e.g. `host_label_height::single_line_height`) without
+  # regression coverage. d2-little is self-contained (no graphviz /
+  # fonttools native deps), so a plain `cargo test --lib` is enough; the
+  # heavier byte-exact e2e / cross-validation suites can be a follow-up.
+  d2-rust-tests:
+    name: d2-little Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo test -p d2-little (lib unit tests)
+        run: cargo test -p d2-little --lib
+
   # plantuml-little byte-exact reference-SVG suite (issue #46, "Full" tier).
   # The committed goldens in tests/reference/ are byte-exact against the wasm
   # Graphviz build (@kookyleo/graphviz-anywhere-web@0.1.8), so the suite runs

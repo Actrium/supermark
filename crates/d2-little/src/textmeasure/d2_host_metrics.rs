@@ -38,7 +38,7 @@ use std::cell::Cell;
 
 use font_metrics_core::{Measured, Metrics, host_callback::HostCallbackMetrics};
 
-use super::{D2Metrics, MarkdownOptions};
+use super::{D2Metrics, MarkdownOptions, host_label_height::single_line_height};
 use crate::fonts::{Font, FontFamily, FontStyle};
 
 /// Adapter that bridges d2's [`D2Metrics`] surface to the host
@@ -157,7 +157,10 @@ impl D2Metrics for D2HostMetrics {
             .fold(0.0_f64, f64::max);
         let single_h = {
             let m = self.inner.measure(lines[0], family, size_f, bold, italic);
-            m.ascent + m.descent
+            // Use `size_f` (the requested font size) as the ascent proxy
+            // instead of `m.ascent` (see `host_label_height::single_line_height`
+            // doc for why this approximates — not matches — the native path).
+            single_line_height(size_f, m.descent)
         };
         let composed_h = single_h + ((n - 1) as f64) * self.line_height_factor.get() * size_f;
         (max_w, composed_h)
