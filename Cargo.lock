@@ -313,6 +313,8 @@ name = "d2-little-web"
 version = "0.7.1-1"
 dependencies = [
  "d2-little",
+ "serde",
+ "serde_json",
  "wasm-bindgen",
 ]
 
