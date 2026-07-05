@@ -141,6 +141,10 @@ reference_test!(
     "fixtures/activity/swimlane001.puml"
 );
 reference_test!(
+    reference_fixtures_activity_while_loop_puml,
+    "fixtures/activity/while_loop.puml"
+);
+reference_test!(
     reference_fixtures_activity_advanced_backward_puml,
     "fixtures/activity_advanced/backward.puml"
 );
@@ -1174,4 +1178,4 @@ reference_test!(
     "fixtures/yaml/basic.puml"
 );
 
-// Total: 269 reference tests
+// Total: 270 reference tests
