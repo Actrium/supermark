@@ -258,6 +258,90 @@ function normalizeMermaidHtmlLabels(svg: string): string {
   });
 }
 
+/**
+ * Format a coordinate the way mermaid emits one — plain decimal, no
+ * scientific notation, float noise trimmed. Used when we rewrite SVG
+ * geometry that the wasm already serialised.
+ */
+function fmtCoord(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  return String(Math.round(value * 1e6) / 1e6);
+}
+
+/**
+ * Re-center SVG-text edge labels on their edge.
+ *
+ * `mermaid-little` faithfully reproduces upstream mermaid's edge-label
+ * markup for `htmlLabels: false`:
+ *
+ * ```html
+ * <g class="edgeLabel" transform="translate(lx, ly)">
+ *   <g class="label" transform="translate(-w/2, -h/2)">
+ *     <g><rect class="background" x="-2" y="-2" width="w+4" height="h+4"></rect>
+ *        <text text-anchor="middle">…tspans anchored at x=0…</text></g>
+ *   </g>
+ * </g>
+ * ```
+ *
+ * The `<text>` self-centres at local x=0 (text-anchor=middle) while the
+ * background rect spans local x=[-2, w+2] (centre w/2). After the outer
+ * `translate(-w/2, …)`, the rect lands on the edge midpoint but the text
+ * lands w/2 to its left — visibly off-centre (empirically ~30px for a
+ * 60px label; see issue #40).
+ *
+ * Re-centre by dropping the x-shift from the label-group transform (the
+ * text already self-centres) and shifting the rect to straddle x=0
+ * (`x = -width/2`). Text and background then share the same centre line.
+ */
+function recenterMermaidEdgeLabels(svg: string): string {
+  return svg.replace(
+    /<g class="edgeLabel" transform="translate\(([^,)]+),\s*([^)]+)\)"><g class="label" data-id="([^"]*)" transform="translate\(([^,)]+),\s*([^)]+)\)"><g><rect class="background"(?: style="([^"]*)")? x="-2" y="-2" width="([^"]+)" height="([^"]+)"><\/rect>/g,
+    (
+      _match: string,
+      lx: string,
+      ly: string,
+      did: string,
+      _tx: string,
+      ty: string,
+      rs: string | undefined,
+      w: string,
+      h: string,
+    ) => {
+      const width = parseFloat(w);
+      const rectX = -width / 2;
+      const styleAttr = rs !== undefined ? ` style="${rs}"` : '';
+      return (
+        `<g class="edgeLabel" transform="translate(${lx}, ${ly})">` +
+        `<g class="label" data-id="${did}" transform="translate(0, ${ty})">` +
+        `<g><rect class="background"${styleAttr} x="${fmtCoord(rectX)}" y="-2" width="${w}" height="${h}"></rect>`
+      );
+    }
+  );
+}
+
+/**
+ * Vertically center node/edge HTML labels inside their `<foreignObject>`.
+ *
+ * `mermaid-little` sizes each `<foreignObject>` to the font's
+ * ascent+descent, but the inner `<div>` paints at `line-height: 1.5`,
+ * producing a line box ~1.5× taller than the foreignObject. With the
+ * upstream `display: table-cell` the div grows to the (larger) content
+ * height and overflows the foreignObject downward, so the text sits at
+ * the bottom of the node instead of the middle (issue #40).
+ *
+ * Switching the div to a flex container that fills the foreignObject
+ * (`height: 100%`) and centers its content restores vertical centering
+ * even when the painted text is taller than the measured box — the
+ * foreignObject's `overflow="visible"` (set by `normalizeMermaidHtmlLabels`)
+ * keeps anything from being clipped.
+ */
+function centerMermaidHtmlLabels(svg: string): string {
+  return svg.replace(
+    /display:\s*table-cell;\s*white-space:\s*nowrap;\s*line-height:\s*1\.5;/g,
+    'display: flex; align-items: center; justify-content: center; height: 100%; white-space: nowrap; line-height: 1.5;'
+  );
+}
+
 function inlineMermaidSvg(svg: string, options?: Record<string, unknown>): string {
   const styleMatch = svg.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
   const cssText = styleMatch?.[1] ?? '';
@@ -296,6 +380,8 @@ function inlineMermaidSvg(svg: string, options?: Record<string, unknown>): strin
 
   next = applyFontFamilies(next, textFontFamily, monoFontFamily);
   next = normalizeMermaidHtmlLabels(next);
+  next = recenterMermaidEdgeLabels(next);
+  next = centerMermaidHtmlLabels(next);
   return next;
 }
 
