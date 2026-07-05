@@ -117,11 +117,11 @@ CI or airgapped environments). Override the release tag with
 
 - **Toolchain**: MSVC 2022, CMake, `bison`/`flex` (winflexbison)
 - **Build**: `./scripts/build-windows.sh`
-- **Output**: `output/windows-x86_64/`; ships as `.zip` (not `.tar.gz`)
-- **Release asset**: `graphviz-native-windows-x86_64.zip`
+- **Output**: `output/windows-x86_64/`; release ships as `.tar.gz`
+- **Release asset**: `graphviz-native-windows-x86_64.tar.gz`
 - **Override**: `$env:GRAPHVIZ_ANYWHERE_DIR = "output\windows-x86_64"; cargo build`
-- **build.rs**: env override works; auto-download is not supported (zip layout differs)
-- **Common errors**: `.zip` extraction must be done manually before building the Rust crate; place `graphviz_api.lib` under the dir pointed to by `GRAPHVIZ_ANYWHERE_DIR`
+- **build.rs**: env override works; auto-download extracts the `.tar.gz` release asset
+- **Common errors**: MSVC tools not on PATH when building from source; use a Developer Command Prompt/Git Bash or set `GRAPHVIZ_ANYWHERE_DIR` to a prebuilt directory containing `graphviz_api.lib`
 
 ## aarch64-pc-windows-msvc
 

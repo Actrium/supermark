@@ -325,19 +325,6 @@ fn try_github_release() -> bool {
         return false;
     };
 
-    // Windows .zip assets are not auto-extracted yet.
-    // TODO: windows zip extraction — implement curl+unzip (or PowerShell
-    // Expand-Archive) to handle .zip assets for Windows targets.
-    if asset.ends_with(".zip") {
-        eprintln!(
-            "graphviz-anywhere: automatic download of Windows .zip assets is not yet \
-             implemented.  Set GRAPHVIZ_ANYWHERE_DIR to point at the directory \
-             containing graphviz_api.lib, or drop the prebuilt lib under \
-             packages/rust/prebuilt/{target}/"
-        );
-        return false;
-    }
-
     let release_version = env::var("GRAPHVIZ_ANYWHERE_RELEASE_VERSION")
         .ok()
         .filter(|s| !s.is_empty())
@@ -389,8 +376,9 @@ fn try_github_release() -> bool {
             return false;
         }
 
+        let tar_flag = if asset.ends_with(".zip") { "-xf" } else { "-xzf" };
         let untar = Command::new("tar")
-            .args(["-xzf"])
+            .arg(tar_flag)
             .arg(&archive)
             .arg("-C")
             .arg(&staging)
