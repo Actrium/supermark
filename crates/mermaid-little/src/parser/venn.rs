@@ -208,8 +208,11 @@ fn parse_text_args(
     Ok((None, first, None))
 }
 
+type StyleField = (String, String);
+type ParsedStyleArgs = (Vec<String>, Vec<StyleField>);
+
 /// `style <id list> key:value, key:value, ...`
-fn parse_style_args(rest: &str, lineno: usize) -> Result<(Vec<String>, Vec<(String, String)>)> {
+fn parse_style_args(rest: &str, lineno: usize) -> Result<ParsedStyleArgs> {
     let mut s = rest.trim_start();
 
     // Identifier list (comma-separated). The list ends when we see an
@@ -256,11 +259,7 @@ fn parse_style_args(rest: &str, lineno: usize) -> Result<(Vec<String>, Vec<(Stri
     parse_style_fields(s, targets, lineno)
 }
 
-fn parse_style_fields(
-    s: &str,
-    targets: Vec<String>,
-    lineno: usize,
-) -> Result<(Vec<String>, Vec<(String, String)>)> {
+fn parse_style_fields(s: &str, targets: Vec<String>, lineno: usize) -> Result<ParsedStyleArgs> {
     let mut s = s.trim_start();
     let mut fields = Vec::<(String, String)>::new();
     while !s.is_empty() {

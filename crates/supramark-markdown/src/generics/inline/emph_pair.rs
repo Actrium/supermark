@@ -277,8 +277,8 @@ fn is_odd_match(opener: &EmphMarker, closer: &EmphMarker) -> bool {
     //
     #[allow(clippy::collapsible_if)]
     if opener.close || closer.open {
-        if (opener.length + closer.length) % 3 == 0 {
-            if opener.length % 3 != 0 || closer.length % 3 != 0 {
+        if (opener.length + closer.length).is_multiple_of(3) {
+            if !opener.length.is_multiple_of(3) || !closer.length.is_multiple_of(3) {
                 return true;
             }
         }

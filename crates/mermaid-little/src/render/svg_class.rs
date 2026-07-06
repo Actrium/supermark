@@ -341,7 +341,9 @@ pub fn render(
     }
 
     out.push_str("</svg>");
-    Ok(normalise_classid_counters(out))
+    Ok(crate::make_foreign_objects_non_clipping(
+        &normalise_classid_counters(out),
+    ))
 }
 
 /// Renumber `classId-<base>-<n>` suffixes by first-appearance order.
@@ -1194,8 +1196,8 @@ fn render_node(id: &str, n: &LayoutNode, theme: &ThemeVariables, d: &ClassDiagra
     // formulas collapse to the original constants we already use;
     // for non-empty rows, we replicate the textHelper transform plus the
     // classBox post-adjustment loop.
-    let has_members = class_node.map_or(false, |c| !c.members.is_empty());
-    let has_methods = class_node.map_or(false, |c| !c.methods.is_empty());
+    let has_members = class_node.is_some_and(|c| !c.members.is_empty());
+    let has_methods = class_node.is_some_and(|c| !c.methods.is_empty());
     let render_extra_box = !has_members && !has_methods;
     // bbox.width as seen by classBox = max foreignObject width across
     // all visible groups. For empty members/methods this is just the
@@ -1586,8 +1588,8 @@ fn compute_svg_bbox_local(l: &ClassLayout, d: &ClassDiagram) -> (f64, f64, f64, 
         if w > 0.0 {
             let drawn_w = w;
             let drawn_h = h;
-            let has_members = class_node.map_or(false, |c| !c.members.is_empty());
-            let has_methods = class_node.map_or(false, |c| !c.methods.is_empty());
+            let has_members = class_node.is_some_and(|c| !c.members.is_empty());
+            let has_methods = class_node.is_some_and(|c| !c.methods.is_empty());
             let render_extra_box = !has_members && !has_methods;
             let h_internal_real = if render_extra_box {
                 drawn_h - 4.0 * padding
@@ -1601,7 +1603,7 @@ fn compute_svg_bbox_local(l: &ClassLayout, d: &ClassDiagram) -> (f64, f64, f64, 
             // Annotation row contributes label_h to the divider-y offset
             // when the class declares any `<<annotation>>`. Mirrors
             // render_node's `annotation_h_cb` term.
-            let has_annotation = class_node.map_or(false, |c| !c.annotations.is_empty());
+            let has_annotation = class_node.is_some_and(|c| !c.annotations.is_empty());
             let raw_annotation_h = if has_annotation { label_h } else { 0.0 };
             let cb = |v: f64| if v == 0.0 { 0.0 } else { v };
             let annotation_h_cb = cb(raw_annotation_h - extra_sub);
@@ -1632,7 +1634,7 @@ fn compute_svg_bbox_local(l: &ClassLayout, d: &ClassDiagram) -> (f64, f64, f64, 
             continue;
         }
         let raw: Vec<crate::layout::unified::types::Point> =
-            e.points.as_deref().unwrap_or(&[]).iter().copied().collect();
+            e.points.as_deref().unwrap_or(&[]).to_vec();
         if raw.is_empty() {
             continue;
         }
@@ -1805,7 +1807,7 @@ fn render_edge_path(diag_id: &str, kind: &str, e: &crate::layout::unified::types
     // Raw waypoints — preserved for `data-points` (upstream base64s the
     // pre-offset values).
     let raw: Vec<crate::layout::unified::types::Point> =
-        e.points.as_deref().unwrap_or(&[]).iter().copied().collect();
+        e.points.as_deref().unwrap_or(&[]).to_vec();
 
     // Apply marker visual offsets to a clone — the rendered `d=` path
     // ends a markerOffset short of the node boundary so the arrowhead
@@ -2097,7 +2099,7 @@ fn js_atan2(y: f64, x: f64) -> f64 {
     if x.is_nan() || y.is_nan() {
         return f64::NAN;
     }
-    const PI_LO: f64 = 1.224_646_799_147_353_177_2E-16;
+    const PI_LO: f64 = 1.224_646_799_147_353_2E-16;
     let pi = std::f64::consts::PI;
 
     let xb = x.to_bits();
@@ -2755,23 +2757,32 @@ mod tests {
         if got == expected {
             return true;
         }
-        let a_ok = got.len() == expected.len();
-        if !a_ok {
+        let prefix = got
+            .bytes()
+            .zip(expected.bytes())
+            .take_while(|(a, b)| a == b)
+            .count();
+        if got.len() != expected.len() {
             eprintln!(
-                "length mismatch on {}: got {} vs expected {}",
+                "length mismatch on {}: got {} vs expected {} at byte {}",
                 fixture,
                 got.len(),
-                expected.len()
+                expected.len(),
+                prefix,
             );
         } else {
-            // Find first diff position
-            let prefix = got
-                .bytes()
-                .zip(expected.bytes())
-                .take_while(|(a, b)| a == b)
-                .count();
             eprintln!("content mismatch on {} at byte {}", fixture, prefix);
         }
+        let ctx = 120usize;
+        let got_start = prefix.saturating_sub(ctx);
+        let expected_start = prefix.saturating_sub(ctx);
+        let got_end = (prefix + ctx).min(got.len());
+        let expected_end = (prefix + ctx).min(expected.len());
+        eprintln!("got: ...{}...", &got[got_start..got_end]);
+        eprintln!(
+            "expected: ...{}...",
+            &expected[expected_start..expected_end]
+        );
         false
     }
 

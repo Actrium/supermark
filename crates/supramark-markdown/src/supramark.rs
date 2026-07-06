@@ -722,9 +722,7 @@ fn find_next_inline_extension(value: &str, from: usize) -> Option<InlineExtensio
 
     while cursor < value.len() {
         let mut chars = value[cursor..].char_indices();
-        let Some((relative, ch)) = chars.next() else {
-            return None;
-        };
+        let (relative, ch) = chars.next()?;
         let index = cursor + relative;
 
         if ch == '$' && !is_escaped(value, index) {
@@ -966,6 +964,8 @@ fn diagram_engine(lang: &str) -> Option<&str> {
         "echarts" => Some("echarts"),
         "chart" => Some("chart"),
         "chartjs" => Some("chartjs"),
+        "chart.js" => Some("chart.js"),
+        "plotly" => Some("plotly"),
         "dot" => Some("dot"),
         "graphviz" => Some("graphviz"),
         "d2" => Some("d2"),
@@ -1551,7 +1551,31 @@ mod tests {
 
     #[test]
     fn maps_diagram_fences() {
-        let ast = parse("```mermaid\ngraph TD; A-->B;\n```");
+        for (lang, expected_engine) in [
+            ("mermaid", "mermaid"),
+            ("graphviz", "graphviz"),
+            ("vega", "vega"),
+            ("chart", "chart"),
+            ("chartjs", "chartjs"),
+            ("chart.js", "chart.js"),
+        ] {
+            let ast = parse(&format!("```{lang}\ngraph TD; A-->B;\n```"));
+            let SupramarkNode::Root { children, .. } = ast else {
+                panic!("expected root");
+            };
+
+            let SupramarkNode::Diagram { engine, code, .. } = &children[0] else {
+                panic!("expected diagram for {lang}");
+            };
+
+            assert_eq!(engine, expected_engine);
+            assert_eq!(code.trim(), "graph TD; A-->B;");
+        }
+    }
+
+    #[test]
+    fn maps_plotly_as_unsupported_diagram_fence() {
+        let ast = parse("```plotly\n{}\n```");
         let SupramarkNode::Root { children, .. } = ast else {
             panic!("expected root");
         };
@@ -1560,8 +1584,8 @@ mod tests {
             panic!("expected diagram");
         };
 
-        assert_eq!(engine, "mermaid");
-        assert_eq!(code.trim(), "graph TD; A-->B;");
+        assert_eq!(engine, "plotly");
+        assert_eq!(code.trim(), "{}");
     }
 
     #[test]

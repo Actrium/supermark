@@ -3,11 +3,9 @@
 //! Upstream reference: `packages/mermaid/src/diagrams/gantt/{ganttRenderer.js, ganttDb.js}`.
 //!
 //! The renderer in upstream is normally driven by a real DOM: it reads
-//! `elem.parentElement.offsetWidth` to size the chart. Under the test
-//! harness (jsdom / our headless reference run) that property is 0, so
-//! the SVG width is 0, the time scale's range collapses to `[0, -150]`,
-//! and most coordinates end up negative. The reference SVGs preserve
-//! exactly that; we replicate it bit-for-bit here.
+//! `elem.parentElement.offsetWidth` to size the chart. Reference fixtures
+//! generated under jsdom may observe `0`, but production server-side renders
+//! need a real fallback width so the time scale does not collapse.
 
 use crate::error::Result;
 use crate::model::gantt::{GanttDiagram, Task};
@@ -24,6 +22,7 @@ pub(crate) const GRID_LINE_START_PADDING: i32 = 35;
 pub(crate) const FONT_SIZE: i32 = 11;
 pub(crate) const SECTION_FONT_SIZE: i32 = 11;
 pub(crate) const NUMBER_SECTION_STYLES: i32 = 4;
+pub(crate) const DEFAULT_RENDER_WIDTH: i32 = 1_000;
 
 /// Resolved task with absolute times in milliseconds since epoch.
 #[derive(Debug, Clone)]
@@ -72,7 +71,7 @@ pub struct AxisTick {
 /// Full gantt layout ready for rendering.
 #[derive(Debug, Clone, Default)]
 pub struct GanttLayout {
-    /// width = 0 (matches reference output under jsdom).
+    /// Render width used for the SVG viewBox and time scale.
     pub width: i32,
     /// total height including padding.
     pub height: i32,
@@ -98,8 +97,21 @@ pub enum TodayMarker {
 }
 
 pub fn layout(d: &GanttDiagram, _theme: &ThemeVariables) -> Result<GanttLayout> {
+    layout_with_width(d, _theme, DEFAULT_RENDER_WIDTH)
+}
+
+pub fn layout_with_width(
+    d: &GanttDiagram,
+    _theme: &ThemeVariables,
+    render_width: i32,
+) -> Result<GanttLayout> {
+    let render_width = if render_width > 0 {
+        render_width
+    } else {
+        DEFAULT_RENDER_WIDTH
+    };
     let mut layout = GanttLayout {
-        width: 0,
+        width: render_width,
         ..Default::default()
     };
 
@@ -127,8 +139,7 @@ pub fn layout(d: &GanttDiagram, _theme: &ThemeVariables) -> Result<GanttLayout> 
     // Compute category heights and total height.
     let compact = matches!(d.display_mode.as_deref(), Some(s) if s.eq_ignore_ascii_case("compact"));
     let mut category_heights: Vec<(String, i32)> = Vec::new();
-    let h: i32;
-    if compact {
+    let h: i32 = if compact {
         // displayMode: compact — pack tasks per-section into rows so that
         // non-overlapping tasks share the same vertical slot. Mirrors
         // upstream `ganttRenderer.draw()` lines 1862-1884.
@@ -162,14 +173,14 @@ pub fn layout(d: &GanttDiagram, _theme: &ThemeVariables) -> Result<GanttLayout> 
         // (Upstream's `categoryHeights` only contains sections that have
         // at least one task; preserve that behaviour.)
         let total_rows: i32 = category_heights.iter().map(|(_, h)| *h).sum();
-        h = 2 * TOP_PADDING + total_rows * (BAR_HEIGHT + BAR_GAP);
+        2 * TOP_PADDING + total_rows * (BAR_HEIGHT + BAR_GAP)
     } else {
         for cat in &categories {
             let count = tasks.iter().filter(|t| &t.section_name == cat).count() as i32;
             category_heights.push((cat.clone(), count));
         }
-        h = 2 * TOP_PADDING + (tasks.len() as i32) * (BAR_HEIGHT + BAR_GAP);
-    }
+        2 * TOP_PADDING + (tasks.len() as i32) * (BAR_HEIGHT + BAR_GAP)
+    };
 
     // Time domain.
     let (min_ms, max_ms) = if tasks.is_empty() {
@@ -444,10 +455,7 @@ fn parse_iso_date_lenient(s: &str) -> Option<f64> {
     let m: u32 = parts[1].parse().ok()?;
     // Day part may have trailing time-of-day separated by `T` or space.
     let d_str = parts[2];
-    let d_only: &str = d_str
-        .find(|c: char| c == 'T' || c == ' ')
-        .map(|i| &d_str[..i])
-        .unwrap_or(d_str);
+    let d_only: &str = d_str.find(['T', ' ']).map(|i| &d_str[..i]).unwrap_or(d_str);
     let d: u32 = d_only.parse().ok()?;
     if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
         return None;
@@ -647,7 +655,7 @@ fn get_start_date(
         for id in rest.split_whitespace() {
             if let Some(&idx) = id_to_idx.get(id) {
                 let end = resolved[idx].end_ms;
-                if latest.map_or(true, |cur| end > cur) {
+                if latest.is_none_or(|cur| end > cur) {
                     latest = Some(end);
                 }
             }
@@ -671,7 +679,7 @@ fn get_end_date(
         for id in rest.split_whitespace() {
             if let Some(&idx) = id_to_idx.get(id) {
                 let st = resolved[idx].start_ms;
-                if earliest.map_or(true, |cur| st < cur) {
+                if earliest.is_none_or(|cur| st < cur) {
                     earliest = Some(st);
                 }
             }

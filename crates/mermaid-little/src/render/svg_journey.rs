@@ -203,7 +203,7 @@ pub fn render(
 
     // 9. Close svg.
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 fn render_actor_legend(out: &mut String, a: &JourneyActorLegend) {
@@ -247,15 +247,15 @@ fn render_section(
         n = sec.num,
     ));
     // byFo: <switch><foreignObject …><div…>…</div></foreignObject><text>…<tspan…>…</tspan></text></switch>
+    let section_class = format!("journey-section section-type-{}", sec.num);
     emit_fo_label(
         out,
-        sec.x,
-        sec_y,
-        sec.width,
-        sec_h,
-        &format!("journey-section section-type-{}", sec.num),
-        &format!("journey-section section-type-{}", sec.num),
-        &sec.text,
+        FoLabel {
+            rect: (sec.x, sec_y, sec.width, sec_h),
+            div_class: &section_class,
+            text_class: &section_class,
+            content: &sec.text,
+        },
     );
     out.push_str("</g>");
 }
@@ -304,7 +304,15 @@ fn render_task(out: &mut String, task: &JourneyTaskLayout, l: &JourneyLayout, id
     }
 
     // Task label via foreignObject+text (byFo) — class is just "task" here.
-    emit_fo_label(out, task.x, task.y, w, h, "task", "task", &task.task);
+    emit_fo_label(
+        out,
+        FoLabel {
+            rect: (task.x, task.y, w, h),
+            div_class: "task",
+            text_class: "task",
+            content: &task.task,
+        },
+    );
 
     out.push_str("</g>");
 
@@ -388,16 +396,15 @@ fn render_face(out: &mut String, cx: f64, cy: f64, face: JourneyFace) {
 /// <text x={x+w/2} y={y+h/2} style="text-anchor: middle; font-family: &quot;Open Sans&quot;, sans-serif;" dominant-baseline="central" alignment-baseline="central" class="{text_class}">
 ///   <tspan x={x+w/2} dy="0">{content}</tspan>
 /// </text></switch>`
-fn emit_fo_label(
-    out: &mut String,
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-    div_class: &str,
-    text_class: &str,
-    content: &str,
-) {
+struct FoLabel<'a> {
+    rect: (f64, f64, f64, f64),
+    div_class: &'a str,
+    text_class: &'a str,
+    content: &'a str,
+}
+
+fn emit_fo_label(out: &mut String, label: FoLabel<'_>) {
+    let (x, y, w, h) = label.rect;
     let cx = x + w / 2.0;
     let cy = y + h / 2.0;
     out.push_str(&format!(
@@ -412,19 +419,19 @@ fn emit_fo_label(
     // namespace is already xhtml inside foreignObject.
     out.push_str(&format!(
         r#"<div style="display: table; height: 100%; width: 100%;" class="{dc}">"#,
-        dc = div_class,
+        dc = label.div_class,
     ));
     out.push_str(&format!(
         r#"<div class="label" style="display: table-cell; text-align: center; vertical-align: middle;">{c}</div></div></foreignObject>"#,
-        c = escape_text(content),
+        c = escape_text(label.content),
     ));
     // <text>
     out.push_str(&format!(
         r#"<text x="{cx}" y="{cy}" style="text-anchor: middle; font-family: &quot;Open Sans&quot;, sans-serif;" dominant-baseline="central" alignment-baseline="central" class="{tc}"><tspan x="{cx}" dy="0">{c}</tspan></text></switch>"#,
         cx = fmt_num(cx),
         cy = fmt_num(cy),
-        tc = text_class,
-        c = escape_text(content),
+        tc = label.text_class,
+        c = escape_text(label.content),
     ));
 }
 

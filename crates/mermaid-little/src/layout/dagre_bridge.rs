@@ -184,12 +184,12 @@ fn make_edge_label(edge: &Edge) -> EdgeLabel {
 /// flowchart and `edge.source` for newer diagrams — we accept whichever
 /// is populated, preferring `start` to match the dagre/index.ts call
 /// site (`graph.setEdge(edge.start, edge.end, ...)`).
-fn edge_source<'a>(e: &'a Edge) -> Option<&'a str> {
+fn edge_source(e: &Edge) -> Option<&str> {
     e.start.as_deref().or(e.source.as_deref())
 }
 
 /// Symmetric to [`edge_source`].
-fn edge_target<'a>(e: &'a Edge) -> Option<&'a str> {
+fn edge_target(e: &Edge) -> Option<&str> {
     e.end.as_deref().or(e.target.as_deref())
 }
 
@@ -332,9 +332,9 @@ fn build_graph(data: &LayoutData) -> Graph<NodeLabel, EdgeLabel> {
 /// Used by the outer pass when isolated clusters have pre-computed layouts
 /// and their children are excluded from the outer dagre graph.
 #[allow(dead_code)]
-fn build_graph_filtered<'a>(
+fn build_graph_filtered(
     data: &LayoutData,
-    excluded: &std::collections::HashSet<&'a str>,
+    excluded: &std::collections::HashSet<&str>,
 ) -> Graph<NodeLabel, EdgeLabel> {
     build_graph_filtered_ex(data, excluded, &std::collections::HashMap::new())
 }
@@ -347,9 +347,9 @@ fn build_graph_filtered<'a>(
 ///
 /// `isolated_descendants`: for each isolated cluster id, the set of all
 /// descendant node ids (not including the cluster itself).
-fn build_graph_filtered_ex<'a>(
+fn build_graph_filtered_ex(
     data: &LayoutData,
-    excluded: &std::collections::HashSet<&'a str>,
+    excluded: &std::collections::HashSet<&str>,
     isolated_descendants: &std::collections::HashMap<String, std::collections::HashSet<String>>,
 ) -> Graph<NodeLabel, EdgeLabel> {
     let opts = GraphOptions {
@@ -541,7 +541,7 @@ fn build_graph_filtered_ex<'a>(
         if !both_are_iso_clusters {
             // Check if both endpoints are descendants of the same isolated cluster.
             let mut same_iso = false;
-            for (_iso_id, desc) in isolated_descendants {
+            for desc in isolated_descendants.values() {
                 let src_in = desc.contains(effective_src);
                 let dst_in = desc.contains(effective_dst);
                 if src_in && dst_in {
@@ -787,15 +787,17 @@ fn collect_self_loop_helpers(g: &Graph<NodeLabel, EdgeLabel>) -> Vec<Node> {
             Some(l) => l,
             None => continue,
         };
-        let mut h = Node::default();
-        h.id = nid.clone();
-        h.label = Some(String::new());
-        h.shape = Some("labelRect".to_string());
-        h.width = Some(lbl.width);
-        h.height = Some(lbl.height);
-        h.x = lbl.x;
-        h.y = lbl.y;
-        h.padding = Some(0.0);
+        let mut h = Node {
+            id: nid.clone(),
+            label: Some(String::new()),
+            shape: Some("labelRect".to_string()),
+            width: Some(lbl.width),
+            height: Some(lbl.height),
+            x: lbl.x,
+            y: lbl.y,
+            padding: Some(0.0),
+            ..Default::default()
+        };
         h.extra
             .insert("synthetic".to_string(), "cyclic_helper".to_string());
         h.extra.insert("cyclic_owner".to_string(), owner);
@@ -1140,14 +1142,18 @@ fn collect_edges(
         }
     }
 
+    struct EndpointLookup<'a> {
+        src_raw: Option<&'a str>,
+        dst_raw: Option<&'a str>,
+        dagre_src: Option<&'a str>,
+        dagre_dst: Option<&'a str>,
+    }
+
     fn reclip_cluster_anchor_state_start_rect(
         data: &LayoutData,
         g: &Graph<NodeLabel, EdgeLabel>,
         orig: &Edge,
-        src_raw: Option<&str>,
-        dst_raw: Option<&str>,
-        dagre_src: Option<&str>,
-        dagre_dst: Option<&str>,
+        lookup: EndpointLookup<'_>,
         out: &mut Edge,
     ) {
         let is_group = |id: &str| data.nodes.iter().any(|n| n.id == id && n.is_group);
@@ -1163,10 +1169,10 @@ fn collect_edges(
 
         if let (Some(orig_src), Some(anchor_id), Some(raw_src), Some(raw_dst), Some(d_dst)) = (
             orig.extra.get("orig_start"),
-            dagre_src,
-            src_raw,
-            dst_raw,
-            dagre_dst,
+            lookup.dagre_src,
+            lookup.src_raw,
+            lookup.dst_raw,
+            lookup.dagre_dst,
         ) {
             if is_group(orig_src) {
                 let source_rewritten = anchor_id != raw_src;
@@ -1198,10 +1204,10 @@ fn collect_edges(
         }
         if let (Some(orig_dst), Some(anchor_id), Some(raw_dst), Some(raw_src), Some(d_src)) = (
             orig.extra.get("orig_end"),
-            dagre_dst,
-            dst_raw,
-            src_raw,
-            dagre_src,
+            lookup.dagre_dst,
+            lookup.dst_raw,
+            lookup.src_raw,
+            lookup.dagre_src,
         ) {
             if is_group(orig_dst) {
                 let target_rewritten = anchor_id != raw_dst;
@@ -1427,7 +1433,7 @@ fn collect_edges(
                     .collect::<Vec<_>>()
             );
         }
-        for (member_idx, snap) in members.iter().copied().zip(snaps.into_iter()) {
+        for (member_idx, snap) in members.iter().copied().zip(snaps) {
             grouped_rebind.insert(member_idx, snap);
         }
     }
@@ -1478,10 +1484,12 @@ fn collect_edges(
                     data,
                     g,
                     orig,
-                    lookups[idx].src_raw.as_deref(),
-                    lookups[idx].dst_raw.as_deref(),
-                    lookups[idx].dagre_src.as_deref(),
-                    lookups[idx].dagre_dst.as_deref(),
+                    EndpointLookup {
+                        src_raw: lookups[idx].src_raw.as_deref(),
+                        dst_raw: lookups[idx].dst_raw.as_deref(),
+                        dagre_src: lookups[idx].dagre_src.as_deref(),
+                        dagre_dst: lookups[idx].dagre_dst.as_deref(),
+                    },
                     &mut out,
                 );
                 mark_cluster_endpoints(data, orig, &mut out);
@@ -1508,10 +1516,12 @@ fn collect_edges(
                 data,
                 g,
                 orig,
-                lookups[idx].src_raw.as_deref(),
-                lookups[idx].dst_raw.as_deref(),
-                Some(dagre_src),
-                Some(dagre_dst),
+                EndpointLookup {
+                    src_raw: lookups[idx].src_raw.as_deref(),
+                    dst_raw: lookups[idx].dst_raw.as_deref(),
+                    dagre_src: Some(dagre_src),
+                    dagre_dst: Some(dagre_dst),
+                },
                 &mut out,
             );
             mark_cluster_endpoints(data, orig, &mut out);
@@ -1752,12 +1762,12 @@ fn apply_flowchart_cluster_correction(
     let rect_h = inner.cluster_height;
     let mut max_half_node_h: f64 = 0.0;
     let mut max_half_sym_w: f64 = 0.0;
-    for (_cid, &(_cx, _cy, cw, ch)) in &inner.child_positions {
+    for &(_cx, _cy, cw, ch) in inner.child_positions.values() {
         max_half_sym_w = max_half_sym_w.max(cw / 2.0);
         max_half_node_h = max_half_node_h.max(ch / 2.0);
     }
     for sub_inner in inner.sub_isolated.values() {
-        for (_cid, &(_cx, _cy, cw, ch)) in &sub_inner.child_positions {
+        for &(_cx, _cy, cw, ch) in sub_inner.child_positions.values() {
             max_half_sym_w = max_half_sym_w.max(cw / 2.0);
             max_half_node_h = max_half_node_h.max(ch / 2.0);
         }
@@ -3083,10 +3093,10 @@ pub fn layout(data: &LayoutData, _theme: &ThemeVariables) -> Result<LayoutResult
         String,
         std::collections::HashSet<String>,
     > = std::collections::HashMap::new();
-    for (cid, _il) in &isolated_layouts {
+    for cid in isolated_layouts.keys() {
         iso_desc_for_outer.insert(cid.clone(), all_descendants(cid, data));
     }
-    for (cid, _il) in &nested_isolated_layouts {
+    for cid in nested_isolated_layouts.keys() {
         iso_desc_for_outer.insert(cid.clone(), all_descendants(cid, data));
     }
     let mut g = build_graph_filtered_ex(&outer_data, &excluded_refs, &iso_desc_for_outer);
@@ -3730,20 +3740,26 @@ mod tests {
     use crate::theme::ThemeVariables;
 
     fn two_node_graph() -> LayoutData {
-        let mut a = Node::default();
-        a.id = "a".into();
+        let mut a = Node {
+            id: "a".into(),
+            ..Node::default()
+        };
         a.label = Some("A".into());
         a.width = Some(60.0);
         a.height = Some(30.0);
 
-        let mut b = Node::default();
-        b.id = "b".into();
+        let mut b = Node {
+            id: "b".into(),
+            ..Node::default()
+        };
         b.label = Some("B".into());
         b.width = Some(60.0);
         b.height = Some(30.0);
 
-        let mut e = Edge::default();
-        e.id = "e1".into();
+        let mut e = Edge {
+            id: "e1".into(),
+            ..Edge::default()
+        };
         e.start = Some("a".into());
         e.end = Some("b".into());
 
@@ -3830,27 +3846,35 @@ mod tests {
         // it into 2 helper nodes (`---1` / `---2`) plus 3 cyclic-special
         // sub-edges (segments 0/1/2). Both must surface on the
         // LayoutResult after the layout call.
-        let mut a = Node::default();
-        a.id = "A".into();
+        let mut a = Node {
+            id: "A".into(),
+            ..Node::default()
+        };
         a.label = Some("A".into());
         a.width = Some(60.0);
         a.height = Some(30.0);
 
-        let mut b = Node::default();
-        b.id = "B".into();
+        let mut b = Node {
+            id: "B".into(),
+            ..Node::default()
+        };
         b.label = Some("B".into());
         b.width = Some(60.0);
         b.height = Some(30.0);
 
-        let mut self_e = Edge::default();
-        self_e.id = "loop".into();
+        let mut self_e = Edge {
+            id: "loop".into(),
+            ..Edge::default()
+        };
         self_e.start = Some("A".into());
         self_e.end = Some("A".into());
         self_e.label = Some("again".into());
 
         // Plus a regular edge so the graph isn't degenerate.
-        let mut ab = Edge::default();
-        ab.id = "ab".into();
+        let mut ab = Edge {
+            id: "ab".into(),
+            ..Edge::default()
+        };
         ab.start = Some("A".into());
         ab.end = Some("B".into());
 
@@ -3914,28 +3938,36 @@ mod tests {
         // it is still a REAL user self-loop and must expand to the cluster-
         // owned `Active-cyclic-special-*` segments rather than staying as a
         // raw rewritten `Idle -> Idle` edge.
-        let mut active = Node::default();
-        active.id = "Active".into();
+        let mut active = Node {
+            id: "Active".into(),
+            ..Node::default()
+        };
         active.label = Some("Active".into());
         active.is_group = true;
         active.shape = Some("rect".into());
         active.padding = Some(8.0);
 
-        let mut idle = Node::default();
-        idle.id = "Idle".into();
+        let mut idle = Node {
+            id: "Idle".into(),
+            ..Node::default()
+        };
         idle.label = Some("Idle".into());
         idle.width = Some(60.0);
         idle.height = Some(30.0);
         idle.parent_id = Some("Active".into());
 
-        let mut inactive = Node::default();
-        inactive.id = "Inactive".into();
+        let mut inactive = Node {
+            id: "Inactive".into(),
+            ..Node::default()
+        };
         inactive.label = Some("Inactive".into());
         inactive.width = Some(80.0);
         inactive.height = Some(30.0);
 
-        let mut to_child = Edge::default();
-        to_child.id = "edge0".into();
+        let mut to_child = Edge {
+            id: "edge0".into(),
+            ..Edge::default()
+        };
         to_child.start = Some("Inactive".into());
         to_child.end = Some("Idle".into());
         to_child
@@ -3943,8 +3975,10 @@ mod tests {
             .insert("orig_start".into(), "Inactive".into());
         to_child.extra.insert("orig_end".into(), "Idle".into());
 
-        let mut cluster_loop = Edge::default();
-        cluster_loop.id = "edge1".into();
+        let mut cluster_loop = Edge {
+            id: "edge1".into(),
+            ..Edge::default()
+        };
         cluster_loop.start = Some("Active".into());
         cluster_loop.end = Some("Active".into());
         cluster_loop.label = Some("LOG".into());
@@ -3994,8 +4028,10 @@ mod tests {
 
     #[test]
     fn missing_endpoints_skip_gracefully() {
-        let mut a = Node::default();
-        a.id = "a".into();
+        let mut a = Node {
+            id: "a".into(),
+            ..Node::default()
+        };
         a.width = Some(40.0);
         a.height = Some(20.0);
 
@@ -4019,27 +4055,35 @@ mod tests {
 
     #[test]
     fn cluster_edges_keep_cluster_endpoint_metadata_without_parallel_rebind() {
-        let mut cluster = Node::default();
-        cluster.id = "Active".into();
+        let mut cluster = Node {
+            id: "Active".into(),
+            ..Node::default()
+        };
         cluster.is_group = true;
         cluster.shape = Some("rect".into());
         cluster.padding = Some(8.0);
 
-        let mut child = Node::default();
-        child.id = "Idle".into();
+        let mut child = Node {
+            id: "Idle".into(),
+            ..Node::default()
+        };
         child.label = Some("Idle".into());
         child.width = Some(60.0);
         child.height = Some(30.0);
         child.parent_id = Some("Active".into());
 
-        let mut external = Node::default();
-        external.id = "Inactive".into();
+        let mut external = Node {
+            id: "Inactive".into(),
+            ..Node::default()
+        };
         external.label = Some("Inactive".into());
         external.width = Some(80.0);
         external.height = Some(30.0);
 
-        let mut edge = Edge::default();
-        edge.id = "edge0".into();
+        let mut edge = Edge {
+            id: "edge0".into(),
+            ..Edge::default()
+        };
         edge.start = Some("Active".into());
         edge.end = Some("Inactive".into());
         edge.extra.insert("orig_start".into(), "Active".into());

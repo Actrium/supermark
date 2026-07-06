@@ -10,11 +10,54 @@ fn registry_dispatches_known_engines() {
     assert!(reg.get("mermaid").is_some());
     assert!(reg.get("plantuml").is_some());
     assert!(reg.get("d2").is_some());
+    assert!(reg.get("vega-lite").is_some());
+    assert!(reg.get("vega").is_some());
+    assert!(reg.get("chart").is_some());
+    assert!(reg.get("echarts").is_some());
+    assert!(reg.get("chartjs").is_some());
+    assert!(reg.get("chart.js").is_some());
     assert!(reg.get("unknown").is_none());
     #[cfg(not(target_arch = "wasm32"))]
     {
         assert!(reg.get("dot").is_some());
         assert!(reg.get("graphviz").is_some());
+    }
+}
+
+#[test]
+fn chart_engines_render_svg() {
+    let reg = default_registry();
+    let vega_lite = r#"{
+      "data": {"values": [{"area": "Rendering", "score": 35}, {"area": "Search", "score": 20}]},
+      "mark": "bar",
+      "encoding": {
+        "x": {"field": "area", "type": "nominal"},
+        "y": {"field": "score", "type": "quantitative"}
+      }
+    }"#;
+    let echarts = r#"{
+      "xAxis": {"type": "category", "data": ["Render", "Search", "Edit"]},
+      "yAxis": {"type": "value"},
+      "series": [{"type": "line", "data": [35, 20, 25]}]
+    }"#;
+    let chartjs = r#"{
+      "type": "doughnut",
+      "data": {
+        "labels": ["Markdown", "Workspace", "Review"],
+        "datasets": [{"data": [40, 35, 25]}]
+      }
+    }"#;
+
+    for (engine, source) in [
+        ("vega-lite", vega_lite),
+        ("echarts", echarts),
+        ("chartjs", chartjs),
+    ] {
+        let out = reg.render(engine, source).unwrap().unwrap();
+        assert_eq!(out.mime, "image/svg+xml");
+        let svg = String::from_utf8(out.bytes).unwrap();
+        assert!(svg.contains("<svg"), "{engine}: {svg}");
+        assert!(svg.contains("</svg>"), "{engine}: {svg}");
     }
 }
 
@@ -31,8 +74,18 @@ fn d2_semantic_envelope_contract() {
     assert!(v["data"]["edges"].is_array());
     // Layout coordinates must not leak into the semantics.
     let s = serde_json::to_string(&v).unwrap();
-    for k in ["top_left", "topLeft", "\"width\"", "\"height\"", "box_", "route"] {
-        assert!(!s.contains(k), "semantic JSON should not contain layout field {k}");
+    for k in [
+        "top_left",
+        "topLeft",
+        "\"width\"",
+        "\"height\"",
+        "box_",
+        "route",
+    ] {
+        assert!(
+            !s.contains(k),
+            "semantic JSON should not contain layout field {k}"
+        );
     }
 }
 

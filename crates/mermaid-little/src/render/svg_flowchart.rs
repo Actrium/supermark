@@ -10,8 +10,8 @@
 //! jsdom's font metric assumptions for label measurement, and (c) the
 //! precise stylis CSS scoping transform. We reuse the shape registry
 //! + markers + edges modules that Wave 3 built, emit structurally
-//! correct SVG here, and leave the fine byte-level polish for
-//! follow-up iterations.
+//!   correct SVG here, and leave the fine byte-level polish for
+//!   follow-up iterations.
 
 use crate::error::Result;
 use crate::layout::flowchart::FlowchartLayout;
@@ -1011,7 +1011,7 @@ pub fn render(
         .clusters
         .iter()
         .filter_map(|c| {
-            let mut b = c.bounds.as_ref()?.clone();
+            let mut b = *c.bounds.as_ref()?;
             // Pick up the matching cluster node so we can look up the
             // pre-computed outer translate (only present on isolated
             // clusters that participated in the inner-pass).
@@ -1369,7 +1369,7 @@ pub fn render(
     // so this is a pure string rewrite of the final SVG.
     let out = postprocess_imgs(&out);
 
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// See call site for full documentation. Splits the input into `<p>...</p>` blocks
@@ -1573,7 +1573,7 @@ fn render_empty_cluster_as_node(
         crate::render::foreign_object::measure_html_markup_label(&for_measure, &font, 200.0, true)
     } else if !label.is_empty() {
         (
-            crate::font_metrics::text_width(&label, "sans-serif", 16.0, false, false) as f64,
+            crate::font_metrics::text_width(&label, "sans-serif", 16.0, false, false),
             22.0,
         )
     } else {
@@ -1595,8 +1595,8 @@ fn render_empty_cluster_as_node(
             let patched = diamond_br_postprocess(&demoted, &patched);
             let patched = font_size_postprocess_node_svg(&demoted, &patched);
             let patched = tooltip_postprocess_node_svg(&demoted, &patched);
-            let patched = link_postprocess_node_svg(&demoted, &patched);
-            patched
+
+            link_postprocess_node_svg(&demoted, &patched)
         }
         Err(_) => String::new(),
     }
@@ -2162,7 +2162,7 @@ fn render_isolated_cluster_inner_root(
             if l.isolated_cluster_ids.contains(&c.id) {
                 return None;
             }
-            Some((c.id.clone(), b.clone()))
+            Some((c.id.clone(), *b))
         })
         .collect();
 
@@ -2397,10 +2397,7 @@ fn render_helper_node(node: &UNode, theme: &ThemeVariables) -> String {
         .shape
         .clone()
         .unwrap_or_else(|| "labelRect".to_string());
-    match crate::render::shapes::draw(&shape_id, node, theme) {
-        Ok(svg) => svg,
-        Err(_) => String::new(),
-    }
+    crate::render::shapes::draw(&shape_id, node, theme).unwrap_or_default()
 }
 
 /// Return true if `node_id`'s parent is `cluster_id`.
@@ -3840,7 +3837,7 @@ fn dedent(s: &str) -> String {
             continue;
         }
         // Skip pure-whitespace lines (no non-ws content after the indent).
-        if line.chars().skip(n).next().is_none() {
+        if line.chars().nth(n).is_none() {
             continue;
         }
         min_indent = Some(min_indent.map(|m| m.min(n)).unwrap_or(n));
@@ -3891,7 +3888,7 @@ fn dedent(s: &str) -> String {
 /// `createCssStyles`. Selectors depend on `flowchart.htmlLabels`:
 /// - htmlLabels=true (default): `> *`, `span`
 /// - htmlLabels=false: `rect`, `polygon`, `ellipse`, `circle`, `path`
-/// Plus a `tspan` rule with `color → fill` rewrites for text styles.
+///   Plus a `tspan` rule with `color → fill` rewrites for text styles.
 fn flowchart_class_def_css(id: &str, d: &FlowchartDiagram) -> String {
     let mut out = String::new();
     let html_labels = d.html_labels.unwrap_or(true);

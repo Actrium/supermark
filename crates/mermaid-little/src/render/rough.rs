@@ -75,7 +75,7 @@ impl RoughRandom {
     }
 
     /// Attach a mulberry32 fallback. When the LCG's seed is 0, each
-    /// `next()` call instead delegates to this generator — mirroring
+    /// `next_f64()` call instead delegates to this generator — mirroring
     /// upstream's `Math.random()` branch for the seed-0 case.
     pub fn with_fallback(mut self, rng: Mulberry32) -> Self {
         self.fallback = Some(rng);
@@ -85,7 +85,7 @@ impl RoughRandom {
     /// Return the next `[0, 1)` float. Advances the internal LCG state
     /// when `seed != 0`; otherwise pulls from the mulberry32 fallback
     /// (or returns `0.0` when no fallback is attached).
-    pub fn next(&mut self) -> f64 {
+    pub fn next_f64(&mut self) -> f64 {
         if self.seed != 0 {
             // Math.imul(48271, seed) — 32-bit signed multiply.
             let product = (self.seed as i64 * 48271i64) as i32;
@@ -93,7 +93,7 @@ impl RoughRandom {
             let val = (product as u32) & 0x7fff_ffff;
             val as f64 / 2147483648.0_f64 // 2^31
         } else if let Some(fb) = self.fallback.as_mut() {
-            fb.next()
+            fb.next_f64()
         } else {
             0.0
         }
@@ -126,7 +126,7 @@ impl Mulberry32 {
 
     /// Produce the next `[0, 1)` float and advance the state. This is
     /// an exact transliteration of the upstream shim's `__mulberry32`.
-    pub fn next(&mut self) -> f64 {
+    pub fn next_f64(&mut self) -> f64 {
         // state = (state + 0x6d2b79f5) | 0;  (wrap to i32)
         self.state = self.state.wrapping_add(0x6d2b79f5);
         let mut t: u32 = self.state;
@@ -390,11 +390,12 @@ impl RoughGenerator {
     /// Path order matches upstream:
     ///   1. fillPath (after `_mergedShape`) when `hasFill && fillStyle == 'solid'`.
     ///   2. stroke path.
+    ///
     /// The `_o` order of operations in upstream is:
     ///   `shape = svgPath(d, o)`     ← stroke path, runs first, advances RNG
     ///   `fillShape = svgPath(d, fillOpts)` ← fill path, RNG continues
-    /// then `paths.push(fill)`, `paths.push(stroke)`. Output emit order
-    /// is `[fill, stroke]`. We follow that exact ordering.
+    ///   then `paths.push(fill)`, `paths.push(stroke)`. Output emit order
+    ///   is `[fill, stroke]`. We follow that exact ordering.
     pub fn path(&mut self, d: &str, o: &RoughOptions) -> Drawable {
         let mut rng = self.make_random(o);
         let mut sets: Vec<OpSet> = Vec::with_capacity(2);
@@ -875,18 +876,15 @@ fn path_normalize(segs: &[RawSeg]) -> Vec<RawSeg> {
                     cx = x;
                     cy = y;
                 } else if cx != x || cy != y {
-                    let curves = arc_to_cubic_curves(
-                        cx,
-                        cy,
-                        x,
-                        y,
-                        r1,
-                        r2,
+                    let curves = arc_to_cubic_curves(ArcToCubic {
+                        start: (cx, cy),
+                        end: (x, y),
+                        radii: (r1, r2),
                         angle,
                         large_arc_flag,
                         sweep_flag,
-                        None,
-                    );
+                        recursive: None,
+                    });
                     for curve in curves {
                         out.push(RawSeg {
                             key: 'C',
@@ -917,30 +915,19 @@ fn path_normalize(segs: &[RawSeg]) -> Vec<RawSeg> {
 /// Internally uses [`arc_inner`] which mirrors the JS function 1:1
 /// (recursive frame returns 2-tuples, outer rotates and packs into
 /// 6-tuples).
-fn arc_to_cubic_curves(
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
-    r1: f64,
-    r2: f64,
+#[derive(Clone, Copy)]
+struct ArcToCubic {
+    start: (f64, f64),
+    end: (f64, f64),
+    radii: (f64, f64),
     angle: f64,
     large_arc_flag: f64,
     sweep_flag: f64,
     recursive: Option<[f64; 4]>,
-) -> Vec<Vec<f64>> {
-    arc_inner(
-        x1,
-        y1,
-        x2,
-        y2,
-        r1,
-        r2,
-        angle,
-        large_arc_flag,
-        sweep_flag,
-        recursive,
-    )
+}
+
+fn arc_to_cubic_curves(args: ArcToCubic) -> Vec<Vec<f64>> {
+    arc_inner(args)
 }
 
 #[inline]
@@ -966,26 +953,20 @@ fn round_to_9(v: f64) -> f64 {
 /// `Vec<Vec<f64>>` (length-2 entries are intermediate points; length-6
 /// entries are final curves). The outer call always returns length-6
 /// entries.
-#[allow(clippy::too_many_arguments)]
-fn arc_inner(
-    mut x1: f64,
-    mut y1: f64,
-    mut x2: f64,
-    mut y2: f64,
-    mut r1: f64,
-    mut r2: f64,
-    angle: f64,
-    large_arc_flag: f64,
-    sweep_flag: f64,
-    recursive: Option<[f64; 4]>,
-) -> Vec<Vec<f64>> {
+fn arc_inner(args: ArcToCubic) -> Vec<Vec<f64>> {
+    let (mut x1, mut y1) = args.start;
+    let (mut x2, mut y2) = args.end;
+    let (mut r1, mut r2) = args.radii;
+    let angle = args.angle;
+    let large_arc_flag = args.large_arc_flag;
+    let sweep_flag = args.sweep_flag;
     let angle_rad = std::f64::consts::PI * angle / 180.0;
     let mut params: Vec<Vec<f64>> = Vec::new();
     let f1: f64;
     let mut f2: f64;
     let cx: f64;
     let cy: f64;
-    if let Some([rf1, rf2, rcx, rcy]) = recursive {
+    if let Some([rf1, rf2, rcx, rcy]) = args.recursive {
         f1 = rf1;
         f2 = rf2;
         cx = rcx;
@@ -1054,18 +1035,15 @@ fn arc_inner(
         }
         x2 = cx + r1 * f2.cos();
         y2 = cy + r2 * f2.sin();
-        params = arc_inner(
-            x2,
-            y2,
-            x2old,
-            y2old,
-            r1,
-            r2,
+        params = arc_inner(ArcToCubic {
+            start: (x2, y2),
+            end: (x2old, y2old),
+            radii: (r1, r2),
             angle,
-            0.0,
+            large_arc_flag: 0.0,
             sweep_flag,
-            Some([f2, f2old, cx, cy]),
-        );
+            recursive: Some([f2, f2old, cx, cy]),
+        });
     }
     df = f2 - f1;
     let c1 = f1.cos();
@@ -1081,7 +1059,7 @@ fn arc_inner(
     let m4 = [x2, y2];
     m2[0] = 2.0 * m1[0] - m2[0];
     m2[1] = 2.0 * m1[1] - m2[1];
-    if recursive.is_some() {
+    if args.recursive.is_some() {
         let mut out: Vec<Vec<f64>> = Vec::with_capacity(3 + params.len());
         out.push(vec![m2[0], m2[1]]);
         out.push(vec![m3[0], m3[1]]);
@@ -1139,7 +1117,16 @@ fn svg_path_ops(segs: &[RawSeg], o: &RoughOptions, rng: &mut RoughRandom) -> Vec
                 let y2 = seg.data[3];
                 let x = seg.data[4];
                 let y = seg.data[5];
-                ops.extend(bezier_to(x1, y1, x2, y2, x, y, current, o, rng));
+                ops.extend(bezier_to(
+                    BezierCurve {
+                        first_control: (x1, y1),
+                        second_control: (x2, y2),
+                        end: (x, y),
+                        current,
+                    },
+                    o,
+                    rng,
+                ));
                 current = (x, y);
             }
             'Z' => {
@@ -1157,17 +1144,19 @@ fn svg_path_ops(segs: &[RawSeg], o: &RoughOptions, rng: &mut RoughRandom) -> Vec
 /// Mirrors upstream `_bezierTo`. Used by `svg_path_ops` for `C`
 /// segments. Stadium doesn't hit this in its M/L/Z form, but other
 /// shapes use it via `path()`.
-fn bezier_to(
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
-    x: f64,
-    y: f64,
+#[derive(Clone, Copy)]
+struct BezierCurve {
+    first_control: (f64, f64),
+    second_control: (f64, f64),
+    end: (f64, f64),
     current: (f64, f64),
-    o: &RoughOptions,
-    rng: &mut RoughRandom,
-) -> Vec<Op> {
+}
+
+fn bezier_to(curve: BezierCurve, o: &RoughOptions, rng: &mut RoughRandom) -> Vec<Op> {
+    let (x1, y1) = curve.first_control;
+    let (x2, y2) = curve.second_control;
+    let (x, y) = curve.end;
+    let current = curve.current;
     let mut ops = Vec::with_capacity(4);
     let max_off = if o.max_randomness_offset == 0.0 {
         1.0
@@ -1301,24 +1290,45 @@ fn double_line(
     } else {
         o.disable_multi_stroke
     };
-    let mut ops = line_ops(x1, y1, x2, y2, o, true, false, rng);
+    let mut ops = line_ops(
+        LineOpInput {
+            start: (x1, y1),
+            end: (x2, y2),
+            do_move: true,
+            overlay: false,
+        },
+        o,
+        rng,
+    );
     if single_stroke {
         return ops;
     }
-    ops.extend(line_ops(x1, y1, x2, y2, o, true, true, rng));
+    ops.extend(line_ops(
+        LineOpInput {
+            start: (x1, y1),
+            end: (x2, y2),
+            do_move: true,
+            overlay: true,
+        },
+        o,
+        rng,
+    ));
     ops
 }
 
-fn line_ops(
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
-    o: &RoughOptions,
+#[derive(Clone, Copy)]
+struct LineOpInput {
+    start: (f64, f64),
+    end: (f64, f64),
     do_move: bool,
     overlay: bool,
-    rng: &mut RoughRandom,
-) -> Vec<Op> {
+}
+
+fn line_ops(input: LineOpInput, o: &RoughOptions, rng: &mut RoughRandom) -> Vec<Op> {
+    let (x1, y1) = input.start;
+    let (x2, y2) = input.end;
+    let do_move = input.do_move;
+    let overlay = input.overlay;
     let length_sq = (x1 - x2).powi(2) + (y1 - y2).powi(2);
     let length = length_sq.sqrt();
     let roughness_gain = if length < 200.0 {
@@ -1336,7 +1346,7 @@ fn line_ops(
     let half_offset = offset / 2.0;
 
     // ── RNG call 1: divergePoint ─────────────────────────────────────
-    let r1 = rng.next();
+    let r1 = rng.next_f64();
     let diverge_point = 0.2 + r1 * 0.2;
 
     // ── RNG call 2, 3: midDispX, midDispY ────────────────────────────
@@ -1378,7 +1388,7 @@ fn line_ops(
     }
 
     // bcurveTo. Note: each of the 6 random reads is a distinct
-    // rng.next() call. We inline the offset_opt call order exactly.
+    // rng.next_f64() call. We inline the offset_opt call order exactly.
     let (c1x, c1y, c2x, c2y, ex, ey) = if overlay {
         let c1x_r = offset_opt(half_offset, o, roughness_gain, rng);
         let c1y_r = offset_opt(half_offset, o, roughness_gain, rng);
@@ -1432,7 +1442,7 @@ fn line_ops(
 
 /// `_offset(min, max, ops, rg) = ops.roughness * rg * (random*(max-min)+min)`.
 fn offset(min_v: f64, max_v: f64, o: &RoughOptions, rg: f64, rng: &mut RoughRandom) -> f64 {
-    o.roughness * rg * (rng.next() * (max_v - min_v) + min_v)
+    o.roughness * rg * (rng.next_f64() * (max_v - min_v) + min_v)
 }
 
 /// `_offsetOpt(x, ops, rg) = _offset(-x, x, ops, rg)`.
@@ -1491,11 +1501,30 @@ fn ellipse_with_params(
 ) -> EllipseResponse {
     let inner = offset(0.4, 1.0, o, 1.0, rng);
     let scaled = p.increment * offset(0.1, inner, o, 1.0, rng);
-    let (ap1_all, ap1_core) =
-        compute_ellipse_points(p.increment, x, y, p.rx, p.ry, 1.0, scaled, o, rng);
+    let (ap1_all, ap1_core) = compute_ellipse_points(
+        EllipsePointParams {
+            increment: p.increment,
+            center: (x, y),
+            radii: (p.rx, p.ry),
+            offset_mul: 1.0,
+            overlap: scaled,
+        },
+        o,
+        rng,
+    );
     let mut o1 = curve_inner(&ap1_all, None, o);
     if !o.disable_multi_stroke && o.roughness != 0.0 {
-        let (ap2_all, _) = compute_ellipse_points(p.increment, x, y, p.rx, p.ry, 1.5, 0.0, o, rng);
+        let (ap2_all, _) = compute_ellipse_points(
+            EllipsePointParams {
+                increment: p.increment,
+                center: (x, y),
+                radii: (p.rx, p.ry),
+                offset_mul: 1.5,
+                overlap: 0.0,
+            },
+            o,
+            rng,
+        );
         let o2 = curve_inner(&ap2_all, None, o);
         o1.extend(o2);
     }
@@ -1508,17 +1537,28 @@ fn ellipse_with_params(
     }
 }
 
-fn compute_ellipse_points(
+type EllipsePoints = Vec<(f64, f64)>;
+type EllipsePointSets = (EllipsePoints, EllipsePoints);
+
+#[derive(Clone, Copy)]
+struct EllipsePointParams {
     increment: f64,
-    cx: f64,
-    cy: f64,
-    rx: f64,
-    ry: f64,
+    center: (f64, f64),
+    radii: (f64, f64),
     offset_mul: f64,
     overlap: f64,
+}
+
+fn compute_ellipse_points(
+    params: EllipsePointParams,
     o: &RoughOptions,
     rng: &mut RoughRandom,
-) -> (Vec<(f64, f64)>, Vec<(f64, f64)>) {
+) -> EllipsePointSets {
+    let increment = params.increment;
+    let (cx, cy) = params.center;
+    let (rx, ry) = params.radii;
+    let offset_mul = params.offset_mul;
+    let overlap = params.overlap;
     // Trig calls here drive ellipse path coordinates; route through the
     // V8 fdlibm port so circle/ellipse outlines match Node 1 ULP-exact.
     use crate::math::v8_trig::{cos, sin};
@@ -2037,7 +2077,7 @@ pub fn polygon_hachure_lines_mut(
     gap = gap.max(0.1).round();
     let mut skip_offset = 1.0_f64;
     if o.roughness >= 1.0 {
-        let r = rng.next();
+        let r = rng.next_f64();
         if r > 0.7 {
             skip_offset = gap;
         }
@@ -2211,12 +2251,7 @@ fn distance_to_segment_sq(p: [f64; 2], v: [f64; 2], w: [f64; 2]) -> f64 {
         return distance_sq(p, v);
     }
     let mut t = ((p[0] - v[0]) * (w[0] - v[0]) + (p[1] - v[1]) * (w[1] - v[1])) / l2;
-    if t < 0.0 {
-        t = 0.0;
-    }
-    if t > 1.0 {
-        t = 1.0;
-    }
+    t = t.clamp(0.0, 1.0);
     distance_sq(p, lerp_pt(v, w, t))
 }
 
@@ -2235,8 +2270,8 @@ fn simplify_points_rec(
     let e = points[end - 1];
     let mut max_dist_sq = 0.0_f64;
     let mut max_idx = start + 1;
-    for i in (start + 1)..(end - 1) {
-        let d = distance_to_segment_sq(points[i], s, e);
+    for (i, point) in points.iter().enumerate().take(end - 1).skip(start + 1) {
+        let d = distance_to_segment_sq(*point, s, e);
         if d > max_dist_sq {
             max_dist_sq = d;
             max_idx = i;
@@ -2586,14 +2621,14 @@ mod tests {
             0.0000224779359996_f64,
             0.0850324486382306,
             0.6013282160274684,
-            0.7143158619292080,
+            0.714_315_861_929_208,
             0.7409711848013103,
             0.4200615440495312,
             0.7907928149215877,
             0.3599690799601376,
         ];
         for (i, e) in expected.iter().enumerate() {
-            let got = r.next();
+            let got = r.next_f64();
             assert!((got - e).abs() < 1e-15, "idx {i}: got {got} want {e}");
         }
     }
@@ -2601,8 +2636,8 @@ mod tests {
     #[test]
     fn lcg_seed_0_no_fallback_returns_zeros() {
         let mut r = RoughRandom::new(0);
-        assert_eq!(r.next(), 0.0);
-        assert_eq!(r.next(), 0.0);
+        assert_eq!(r.next_f64(), 0.0);
+        assert_eq!(r.next_f64(), 0.0);
     }
 
     #[test]
@@ -2610,8 +2645,8 @@ mod tests {
         let mut r = RoughRandom::new(0).with_fallback(Mulberry32::new(1));
         let mut m = Mulberry32::new(1);
         // Consumed values should match.
-        assert_eq!(r.next(), m.next());
-        assert_eq!(r.next(), m.next());
+        assert_eq!(r.next_f64(), m.next_f64());
+        assert_eq!(r.next_f64(), m.next_f64());
     }
 
     #[test]
@@ -2629,7 +2664,7 @@ mod tests {
         //   [r(), r(), r(), r()]
         // → [0.10615200875326991, 0.941276284167543,
         //    0.9398706152569503, 0.2338848018553108]
-        let out: Vec<f64> = (0..4).map(|_| m.next()).collect();
+        let out: Vec<f64> = (0..4).map(|_| m.next_f64()).collect();
         let want = [
             0.10615200875326991,
             0.941276284167543,
@@ -2682,8 +2717,10 @@ mod tests {
     //        83.3583984375 -70.09375
     //     ...
     fn er12_options() -> RoughOptions {
-        let mut o = RoughOptions::default();
-        o.roughness = 0.0;
+        let mut o = RoughOptions {
+            roughness: 0.0,
+            ..RoughOptions::default()
+        };
         o.fill_style = "solid".into();
         o.fill = Some("#ECECFF".into());
         o.stroke = "#9370DB".into();
@@ -2842,8 +2879,10 @@ mod tests {
     // ── Simple rectangle without fill — single outline path ──────
     #[test]
     fn rectangle_no_fill_emits_single_stroke_path() {
-        let mut o = RoughOptions::default();
-        o.roughness = 0.0;
+        let mut o = RoughOptions {
+            roughness: 0.0,
+            ..RoughOptions::default()
+        };
         o.fill = None;
         o.seed = 1;
         let mut rc = RoughGenerator::new();
@@ -2856,8 +2895,10 @@ mod tests {
     // ── Preserve vertices: move/end points align exactly ─────────
     #[test]
     fn preserve_vertices_keeps_exact_endpoints() {
-        let mut o = RoughOptions::default();
-        o.roughness = 0.0; // zero offsets already exact, but belt-and-braces
+        let mut o = RoughOptions {
+            roughness: 0.0,
+            ..RoughOptions::default()
+        }; // zero offsets already exact, but belt-and-braces
         o.preserve_vertices = true;
         o.seed = 42;
         let mut rc = RoughGenerator::new();
@@ -2888,17 +2929,29 @@ mod tests {
     //   pulls per half (non-overlay, move, no-preserve). ───────────
     #[test]
     fn line_ops_non_overlay_consumes_11_rng_pulls() {
-        let mut o = RoughOptions::default();
-        o.seed = 1;
-        o.disable_multi_stroke = true; // take only the non-overlay half
+        let o = RoughOptions {
+            seed: 1,
+            disable_multi_stroke: true,
+            ..RoughOptions::default()
+        };
+        // take only the non-overlay half
         let mut rng = RoughRandom::new(1);
-        let _ = line_ops(0.0, 0.0, 100.0, 0.0, &o, true, false, &mut rng);
+        let _ = line_ops(
+            LineOpInput {
+                start: (0.0, 0.0),
+                end: (100.0, 0.0),
+                do_move: true,
+                overlay: false,
+            },
+            &o,
+            &mut rng,
+        );
         // After 11 pulls from seed=1, seed should equal the 11th LCG
         // iterate (computed in the lcg_seed_1 test above).
         // Quickest check: compare next() to the 12th reference value.
         // 12th r-value in our reference table (0-indexed 11): r12.
-        let expect_r12 = 0.1067594592459500_f64;
-        assert!((rng.next() - expect_r12).abs() < 1e-15);
+        let expect_r12 = 0.106_759_459_245_95_f64;
+        assert!((rng.next_f64() - expect_r12).abs() < 1e-15);
     }
 
     // ── Hachure scan-line fill ────────────────────────────────────
@@ -3063,7 +3116,7 @@ mod tests {
     #[test]
     fn polygon_hachure_lines_default_options_consume_one_rng_pull_when_roughness_ge_1() {
         // o.roughness defaults to 1.0 → hits the `roughness >= 1` branch
-        // which pulls one rng.next(). After the pull the LCG seed should
+        // which pulls one rng.next_f64(). After the pull the LCG seed should
         // have advanced exactly once.
         let o = RoughOptions::default();
         let mut rng = RoughRandom::new(1);
@@ -3072,7 +3125,7 @@ mod tests {
         // First two pulls of seed=1 were 0.0000224779359996, 0.0850324486382306.
         // After polygon_hachure_lines (consuming 1 pull), the next pull
         // should be the 2nd value.
-        let next = rng.next();
+        let next = rng.next_f64();
         let want = 0.0850324486382306_f64;
         assert!((next - want).abs() < 1e-15, "next = {next}");
     }
@@ -3087,8 +3140,10 @@ mod tests {
         // count.
         let mut rng_low = RoughRandom::new(1);
         let mut rng_high = RoughRandom::new(2);
-        let mut o = RoughOptions::default();
-        o.hachure_gap = 4.0;
+        let mut o = RoughOptions {
+            hachure_gap: 4.0,
+            ..RoughOptions::default()
+        };
         o.hachure_angle = 0.0;
         o.roughness = 1.0;
         let polys = vec![vec![[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]]];
@@ -3101,8 +3156,10 @@ mod tests {
     #[test]
     fn hachure_fill_sketch_emits_double_lines() {
         // Empty input → empty FillSketch.
-        let mut o = RoughOptions::default();
-        o.seed = 1;
+        let o = RoughOptions {
+            seed: 1,
+            ..RoughOptions::default()
+        };
         let mut rng = RoughRandom::new(1);
         let lines: Vec<[[f64; 2]; 2]> = vec![];
         let sk = hachure_fill_sketch(&lines, &o, &mut rng);
@@ -3118,8 +3175,10 @@ mod tests {
 
     #[test]
     fn rectangle_with_hachure_fill_emits_fillsketch_set() {
-        let mut o = RoughOptions::default();
-        o.fill = Some("#fff".into());
+        let mut o = RoughOptions {
+            fill: Some("#fff".into()),
+            ..RoughOptions::default()
+        };
         o.fill_style = "hachure".into();
         o.seed = 1;
         let mut rc = RoughGenerator::new();
@@ -3134,8 +3193,10 @@ mod tests {
 
     #[test]
     fn circle_seed_2_default_byte_exact() {
-        let mut o = RoughOptions::default();
-        o.seed = 2;
+        let o = RoughOptions {
+            seed: 2,
+            ..RoughOptions::default()
+        };
         let mut rc = RoughGenerator::new();
         let d = rc.circle(100.0, 200.0, 40.0, &o);
         assert_eq!(d.shape, "circle");
@@ -3146,10 +3207,13 @@ mod tests {
 
     #[test]
     fn bbox_of_sets_rectangle_no_jitter() {
-        let mut o = RoughOptions::default();
-        o.seed = 1;
-        o.roughness = 0.0; // no jitter — exact corners
-        o.preserve_vertices = true;
+        let o = RoughOptions {
+            seed: 1,
+            roughness: 0.0,
+            preserve_vertices: true,
+            ..RoughOptions::default()
+        };
+        // no jitter — exact corners
         let mut rc = RoughGenerator::new();
         let d = rc.rectangle(-5.0, -3.0, 10.0, 6.0, &o);
         let bb = bbox_of_sets(&d.sets).expect("non-empty");
@@ -3161,8 +3225,10 @@ mod tests {
 
     #[test]
     fn bbox_of_sets_circle_seed1_within_bounds() {
-        let mut o = RoughOptions::default();
-        o.seed = 1;
+        let o = RoughOptions {
+            seed: 1,
+            ..RoughOptions::default()
+        };
         let mut rc = RoughGenerator::new();
         let d = rc.circle(0.0, 0.0, 200.0, &o);
         let bb = bbox_of_sets(&d.sets).expect("non-empty");

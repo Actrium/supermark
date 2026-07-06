@@ -91,17 +91,15 @@ const DEFAULT_FONT_SIZE: f64 = 14.0;
 pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
     let direction = d.direction.clone().unwrap_or_else(|| "TB".into());
 
-    let mut data = LayoutData::default();
-    data.diagram_type = Some(if d.is_v2 {
-        "stateDiagram".into()
-    } else {
-        "stateDiagram".into()
-    });
-    data.direction = Some(direction.clone());
-    data.node_spacing = Some(DEFAULT_NODE_SPACING);
-    data.rank_spacing = Some(DEFAULT_RANK_SPACING);
-    data.layout_algorithm = Some("dagre".into());
-    data.markers.push("barbEnd".into());
+    let mut data = LayoutData {
+        diagram_type: Some("stateDiagram".into()),
+        direction: Some(direction.clone()),
+        node_spacing: Some(DEFAULT_NODE_SPACING),
+        rank_spacing: Some(DEFAULT_RANK_SPACING),
+        layout_algorithm: Some("dagre".into()),
+        markers: vec!["barbEnd".into()],
+        ..Default::default()
+    };
 
     let orig_state_index: std::collections::HashMap<&str, usize> = d
         .states
@@ -156,20 +154,20 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
 
     // Emit nodes (dom_ids assigned later based on edge traversal order).
     for state in ordered_states {
-        let mut n = LNode::default();
-        n.id = state.id.clone();
-        n.parent_id = state.parent.clone();
-        // dom_id will be assigned below after edge traversal
-        n.label = state.label.clone().or_else(|| Some(state.id.clone()));
-        n.description = state.description.clone();
-        // Per-node inline style from `style X fill:...` directive.
-        // Store as a comma-separated string in label_style for the renderer
-        // to process via styles2_string.
-        if let Some(ref sty) = state.style {
-            n.label_style = Some(sty.clone());
-        }
-        n.look = Some("classic".into());
-        n.label_type = Some("markdown".into());
+        let mut n = LNode {
+            id: state.id.clone(),
+            parent_id: state.parent.clone(),
+            // dom_id will be assigned below after edge traversal
+            label: state.label.clone().or_else(|| Some(state.id.clone())),
+            description: state.description.clone(),
+            // Per-node inline style from `style X fill:...` directive.
+            // Store as a comma-separated string in label_style for the renderer
+            // to process via styles2_string.
+            label_style: state.style.clone(),
+            look: Some("classic".into()),
+            label_type: Some("markdown".into()),
+            ..Default::default()
+        };
         // Determine whether any applied classDef specifies font-weight:bold.
         // Upstream's jsdom shim resolves font-weight from inline style attributes,
         // which includes classDef 'text styles' (font-weight:bold) applied via
@@ -183,7 +181,7 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
                 d.class_defs
                     .iter()
                     .find(|cd| cd.name == ca.class_name)
-                    .map_or(false, |cd| {
+                    .is_some_and(|cd| {
                         cd.styles.split(',').any(|p| {
                             p.trim().trim_end_matches(';').replace(" ", "") == "font-weight:bold"
                         })
@@ -306,7 +304,7 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
             }
             StateKind::Simple => {
                 let label = state.label.as_deref().unwrap_or(&state.id);
-                let has_desc = state.description.as_ref().map_or(false, |d| !d.is_empty());
+                let has_desc = state.description.as_ref().is_some_and(|d| !d.is_empty());
                 if has_desc {
                     // State node with description lines: upstream uses the
                     // `rectWithTitle` shape. Dagre dimensions are based on
@@ -534,15 +532,17 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
                             }
                             pos
                         } else {
-                            let mut group_node = LNode::default();
-                            group_node.id = parent_id_str.clone();
-                            group_node.dom_id = Some(parent_dom_id);
-                            group_node.is_group = true;
-                            group_node.shape = Some("noteGroup".into());
-                            group_node.padding = Some(16.0);
-                            group_node.css_classes = target_css_classes;
-                            // The parent state's own parent (if any) becomes the noteGroup's parent.
-                            group_node.parent_id = target_parent;
+                            let group_node = LNode {
+                                id: parent_id_str.clone(),
+                                dom_id: Some(parent_dom_id),
+                                is_group: true,
+                                shape: Some("noteGroup".into()),
+                                padding: Some(16.0),
+                                css_classes: target_css_classes,
+                                // The parent state's own parent (if any) becomes the noteGroup's parent.
+                                parent_id: target_parent,
+                                ..Default::default()
+                            };
                             // Insert noteGroup immediately after the target state.
                             // If state is not found (shouldn't happen), push at end.
                             let after = target_idx.map(|i| i + 1).unwrap_or(data.nodes.len());
@@ -572,17 +572,19 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
                         const NOTE_HEIGHT: f64 = 46.296875;
                         const NOTE_PAD: f64 = 15.0;
                         let note_w = note_text_w + 2.0 * NOTE_PAD;
-                        let mut note_node = LNode::default();
-                        note_node.id = note_id.clone();
-                        note_node.dom_id = Some(note_dom_id);
-                        note_node.shape = Some("note".into());
-                        note_node.css_classes = Some("statediagram-note".into());
-                        note_node.label_type = Some("markdown".into());
-                        note_node.look = Some("classic".into());
-                        note_node.label = Some(note.text.clone());
-                        note_node.width = Some(note_w);
-                        note_node.height = Some(NOTE_HEIGHT);
-                        note_node.parent_id = Some(parent_id_str.clone());
+                        let note_node = LNode {
+                            id: note_id.clone(),
+                            dom_id: Some(note_dom_id),
+                            shape: Some("note".into()),
+                            css_classes: Some("statediagram-note".into()),
+                            label_type: Some("markdown".into()),
+                            look: Some("classic".into()),
+                            label: Some(note.text.clone()),
+                            width: Some(note_w),
+                            height: Some(NOTE_HEIGHT),
+                            parent_id: Some(parent_id_str.clone()),
+                            ..Default::default()
+                        };
                         // Insert note node at computed position (right after the
                         // noteGroup, or after pre-existing same-group notes).
                         data.nodes.insert(note_insert_pos, note_node);
@@ -596,17 +598,19 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
                             NotePosition::LeftOf => (note_id.clone(), target.clone()),
                             _ => (target.clone(), note_id.clone()),
                         };
-                        let mut note_edge = LEdge::default();
-                        note_edge.id = format!("{}-{}", edge_start, edge_end);
-                        note_edge.start = Some(edge_start);
-                        note_edge.end = Some(edge_end);
-                        // No arrowhead for note edges.
-                        note_edge.arrowhead = None;
-                        note_edge.arrow_type_end = None;
-                        note_edge.classes = Some("transition note-edge".into());
-                        note_edge.curve = Some("basis".into());
-                        note_edge.thickness = Some("normal".into());
-                        note_edge.pattern = Some("solid".into());
+                        let note_edge = LEdge {
+                            id: format!("{}-{}", edge_start, edge_end),
+                            start: Some(edge_start),
+                            end: Some(edge_end),
+                            // No arrowhead for note edges.
+                            arrowhead: None,
+                            arrow_type_end: None,
+                            classes: Some("transition note-edge".into()),
+                            curve: Some("basis".into()),
+                            thickness: Some("normal".into()),
+                            pattern: Some("solid".into()),
+                            ..Default::default()
+                        };
                         data.edges.push(note_edge);
 
                         graph_item_count += 1;
@@ -623,16 +627,18 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
                         // Build the transition edge here (using current graph_item_count
                         // for the ID), so edge IDs match upstream's "edge{graphItemCount}"
                         // and the edge order matches the items processing sequence.
-                        let mut e = LEdge::default();
-                        e.id = format!("edge{}", graph_item_count);
-                        e.start = Some(t.source.clone());
-                        e.end = Some(t.target.clone());
-                        e.arrowhead = Some("barbEnd".into());
-                        e.arrow_type_end = Some("barbEnd".into());
-                        e.classes = Some("transition".into());
-                        e.curve = Some("basis".into());
-                        e.thickness = Some("normal".into());
-                        e.pattern = Some("solid".into());
+                        let mut e = LEdge {
+                            id: format!("edge{}", graph_item_count),
+                            start: Some(t.source.clone()),
+                            end: Some(t.target.clone()),
+                            arrowhead: Some("barbEnd".into()),
+                            arrow_type_end: Some("barbEnd".into()),
+                            classes: Some("transition".into()),
+                            curve: Some("basis".into()),
+                            thickness: Some("normal".into()),
+                            pattern: Some("solid".into()),
+                            ..Default::default()
+                        };
                         // Record original endpoints so is_isolated_cluster can
                         // detect cluster-to-cluster edges (mirrors flowchart layout).
                         e.extra.insert("orig_start".into(), t.source.clone());
@@ -662,16 +668,18 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
                 n.dom_id = Some(format!("state-{}-{}", t.target, graph_item_count));
             }
             // Build edge in fallback path using current graph_item_count.
-            let mut e = LEdge::default();
-            e.id = format!("edge{}", graph_item_count);
-            e.start = Some(t.source.clone());
-            e.end = Some(t.target.clone());
-            e.arrowhead = Some("barbEnd".into());
-            e.arrow_type_end = Some("barbEnd".into());
-            e.classes = Some("transition".into());
-            e.curve = Some("basis".into());
-            e.thickness = Some("normal".into());
-            e.pattern = Some("solid".into());
+            let mut e = LEdge {
+                id: format!("edge{}", graph_item_count),
+                start: Some(t.source.clone()),
+                end: Some(t.target.clone()),
+                arrowhead: Some("barbEnd".into()),
+                arrow_type_end: Some("barbEnd".into()),
+                classes: Some("transition".into()),
+                curve: Some("basis".into()),
+                thickness: Some("normal".into()),
+                pattern: Some("solid".into()),
+                ..Default::default()
+            };
             // Record original endpoints so is_isolated_cluster can
             // detect cluster-to-cluster edges (mirrors flowchart layout).
             e.extra.insert("orig_start".into(), t.source.clone());
@@ -830,7 +838,7 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
     // a TB-rankdir compound). Bump such wrappers by +2 horizontally and
     // shift their non-wrapping children by +1 to match upstream byte-exact.
     widen_cluster_with_fork_children(&mut result, &d.states);
-    fix_state_end_edge_endpoints(&mut result, 7.0088621440762111);
+    fix_state_end_edge_endpoints(&mut result, 7.008_862_144_076_211);
     // The vendored dagre version falls back to intersectRect for every
     // shape, which leaves the first edge point at the rect-clip of a
     // stateStart node. Re-clip with the proper ellipse formula
@@ -879,7 +887,7 @@ fn stabilise_divider_positions(
                 d.states
                     .iter()
                     .find(|s| &s.id == *cid)
-                    .map_or(false, |s| s.kind == StateKind::Divider)
+                    .is_some_and(|s| s.kind == StateKind::Divider)
             })
             .map(|s| s.as_str())
             .collect();
@@ -891,7 +899,7 @@ fn stabilise_divider_positions(
         type Slot = (f64, f64, Option<String>, Option<String>);
         let mut slots: Vec<Slot> = Vec::with_capacity(divider_children.len());
         for cid in &divider_children {
-            if let Some(n) = result.nodes.iter().find(|n| &n.id == *cid) {
+            if let Some(n) = result.nodes.iter().find(|n| n.id == *cid) {
                 slots.push((
                     n.x.unwrap_or(0.0),
                     n.y.unwrap_or(0.0),
@@ -920,7 +928,7 @@ fn stabilise_divider_positions(
         // Re-bind: slot[i] (sorted ascending along the rankdir axis) belongs
         // to divider_children[i] (source-declaration order).
         for (cid, slot) in divider_children.iter().zip(sorted_slots.iter()) {
-            if let Some(n) = result.nodes.iter_mut().find(|n| &n.id == *cid) {
+            if let Some(n) = result.nodes.iter_mut().find(|n| n.id == *cid) {
                 n.x = Some(slot.0);
                 n.y = Some(slot.1);
                 if let Some(v) = &slot.2 {
@@ -1367,7 +1375,7 @@ fn measure_edge_label(text: &str) -> (f64, f64) {
 /// height are computed per-glyph, not estimated.
 fn measure_label_box(text: &str, font_size: f64) -> (f64, f64) {
     let lines: Vec<&str> = text.split('\n').collect();
-    measure_lines_box(&lines.iter().copied().collect::<Vec<_>>(), font_size, false)
+    measure_lines_box(&lines.to_vec(), font_size, false)
 }
 
 fn measure_lines_box(lines: &[&str], font_size: f64, bold: bool) -> (f64, f64) {

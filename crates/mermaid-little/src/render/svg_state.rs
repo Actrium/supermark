@@ -222,7 +222,7 @@ fn render_inner(
                 node, &l.result, theme, id,
             ));
         } else {
-            if node.extra.get("__skip_render").is_some() {
+            if node.extra.contains_key("__skip_render") {
                 continue;
             }
             if has_isolated_ancestor(&node.id, &l.result.nodes, iso_ids) {
@@ -258,7 +258,7 @@ fn render_inner(
     }
 
     out.push_str(unified_shell::close_unified_svg());
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// Compute the viewBox by unioning the bounding boxes of all nodes
@@ -507,7 +507,7 @@ fn compute_viewbox(l: &StateLayout, pad: f64, title: Option<&str>) -> (f64, f64,
     }
 
     for n in &l.result.nodes {
-        if n.is_group || n.extra.get("__skip_render").is_some() {
+        if n.is_group || n.extra.contains_key("__skip_render") {
             continue;
         }
         let shape = n.shape.as_deref().unwrap_or("state");
@@ -960,7 +960,7 @@ fn render_isolated_cluster_inner_root(
             // Leaf node: any descendant of `cnode` that is not inside a
             // sub-isolated cluster (those are emitted by the recursive call
             // above, inside their own inner root).
-            if n.extra.get("__skip_render").is_some() {
+            if n.extra.contains_key("__skip_render") {
                 continue;
             }
             if !is_descendant_of(&n.id, &cnode.id, &l.nodes) {
@@ -1290,7 +1290,7 @@ fn emit_edge_path(id: &str, e: &Edge, nodes: &[Node]) -> String {
     let is_note_edge = e
         .classes
         .as_deref()
-        .map_or(false, |c| c.contains("note-edge"));
+        .is_some_and(|c| c.contains("note-edge"));
     let suppress_marker_end = matches!(e.arrow_type_end.as_deref(), Some("none"));
     if is_note_edge || suppress_marker_end {
         format!(
@@ -1377,7 +1377,7 @@ fn emit_edge_label(e: &Edge, nodes: &[Node]) -> String {
             (format!("<p>{}</p>", xml_escape(&decoded)), false)
         }
     } else {
-        let parts: Vec<String> = decoded.split('\n').map(|seg| xml_escape(seg)).collect();
+        let parts: Vec<String> = decoded.split('\n').map(xml_escape).collect();
         (parts.join("<br/>"), true)
     };
 
@@ -1837,7 +1837,7 @@ fn emit_rect_with_title(id: &str, n: &Node, _theme: &ThemeVariables) -> Option<S
         r#"<foreignObject width="{tw}" height="{lh}" transform="translate({fo_tx}, 0)"><div style="display: table-cell; white-space: nowrap; line-height: 1.5;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel "><p>{title}</p></span></div></foreignObject>"#,
         tw = fmt_num(title_fo_width),
         lh = fmt_num(lh),
-        fo_tx = format!(" {}", fmt_num(title_fo_tx)),
+        fo_tx = format_args!(" {}", fmt_num(title_fo_tx)),
         title = xml_escape(title),
     ));
     // Description foreignObject(s).
@@ -1863,7 +1863,7 @@ fn emit_rect_with_title(id: &str, n: &Node, _theme: &ThemeVariables) -> Option<S
         r#"<foreignObject width="{dw}" height="{lh}" transform="translate({fo_tx}, {fo_ty})"><div style="display: table-cell; white-space: nowrap; line-height: 1.5;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel "><p>{desc}</p></span></div></foreignObject>"#,
         dw = fmt_num(actual_desc_w),
         lh = fmt_num(lh),
-        fo_tx = format!(" {}", fmt_num(desc_fo_tx)),
+        fo_tx = format_args!(" {}", fmt_num(desc_fo_tx)),
         fo_ty = fmt_num(desc_y),
         desc = xml_escape(&desc_text),
     ));
@@ -2750,7 +2750,7 @@ mod tests {
         );
         eprintln!("Top 20 non-exact:");
         for r in all.iter().filter(|r| r.3 != r.1 || r.1 != r.2).take(20) {
-            let stem = r.0.split('/').last().unwrap_or("");
+            let stem = r.0.split('/').next_back().unwrap_or("");
             eprintln!("  [{}] got={} ref={} prefix={}", stem, r.1, r.2, r.3);
         }
     }
@@ -3209,11 +3209,12 @@ mod tests {
         let total = groups.len();
         let rendered = groups.iter().filter(|(_, r, _, _)| *r).count();
         let exact = groups.iter().filter(|(_, _, e, _)| *e).count();
-        let avg_prefix: usize = if rendered > 0 {
-            groups.iter().map(|(_, _, _, p)| *p).sum::<usize>() / rendered
-        } else {
-            0
-        };
+        let avg_prefix: usize = groups
+            .iter()
+            .map(|(_, _, _, p)| *p)
+            .sum::<usize>()
+            .checked_div(rendered)
+            .unwrap_or(0);
         eprintln!(
             "[state] fixtures={} rendered={} byte-exact={} avg-common-prefix={}",
             total, rendered, exact, avg_prefix
@@ -4131,14 +4132,14 @@ mod tests {
         }
         // Sort by prefix descending (near-misses first)
         let mut non_exact: Vec<_> = groups.iter().filter(|(_, _, e, _, _, _)| !*e).collect();
-        non_exact.sort_by(|a, b| b.3.cmp(&a.3));
+        non_exact.sort_by_key(|item| std::cmp::Reverse(item.3));
         eprintln!("=== Non-exact fixtures sorted by prefix (highest first) ===");
         for (rel, rendered, _, prefix, got_len, exp_len) in &non_exact {
             if !rendered {
                 eprintln!("  PANIC  {}", rel);
                 continue;
             }
-            let stem: &str = rel.split('/').last().unwrap_or("");
+            let stem: &str = rel.split('/').next_back().unwrap_or("");
             eprintln!(
                 "  prefix={:6}  got={:6}  exp={:6}  {}",
                 prefix, got_len, exp_len, stem
@@ -4177,12 +4178,12 @@ mod tests {
             let e_ctx = &expected[p.saturating_sub(ctx)..(p + 120).min(expected.len())];
             eprintln!(
                 "DIFF[{}] got: {:?}",
-                rel.split('/').last().unwrap_or(rel),
+                rel.split('/').next_back().unwrap_or(rel),
                 g_ctx
             );
             eprintln!(
                 "DIFF[{}] exp: {:?}",
-                rel.split('/').last().unwrap_or(rel),
+                rel.split('/').next_back().unwrap_or(rel),
                 e_ctx
             );
         }

@@ -50,8 +50,10 @@ mod tests {
 
     #[test]
     fn fork_join_default_tb_dimensions() {
-        let mut n = Node::default();
-        n.id = "f".into();
+        let n = Node {
+            id: "f".into(),
+            ..Node::default()
+        };
         let got = draw(&n, &ThemeVariables::default()).unwrap();
         assert!(got.contains(r#"width="70""#));
         assert!(got.contains(r#"height="10""#));
@@ -59,9 +61,11 @@ mod tests {
 
     #[test]
     fn fork_join_lr_swaps_dimensions() {
-        let mut n = Node::default();
-        n.id = "f".into();
-        n.dir = Some("LR".into());
+        let n = Node {
+            id: "f".into(),
+            dir: Some("LR".into()),
+            ..Node::default()
+        };
         let got = draw(&n, &ThemeVariables::default()).unwrap();
         assert!(got.contains(r#"width="10""#));
         assert!(got.contains(r#"height="70""#));

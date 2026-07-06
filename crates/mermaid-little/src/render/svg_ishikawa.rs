@@ -53,7 +53,7 @@ pub fn render(
 
     if !l.has_root {
         out.push_str("</g></svg>");
-        return Ok(out);
+        return Ok(crate::make_foreign_objects_non_clipping(&out));
     }
 
     // Arrow marker defs.
@@ -80,7 +80,7 @@ pub fn render(
     }
 
     out.push_str("</g></svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 fn render_head(out: &mut String, l: &IshikawaLayout) {

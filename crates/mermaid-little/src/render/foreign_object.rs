@@ -1117,7 +1117,7 @@ fn markdown_paragraph_to_html(src: &str) -> String {
                 }
             }
             // bare *, treat as literal
-            out.push_str("*");
+            out.push('*');
             i += 1;
         } else if b == b'`' {
             // inline code: `code`
@@ -1129,7 +1129,7 @@ fn markdown_paragraph_to_html(src: &str) -> String {
                 i += 1 + end + 1;
                 continue;
             }
-            out.push_str("`");
+            out.push('`');
             i += 1;
         } else if b == b'<' {
             // Embedded HTML tag — pass through (with normalisation of <br> → <br/>)
@@ -1346,8 +1346,10 @@ mod tests {
         //       </div>
         //     </foreignObject>
         //   </g>
-        let mut opts = LabelOpts::default();
-        opts.max_width = f64::INFINITY;
+        let opts = LabelOpts {
+            max_width: f64::INFINITY,
+            ..LabelOpts::default()
+        };
         let got = render_node_label("id1", 21.68359375, 16.296875, &opts);
         assert_eq!(
             got,

@@ -158,8 +158,10 @@ mod tests {
 
     #[test]
     fn rounded_rect_emits_radius() {
-        let mut n = Node::default();
-        n.id = "n".into();
+        let mut n = Node {
+            id: "n".into(),
+            ..Node::default()
+        };
         n.width = Some(80.0);
         n.height = Some(40.0);
         n.rx = Some(5.0);
@@ -172,8 +174,10 @@ mod tests {
 
     #[test]
     fn rounded_rect_emits_data_look() {
-        let mut n = Node::default();
-        n.id = "n".into();
+        let mut n = Node {
+            id: "n".into(),
+            ..Node::default()
+        };
         n.width = Some(80.0);
         n.height = Some(40.0);
         n.look = Some("classic".into());
@@ -184,8 +188,10 @@ mod tests {
 
     #[test]
     fn rounded_rect_uses_markdown_node_label() {
-        let mut n = Node::default();
-        n.id = "n".into();
+        let mut n = Node {
+            id: "n".into(),
+            ..Node::default()
+        };
         n.width = Some(80.0);
         n.height = Some(40.0);
         n.label = Some("State1".into());

@@ -508,8 +508,8 @@ fn intersection_area(circles: &[Circle], stats: &mut AreaStats) -> f64 {
 
         let n = inner_points.len();
         let mut p2 = inner_points[n - 1].clone();
-        for i in 0..n {
-            let p1 = inner_points[i].clone();
+        for point in inner_points.iter().take(n) {
+            let p1 = point.clone();
             polygon_area += (p2.x + p1.x) * (p1.y - p2.y);
             let mid = ((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0);
             let mut arc: Option<Arc> = None;
@@ -818,8 +818,8 @@ fn greedy_layout(areas: &[Area]) -> OrderedMap {
     }
     positioned.insert(first);
 
-    for i in 1..most_overlapped.len() {
-        let setid = most_overlapped[i].0.clone();
+    for (setid, _) in most_overlapped.iter().skip(1) {
+        let setid = setid.clone();
         let mut overlap: Vec<(String, f64, f64)> = set_overlaps[&setid]
             .iter()
             .filter(|(s, _, _)| positioned.contains(s))
@@ -834,16 +834,16 @@ fn greedy_layout(areas: &[Area]) -> OrderedMap {
         let set_radius = output.get(&setid).unwrap().radius;
 
         let mut points: Vec<(f64, f64)> = Vec::new();
-        for j in 0..overlap.len() {
-            let p1 = *output.get(&overlap[j].0).unwrap();
-            let d1 = distance_from_intersect_area(set_radius, p1.radius, overlap[j].1);
+        for (j, overlap_item) in overlap.iter().enumerate() {
+            let p1 = *output.get(&overlap_item.0).unwrap();
+            let d1 = distance_from_intersect_area(set_radius, p1.radius, overlap_item.1);
             points.push((p1.x + d1, p1.y));
             points.push((p1.x - d1, p1.y));
             points.push((p1.x, p1.y + d1));
             points.push((p1.x, p1.y - d1));
-            for k in (j + 1)..overlap.len() {
-                let p2 = *output.get(&overlap[k].0).unwrap();
-                let d2 = distance_from_intersect_area(set_radius, p2.radius, overlap[k].1);
+            for next_overlap in overlap.iter().skip(j + 1) {
+                let p2 = *output.get(&next_overlap.0).unwrap();
+                let d2 = distance_from_intersect_area(set_radius, p2.radius, next_overlap.1);
                 let extra = circle_circle_intersection(
                     &Circle {
                         x: p1.x,
@@ -1020,8 +1020,8 @@ where
         fx_vec = new_fx;
 
         let mut max_diff = 0.0_f64;
-        for i in 0..n {
-            let d = (simplex[0][i] - simplex[1][i]).abs();
+        for (a, b) in simplex[0].iter().zip(simplex[1].iter()).take(n) {
+            let d = (a - b).abs();
             if d > max_diff {
                 max_diff = d;
             }
@@ -1031,12 +1031,12 @@ where
         }
 
         // centroid of all but worst.
-        for i in 0..n {
-            centroid[i] = 0.0;
-            for j in 0..n {
-                centroid[i] += simplex[j][i];
+        for (i, centroid_item) in centroid.iter_mut().enumerate().take(n) {
+            *centroid_item = 0.0;
+            for simplex_item in simplex.iter().take(n) {
+                *centroid_item += simplex_item[i];
             }
-            centroid[i] /= n as f64;
+            *centroid_item /= n as f64;
         }
 
         let worst = simplex[n].clone();
@@ -1318,7 +1318,7 @@ fn bounding_box(cluster: &[ClusterCircle]) -> BoundingBox {
     }
 }
 
-fn orientate_circles(circles: &mut Vec<ClusterCircle>, orientation: f64) {
+fn orientate_circles(circles: &mut [ClusterCircle], orientation: f64) {
     // Sort largest radius first. Note: Array.sort in V8 is stable, so
     // ties resolve by original (insertion) order.
     circles.sort_by(|a, b| {
@@ -1425,8 +1425,8 @@ fn scale_solution(
 
 fn circle_margin(current: (f64, f64), interior: &[Circle], exterior: &[Circle]) -> f64 {
     let mut margin = interior[0].radius - dist_xy((interior[0].x, interior[0].y), current);
-    for i in 1..interior.len() {
-        let m = interior[i].radius - dist_xy((interior[i].x, interior[i].y), current);
+    for c in interior.iter().skip(1) {
+        let m = c.radius - dist_xy((c.x, c.y), current);
         if m <= margin {
             margin = m;
         }

@@ -34,8 +34,10 @@ mod tests {
 
     #[test]
     fn trapezoid_points_match_upstream() {
-        let mut n = Node::default();
-        n.id = "tr".into();
+        let mut n = Node {
+            id: "tr".into(),
+            ..Node::default()
+        };
         // visual_w = 100 (= base_w 60 + 2*shear 40)
         n.width = Some(100.0);
         n.height = Some(40.0);

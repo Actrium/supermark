@@ -1,7 +1,7 @@
-/// Pure mapping functions used by build.rs.
-///
-/// This module is `include!`-d from build.rs so the same logic can be unit-tested
-/// without duplicating code. Do NOT add dependencies beyond `std` here.
+// Pure mapping functions used by build.rs.
+//
+// This module is `include!`-d from build.rs so the same logic can be unit-tested
+// without duplicating code. Do NOT add dependencies beyond `std` here.
 
 /// Maps a Rust target triple to the GitHub release asset name.
 ///

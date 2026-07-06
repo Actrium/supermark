@@ -7,6 +7,8 @@
 //! engine, and downstream code that needs semantics holds this crate's registry
 //! and parses on demand.
 
+mod chart;
+
 // Re-export core's trait and types so downstream depends on this crate alone.
 pub use supramark_diagram_core::{
     DiagramEngine, DiagramError, DiagramRegistry, EngineAst, RenderOutput,
@@ -25,6 +27,12 @@ pub fn default_registry() -> DiagramRegistry {
     reg.register(["mermaid"], Arc::new(mermaid_little::MermaidEngine));
     reg.register(["plantuml"], Arc::new(plantuml_little::PlantumlEngine));
     reg.register(["d2"], Arc::new(d2_little::D2Engine));
+    reg.register(
+        ["vega-lite", "vega", "chart"],
+        Arc::new(chart::VegaLiteChartEngine),
+    );
+    reg.register(["echarts"], Arc::new(chart::EchartsChartEngine));
+    reg.register(["chartjs", "chart.js"], Arc::new(chart::ChartJsEngine));
     #[cfg(not(target_arch = "wasm32"))]
     reg.register(
         ["dot", "graphviz"],

@@ -372,7 +372,7 @@ pub fn layout(d: &GitGraphDiagram, _theme: &ThemeVariables) -> Result<GitGraphLa
         let commit = &d.commits[i];
         let label_emitted = d.config.show_commit_label
             && !matches!(commit.kind, CommitKind::CherryPick)
-            && !(matches!(commit.kind, CommitKind::Merge) && !commit.custom_id);
+            && (!matches!(commit.kind, CommitKind::Merge) || commit.custom_id);
         if label_emitted {
             let lw = label_widths[i];
             let lh = commit_label_text_height;
@@ -454,7 +454,6 @@ pub fn layout(d: &GitGraphDiagram, _theme: &ThemeVariables) -> Result<GitGraphLa
         }
     }
 
-    drop(acc);
     let title_x = min_x + (max_x - min_x) / 2.0;
 
     if let Some(title) = d.meta.title.as_deref() {

@@ -123,7 +123,7 @@ pub fn render(
 
     out.push_str("</g></svg>");
 
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -606,7 +606,7 @@ fn normalise_label_extra(s: &str) -> String {
 /// Implements the `valueFormat` subset used by upstream's renderer.ts:
 ///   * `","`      — grouped thousands, no fractional digits.
 ///   * `"$0,0"`   — currency with thousands separator (special-cased in
-///                  renderer.ts).
+///     renderer.ts).
 ///   * `"$,.2f"` / `"$.2f"` — dollar prefix + fixed decimals.
 ///   * `".1%"`    — percent, fixed decimals.
 ///   * `".2f"`    — fixed decimals.

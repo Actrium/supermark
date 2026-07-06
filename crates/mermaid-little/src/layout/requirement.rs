@@ -95,12 +95,14 @@ pub fn layout(d: &RequirementDiagram, theme: &ThemeVariables) -> Result<Requirem
         .clone()
         .unwrap_or_else(|| "\"trebuchet ms\",verdana,arial,sans-serif".into());
 
-    let mut data = LayoutData::default();
-    data.direction = Some(d.direction.clone());
-    data.node_spacing = Some(50.0);
-    data.rank_spacing = Some(50.0);
-    data.diagram_type = Some("requirement".into());
-    data.layout_algorithm = Some("dagre".into());
+    let mut data = LayoutData {
+        direction: Some(d.direction.clone()),
+        node_spacing: Some(50.0),
+        rank_spacing: Some(50.0),
+        diagram_type: Some("requirement".into()),
+        layout_algorithm: Some("dagre".into()),
+        ..Default::default()
+    };
 
     let mut node_labels = Vec::new();
     let mut requirement_ids = Vec::new();
@@ -109,18 +111,20 @@ pub fn layout(d: &RequirementDiagram, theme: &ThemeVariables) -> Result<Requirem
     for r in d.requirements() {
         let labels = requirement_labels(r, &font_family);
         let (w, h) = box_size(&labels);
-        let mut n = UNode::default();
-        n.id = r.name.clone();
-        n.label = Some(labels.name.clone());
-        n.width = Some(w);
-        n.height = Some(h);
-        n.padding = Some(BOX_PAD * 3.0); // header area
-        n.shape = Some("requirementBox".into());
-        n.css_classes = Some(r.classes.join(" "));
-        n.css_styles = if r.css_styles.is_empty() {
-            None
-        } else {
-            Some(r.css_styles.clone())
+        let n = UNode {
+            id: r.name.clone(),
+            label: Some(labels.name.clone()),
+            width: Some(w),
+            height: Some(h),
+            padding: Some(BOX_PAD * 3.0),
+            shape: Some("requirementBox".into()),
+            css_classes: Some(r.classes.join(" ")),
+            css_styles: if r.css_styles.is_empty() {
+                None
+            } else {
+                Some(r.css_styles.clone())
+            },
+            ..Default::default()
         };
         node_labels.push(labels);
         requirement_ids.push(r.name.clone());
@@ -129,18 +133,20 @@ pub fn layout(d: &RequirementDiagram, theme: &ThemeVariables) -> Result<Requirem
     for e in d.elements() {
         let labels = element_labels(e, &font_family);
         let (w, h) = box_size(&labels);
-        let mut n = UNode::default();
-        n.id = e.name.clone();
-        n.label = Some(labels.name.clone());
-        n.width = Some(w);
-        n.height = Some(h);
-        n.padding = Some(BOX_PAD * 3.0);
-        n.shape = Some("requirementBox".into());
-        n.css_classes = Some(e.classes.join(" "));
-        n.css_styles = if e.css_styles.is_empty() {
-            None
-        } else {
-            Some(e.css_styles.clone())
+        let n = UNode {
+            id: e.name.clone(),
+            label: Some(labels.name.clone()),
+            width: Some(w),
+            height: Some(h),
+            padding: Some(BOX_PAD * 3.0),
+            shape: Some("requirementBox".into()),
+            css_classes: Some(e.classes.join(" ")),
+            css_styles: if e.css_styles.is_empty() {
+                None
+            } else {
+                Some(e.css_styles.clone())
+            },
+            ..Default::default()
         };
         node_labels.push(labels);
         element_ids.push(e.name.clone());
@@ -148,42 +154,43 @@ pub fn layout(d: &RequirementDiagram, theme: &ThemeVariables) -> Result<Requirem
     }
 
     let mut edge_labels: Vec<EdgeLabel> = Vec::new();
-    for (i, rel) in d.relations.iter().enumerate() {
+    for rel in &d.relations {
         let text = edge_text(&rel.kind);
         // measure the label — upstream wraps it inside a foreignObject
         // whose width is max-content.
         let width = text_width(&text, &font_family, FONT_SIZE, false, false);
         let height = LINE_HEIGHT;
-        let mut e = UEdge::default();
-        e.id = format!("{}-{}-{}", rel.src, rel.dst, 0);
-        let _ = i;
-        e.start = Some(rel.src.clone());
-        e.end = Some(rel.dst.clone());
-        e.label = Some(text.clone());
         let is_contains = rel.kind == Relationship::Contains;
-        e.classes = Some("relationshipLine".into());
-        e.style = Some(vec![
-            "fill:none".to_string(),
-            if is_contains {
-                String::new()
-            } else {
-                "stroke-dasharray: 10,7".to_string()
-            },
-        ]);
-        e.labelpos = Some("c".into());
-        e.thickness = Some("normal".into());
-        e.kind = Some("normal".into());
-        e.pattern = Some(if is_contains { "normal" } else { "dashed" }.into());
-        e.arrow_type_start = Some(
-            if is_contains {
-                "requirement_contains"
-            } else {
-                ""
-            }
-            .into(),
-        );
-        e.arrow_type_end = Some(if is_contains { "" } else { "requirement_arrow" }.into());
-        e.label_type = Some("markdown".into());
+        let mut e = UEdge {
+            id: format!("{}-{}-{}", rel.src, rel.dst, 0),
+            start: Some(rel.src.clone()),
+            end: Some(rel.dst.clone()),
+            label: Some(text.clone()),
+            classes: Some("relationshipLine".into()),
+            style: Some(vec![
+                "fill:none".to_string(),
+                if is_contains {
+                    String::new()
+                } else {
+                    "stroke-dasharray: 10,7".to_string()
+                },
+            ]),
+            labelpos: Some("c".into()),
+            thickness: Some("normal".into()),
+            kind: Some("normal".into()),
+            pattern: Some(if is_contains { "normal" } else { "dashed" }.into()),
+            arrow_type_start: Some(
+                if is_contains {
+                    "requirement_contains"
+                } else {
+                    ""
+                }
+                .into(),
+            ),
+            arrow_type_end: Some(if is_contains { "" } else { "requirement_arrow" }.into()),
+            label_type: Some("markdown".into()),
+            ..Default::default()
+        };
         // Pass label dimensions to dagre so it reserves rank space for the
         // edge label (dagre adds label height to ranksep when routing).
         e.extra.insert("label_width".into(), format!("{}", width));

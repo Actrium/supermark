@@ -232,15 +232,6 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
     // `getData` emits them with `shape: 'note'` and wires a special
     // relation to the target class.
     for n in &d.notes {
-        let mut note = Node::default();
-        note.id = n.id.clone();
-        note.label = Some(n.text.clone());
-        note.shape = Some("note".into());
-        // Upstream `classDb.getData` does NOT set a `cssClasses` on the
-        // note Node, so `getNodeClasses` falls back to "undefined"
-        // (`<g class="node undefined ">`).
-        note.css_classes = None;
-        note.parent_id = n.parent.clone();
         // Upstream `note.ts`: `totalWidth = bbox.width + 2 * padding` with
         // `padding = config.class.padding ?? 6`. The bbox.width comes from
         // `div.getBoundingClientRect()` — the testing harness shim
@@ -262,22 +253,35 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
         let measured = strip_html_tags(&joined);
         let family = "trebuchet ms,verdana,arial,sans-serif";
         let w = font_metrics::text_width(&measured, family, 14.0, false, false);
-        note.width = Some(w + 2.0 * note_padding);
-        note.height = Some(line_h + 2.0 * note_padding);
+        let note = Node {
+            id: n.id.clone(),
+            label: Some(n.text.clone()),
+            shape: Some("note".into()),
+            // Upstream `classDb.getData` does NOT set a `cssClasses` on the
+            // note Node, so `getNodeClasses` falls back to "undefined"
+            // (`<g class="node undefined ">`).
+            css_classes: None,
+            parent_id: n.parent.clone(),
+            width: Some(w + 2.0 * note_padding),
+            height: Some(line_h + 2.0 * note_padding),
+            ..Default::default()
+        };
         data.nodes.push(note);
         if !n.class_id.is_empty() {
             // Upstream `classDb.getData` emits a dotted relation from the
             // note to its target class. Edge id format is
             // `edgeNote{note.index}` and `style: ['fill: none']` carries
             // through to the rendered `style="fill: none;;;fill: none"`.
-            let mut e = Edge::default();
-            e.id = format!("edgeNote{}", n.index);
-            e.source = Some(n.id.clone());
-            e.target = Some(n.class_id.clone());
-            e.classes = Some("relation".into());
-            e.thickness = Some("normal".into());
-            e.pattern = Some("dotted".into());
-            e.style = Some(vec!["fill: none".into()]);
+            let mut e = Edge {
+                id: format!("edgeNote{}", n.index),
+                source: Some(n.id.clone()),
+                target: Some(n.class_id.clone()),
+                classes: Some("relation".into()),
+                thickness: Some("normal".into()),
+                pattern: Some("dotted".into()),
+                style: Some(vec!["fill: none".into()]),
+                ..Default::default()
+            };
             // Upstream `insertEdgeLabel` always sets `edge.width = bbox.width`
             // and `edge.height = bbox.height` from the foreignObject body,
             // even when the label text is empty — the resulting fO collapses
@@ -302,23 +306,25 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
     let iface_font = 14.0_f64;
     let iface_line_h = 16.296875_f64;
     for iface in &d.interfaces {
-        let mut node = Node::default();
-        node.id = iface.id.clone();
-        node.label = Some(iface.label.clone());
-        node.shape = Some("rect".into());
-        // Upstream sets `cssStyles: ['opacity: 0;']`; surface that as a
-        // style entry the rect shape will fold into the container's
-        // `style=` attribute.
-        node.css_styles = Some(vec!["opacity: 0;".into()]);
-        // No explicit cssClasses upstream → renders as `node undefined`.
-        node.css_classes = None;
-        node.look = Some("classic".into());
         // Upstream's `rect` shape measures the label's foreignObject and
         // pads with `labelPaddingX/Y`. For lollipop interfaces the text
         // is plain (no markup) so we use the same trebuchet metrics.
         let w = font_metrics::text_width(&iface.label, iface_family, iface_font, false, false);
-        node.width = Some(w);
-        node.height = Some(iface_line_h);
+        let node = Node {
+            id: iface.id.clone(),
+            label: Some(iface.label.clone()),
+            shape: Some("rect".into()),
+            // Upstream sets `cssStyles: ['opacity: 0;']`; surface that as a
+            // style entry the rect shape will fold into the container's
+            // `style=` attribute.
+            css_styles: Some(vec!["opacity: 0;".into()]),
+            // No explicit cssClasses upstream → renders as `node undefined`.
+            css_classes: None,
+            look: Some("classic".into()),
+            width: Some(w),
+            height: Some(iface_line_h),
+            ..Default::default()
+        };
         data.nodes.push(node);
     }
 
@@ -336,36 +342,38 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
     let label_font = 14.0_f64;
     let label_line_h = 16.296875_f64;
     for (i, r) in d.relations.iter().enumerate() {
-        let mut e = Edge::default();
-        e.id = format!("id_{}_{}_{}", r.id1, r.id2, i + 1);
-        e.source = Some(r.id1.clone());
-        e.target = Some(r.id2.clone());
-        e.label = if r.title.is_empty() {
-            None
-        } else {
-            Some(r.title.clone())
+        let mut e = Edge {
+            id: format!("id_{}_{}_{}", r.id1, r.id2, i + 1),
+            source: Some(r.id1.clone()),
+            target: Some(r.id2.clone()),
+            label: if r.title.is_empty() {
+                None
+            } else {
+                Some(r.title.clone())
+            },
+            arrow_type_start: Some(end_marker_name(r.end1)),
+            arrow_type_end: Some(end_marker_name(r.end2)),
+            pattern: Some(match r.line {
+                LineType::Solid => "solid".into(),
+                LineType::Dotted => "dashed".into(),
+            }),
+            thickness: Some("normal".into()),
+            classes: Some("relation".into()),
+            start_label_right: if r.title1.is_empty() {
+                None
+            } else {
+                Some(r.title1.clone())
+            },
+            end_label_left: if r.title2.is_empty() {
+                None
+            } else {
+                Some(r.title2.clone())
+            },
+            curve: Some("basis".into()),
+            look: Some("classic".into()),
+            labelpos: Some("c".into()),
+            ..Default::default()
         };
-        e.arrow_type_start = Some(end_marker_name(r.end1));
-        e.arrow_type_end = Some(end_marker_name(r.end2));
-        e.pattern = Some(match r.line {
-            LineType::Solid => "solid".into(),
-            LineType::Dotted => "dashed".into(),
-        });
-        e.thickness = Some("normal".into());
-        e.classes = Some("relation".into());
-        e.start_label_right = if r.title1.is_empty() {
-            None
-        } else {
-            Some(r.title1.clone())
-        };
-        e.end_label_left = if r.title2.is_empty() {
-            None
-        } else {
-            Some(r.title2.clone())
-        };
-        e.curve = Some("basis".into());
-        e.look = Some("classic".into());
-        e.labelpos = Some("c".into());
         // Surface label bbox so dagre packs an extra rank for it.
         if !r.title.is_empty() {
             let lw = font_metrics::text_width(&r.title, label_family, label_font, false, false);
@@ -380,32 +388,35 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
 }
 
 fn cluster_node(ns: &crate::model::class::Namespace) -> Node {
-    let mut n = Node::default();
-    n.id = ns.id.clone();
-    n.dom_id = Some(ns.dom_id.clone());
-    n.label = Some(ns.id.clone());
-    n.is_group = true;
-    n.shape = Some("rect".into());
-    n.css_classes = Some("namespace".into());
-    n
+    Node {
+        id: ns.id.clone(),
+        dom_id: Some(ns.dom_id.clone()),
+        label: Some(ns.id.clone()),
+        is_group: true,
+        shape: Some("rect".into()),
+        css_classes: Some("namespace".into()),
+        ..Default::default()
+    }
 }
 
 fn class_to_node(c: &ClassNode, d: &ClassDiagram) -> Node {
-    let mut n = Node::default();
-    n.id = c.id.clone();
-    n.dom_id = Some(c.dom_id.clone());
-    // Title row renders the generic-augmented form (`Foo<T>` after
-    // tilde decoding) — see `ClassNode::display_label`.
-    n.label = Some(c.display_label());
-    n.shape = Some("classBox".into());
-    n.css_classes = Some(
-        std::iter::once("default")
-            .chain(c.css_classes.iter().map(String::as_str))
-            .collect::<Vec<_>>()
-            .join(" "),
-    );
-    n.parent_id = c.parent.clone();
-    n.look = Some("classic".into());
+    let mut n = Node {
+        id: c.id.clone(),
+        dom_id: Some(c.dom_id.clone()),
+        // Title row renders the generic-augmented form (`Foo<T>` after
+        // tilde decoding) — see `ClassNode::display_label`.
+        label: Some(c.display_label()),
+        shape: Some("classBox".into()),
+        css_classes: Some(
+            std::iter::once("default")
+                .chain(c.css_classes.iter().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" "),
+        ),
+        parent_id: c.parent.clone(),
+        look: Some("classic".into()),
+        ..Default::default()
+    };
     if c.have_callback {
         n.have_callback = Some(true);
     }

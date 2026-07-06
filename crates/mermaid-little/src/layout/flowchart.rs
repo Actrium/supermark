@@ -758,12 +758,14 @@ fn intersect_rect(rect: (f64, f64, f64, f64), target: (f64, f64)) -> (f64, f64) 
 
 /// Build a unified `LayoutData` from a flowchart AST.
 fn build_layout_data(d: &FlowchartDiagram) -> LayoutData {
-    let mut data = LayoutData::default();
-    data.diagram_type = Some("flowchart-v2".into());
-    data.direction = Some(d.direction.as_str().into());
-    data.node_spacing = Some(d.node_spacing.map(f64::from).unwrap_or(50.0));
-    data.rank_spacing = Some(d.rank_spacing.map(f64::from).unwrap_or(50.0));
-    data.layout_algorithm = Some("dagre".into());
+    let mut data = LayoutData {
+        diagram_type: Some("flowchart-v2".into()),
+        direction: Some(d.direction.as_str().into()),
+        node_spacing: Some(d.node_spacing.map(f64::from).unwrap_or(50.0)),
+        rank_spacing: Some(d.rank_spacing.map(f64::from).unwrap_or(50.0)),
+        layout_algorithm: Some("dagre".into()),
+        ..Default::default()
+    };
 
     // Class-def lookup for inline CSS.
     let class_map: BTreeMap<&str, &ClassDef> =
@@ -847,27 +849,29 @@ fn build_layout_data(d: &FlowchartDiagram) -> LayoutData {
     // node DFS visits first).
     for sg in d.subgraphs.iter().rev() {
         let (w, h) = measure_subgraph_title_box(sg.title.as_ref());
-        let mut node = unified::Node::default();
-        node.id = sg.id.clone();
-        // Upstream cluster DOM id is just the subgraph id — no "flowchart-" prefix.
-        // render_cluster prepends the SVG element id when emitting.
-        node.dom_id = Some(sg.id.clone());
-        node.label = sg.title.as_ref().map(|l| l.text.clone());
-        node.label_type = sg.title.as_ref().map(|l| {
-            use crate::model::flowchart::LabelKind;
-            match l.kind {
-                LabelKind::Markdown => "markdown",
-                LabelKind::String => "string",
-                LabelKind::Text => "text",
-            }
-            .to_string()
-        });
-        node.shape = Some("rect".into());
-        node.width = Some(w);
-        node.height = Some(h);
-        node.padding = Some(8.0);
-        node.is_group = true;
-        node.look = Some("classic".into());
+        let mut node = unified::Node {
+            id: sg.id.clone(),
+            // Upstream cluster DOM id is just the subgraph id — no "flowchart-" prefix.
+            // render_cluster prepends the SVG element id when emitting.
+            dom_id: Some(sg.id.clone()),
+            label: sg.title.as_ref().map(|l| l.text.clone()),
+            label_type: sg.title.as_ref().map(|l| {
+                use crate::model::flowchart::LabelKind;
+                match l.kind {
+                    LabelKind::Markdown => "markdown",
+                    LabelKind::String => "string",
+                    LabelKind::Text => "text",
+                }
+                .to_string()
+            }),
+            shape: Some("rect".into()),
+            width: Some(w),
+            height: Some(h),
+            padding: Some(8.0),
+            is_group: true,
+            look: Some("classic".into()),
+            ..Default::default()
+        };
         // Per-cluster direction. Upstream `mermaid-graphlib`'s `extractor.ts`
         // (line 339) flips inner rankdir as `outer === 'TB' ? 'LR' : 'TB'`,
         // so any non-TB outer (LR/BT/RL) yields a TB inner pass. Our
@@ -932,20 +936,22 @@ fn build_layout_data(d: &FlowchartDiagram) -> LayoutData {
         } else {
             display_label(v)
         };
-        let mut node = unified::Node::default();
-        node.id = v.id.clone();
-        node.dom_id = Some(flowchart_dom_id(&v.id, v.order));
-        node.label = Some(label_text.clone());
-        node.label_type = Some(label_kind_string(v.label.as_ref()).to_string());
-        node.shape = Some(shape_id.to_string());
-        node.width = Some(w);
-        node.height = Some(h);
-        node.padding = Some(FLOWCHART_PADDING);
+        let mut node = unified::Node {
+            id: v.id.clone(),
+            dom_id: Some(flowchart_dom_id(&v.id, v.order)),
+            label: Some(label_text.clone()),
+            label_type: Some(label_kind_string(v.label.as_ref()).to_string()),
+            shape: Some(shape_id.to_string()),
+            width: Some(w),
+            height: Some(h),
+            padding: Some(FLOWCHART_PADDING),
+            look: Some("classic".into()),
+            parent_id: parent_of.get(&v.id).cloned(),
+            ..Default::default()
+        };
         if shape_id == "icon" {
             node.icon = v.shape_data.clone();
         }
-        node.look = Some("classic".into());
-        node.parent_id = parent_of.get(&v.id).cloned();
         // CSS classes — upstream: `'default ' + vertex.classes.join(' ')`.
         // `"default "` has a trailing space; when classes are appended via
         // join(' '), the result is `"default dark"` (no trailing space) for
@@ -1716,27 +1722,30 @@ fn build_edge<'a>(
     html_labels: bool,
     config_curve: &str,
 ) -> unified::Edge {
-    let mut ue = unified::Edge::default();
     // Custom-id syntax `A name@-->B` lets the source set an explicit edge id
     // (`name`). Upstream uses that id directly; only fall back to the
     // synthetic `L_{start}_{end}_{counter}` form when no custom id is given.
-    ue.id = match &e.id {
+    let id = match &e.id {
         Some(custom) if !custom.is_empty() => custom.clone(),
         _ => format!("L_{}_{}_{}", e.start, e.end, pair_counter),
     };
-    ue.start = Some(e.start.clone());
-    ue.end = Some(e.end.clone());
-    ue.minlen = Some(e.length as i32);
-    ue.label = e.label.as_ref().map(|l| l.text.clone());
-    ue.label_type = Some(label_kind_string(e.label.as_ref()).to_string());
-    ue.arrow_type_end = Some(arrow_kind_string(e.arrow_end).to_string());
-    ue.arrow_type_start = Some(arrow_kind_string(e.arrow_start).to_string());
     let (thickness, pattern) = stroke_descriptor(e.stroke);
-    ue.thickness = Some(thickness.into());
-    ue.pattern = Some(pattern.into());
-    ue.stroke = Some(thickness.into());
-    ue.interpolate = Some(config_curve.into());
-    ue.curve = Some(config_curve.into());
+    let mut ue = unified::Edge {
+        id,
+        start: Some(e.start.clone()),
+        end: Some(e.end.clone()),
+        minlen: Some(e.length as i32),
+        label: e.label.as_ref().map(|l| l.text.clone()),
+        label_type: Some(label_kind_string(e.label.as_ref()).to_string()),
+        arrow_type_end: Some(arrow_kind_string(e.arrow_end).to_string()),
+        arrow_type_start: Some(arrow_kind_string(e.arrow_start).to_string()),
+        thickness: Some(thickness.into()),
+        pattern: Some(pattern.into()),
+        stroke: Some(thickness.into()),
+        interpolate: Some(config_curve.into()),
+        curve: Some(config_curve.into()),
+        ..Default::default()
+    };
     if let Some(curve_override) = &e.curve {
         ue.interpolate = Some(curve_override.clone());
         ue.curve = Some(curve_override.clone());
@@ -1821,7 +1830,7 @@ fn build_edge<'a>(
 }
 
 fn apply_link_style(ls: &LinkStyle, idx: usize) -> bool {
-    ls.is_default || ls.indices.iter().any(|&i| i == idx)
+    ls.is_default || ls.indices.contains(&idx)
 }
 
 fn arrow_kind_string(a: ArrowType) -> &'static str {
@@ -1953,8 +1962,10 @@ fn synthesize_vertex_for_subgraph(
     sg: &crate::model::flowchart::Subgraph,
     d: &FlowchartDiagram,
 ) -> Vertex {
-    let mut v = Vertex::default();
-    v.id = sg.id.clone();
+    let mut v = Vertex {
+        id: sg.id.clone(),
+        ..Default::default()
+    };
     if let Some(existing) = d.find_vertex(&sg.id) {
         v.styles = existing.styles.clone();
         v.classes.extend(existing.classes.iter().cloned());

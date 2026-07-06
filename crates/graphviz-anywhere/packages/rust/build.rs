@@ -302,9 +302,9 @@ fn try_repo_output(manifest_dir: &Path) -> bool {
 ///   * `GRAPHVIZ_ANYWHERE_ALLOW_DOWNLOAD=1` — opt in to the network fallback.
 ///   * `GRAPHVIZ_ANYWHERE_NO_DOWNLOAD=1`    — force it off (wins over allow).
 ///   * `GRAPHVIZ_ANYWHERE_RELEASE_BASE_URL` — override the release base URL
-///       (default `https://github.com/Actrium/supramark/releases/download`).
+///     (default `https://github.com/Actrium/supramark/releases/download`).
 ///   * `GRAPHVIZ_ANYWHERE_RELEASE_VERSION`  — override the tag version
-///       (defaults to CARGO_PKG_VERSION).
+///     (defaults to CARGO_PKG_VERSION).
 fn try_github_release() -> bool {
     // Hard-off always wins; otherwise require explicit opt-in because no
     // standalone release feed exists for this crate yet.

@@ -60,17 +60,18 @@ pub struct Sankey {
 
 impl Sankey {
     pub fn layout(&self, node_ids: &[String], links_in: &[(String, String, f64)]) -> AlgoGraph {
-        let mut graph = AlgoGraph::default();
-
         // computeNodeLinks
-        graph.nodes = node_ids
-            .iter()
-            .enumerate()
-            .map(|(i, _)| AlgoNode {
-                index: i,
-                ..AlgoNode::default()
-            })
-            .collect();
+        let mut graph = AlgoGraph {
+            nodes: node_ids
+                .iter()
+                .enumerate()
+                .map(|(i, _)| AlgoNode {
+                    index: i,
+                    ..AlgoNode::default()
+                })
+                .collect(),
+            ..Default::default()
+        };
         let node_by_id: std::collections::HashMap<&str, usize> = node_ids
             .iter()
             .enumerate()
@@ -361,12 +362,12 @@ fn relax_left_to_right(
     y1: f64,
     py: f64,
 ) {
-    for i in 1..columns.len() {
+    for column in columns.iter_mut().skip(1) {
         // Iterate the column in its current order (as left by the
         // previous relax). `target` comes from the mutable vec, but
         // we snapshot it here so subsequent sort-in-place and
         // reorder_node_links don't invalidate the iteration.
-        let column_snapshot = columns[i].clone();
+        let column_snapshot = column.clone();
         for &target in &column_snapshot {
             let mut y_acc = 0.0f64;
             let mut w_acc = 0.0f64;
@@ -378,7 +379,7 @@ fn relax_left_to_right(
                 y_acc += target_top_with_py(graph, source, target, py) * v;
                 w_acc += v;
             }
-            if !(w_acc > 0.0) {
+            if w_acc.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
                 continue;
             }
             let dy = (y_acc / w_acc - graph.nodes[target].y0) * alpha;
@@ -388,7 +389,6 @@ fn relax_left_to_right(
         }
         // JS: `if (sort === undefined) column.sort(ascendingBreadth);`
         // Sort the column IN PLACE so subsequent iterations see it.
-        let column = &mut columns[i];
         sort_by_breadth(graph, column);
         let column_for_resolve = column.clone();
         resolve_collisions(graph, &column_for_resolve, beta, y0, y1, py);
@@ -422,7 +422,7 @@ fn relax_right_to_left(
                 y_acc += source_top_with_py(graph, source, target, py) * v;
                 w_acc += v;
             }
-            if !(w_acc > 0.0) {
+            if w_acc.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
                 continue;
             }
             let dy = (y_acc / w_acc - graph.nodes[source].y0) * alpha;

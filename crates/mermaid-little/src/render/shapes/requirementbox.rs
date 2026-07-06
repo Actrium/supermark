@@ -63,8 +63,10 @@ mod tests {
 
     #[test]
     fn requirementbox_has_divider_when_body_present() {
-        let mut n = Node::default();
-        n.id = "r".into();
+        let mut n = Node {
+            id: "r".into(),
+            ..Node::default()
+        };
         n.width = Some(200.0);
         n.height = Some(160.0);
         n.padding = Some(60.0);

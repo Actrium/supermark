@@ -109,7 +109,7 @@ fn main() {
     }
 
     // Sort by diff_at DESCENDING (largest = closest to byte-exact).
-    rows.sort_by(|a, b| b.diff_at.cmp(&a.diff_at));
+    rows.sort_by_key(|row| std::cmp::Reverse(row.diff_at));
 
     println!(
         "== seq probe: {} ignored fixtures (sorted by diff_at desc) ==",

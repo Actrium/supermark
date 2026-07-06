@@ -163,7 +163,7 @@ mod tests {
         // From cypress/xychart/35: Rust `{}` gives "557.3887329101563";
         // JS Number.toString gives "557.3887329101562". Both parse back
         // to the same f64. We must produce the even-trailing form.
-        let v: f64 = 557.38873291015625;
+        let v: f64 = 557.388_732_910_156_3;
         assert_eq!(js_number_to_string(v), "557.3887329101562");
     }
 

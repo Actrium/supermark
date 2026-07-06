@@ -24,7 +24,10 @@ pub struct RenderOutput {
 impl RenderOutput {
     /// Convenience constructor for an SVG output.
     pub fn svg(bytes: Vec<u8>) -> Self {
-        Self { mime: "image/svg+xml", bytes }
+        Self {
+            mime: "image/svg+xml",
+            bytes,
+        }
     }
 }
 
@@ -57,7 +60,11 @@ impl EngineAst {
             engine,
             message: format!("serialize semantic failed: {e}"),
         })?;
-        Ok(Self { engine, kind: kind.into(), data })
+        Ok(Self {
+            engine,
+            kind: kind.into(),
+            data,
+        })
     }
 }
 
@@ -67,10 +74,16 @@ impl EngineAst {
 pub enum DiagramError {
     /// Semantic parsing failed (syntax error etc.).
     #[error("{engine}: parse failed: {message}")]
-    Parse { engine: &'static str, message: String },
+    Parse {
+        engine: &'static str,
+        message: String,
+    },
     /// Rendering failed.
     #[error("{engine}: render failed: {message}")]
-    Render { engine: &'static str, message: String },
+    Render {
+        engine: &'static str,
+        message: String,
+    },
     /// This engine does not support a semantic AST (e.g. graphviz stage one).
     #[error("{engine}: semantic AST not supported")]
     SemanticUnsupported { engine: &'static str },
@@ -112,7 +125,9 @@ pub struct DiagramRegistry {
 impl DiagramRegistry {
     /// Create an empty registry.
     pub fn new() -> Self {
-        Self { engines: HashMap::new() }
+        Self {
+            engines: HashMap::new(),
+        }
     }
 
     /// Register the same engine instance under one or more keys.

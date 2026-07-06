@@ -130,8 +130,10 @@ mod tests {
 
     #[test]
     fn diamond_points_match_upstream_format() {
-        let mut n = Node::default();
-        n.id = "q".into();
+        let mut n = Node {
+            id: "q".into(),
+            ..Node::default()
+        };
         n.label = Some("test".into());
         n.padding = Some(15.0);
         let theme = ThemeVariables::default();

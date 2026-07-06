@@ -505,8 +505,10 @@ mod tests {
             Point { x: 10.0, y: 0.0 },
             Point { x: 20.0, y: 0.0 },
         ];
-        let mut e = Edge::default();
-        e.id = "x".into();
+        let mut e = Edge {
+            id: "x".into(),
+            ..Edge::default()
+        };
         e.points = Some(pts);
 
         let out = refine_edges(&[], &[e]);
@@ -518,8 +520,10 @@ mod tests {
     }
 
     fn demo_node() -> Node {
-        let mut n = Node::default();
-        n.id = "n".into();
+        let mut n = Node {
+            id: "n".into(),
+            ..Node::default()
+        };
         n.x = Some(100.0);
         n.y = Some(100.0);
         n.width = Some(40.0);
@@ -635,8 +639,10 @@ mod tests {
     #[test]
     fn route_edge_self_loop_produces_five_points() {
         let node = demo_node();
-        let mut edge = Edge::default();
-        edge.id = "e1".into();
+        let mut edge = Edge {
+            id: "e1".into(),
+            ..Edge::default()
+        };
         edge.source = Some("n".into());
         edge.target = Some("n".into());
         route_edge(&mut edge, &node, &node);

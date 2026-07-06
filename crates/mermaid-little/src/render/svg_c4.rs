@@ -178,7 +178,7 @@ pub fn render(
         ));
     }
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 fn write_shape(out: &mut String, sh: &LaidShape) {
@@ -263,16 +263,43 @@ fn write_shape(out: &mut String, sh: &LaidShape) {
     }
 
     // label
-    write_text_block(out, sh.x, sh.y, sh.width, &sh.label, fc, true, false);
+    write_text_block(
+        out,
+        (sh.x, sh.y, sh.width),
+        &sh.label,
+        TextBlockStyle {
+            fill: fc,
+            bold: true,
+            italic: false,
+        },
+    );
 
     // techn or type (techn is what container/component use)
     if sh.has_techn {
-        write_text_block(out, sh.x, sh.y, sh.width, &sh.techn, fc, false, true);
+        write_text_block(
+            out,
+            (sh.x, sh.y, sh.width),
+            &sh.techn,
+            TextBlockStyle {
+                fill: fc,
+                bold: false,
+                italic: true,
+            },
+        );
     }
 
     // descr
     if sh.has_descr {
-        write_text_block(out, sh.x, sh.y, sh.width, &sh.descr, fc, false, false);
+        write_text_block(
+            out,
+            (sh.x, sh.y, sh.width),
+            &sh.descr,
+            TextBlockStyle {
+                fill: fc,
+                bold: false,
+                italic: false,
+            },
+        );
     }
 
     out.push_str("</g>");
@@ -283,23 +310,27 @@ fn label_size(_kind: &str) -> f64 {
     14.0
 }
 
-fn write_text_block(
-    out: &mut String,
-    sx: f64,
-    sy: f64,
-    sw: f64,
-    block: &TextBlock,
-    fill: &str,
+#[derive(Clone, Copy)]
+struct TextBlockStyle<'a> {
+    fill: &'a str,
     bold: bool,
     italic: bool,
+}
+
+fn write_text_block(
+    out: &mut String,
+    area: (f64, f64, f64),
+    block: &TextBlock,
+    style: TextBlockStyle<'_>,
 ) {
     if block.text.is_empty() {
         return;
     }
+    let (sx, sy, sw) = area;
     let cx = format_js_number(sx + sw / 2.0);
     let cy = format_js_number(sy + block.y_offset);
-    let weight = if bold { "bold" } else { "normal" };
-    let italic_attr = if italic {
+    let weight = if style.bold { "bold" } else { "normal" };
+    let italic_attr = if style.italic {
         r#" font-style="italic""#
     } else {
         ""
@@ -321,6 +352,7 @@ fn write_text_block(
         out.push_str(&format!(
             r#"<text x="{cx}" y="{cy}" style="text-anchor: middle; font-weight: {weight}; font-family: &quot;Open Sans&quot;, sans-serif;" dominant-baseline="middle" fill="{fill}"{italic}><tspan dy="{dy}" alignment-baseline="mathematical">{}</tspan></text>"#,
             escape_xml(line),
+            fill = style.fill,
             weight = weight,
             italic = italic_attr,
         ));
@@ -345,12 +377,39 @@ fn write_boundary(out: &mut String, b: &LaidBoundary) {
         ));
     }
     // label
-    write_text_block(out, b.x, b.y, b.width, &b.label, "#444444", true, false);
+    write_text_block(
+        out,
+        (b.x, b.y, b.width),
+        &b.label,
+        TextBlockStyle {
+            fill: "#444444",
+            bold: true,
+            italic: false,
+        },
+    );
     if b.has_type {
-        write_text_block(out, b.x, b.y, b.width, &b.typ, "#444444", false, false);
+        write_text_block(
+            out,
+            (b.x, b.y, b.width),
+            &b.typ,
+            TextBlockStyle {
+                fill: "#444444",
+                bold: false,
+                italic: false,
+            },
+        );
     }
     if b.has_descr {
-        write_text_block(out, b.x, b.y, b.width, &b.descr, "#444444", false, false);
+        write_text_block(
+            out,
+            (b.x, b.y, b.width),
+            &b.descr,
+            TextBlockStyle {
+                fill: "#444444",
+                bold: false,
+                italic: false,
+            },
+        );
     }
     out.push_str("</g>");
 }

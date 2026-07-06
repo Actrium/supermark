@@ -155,8 +155,8 @@ fn tokenise(s: &str) -> Vec<Tok<'_>> {
 /// (ident, number) pairs — those are counter-suffix ids, not
 /// floating-point values.
 fn looks_like_number_start(bytes: &[u8], i: usize) -> bool {
-    if !bytes[i].is_ascii_digit()
-        && !(bytes[i] == b'-' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit())
+    if !(bytes[i].is_ascii_digit()
+        || bytes[i] == b'-' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit())
     {
         return false;
     }

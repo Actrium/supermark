@@ -423,9 +423,7 @@ fn strip_br(s: &str) -> String {
 }
 
 fn utf8_char_len(first_byte: u8) -> usize {
-    if first_byte < 0x80 {
-        1
-    } else if first_byte < 0xC0 {
+    if first_byte < 0xC0 {
         1
     } else if first_byte < 0xE0 {
         2

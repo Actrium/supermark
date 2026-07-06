@@ -328,61 +328,62 @@ pub fn layout(d: &QuadrantDiagram, theme: &ThemeVariables) -> Result<QuadrantLay
 
     // --- Border lines (6 entries, order matches upstream). ---
     let half_ext = external_border_stroke_width / 2.0;
-    let mut border_lines = Vec::with_capacity(6);
-    // top
-    border_lines.push(QuadrantLine {
-        stroke: ext_border_fill.clone(),
-        stroke_width: external_border_stroke_width,
-        x1: quadrant_left - half_ext,
-        y1: quadrant_top,
-        x2: quadrant_left + quadrant_width + half_ext,
-        y2: quadrant_top,
-    });
-    // right
-    border_lines.push(QuadrantLine {
-        stroke: ext_border_fill.clone(),
-        stroke_width: external_border_stroke_width,
-        x1: quadrant_left + quadrant_width,
-        y1: quadrant_top + half_ext,
-        x2: quadrant_left + quadrant_width,
-        y2: quadrant_top + quadrant_height - half_ext,
-    });
-    // bottom
-    border_lines.push(QuadrantLine {
-        stroke: ext_border_fill.clone(),
-        stroke_width: external_border_stroke_width,
-        x1: quadrant_left - half_ext,
-        y1: quadrant_top + quadrant_height,
-        x2: quadrant_left + quadrant_width + half_ext,
-        y2: quadrant_top + quadrant_height,
-    });
-    // left
-    border_lines.push(QuadrantLine {
-        stroke: ext_border_fill.clone(),
-        stroke_width: external_border_stroke_width,
-        x1: quadrant_left,
-        y1: quadrant_top + half_ext,
-        x2: quadrant_left,
-        y2: quadrant_top + quadrant_height - half_ext,
-    });
-    // vertical inner
-    border_lines.push(QuadrantLine {
-        stroke: int_border_fill.clone(),
-        stroke_width: internal_border_stroke_width,
-        x1: quadrant_left + quadrant_half_width,
-        y1: quadrant_top + half_ext,
-        x2: quadrant_left + quadrant_half_width,
-        y2: quadrant_top + quadrant_height - half_ext,
-    });
-    // horizontal inner
-    border_lines.push(QuadrantLine {
-        stroke: int_border_fill,
-        stroke_width: internal_border_stroke_width,
-        x1: quadrant_left + half_ext,
-        y1: quadrant_top + quadrant_half_height,
-        x2: quadrant_left + quadrant_width - half_ext,
-        y2: quadrant_top + quadrant_half_height,
-    });
+    let border_lines = vec![
+        // top
+        QuadrantLine {
+            stroke: ext_border_fill.clone(),
+            stroke_width: external_border_stroke_width,
+            x1: quadrant_left - half_ext,
+            y1: quadrant_top,
+            x2: quadrant_left + quadrant_width + half_ext,
+            y2: quadrant_top,
+        },
+        // right
+        QuadrantLine {
+            stroke: ext_border_fill.clone(),
+            stroke_width: external_border_stroke_width,
+            x1: quadrant_left + quadrant_width,
+            y1: quadrant_top + half_ext,
+            x2: quadrant_left + quadrant_width,
+            y2: quadrant_top + quadrant_height - half_ext,
+        },
+        // bottom
+        QuadrantLine {
+            stroke: ext_border_fill.clone(),
+            stroke_width: external_border_stroke_width,
+            x1: quadrant_left - half_ext,
+            y1: quadrant_top + quadrant_height,
+            x2: quadrant_left + quadrant_width + half_ext,
+            y2: quadrant_top + quadrant_height,
+        },
+        // left
+        QuadrantLine {
+            stroke: ext_border_fill.clone(),
+            stroke_width: external_border_stroke_width,
+            x1: quadrant_left,
+            y1: quadrant_top + half_ext,
+            x2: quadrant_left,
+            y2: quadrant_top + quadrant_height - half_ext,
+        },
+        // vertical inner
+        QuadrantLine {
+            stroke: int_border_fill.clone(),
+            stroke_width: internal_border_stroke_width,
+            x1: quadrant_left + quadrant_half_width,
+            y1: quadrant_top + half_ext,
+            x2: quadrant_left + quadrant_half_width,
+            y2: quadrant_top + quadrant_height - half_ext,
+        },
+        // horizontal inner
+        QuadrantLine {
+            stroke: int_border_fill,
+            stroke_width: internal_border_stroke_width,
+            x1: quadrant_left + half_ext,
+            y1: quadrant_top + quadrant_half_height,
+            x2: quadrant_left + quadrant_width - half_ext,
+            y2: quadrant_top + quadrant_half_height,
+        },
+    ];
 
     // --- Axis labels (order: xLeft, xRight, yBottom, yTop). ---
     let mut axis_labels: Vec<QuadrantText> = Vec::new();

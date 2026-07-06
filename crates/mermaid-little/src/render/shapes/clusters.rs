@@ -9,8 +9,8 @@
 //! * `roundedWithTitle`       — state-diagram composite-state border,
 //! * `noteGroup`              — invisible note wrapper,
 //! * `divider`                — state-diagram divider (concurrent
-//!                              region separator, drawn as a dashed
-//!                              rectangle),
+//!   region separator, drawn as a dashed
+//!   rectangle),
 //! * `kanbanSection`          — Kanban column body.
 //!
 //! This module emits each variant as an `<rect>` (or `<path>` for
@@ -356,8 +356,10 @@ mod tests {
     use super::*;
 
     fn demo_node() -> Node {
-        let mut n = Node::default();
-        n.id = "subgraph-a".into();
+        let mut n = Node {
+            id: "subgraph-a".into(),
+            ..Node::default()
+        };
         n.dom_id = Some("sg-a".into());
         n.x = Some(100.0);
         n.y = Some(50.0);
@@ -373,8 +375,10 @@ mod tests {
     }
 
     fn demo_theme() -> ThemeVariables {
-        let mut t = ThemeVariables::default();
-        t.cluster_bkg = Some("#ECECFF".into());
+        let mut t = ThemeVariables {
+            cluster_bkg: Some("#ECECFF".into()),
+            ..ThemeVariables::default()
+        };
         t.cluster_border = Some("#9370DB".into());
         t
     }

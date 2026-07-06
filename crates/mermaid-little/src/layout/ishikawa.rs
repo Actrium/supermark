@@ -123,8 +123,10 @@ pub struct SubBranch {
 }
 
 pub fn layout(d: &IshikawaDiagram, theme: &ThemeVariables) -> Result<IshikawaLayout> {
-    let mut l = IshikawaLayout::default();
-    l.padding = d.diagram_padding;
+    let mut l = IshikawaLayout {
+        padding: d.diagram_padding,
+        ..Default::default()
+    };
     // Resolve fontSize — mermaid config default is 16 ("16px"). parse
     // the leading number from the theme's `fontSize`, defaulting to
     // 16 (the diagram-api default). `FONT_SIZE_DEFAULT` (=14) only
@@ -207,7 +209,7 @@ pub fn layout(d: &IshikawaDiagram, theme: &ThemeVariables) -> Result<IshikawaLay
 
     // spineX starts at -20 after `spineX -= 20` (non-empty causes branch).
     let mut spine_x: f64 = -20.0;
-    let pair_count = (causes.len() + 1) / 2;
+    let pair_count = causes.len().div_ceil(2);
 
     for p in 0..pair_count {
         let mut pair = Pair {
@@ -220,12 +222,30 @@ pub fn layout(d: &IshikawaDiagram, theme: &ThemeVariables) -> Result<IshikawaLay
 
         if let Some(node) = upper_cause {
             pair.upper = Some(build_branch(
-                node, spine_x, spine_y, -1, upper_len, font_size, cos_a, sin_a,
+                node,
+                BranchGeometry {
+                    start_x: spine_x,
+                    start_y: spine_y,
+                    direction: -1,
+                    length: upper_len,
+                    font_size,
+                    cos_a,
+                    sin_a,
+                },
             ));
         }
         if let Some(node) = lower_cause {
             pair.lower = Some(build_branch(
-                node, spine_x, spine_y, 1, lower_len, font_size, cos_a, sin_a,
+                node,
+                BranchGeometry {
+                    start_x: spine_x,
+                    start_y: spine_y,
+                    direction: 1,
+                    length: lower_len,
+                    font_size,
+                    cos_a,
+                    sin_a,
+                },
             ));
         }
 
@@ -252,8 +272,7 @@ pub fn layout(d: &IshikawaDiagram, theme: &ThemeVariables) -> Result<IshikawaLay
 
 // ── Branch construction ────────────────────────────────────────────
 
-fn build_branch(
-    node: &IshikawaNode,
+struct BranchGeometry {
     start_x: f64,
     start_y: f64,
     direction: i32,
@@ -261,24 +280,26 @@ fn build_branch(
     font_size: f64,
     cos_a: f64,
     sin_a: f64,
-) -> Branch {
+}
+
+fn build_branch(node: &IshikawaNode, geometry: BranchGeometry) -> Branch {
     let children = &node.children;
     // `lineLen = length * (children.length ? 1 : 0.2)`.
     let line_len = if children.is_empty() {
-        length * 0.2
+        geometry.length * 0.2
     } else {
-        length
+        geometry.length
     };
-    let dx = -cos_a * line_len;
-    let dy = sin_a * line_len * (direction as f64);
-    let end_x = start_x + dx;
-    let end_y = start_y + dy;
+    let dx = -geometry.cos_a * line_len;
+    let dy = geometry.sin_a * line_len * (geometry.direction as f64);
+    let end_x = geometry.start_x + dx;
+    let end_y = geometry.start_y + dy;
 
     // drawCauseLabel — the cause box + text. Text y at y+11*direction.
-    let text_y_input = end_y + 11.0 * (direction as f64);
+    let text_y_input = end_y + 11.0 * (geometry.direction as f64);
     let text = &node.text;
     let lines: Vec<String> = split_label_lines(text);
-    let lh = font_size * 1.05;
+    let lh = geometry.font_size * 1.05;
     let text_y_attr = text_y_input - ((lines.len() as f64 - 1.0) * lh) / 2.0;
     let concat: String = lines.join("");
     let tb_w = text_width(&concat, BBOX_FAMILY, BBOX_FONT_SIZE, false, false);
@@ -294,13 +315,23 @@ fn build_branch(
         Vec::new()
     } else {
         build_sub_branches(
-            children, start_x, start_y, end_x, end_y, dx, dy, direction, cos_a, sin_a, font_size,
+            children,
+            geometry.start_x,
+            geometry.start_y,
+            end_x,
+            end_y,
+            dx,
+            dy,
+            geometry.direction,
+            geometry.cos_a,
+            geometry.sin_a,
+            geometry.font_size,
         )
     };
 
     Branch {
-        direction,
-        start: (start_x, start_y),
+        direction: geometry.direction,
+        start: (geometry.start_x, geometry.start_y),
         end: (end_x, end_y),
         label_text: lines,
         label_text_x: end_x,
@@ -675,7 +706,7 @@ fn head_path_bbox(w: f64, h: f64) -> (f64, f64, f64, f64) {
 }
 
 fn head_text_width(lines: &[String]) -> f64 {
-    let concat: String = lines.iter().cloned().collect::<Vec<_>>().join("");
+    let concat: String = lines.to_vec().join("");
     text_width(&concat, BBOX_FAMILY, BBOX_FONT_SIZE, false, false)
 }
 
@@ -687,7 +718,7 @@ fn head_text_height(n_lines: usize) -> f64 {
 /// WITHOUT newline separators — so width = textWidth(concat) and
 /// height = lineHeight * 1 (no '\n' found). We emulate that.
 fn text_bbox_lines(lines: &[String]) -> (f64, f64, f64, f64) {
-    let concat: String = lines.iter().cloned().collect::<Vec<_>>().join("");
+    let concat: String = lines.to_vec().join("");
     let w = text_width(&concat, BBOX_FAMILY, BBOX_FONT_SIZE, false, false);
     let h = line_height_14();
     (0.0, 0.0, w, h)
