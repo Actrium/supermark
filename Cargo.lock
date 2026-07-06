@@ -288,13 +288,12 @@ dependencies = [
 
 [[package]]
 name = "d2-little"
-version = "0.7.2"
+version = "0.7.1-1"
 dependencies = [
  "base32",
  "base64",
  "fancy-regex",
  "flate2",
- "font-metrics",
  "log",
  "markdown",
  "regex",
@@ -303,6 +302,7 @@ dependencies = [
  "serde",
  "serde_json",
  "supramark-diagram-core",
+ "supramark-font-metrics",
  "ttf-parser",
  "unicode-segmentation",
  "unicode-width",
@@ -310,7 +310,7 @@ dependencies = [
 
 [[package]]
 name = "d2-little-web"
-version = "0.7.2"
+version = "0.7.1-1"
 dependencies = [
  "d2-little",
  "wasm-bindgen",
@@ -319,6 +319,17 @@ dependencies = [
 [[package]]
 name = "dagre"
 version = "0.1.1"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dagre"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9468ae6a4b98e7102e0e59ba8f9aacd2266cec71817c19b62b2d61ee260524c1"
 dependencies = [
  "log",
  "serde",
@@ -466,15 +477,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
-name = "font-metrics"
-version = "0.1.0"
-dependencies = [
- "js-sys",
- "ttf-parser",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "form_urlencoded"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -530,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "graphviz-anywhere"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "supramark-diagram-core",
  "thiserror 1.0.69",
@@ -868,9 +870,8 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 name = "mermaid-little"
 version = "11.14.0-1"
 dependencies = [
- "dagre",
+ "dagre 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger",
- "font-metrics",
  "json5",
  "libm",
  "log",
@@ -882,6 +883,7 @@ dependencies = [
  "serde_json",
  "serde_yml",
  "supramark-diagram-core",
+ "supramark-font-metrics",
  "thiserror 1.0.69",
 ]
 
@@ -1015,12 +1017,11 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "plantuml-little"
-version = "1.2026.2-3"
+version = "1.2026.2-4"
 dependencies = [
  "base64",
  "env_logger",
  "flate2",
- "font-metrics",
  "graphviz-anywhere",
  "libc",
  "log",
@@ -1029,6 +1030,7 @@ dependencies = [
  "serde",
  "serde_json",
  "supramark-diagram-core",
+ "supramark-font-metrics",
  "thiserror 1.0.69",
  "ureq",
  "url",
@@ -1037,7 +1039,7 @@ dependencies = [
 
 [[package]]
 name = "plantuml-little-web"
-version = "1.2026.2-3"
+version = "1.2026.2-4"
 dependencies = [
  "plantuml-little",
  "wasm-bindgen",
@@ -1467,15 +1469,15 @@ dependencies = [
 
 [[package]]
 name = "supramark-d2-native"
-version = "0.7.2"
+version = "0.7.1-1"
 dependencies = [
  "d2-little",
- "font-metrics",
+ "supramark-font-metrics",
 ]
 
 [[package]]
 name = "supramark-diagram"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "d2-little",
  "graphviz-anywhere",
@@ -1492,6 +1494,15 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "supramark-font-metrics"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "ttf-parser",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1538,16 +1549,16 @@ dependencies = [
 name = "supramark-mermaid-native"
 version = "11.14.0-1"
 dependencies = [
- "font-metrics",
  "mermaid-little",
+ "supramark-font-metrics",
 ]
 
 [[package]]
 name = "supramark-plantuml-native"
-version = "1.2026.2-3"
+version = "1.2026.2-4"
 dependencies = [
- "font-metrics",
  "plantuml-little",
+ "supramark-font-metrics",
 ]
 
 [[package]]

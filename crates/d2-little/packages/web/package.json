@@ -1,6 +1,6 @@
 {
   "name": "@actrium/d2-little-web",
-  "version": "0.7.2",
+  "version": "0.7.1-1",
   "description": "wasm-bindgen wrapper for d2-little — run D2 diagrams → SVG in the browser",
   "type": "module",
   "license": "MPL-2.0",

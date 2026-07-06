@@ -46,4 +46,4 @@ mermaid-little = { path = "../..", default-features = false, features = ["metric
 # `Metrics` impl chosen by `font_metrics_core` (mermaid-little's
 # rename of this crate) would not agree with what the native lib
 # advertises to the host.
-font-metrics = { path = "../../../font-metrics", features = ["metrics-ffi-callback"], package = "font-metrics" }
+font-metrics = { path = "../../../font-metrics", features = ["metrics-ffi-callback"], package = "supramark-font-metrics" }

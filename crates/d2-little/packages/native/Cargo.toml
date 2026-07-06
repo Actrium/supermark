@@ -1,6 +1,6 @@
 [package]
 name = "supramark-d2-native"
-version = "0.7.2"
+version = "0.7.1-1"
 edition = "2024"
 license = "MPL-2.0"
 authors = ["kookyleo <kookyleo@gmail.com>"]
@@ -30,4 +30,4 @@ d2-little = { path = "../.." }
 # convention set by plantuml-little / mermaid-little. d2-little's main
 # crate uses the same rename, leaving `font_metrics` namespace free for
 # any future wrapper module without crate-root shadowing.
-font_metrics_core = { package = "font-metrics", path = "../../../font-metrics", version = "0.1", features = ["metrics-ffi-callback"] }
+font_metrics_core = { package = "supramark-font-metrics", path = "../../../font-metrics", version = "0.1", features = ["metrics-ffi-callback"] }
