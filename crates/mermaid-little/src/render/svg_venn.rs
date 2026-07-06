@@ -278,7 +278,7 @@ pub fn render(d: &VennDiagram, l: &VennLayout, theme: &ThemeVariables, id: &str)
     }
 
     out.push_str("</g></svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// Render `<g class="venn-text-nodes">…</g>` block from `d.text_nodes`,

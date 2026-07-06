@@ -258,7 +258,7 @@ fn render_inner(
     }
 
     out.push_str(unified_shell::close_unified_svg());
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// Compute the viewBox by unioning the bounding boxes of all nodes

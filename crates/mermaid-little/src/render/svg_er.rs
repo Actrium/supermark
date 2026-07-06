@@ -149,7 +149,7 @@ pub fn render(d: &ErDiagram, l: &ErLayout, theme: &ThemeVariables, id: &str) -> 
     let _ = (bx, bw, by, bh);
 
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 // ──────────────────────────────────────────────────────────────────────

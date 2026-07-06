@@ -272,7 +272,7 @@ pub fn render(
         ));
     }
     out.push_str(unified_shell::close_unified_svg());
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 fn render_node(

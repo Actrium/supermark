@@ -178,7 +178,7 @@ pub fn render(
         ));
     }
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 fn write_shape(out: &mut String, sh: &LaidShape) {

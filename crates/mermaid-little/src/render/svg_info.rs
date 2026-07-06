@@ -23,7 +23,7 @@ pub fn render(theme: &ThemeVariables, id: &str) -> Result<String> {
     out.push_str("<g></g><g><text x=\"100\" y=\"40\" class=\"version\" font-size=\"32\" style=\"text-anchor: middle;\">v");
     out.push_str(version);
     out.push_str("</text></g></svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 #[cfg(test)]

@@ -105,7 +105,7 @@ pub fn render(
     }
 
     out.push_str(close_svg());
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// Render the geometry for a single word (row).

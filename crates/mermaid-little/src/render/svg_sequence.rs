@@ -3453,7 +3453,7 @@ pub fn render(d: &SequenceDiagram, _l: &SequenceLayout, theme: &Theme, id: &str)
     }
 
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// Stickman id mapping table: for each actor (by decl index),

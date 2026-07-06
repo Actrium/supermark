@@ -203,7 +203,7 @@ pub fn render(
 
     // 9. Close svg.
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 fn render_actor_legend(out: &mut String, a: &JourneyActorLegend) {

@@ -105,8 +105,13 @@ pub fn layout_with_width(
     _theme: &ThemeVariables,
     render_width: i32,
 ) -> Result<GanttLayout> {
+    let render_width = if render_width > 0 {
+        render_width
+    } else {
+        DEFAULT_RENDER_WIDTH
+    };
     let mut layout = GanttLayout {
-        width: render_width.max(0),
+        width: render_width,
         ..Default::default()
     };
 

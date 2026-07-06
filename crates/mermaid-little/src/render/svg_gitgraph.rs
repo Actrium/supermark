@@ -538,7 +538,7 @@ pub fn render(
     }
 
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// Mirror upstream `shouldRerouteArrow`. Returns `true` when there is

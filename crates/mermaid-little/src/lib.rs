@@ -91,7 +91,7 @@ pub fn convert_with_id(source: &str, id: &str) -> Result<String, MermaidError> {
     // `packet.showBits`, `themeVariables.pieOuterStrokeWidth`). Doing
     // it this way lets Wave 1 agents keep one API boundary —
     // `parse(&str)` — without a Config parameter.
-    let svg = convert_with_id_inner(source, id)?;
+    let svg = make_foreign_objects_non_clipping(&convert_with_id_inner(source, id)?);
     // Apply the same per-SVG counter normalisation that
     // `generate_ref.mjs` runs over upstream's reference output. Only
     // `classId-\w+-N` is relevant today — class diagrams are the only
@@ -99,6 +99,59 @@ pub fn convert_with_id(source: &str, id: &str) -> Result<String, MermaidError> {
     static CLASS_ID_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = CLASS_ID_RE.get_or_init(|| regex::Regex::new(r"(classId-\w+)-(\d+)").unwrap());
     Ok(renumber_counter_ids(&svg, re, "-"))
+}
+
+/// Mermaid's layout metrics intentionally follow the deterministic
+/// jsdom/reference shim, but real browsers paint HTML labels in
+/// `<foreignObject>` with the final CSS cascade. When those two models
+/// differ by even a few pixels, the default foreignObject viewport clips
+/// descenders and right edges. The layout box is still the right anchor for
+/// geometry, so make the viewport non-clipping instead of perturbing all
+/// node and edge positions.
+pub(crate) fn make_foreign_objects_non_clipping(svg: &str) -> String {
+    const OPEN: &str = "<foreignObject";
+    const OVERFLOW_ATTR: &str = r#" overflow="visible""#;
+
+    let mut out = String::with_capacity(svg.len() + 32);
+    let mut cursor = 0usize;
+
+    while let Some(rel_start) = svg[cursor..].find(OPEN) {
+        let start = cursor + rel_start;
+        out.push_str(&svg[cursor..start]);
+
+        let Some(rel_end) = svg[start..].find('>') else {
+            out.push_str(&svg[start..]);
+            return out;
+        };
+        let end = start + rel_end;
+        let tag = &svg[start..end];
+
+        out.push_str(tag);
+        if !has_svg_attr(tag, "overflow") {
+            out.push_str(OVERFLOW_ATTR);
+        }
+        out.push('>');
+        cursor = end + 1;
+    }
+
+    out.push_str(&svg[cursor..]);
+    out
+}
+
+fn has_svg_attr(tag: &str, name: &str) -> bool {
+    let mut search_from = 0usize;
+    while let Some(rel) = tag[search_from..].find(name) {
+        let idx = search_from + rel;
+        let before = tag[..idx].chars().next_back();
+        let after = tag[idx + name.len()..].chars().next();
+        let starts_attr = before.is_some_and(char::is_whitespace);
+        let ends_attr = after == Some('=') || after.is_some_and(char::is_whitespace);
+        if starts_attr && ends_attr {
+            return true;
+        }
+        search_from = idx + name.len();
+    }
+    false
 }
 
 fn convert_with_id_inner(source: &str, id: &str) -> Result<String, MermaidError> {
@@ -359,4 +412,34 @@ fn convert_with_id_inner(source: &str, id: &str) -> Result<String, MermaidError>
 /// Convenience wrapper using a default id.
 pub fn convert(source: &str) -> Result<String, MermaidError> {
     convert_with_id(source, "mermaid-1")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn foreign_objects_are_marked_non_clipping() {
+        let svg =
+            r#"<svg><foreignObject width="10" height="16"><div>x</div></foreignObject></svg>"#;
+        let got = make_foreign_objects_non_clipping(svg);
+        assert_eq!(
+            got,
+            r#"<svg><foreignObject width="10" height="16" overflow="visible"><div>x</div></foreignObject></svg>"#
+        );
+    }
+
+    #[test]
+    fn foreign_object_overflow_attribute_is_not_duplicated() {
+        let svg = r#"<svg><foreignObject width="10" overflow="hidden" height="16"><div>x</div></foreignObject></svg>"#;
+        let got = make_foreign_objects_non_clipping(svg);
+        assert_eq!(got, svg);
+    }
+
+    #[test]
+    fn foreign_object_substring_in_class_name_is_ignored() {
+        let svg = r#"<svg><g class="foreignObjectish"></g></svg>"#;
+        let got = make_foreign_objects_non_clipping(svg);
+        assert_eq!(got, svg);
+    }
 }

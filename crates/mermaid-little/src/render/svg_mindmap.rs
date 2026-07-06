@@ -139,7 +139,7 @@ fn render_single(
     ));
 
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// Multi-node mindmap renderer (scaffolding, NOT byte-exact yet).
@@ -269,7 +269,7 @@ fn render_multi(
     ));
 
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// Emit the per-shape body (`<path>`, `<rect>`, `<polygon>`, `<circle>`)

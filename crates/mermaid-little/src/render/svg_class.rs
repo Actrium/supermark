@@ -341,7 +341,9 @@ pub fn render(
     }
 
     out.push_str("</svg>");
-    Ok(normalise_classid_counters(out))
+    Ok(crate::make_foreign_objects_non_clipping(
+        &normalise_classid_counters(out),
+    ))
 }
 
 /// Renumber `classId-<base>-<n>` suffixes by first-appearance order.
@@ -2755,23 +2757,32 @@ mod tests {
         if got == expected {
             return true;
         }
-        let a_ok = got.len() == expected.len();
-        if !a_ok {
+        let prefix = got
+            .bytes()
+            .zip(expected.bytes())
+            .take_while(|(a, b)| a == b)
+            .count();
+        if got.len() != expected.len() {
             eprintln!(
-                "length mismatch on {}: got {} vs expected {}",
+                "length mismatch on {}: got {} vs expected {} at byte {}",
                 fixture,
                 got.len(),
-                expected.len()
+                expected.len(),
+                prefix,
             );
         } else {
-            // Find first diff position
-            let prefix = got
-                .bytes()
-                .zip(expected.bytes())
-                .take_while(|(a, b)| a == b)
-                .count();
             eprintln!("content mismatch on {} at byte {}", fixture, prefix);
         }
+        let ctx = 120usize;
+        let got_start = prefix.saturating_sub(ctx);
+        let expected_start = prefix.saturating_sub(ctx);
+        let got_end = (prefix + ctx).min(got.len());
+        let expected_end = (prefix + ctx).min(expected.len());
+        eprintln!("got: ...{}...", &got[got_start..got_end]);
+        eprintln!(
+            "expected: ...{}...",
+            &expected[expected_start..expected_end]
+        );
         false
     }
 

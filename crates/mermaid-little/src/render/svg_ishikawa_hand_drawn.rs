@@ -180,7 +180,7 @@ pub(super) fn render(
     out.push_str(r#"<g class="ishikawa">"#);
     out.push_str(&body);
     out.push_str("</g></svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 // ── Head ─────────────────────────────────────────────────────────────

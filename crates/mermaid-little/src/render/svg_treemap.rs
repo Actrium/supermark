@@ -123,7 +123,7 @@ pub fn render(
 
     out.push_str("</g></svg>");
 
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 // ---------------------------------------------------------------------------------------------

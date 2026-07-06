@@ -1369,7 +1369,7 @@ pub fn render(
     // so this is a pure string rewrite of the final SVG.
     let out = postprocess_imgs(&out);
 
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// See call site for full documentation. Splits the input into `<p>...</p>` blocks
