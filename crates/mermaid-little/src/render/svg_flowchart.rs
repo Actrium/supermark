@@ -26,6 +26,15 @@ use crate::render::unified_shell;
 use crate::theme::css as theme_css;
 use crate::theme::ThemeVariables;
 
+/// Non-upstream readability enhancement for flowchart edge labels.
+///
+/// Mermaid 11.14.0 renders edge-label backgrounds flush with the text
+/// (`.edgeLabel p { padding: 0; }`). That is byte-aligned but visually tight,
+/// especially for short labels like `Pass` / `Fail`. Keep node labels and
+/// other diagram families byte-oriented; flowchart edge labels deliberately
+/// get a small symmetric horizontal cushion.
+const FLOWCHART_EDGE_LABEL_PADDING_X: f64 = 4.0;
+
 /// Compute the viewBox matching the upstream jsdom `getBBox()` shim.
 ///
 /// The reference generator patches `SVGElement.prototype.getBBox` with an
@@ -1148,6 +1157,7 @@ fn compute_viewbox_browser(
         }
         let processed = replace_fa_icons(label_text);
         let (lw, lh) = measure_html_markup_label(&processed, &font, 200.0, true);
+        let lw = lw + FLOWCHART_EDGE_LABEL_PADDING_X * 2.0;
         let dagre_lx = e.label_x.unwrap_or(0.0);
         let dagre_ly = e.label_y.unwrap_or(0.0);
         let (lx, ly) = recompute_edge_label_position(e, l).unwrap_or((dagre_lx, dagre_ly));
@@ -3589,6 +3599,11 @@ fn render_edge_label(e: &UEdge, html_labels: bool, l: &FlowchartLayout) -> Strin
             None
         } else {
             Some(&span_label_style)
+        },
+        horizontal_padding: if is_empty {
+            0.0
+        } else {
+            FLOWCHART_EDGE_LABEL_PADDING_X
         },
         ..LabelOpts::default()
     };

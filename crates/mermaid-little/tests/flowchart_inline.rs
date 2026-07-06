@@ -80,6 +80,34 @@ fn read_known_ignored() -> std::collections::HashSet<String> {
     set
 }
 
+fn read_known_alignment_warnings(scope: &str) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = base.join("tests/known_alignment_warnings.txt");
+    if let Ok(text) = fs::read_to_string(&path) {
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut parts = line.splitn(3, '\t');
+            let Some(line_scope) = parts.next() else {
+                continue;
+            };
+            let Some(check) = parts.next() else {
+                continue;
+            };
+            let Some(reason) = parts.next() else {
+                continue;
+            };
+            if line_scope == scope {
+                warnings.push(format!("{check}: {reason}"));
+            }
+        }
+    }
+    warnings
+}
+
 fn is_elk_source(src: &str) -> bool {
     src.contains("flowchart-elk") || src.contains("layout: elk")
 }
@@ -271,6 +299,9 @@ fn flowchart_byte_exact_sweep() {
         }
     }
     eprintln!("[flowchart] byte-exact={}/{}", pass, total);
+    for warning in read_known_alignment_warnings("flowchart") {
+        eprintln!("[flowchart] warning-ignored {warning}");
+    }
     for (r, d) in diffs.iter().take(30) {
         eprintln!("[flowchart] diff {r}: {d}");
     }

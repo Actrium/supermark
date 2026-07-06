@@ -257,6 +257,11 @@ pub struct LabelOpts<'a> {
     /// Whether the inner `<span>` gets the `nodeLabel` base class
     /// (`true`) or the `edgeLabel` base class (`false`).
     pub is_node: bool,
+    /// Extra horizontal CSS padding on the HTML label body. Upstream
+    /// Mermaid leaves flowchart edge-label backgrounds flush with text;
+    /// callers may opt into a small non-upstream visual readability
+    /// enhancement while keeping the default byte-exact path unchanged.
+    pub horizontal_padding: f64,
 }
 
 impl<'a> Default for LabelOpts<'a> {
@@ -272,7 +277,16 @@ impl<'a> Default for LabelOpts<'a> {
             max_width: 200.0,
             wrap_in_p: true,
             is_node: true,
+            horizontal_padding: 0.0,
         }
+    }
+}
+
+fn padded_width(text: &str, width: f64, opts: &LabelOpts<'_>) -> f64 {
+    if text.is_empty() || opts.horizontal_padding <= 0.0 {
+        width
+    } else {
+        width + opts.horizontal_padding * 2.0
     }
 }
 
@@ -284,6 +298,7 @@ impl<'a> Default for LabelOpts<'a> {
 /// defaults to `translate(-width/2, -height/2)` matching upstream
 /// `labelHelper`'s `useHtmlLabels` branch.
 pub fn render_node_label(text: &str, width: f64, height: f64, opts: &LabelOpts<'_>) -> String {
+    let width = padded_width(text, width, opts);
     let mut out = String::with_capacity(256 + text.len());
     // Outer <g class="label">.
     out.push_str("<g class=\"label\"");
@@ -380,6 +395,12 @@ pub fn foreign_object_body(text: &str, width: f64, height: f64, opts: &LabelOpts
         div_style.push_str(prefix);
     }
     div_style.push_str("display: table-cell; white-space: nowrap; line-height: 1.5;");
+    if !text.is_empty() && opts.horizontal_padding > 0.0 {
+        div_style.push_str(&format!(
+            " padding: 0 {}px;",
+            fmt_num(opts.horizontal_padding)
+        ));
+    }
     if opts.max_width.is_finite() {
         div_style.push_str(&format!(
             " max-width: {}px; text-align: center;",
@@ -1399,6 +1420,28 @@ mod tests {
             got,
             r#"<g class="edgeLabel" transform="translate(177.806640625, 41.60302734375)"><g class="label" data-id="L_DataStore_Process_0" transform="translate(-18.005859375, -8.1484375)"><foreignObject width="36.01171875" height="16.296875"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml" class="labelBkg"><span class="edgeLabel "><p>input</p></span></div></foreignObject></g></g>"#
         );
+    }
+
+    #[test]
+    fn edge_label_padding_is_opt_in() {
+        let opts = LabelOpts {
+            data_id: Some("L_DataStore_Process_0"),
+            group_style: None,
+            horizontal_padding: 4.0,
+            ..LabelOpts::default()
+        };
+        let got = render_edge_label(
+            "input",
+            177.806640625,
+            41.60302734375,
+            36.01171875,
+            16.296875,
+            opts,
+        );
+
+        assert!(got.contains(r#"width="44.01171875""#));
+        assert!(got.contains(r#"transform="translate(-22.005859375, -8.1484375)""#));
+        assert!(got.contains("padding: 0 4px;"));
     }
 
     #[test]
