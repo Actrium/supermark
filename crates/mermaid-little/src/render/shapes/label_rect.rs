@@ -63,10 +63,12 @@ pub fn draw(node: &Node, _theme: &ThemeVariables) -> Result<String> {
         // taken from the helper rect (10 px in cypress/flowchart/187),
         // and the inner foreignObject geometry is `width=0` /
         // `height=line_height(14px sans-serif)` ≈ 16.296875.
-        let mut opts = LabelOpts::default();
-        opts.is_node = true;
-        opts.add_background = false;
-        opts.wrap_in_p = false;
+        let mut opts = LabelOpts {
+            is_node: true,
+            add_background: false,
+            wrap_in_p: false,
+            ..Default::default()
+        };
         // Cyclic self-loop helpers are rendered from an initial 10 px budget,
         // then the DOM pass shrinks the actual shape bbox to 0.1x0.1 before
         // dagre runs. Preserve the 10 px HTML label budget here even though
@@ -106,9 +108,11 @@ mod tests {
 
     #[test]
     fn label_rect_byte_exact_minimum() {
-        let mut n = Node::default();
-        n.id = "lr".into();
-        n.label = Some("edge".into());
+        let n = Node {
+            id: "lr".into(),
+            label: Some("edge".into()),
+            ..Default::default()
+        };
         let got = draw(&n, &ThemeVariables::default()).unwrap();
         assert!(got.contains(r#"class="label edgeLabel""#));
         assert!(got.contains(r#"<rect width="0.1" height="0.1"></rect>"#));
@@ -119,11 +123,13 @@ mod tests {
     fn label_rect_empty_label_emits_helper_block() {
         // Upstream `labelHelper` emits a full <foreignObject> body even
         // for empty text — verify we mirror it.
-        let mut n = Node::default();
-        n.id = "A---A---1".into();
-        n.x = Some(100.0);
-        n.y = Some(200.0);
-        n.width = Some(10.0);
+        let n = Node {
+            id: "A---A---1".into(),
+            x: Some(100.0),
+            y: Some(200.0),
+            width: Some(10.0),
+            ..Default::default()
+        };
         // n.label left as None → empty.
         let got = draw(&n, &ThemeVariables::default()).unwrap();
         assert!(got.contains(r#"<rect width="0.1" height="0.1"></rect>"#));

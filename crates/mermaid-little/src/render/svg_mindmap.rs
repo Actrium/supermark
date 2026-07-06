@@ -414,19 +414,19 @@ fn emit_shape_body(out: &mut String, kind: ShapeKind, n: &PositionedNode, dom_id
                 r = fmt_num(r),
                 r08 = fmt_num(r08),
                 a1 = fmt_num(ew * 0.25),
-                b1 = fmt_num(-1.0 * eh * 0.1),
+                b1 = fmt_num(-eh * 0.1),
                 z = fmt_num(0.0),
                 b2 = fmt_num(eh * 0.1),
                 c1 = fmt_num(ew * 0.15),
                 d1 = fmt_num(eh * 0.33),
                 d2 = fmt_num(eh * 0.34),
-                c2 = fmt_num(-1.0 * ew * 0.15),
-                e1 = fmt_num(-1.0 * ew * 0.25),
+                c2 = fmt_num(-ew * 0.15),
+                e1 = fmt_num(-ew * 0.25),
                 f1 = fmt_num(eh * 0.15),
-                f2 = fmt_num(-1.0 * eh * 0.15),
-                g1 = fmt_num(-1.0 * ew * 0.1),
-                h1 = fmt_num(-1.0 * eh * 0.33),
-                h2 = fmt_num(-1.0 * eh * 0.34),
+                f2 = fmt_num(-eh * 0.15),
+                g1 = fmt_num(-ew * 0.1),
+                h1 = fmt_num(-eh * 0.33),
+                h2 = fmt_num(-eh * 0.34),
                 g2 = fmt_num(ew * 0.1),
             );
             out.push_str(&format!(
@@ -454,22 +454,22 @@ fn emit_shape_body(out: &mut String, kind: ShapeKind, n: &PositionedNode, dom_id
                 r3 = fmt_num(r3),
                 r4 = fmt_num(r4),
                 a1 = fmt_num(w * 0.25),
-                b1 = fmt_num(-1.0 * w * 0.1),
+                b1 = fmt_num(-w * 0.1),
                 a2 = fmt_num(w * 0.4),
                 a3 = fmt_num(w * 0.35),
                 b2 = fmt_num(w * 0.2),
                 c1 = fmt_num(w * 0.15),
                 d1 = fmt_num(h * 0.35),
-                c2 = fmt_num(-1.0 * w * 0.15),
+                c2 = fmt_num(-w * 0.15),
                 d2 = fmt_num(h * 0.65),
-                e1 = fmt_num(-1.0 * w * 0.25),
+                e1 = fmt_num(-w * 0.25),
                 f1 = fmt_num(w * 0.15),
-                e2 = fmt_num(-1.0 * w * 0.5),
-                f2 = fmt_num(-1.0 * w * 0.15),
-                g1 = fmt_num(-1.0 * w * 0.1),
-                h1 = fmt_num(-1.0 * h * 0.35),
+                e2 = fmt_num(-w * 0.5),
+                f2 = fmt_num(-w * 0.15),
+                g1 = fmt_num(-w * 0.1),
+                h1 = fmt_num(-h * 0.35),
                 g2 = fmt_num(w * 0.1),
-                h2 = fmt_num(-1.0 * h * 0.65),
+                h2 = fmt_num(-h * 0.65),
             );
             out.push_str(&format!(
                 r#"<path class="basic label-container" style="" d="{d}" transform="translate({tx}, {ty})"></path>"#,
@@ -937,7 +937,7 @@ fn encode_data_points(ep: EdgePoints) -> String {
 /// Standard base64 encode (the alphabet `btoa` uses) WITH `=` padding.
 fn base64_encode(input: &[u8]) -> String {
     const CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     let mut i = 0;
     while i + 3 <= input.len() {
         let a = input[i] as u32;
@@ -1025,9 +1025,7 @@ fn html_escape(s: &str) -> String {
 }
 
 fn utf8_char_len_first(b: u8) -> usize {
-    if b < 0x80 {
-        1
-    } else if b < 0xC0 {
+    if b < 0xC0 {
         1
     } else if b < 0xE0 {
         2

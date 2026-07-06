@@ -237,8 +237,7 @@ fn layout_lr(
         // section lands in the `.section--1` slot. We encode the
         // already-shifted index here so the renderer can stringify it
         // directly.
-        let mut section_index: i32 = -1;
-        for sname in &d.sections {
+        for (section_index, sname) in (-1..).zip(d.sections.iter()) {
             let tasks_for_section: Vec<_> =
                 d.tasks.iter().filter(|t| &t.section == sname).collect();
             let n = tasks_for_section.len().max(1);
@@ -331,7 +330,6 @@ fn layout_lr(
             }
 
             master_x += 200.0 * n as f64;
-            section_index += 1;
         }
     } else {
         let mut section_index: i32 = -1; // no-section slot
@@ -542,8 +540,7 @@ fn layout_td(
     if has_sections {
         // `(fullSection % THEME_COLOR_LIMIT) - 1` — see note on the
         // LR branch. First section → `.section--1`.
-        let mut section_index: i32 = -1;
-        for sname in &d.sections {
+        for (section_index, sname) in (-1..).zip(d.sections.iter()) {
             let tasks_for_section: Vec<_> =
                 d.tasks.iter().filter(|t| &t.section == sname).collect();
             let section_x = timeline_x - left_width;
@@ -640,7 +637,6 @@ fn layout_td(
                         0.0
                     };
             master_y += section_height;
-            section_index += 1;
         }
     } else {
         let mut section_index: i32 = -1;

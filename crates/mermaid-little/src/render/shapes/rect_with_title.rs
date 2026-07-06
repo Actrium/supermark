@@ -95,8 +95,10 @@ mod tests {
 
     #[test]
     fn rect_with_title_has_divider() {
-        let mut n = Node::default();
-        n.id = "rt".into();
+        let mut n = Node {
+            id: "rt".into(),
+            ..Node::default()
+        };
         n.width = Some(120.0);
         n.height = Some(60.0);
         n.padding = Some(20.0);

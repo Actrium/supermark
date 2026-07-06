@@ -49,9 +49,10 @@ pub struct BlockNode {
 }
 
 /// Upstream shape enum — mirrors `typeStr2Type` output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BlockShape {
     /// `A` with no brackets — default square rect with `rx=0`.
+    #[default]
     Na,
     /// `A[text]` — square rect `rx=0`.
     Square,
@@ -87,12 +88,6 @@ pub enum BlockShape {
     Composite,
     /// `space` / `space:N` — empty cell(s).
     Space,
-}
-
-impl Default for BlockShape {
-    fn default() -> Self {
-        BlockShape::Na
-    }
 }
 
 /// An edge between two blocks. Maps to upstream `Block { type: 'edge' }`.

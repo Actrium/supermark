@@ -20,10 +20,12 @@ pub fn parse(source: &str) -> Result<ErDiagram> {
     let pre = preprocess(source)?;
     let cleaned = &pre.cleaned_source;
 
-    let mut diagram = ErDiagram::default();
-    diagram.meta = pre.meta;
-    diagram.direction = "TB".to_string();
-    diagram.theme_override = pre.config.theme.clone();
+    let mut diagram = ErDiagram {
+        meta: pre.meta,
+        direction: "TB".to_string(),
+        theme_override: pre.config.theme.clone(),
+        ..Default::default()
+    };
 
     // Skip past the `erDiagram` header keyword. The header may be alone
     // on a line, or immediately followed by content (rare). We find it
@@ -665,21 +667,19 @@ fn take_cardinality(s: &str) -> Option<(Cardinality, &str)> {
         ("|{", Cardinality::OneOrMore),
     ];
     for (kw, c) in SYM {
-        if s.starts_with(kw) {
-            return Some((*c, &s[kw.len()..]));
+        if let Some(after) = s.strip_prefix(kw) {
+            return Some((*c, after));
         }
     }
     // `u` for MD parent (only if followed by rel type).
-    if s.starts_with('u') {
-        let after = &s[1..];
-        if after.starts_with(|c: char| matches!(c, '.' | '-' | '|')) {
+    if let Some(after) = s.strip_prefix('u') {
+        if after.starts_with(['.', '-', '|']) {
             return Some((Cardinality::MdParent, after));
         }
     }
     // Digit-only `1` form (acts as ONLY_ONE when followed by relop/alphanumeric).
-    if s.starts_with('1') {
-        let after = &s[1..];
-        if after.starts_with(|c: char| c == '-' || c == '.' || c == ' ') {
+    if let Some(after) = s.strip_prefix('1') {
+        if after.starts_with(['-', '.', ' ']) {
             return Some((Cardinality::OnlyOne, after));
         }
     }

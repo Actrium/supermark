@@ -54,8 +54,10 @@ mod tests {
 
     #[test]
     fn ellipse_byte_exact() {
-        let mut n = Node::default();
-        n.id = "e".into();
+        let mut n = Node {
+            id: "e".into(),
+            ..Node::default()
+        };
         n.rx = Some(30.0);
         n.ry = Some(20.0);
         let theme = ThemeVariables::default();

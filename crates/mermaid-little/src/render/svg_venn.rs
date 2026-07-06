@@ -128,16 +128,18 @@ pub fn render(d: &VennDiagram, l: &VennLayout, theme: &ThemeVariables, id: &str)
                 let fill_color_trans = crate::theme::color::transparentize(&base_color, 0.7);
                 let sw_val: f64 = stroke_width.parse().unwrap_or(5.0 * scale);
                 let mut rc = RoughGenerator::new();
-                let mut o = RoughOptions::default();
-                o.seed = d.hand_drawn_seed.unwrap_or(0) as i32;
-                o.roughness = 0.7;
-                o.fill = Some(fill_color_trans);
-                o.fill_style = "hachure".into();
-                o.fill_weight = 2.0;
-                o.hachure_gap = 8.0;
-                o.hachure_angle = -41.0 + (i as f64) * 60.0;
-                o.stroke = stroke_color.clone();
-                o.stroke_width = sw_val;
+                let o = RoughOptions {
+                    seed: d.hand_drawn_seed.unwrap_or(0) as i32,
+                    roughness: 0.7,
+                    fill: Some(fill_color_trans),
+                    fill_style: "hachure".into(),
+                    fill_weight: 2.0,
+                    hachure_gap: 8.0,
+                    hachure_angle: -41.0 + (i as f64) * 60.0,
+                    stroke: stroke_color.clone(),
+                    stroke_width: sw_val,
+                    ..Default::default()
+                };
                 // Mermaid uses the padding=8 layout (`layoutByKey`) for the
                 // handDrawn rough.js circle — distinct from the padding=15
                 // circles that drive the non-handDrawn `<path>` outline.
@@ -207,15 +209,17 @@ pub fn render(d: &VennDiagram, l: &VennLayout, theme: &ThemeVariables, id: &str)
                 let cf = custom_fill.clone().unwrap();
                 let fill_trans = crate::theme::color::transparentize(&cf, 0.3);
                 let mut rc = RoughGenerator::new();
-                let mut o = RoughOptions::default();
-                o.seed = d.hand_drawn_seed.unwrap_or(0) as i32;
-                o.roughness = 0.7;
-                o.fill = Some(fill_trans);
-                o.fill_style = "cross-hatch".into();
-                o.fill_weight = 2.0;
-                o.hachure_gap = 6.0;
-                o.hachure_angle = 60.0;
-                o.stroke = "none".into();
+                let o = RoughOptions {
+                    seed: d.hand_drawn_seed.unwrap_or(0) as i32,
+                    roughness: 0.7,
+                    fill: Some(fill_trans),
+                    fill_style: "cross-hatch".into(),
+                    fill_weight: 2.0,
+                    hachure_gap: 6.0,
+                    hachure_angle: 60.0,
+                    stroke: "none".into(),
+                    ..Default::default()
+                };
                 let drawable = rc.path(&area.path, &o);
                 let paths = to_paths(&drawable, &o);
                 let mut paths_html = String::new();

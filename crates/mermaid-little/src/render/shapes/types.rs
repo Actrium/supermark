@@ -562,10 +562,6 @@ pub fn build_div_style_prefix(styles: &[String]) -> String {
 /// Escape a text fragment for safe insertion into an SVG attribute or
 /// between tags. This is the escape set upstream mermaid uses in
 /// `sanitizeText`/`decodeEntities` → `&amp; &lt; &gt; &quot;`.
-
-/// Escape a text fragment for safe insertion into an SVG attribute or
-/// between tags. This is the escape set upstream mermaid uses in
-/// `sanitizeText`/`decodeEntities` → `&amp; &lt; &gt; &quot;`.
 pub fn xml_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {

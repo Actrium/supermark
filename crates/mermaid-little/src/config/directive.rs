@@ -48,7 +48,7 @@ pub fn parse_directives(source: &str) -> Vec<Config> {
             continue;
         };
         match parsed {
-            ParsedDirective::Init(cfg) => out.push(cfg),
+            ParsedDirective::Init(cfg) => out.push(*cfg),
             ParsedDirective::Wrap => out.push(Config {
                 wrap: Some(true),
                 ..Config::default()
@@ -159,7 +159,7 @@ fn find_directive_spans(source: &str) -> Vec<DirectiveSpan> {
 }
 
 enum ParsedDirective {
-    Init(Config),
+    Init(Box<Config>),
     Wrap,
     Other,
 }
@@ -193,7 +193,7 @@ fn parse_inner(inner: &str) -> Option<ParsedDirective> {
     }
 
     let body = rest.unwrap();
-    parse_body(body).map(ParsedDirective::Init)
+    parse_body(body).map(Box::new).map(ParsedDirective::Init)
 }
 
 /// Parse a raw directive body into a [`Config`]. The body must be a

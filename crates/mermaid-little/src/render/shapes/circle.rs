@@ -74,8 +74,10 @@ mod tests {
 
     #[test]
     fn circle_emits_correct_radius() {
-        let mut n = Node::default();
-        n.id = "c".into();
+        let mut n = Node {
+            id: "c".into(),
+            ..Node::default()
+        };
         // width=50 → r = 50/2 = 25
         n.width = Some(50.0);
         let theme = ThemeVariables::default();

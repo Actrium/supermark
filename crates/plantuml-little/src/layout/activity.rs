@@ -1407,7 +1407,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 // Condition text lives inside the diamond; the `is (label)` is
                 // rendered on the arrow entering the loop body (see loop-back
                 // pass), so it is NOT folded into the condition text here.
-                let (w, h) = diamond_size(&condition);
+                let (w, h) = diamond_size(condition);
                 let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
                 let x = cx - w / 2.0;
                 let y = y_cursor;
@@ -2081,7 +2081,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         // Also consider while-loop body node widths — the body sits on the
         // centreline under the while diamond, so the widest body node's half
         // width must be covered by the centre margin.
-        for &(_, ref body_nodes, ..) in &while_loopbacks {
+        for (_, body_nodes, ..) in &while_loopbacks {
             let body_max_w = body_nodes
                 .iter()
                 .map(|&i| nodes.get(i).map(|n| n.width).unwrap_or(0.0))

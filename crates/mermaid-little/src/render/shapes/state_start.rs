@@ -29,8 +29,10 @@ mod tests {
 
     #[test]
     fn state_start_defaults_to_14() {
-        let mut n = Node::default();
-        n.id = "ss".into();
+        let n = Node {
+            id: "ss".into(),
+            ..Node::default()
+        };
         let got = draw(&n, &ThemeVariables::default()).unwrap();
         assert!(got.contains(r#"r="7""#));
         assert!(got.contains(r#"state-start"#));

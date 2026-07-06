@@ -195,17 +195,18 @@ pub fn parse(source: &str) -> Result<RequirementDiagram> {
                     break;
                 }
             }
-            let mut r = Requirement::default();
-            r.name = name.clone();
-            r.kind = Some(kind);
-            r.id = std::mem::take(&mut pending_req_id);
-            r.text = std::mem::take(&mut pending_req_text);
-            r.risk = pending_req_risk.take();
-            r.verify = pending_req_verify.take();
-            r.classes = vec!["default".to_string()];
-            for c in decl_classes {
-                r.classes.push(c);
-            }
+            let mut classes = vec!["default".to_string()];
+            classes.extend(decl_classes);
+            let r = Requirement {
+                name: name.clone(),
+                kind: Some(kind),
+                id: std::mem::take(&mut pending_req_id),
+                text: std::mem::take(&mut pending_req_text),
+                risk: pending_req_risk.take(),
+                verify: pending_req_verify.take(),
+                classes,
+                ..Default::default()
+            };
             if !diag.requirements_map.contains_key(&name) {
                 diag.requirement_order.push(name.clone());
             }
@@ -247,14 +248,15 @@ pub fn parse(source: &str) -> Result<RequirementDiagram> {
                     break;
                 }
             }
-            let mut e = Element::default();
-            e.name = name.clone();
-            e.element_type = std::mem::take(&mut pending_elem_type);
-            e.doc_ref = std::mem::take(&mut pending_elem_docref);
-            e.classes = vec!["default".to_string()];
-            for c in decl_classes {
-                e.classes.push(c);
-            }
+            let mut classes = vec!["default".to_string()];
+            classes.extend(decl_classes);
+            let e = Element {
+                name: name.clone(),
+                element_type: std::mem::take(&mut pending_elem_type),
+                doc_ref: std::mem::take(&mut pending_elem_docref),
+                classes,
+                ..Default::default()
+            };
             if !diag.elements_map.contains_key(&name) {
                 diag.element_order.push(name.clone());
             }
@@ -410,7 +412,7 @@ fn read_name_and_classes(input: &str) -> Result<(String, &str, Vec<String>)> {
 }
 
 fn split_id_list(s: &str) -> Vec<String> {
-    s.split(|c: char| c == ',' || c == ' ' || c == '\t')
+    s.split([',', ' ', '\t'])
         .filter_map(|t| {
             let t = t.trim();
             if t.is_empty() {

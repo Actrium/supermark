@@ -105,22 +105,32 @@ pub fn draw(node: &Node, theme: &ThemeVariables) -> Result<String> {
         .unwrap_or(1.3);
 
     // Run rough.path to produce two SVG <path> elements.
-    let mut o = RoughOptions::default();
-    o.seed = hand_drawn_seed;
-    if is_hand_drawn {
-        o.roughness = 0.7;
-        o.fill_style = "hachure".into();
-        o.fill_weight = 4.0;
-        o.hachure_gap = 5.2;
-    } else {
-        o.roughness = 0.0;
-        o.fill_style = "solid".into();
-    }
-    o.fill = Some(fill.clone());
-    o.stroke = stroke.clone();
-    o.stroke_width = stroke_width;
-    o.fill_line_dash = vec![0.0, 0.0];
-    o.stroke_line_dash = vec![0.0, 0.0];
+    let defaults = RoughOptions::default();
+    let o = RoughOptions {
+        seed: hand_drawn_seed,
+        roughness: if is_hand_drawn { 0.7 } else { 0.0 },
+        fill_style: if is_hand_drawn {
+            "hachure".into()
+        } else {
+            "solid".into()
+        },
+        fill_weight: if is_hand_drawn {
+            4.0
+        } else {
+            defaults.fill_weight
+        },
+        hachure_gap: if is_hand_drawn {
+            5.2
+        } else {
+            defaults.hachure_gap
+        },
+        fill: Some(fill.clone()),
+        stroke: stroke.clone(),
+        stroke_width,
+        fill_line_dash: vec![0.0, 0.0],
+        stroke_line_dash: vec![0.0, 0.0],
+        ..Default::default()
+    };
 
     let mut rc = RoughGenerator::new();
     let drawable = rc.path(&path_d, &o);
@@ -223,10 +233,12 @@ mod tests {
 
     #[test]
     fn rect_left_inv_arrow_emits_two_paths() {
-        let mut n = Node::default();
-        n.id = "arr".into();
-        n.width = Some(80.0);
-        n.height = Some(40.0);
+        let n = Node {
+            id: "arr".into(),
+            width: Some(80.0),
+            height: Some(40.0),
+            ..Default::default()
+        };
         let theme = ThemeVariables::default();
         let got = draw(&n, &theme).unwrap();
         // Two <path> elements (fill + stroke) from rough.path.

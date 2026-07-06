@@ -66,14 +66,14 @@ fn normalize_note_html(text: &str) -> String {
 
 /// Deterministic control-point fractions from rough.js LCG (seed=1).
 const P: [f64; 8] = [
-    0.20000449558719993, // side1 stroke1
-    0.22135189184919002, // side1 stroke2
-    0.21750230630859735, // side2 stroke1
-    0.26839575478807093, // side2 stroke2
-    0.21567247649654747, // side3 stroke1
-    0.37591258296743035, // side3 stroke2
-    0.28680931767448786, // side4 stroke1
-    0.36376626798883083, // side4 stroke2
+    0.20000449558719993,     // side1 stroke1
+    0.22135189184919002,     // side1 stroke2
+    0.21750230630859735,     // side2 stroke1
+    0.26839575478807093,     // side2 stroke2
+    0.21567247649654747,     // side3 stroke1
+    0.37591258296743035,     // side3 stroke2
+    0.28680931767448786,     // side4 stroke1
+    0.363_766_267_988_830_8, // side4 stroke2
 ];
 
 /// Build the rough.js stroke path for a rectangle with given half-width (hw)
@@ -87,8 +87,7 @@ const P: [f64; 8] = [
 fn rough_rect_stroke_path(hw: f64, hh: f64) -> String {
     let mut out = String::new();
     // Side 1 top: (-hw,-hh) → (hw,-hh)  (horizontal, Δy=0)
-    for stroke in 0..2usize {
-        let p = P[stroke];
+    for p in P {
         let cp1x = -hw + 2.0 * hw * p;
         let cp2x = -hw + 4.0 * hw * p;
         if !out.is_empty() {
@@ -268,13 +267,17 @@ mod tests {
 
     #[test]
     fn note_includes_theme_colors() {
-        let mut n = Node::default();
-        n.id = "note1".into();
+        let mut n = Node {
+            id: "note1".into(),
+            ..Node::default()
+        };
         n.width = Some(80.0);
         n.height = Some(40.0);
         n.label = Some("Heads up".into());
-        let mut theme = ThemeVariables::default();
-        theme.note_bkg_color = Some("#fff5ad".into());
+        let mut theme = ThemeVariables {
+            note_bkg_color: Some("#fff5ad".into()),
+            ..ThemeVariables::default()
+        };
         theme.note_border_color = Some("#aaaa33".into());
         let got = draw(&n, &theme).unwrap();
         assert!(got.contains("fill=\"#fff5ad\""), "fill color missing");

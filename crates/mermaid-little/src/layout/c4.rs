@@ -265,8 +265,10 @@ pub fn layout(diag: &C4Diagram) -> C4Layout {
             } else {
                 String::new()
             };
-            let mut label_block = TextBlock::default();
-            label_block.text = format!("{}{}", dyn_prefix, rel.label.text);
+            let mut label_block = TextBlock {
+                text: format!("{}{}", dyn_prefix, rel.label.text),
+                ..Default::default()
+            };
             // calcC4ShapeTextWH for label: not wrapped (textLimitWidth = own width).
             // Upstream: textLimitWidth = calculateTextWidth(rel.label.text, relConf).
             // With wrap off (default rel doesn't wrap): single line, width = textWidth.
@@ -592,12 +594,13 @@ impl<'a> LayoutState<'a> {
                 //   type.Y  = label.Y + label.height + 5
                 //   descr.Y = (last bottom) + 20
                 let mut yy = 0.0_f64;
-                let mut label_block = TextBlock::default();
-                label_block.text = label_text;
-                label_block.width = label_w;
-                label_block.height = label_h;
-                label_block.text_lines = 1;
-                label_block.y_offset = yy + 8.0;
+                let label_block = TextBlock {
+                    text: label_text,
+                    width: label_w,
+                    height: label_h,
+                    text_lines: 1,
+                    y_offset: yy + 8.0,
+                };
                 yy = label_block.y_offset + label_block.height;
                 let mut typ_final = TextBlock::default();
                 if has_type {
@@ -684,12 +687,13 @@ impl<'a> LayoutState<'a> {
             ));
             let type_h = (cf_sz - 2.0) + 2.0; // upstream: c4ShapeTypeConf.fontSize + 2
 
-            let mut type_c4 = TextBlock::default();
-            type_c4.text = format!("<<{}>>", kind);
-            type_c4.width = type_w;
-            type_c4.height = type_h;
-            type_c4.text_lines = 1;
-            type_c4.y_offset = conf.c4_shape_padding;
+            let type_c4 = TextBlock {
+                text: format!("<<{}>>", kind),
+                width: type_w,
+                height: type_h,
+                text_lines: 1,
+                y_offset: conf.c4_shape_padding,
+            };
             let mut yy = type_c4.y_offset + type_h - 4.0;
 
             // ── Image (sprite) for person/external_person.

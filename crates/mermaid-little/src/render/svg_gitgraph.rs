@@ -203,9 +203,7 @@ pub fn render(
             } else {
                 pa.cy > pb.cy
             };
-            let raw_idx = if is_merge_2nd {
-                pa.branch_index
-            } else if needs_reroute && reroute_axis_swap {
+            let raw_idx = if is_merge_2nd || (needs_reroute && reroute_axis_swap) {
                 pa.branch_index
             } else {
                 pb.branch_index
@@ -1024,6 +1022,7 @@ fn build_arrow_path(
 /// Format a number the way d3/jsdom does in mermaid output:
 ///   - integral values render without a decimal point ("0", "150").
 ///   - fractional values keep their full precision so the bytes match.
+///
 /// Render a branch name as one `<tspan>` per logical line. Mirrors
 /// upstream `drawText`'s split on `\\n|\n|<br/>` — embedded `\n`
 /// characters in the parsed name produce multi-row labels (cypress

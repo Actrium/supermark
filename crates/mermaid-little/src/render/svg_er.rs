@@ -335,19 +335,20 @@ fn render_entity_node_with_attrs(
 /// outer entity rect — same as `userNodeOverrides(node, {})` with
 /// roughness / fillStyle overrides for the default look.
 fn rough_entity_options(main_bkg: &str, node_border: &str) -> RoughOptions {
-    let mut o = RoughOptions::default();
-    o.roughness = 0.0;
-    o.fill_style = "solid".into();
-    o.fill = Some(main_bkg.to_string());
-    o.fill_weight = 4.0;
-    o.hachure_gap = 5.2;
-    o.stroke = node_border.to_string();
-    o.stroke_width = 1.3;
-    o.seed = 1; // handDrawnSeed default is 0 in mermaid global config but
-                // the test harness sets it to 1 via mermaid.initialize.
-    o.fill_line_dash = vec![0.0, 0.0];
-    o.stroke_line_dash = vec![0.0, 0.0];
-    o
+    RoughOptions {
+        roughness: 0.0,
+        fill_style: "solid".into(),
+        fill: Some(main_bkg.to_string()),
+        fill_weight: 4.0,
+        hachure_gap: 5.2,
+        stroke: node_border.to_string(),
+        stroke_width: 1.3,
+        seed: 1, // handDrawnSeed default is 0 in mermaid global config but
+        // the test harness sets it to 1 via mermaid.initialize.
+        fill_line_dash: vec![0.0, 0.0],
+        stroke_line_dash: vec![0.0, 0.0],
+        ..Default::default()
+    }
 }
 
 /// Row rects — different fill from outer (rowEven/rowOdd), same
@@ -945,10 +946,12 @@ fn render_edge_label(e: &EdgeLayout) -> String {
 // ──────────────────────────────────────────────────────────────────────
 fn render_self_loop_helper(h: &crate::layout::er::SelfLoopHelper) -> String {
     use crate::render::foreign_object::{render_node_label, LabelOpts};
-    let mut opts = LabelOpts::default();
-    opts.is_node = true;
-    opts.add_background = false;
-    opts.wrap_in_p = false;
+    let mut opts = LabelOpts {
+        is_node: true,
+        add_background: false,
+        wrap_in_p: false,
+        ..Default::default()
+    };
     // Helper foreignObject width is 0 (empty label) but the div's
     // `max-width: 10px` matches the helper rect width — upstream uses the
     // node's `width` (10) as the wrap budget. See `labelHelper` /

@@ -298,7 +298,7 @@ fn render_node(
     let override_stroke = labels.css_styles.iter().find_map(|s| {
         let key = s.split(':').next().unwrap_or("").trim();
         if key == "stroke" {
-            s.splitn(2, ':').nth(1).map(|v| v.trim().to_string())
+            s.split_once(':').map(|x| x.1).map(|v| v.trim().to_string())
         } else {
             None
         }
@@ -306,7 +306,7 @@ fn render_node(
     let override_fill = labels.css_styles.iter().find_map(|s| {
         let key = s.split(':').next().unwrap_or("").trim();
         if key == "fill" {
-            s.splitn(2, ':').nth(1).map(|v| v.trim().to_string())
+            s.split_once(':').map(|x| x.1).map(|v| v.trim().to_string())
         } else {
             None
         }
@@ -602,8 +602,8 @@ impl LcgRng {
 ///   1. `p = 0.2 + 0.2 * W(o)`  — used for bezier control points
 ///   2. `G(f, o, c)` = `E(-f, f, o, c)` — bowing offset x (=0 with roughness=0)
 ///   3. `G(d, o, c)` — bowing offset y (=0)
-///   4-5. move op: two `G(u/l, o, c)` calls (=0)
-///   6-11. bcurveTo op: six `G(u/l, o, c)` calls (=0)
+///      4-5. move op: two `G(u/l, o, c)` calls (=0)
+///      6-11. bcurveTo op: six `G(u/l, o, c)` calls (=0)
 ///
 /// All calls after #1 produce 0 with roughness=0, but the RNG state still advances.
 /// We must consume all 11 to keep subsequent segments in sync with upstream.
@@ -737,7 +737,7 @@ fn edge_path_basis(pts: &[crate::layout::unified::Point]) -> String {
 
     // lineEnd
     match point_idx {
-        3 | _ if point_idx >= 3 => {
+        point if point >= 3 => {
             // case 3: point(_x1, _y1) then falls to case 2: lineTo(_x1, _y1)
             bcurve_to(&mut d, x0, y0, x1, y1, x1, y1);
             d.push_str(&format!("L{},{}", fmt_r3(x1), fmt_r3(y1)));
@@ -791,7 +791,7 @@ fn render_edge(id_prefix: &str, e: &UEdge) -> String {
     //   pathStyle = styles + ';' + edge.style.reduce((acc, s) => acc + ';' + s, '')
     // No cssCompiledStyles for requirement edges (stylesFromClasses = "").
     let style = {
-        let edge_styles = e.style.as_ref().map(|v| v.as_slice()).unwrap_or(&[]);
+        let edge_styles = e.style.as_deref().unwrap_or(&[]);
         // styles = each item + ";"
         let styles: String = edge_styles
             .iter()
@@ -803,16 +803,13 @@ fn render_edge(id_prefix: &str, e: &UEdge) -> String {
         format!("{};{}", styles, reduce2)
     };
     let mut marker_attrs = String::new();
-    if e.arrow_type_start
-        .as_deref()
-        .map_or(false, |s| !s.is_empty())
-    {
+    if e.arrow_type_start.as_deref().is_some_and(|s| !s.is_empty()) {
         marker_attrs.push_str(&format!(
             r#" marker-start="url(#{id}_requirement-requirement_containsStart)""#,
             id = id_prefix,
         ));
     }
-    if e.arrow_type_end.as_deref().map_or(false, |s| !s.is_empty()) {
+    if e.arrow_type_end.as_deref().is_some_and(|s| !s.is_empty()) {
         marker_attrs.push_str(&format!(
             r#" marker-end="url(#{id}_requirement-requirement_arrowEnd)""#,
             id = id_prefix,
@@ -922,8 +919,7 @@ fn requirement_specific_css(id: &str, theme: &ThemeVariables) -> String {
     if let Some(bca) = border_color_array {
         if !bca.is_empty() {
             let look = "classic";
-            for i in 0..theme_color_limit {
-                let border_color = &bca[i];
+            for (i, border_color) in bca.iter().enumerate().take(theme_color_limit) {
                 let bkg_fill = bkg_color_array
                     .and_then(|a| a.get(i))
                     .map(|s| s.as_str())
@@ -1364,8 +1360,8 @@ mod tests {
 
     /// Structural parity: after wiring foreignObject, requirement node
     /// + edge labels should use the HTML label stack rather than bare
-    /// `<text>` elements — matching upstream's
-    /// `<foreignObject><div>...<span class="nodeLabel markdown-node-label">`.
+    ///   `<text>` elements — matching upstream's
+    ///   `<foreignObject><div>...<span class="nodeLabel markdown-node-label">`.
     #[test]
     fn node_and_edge_labels_use_foreign_object() {
         let src = std::fs::read_to_string(
@@ -1501,7 +1497,7 @@ mod tests {
             // Find first difference
             let gb: Vec<u8> = got.bytes().collect();
             let eb: Vec<u8> = exp.bytes().collect();
-            let ctx_start = if prefix > 30 { prefix - 30 } else { 0 };
+            let ctx_start = prefix.saturating_sub(30);
             let got_ctx =
                 String::from_utf8_lossy(&gb[ctx_start..std::cmp::min(prefix + 100, gb.len())]);
             let exp_ctx =
@@ -1551,7 +1547,7 @@ mod tests {
         if got != exp {
             let gb: Vec<u8> = got.bytes().collect();
             let eb: Vec<u8> = exp.bytes().collect();
-            let ctx_start = if prefix > 60 { prefix - 60 } else { 0 };
+            let ctx_start = prefix.saturating_sub(60);
             let got_ctx =
                 String::from_utf8_lossy(&gb[ctx_start..std::cmp::min(prefix + 200, gb.len())]);
             let exp_ctx =

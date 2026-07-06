@@ -666,14 +666,31 @@ fn path_monotone_impl(points: &[Point], swap: bool) -> String {
     let mut y1 = coords[1].1;
     let mut t0: f64 = f64::NAN;
 
-    for idx in 2..coords.len() {
-        let (x2, y2) = coords[idx];
+    for (idx, &(x2, y2)) in coords.iter().enumerate().skip(2) {
         let t1 = monotone_slope3(x0, y0, x1, y1, x2, y2);
         if idx == 2 {
             let t_start = monotone_slope2(x0, y0, x1, y1, t1);
-            emit_monotone_cubic(&mut d, x0, y0, x1, y1, t_start, t1, swap);
+            emit_monotone_cubic(
+                &mut d,
+                MonotoneCubic {
+                    start: (x0, y0),
+                    end: (x1, y1),
+                    t0: t_start,
+                    t1,
+                    swap,
+                },
+            );
         } else {
-            emit_monotone_cubic(&mut d, x0, y0, x1, y1, t0, t1, swap);
+            emit_monotone_cubic(
+                &mut d,
+                MonotoneCubic {
+                    start: (x0, y0),
+                    end: (x1, y1),
+                    t0,
+                    t1,
+                    swap,
+                },
+            );
         }
         t0 = t1;
         x0 = x1;
@@ -683,28 +700,39 @@ fn path_monotone_impl(points: &[Point], swap: bool) -> String {
     }
 
     let t_end = monotone_slope2(x0, y0, x1, y1, t0);
-    emit_monotone_cubic(&mut d, x0, y0, x1, y1, t0, t_end, swap);
+    emit_monotone_cubic(
+        &mut d,
+        MonotoneCubic {
+            start: (x0, y0),
+            end: (x1, y1),
+            t0,
+            t1: t_end,
+            swap,
+        },
+    );
 
     d
 }
 
-fn emit_monotone_cubic(
-    d: &mut String,
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
+#[derive(Clone, Copy)]
+struct MonotoneCubic {
+    start: (f64, f64),
+    end: (f64, f64),
     t0: f64,
     t1: f64,
     swap: bool,
-) {
+}
+
+fn emit_monotone_cubic(d: &mut String, segment: MonotoneCubic) {
     use std::fmt::Write;
+    let (x0, y0) = segment.start;
+    let (x1, y1) = segment.end;
     let dx = (x1 - x0) / 3.0;
     let cx1 = x0 + dx;
-    let cy1 = y0 + dx * t0;
+    let cy1 = y0 + dx * segment.t0;
     let cx2 = x1 - dx;
-    let cy2 = y1 - dx * t1;
-    if swap {
+    let cy2 = y1 - dx * segment.t1;
+    if segment.swap {
         let _ = write!(
             d,
             "C{},{},{},{},{},{}",
@@ -774,14 +802,31 @@ fn monotone_visited_points_impl(points: &[Point], swap: bool) -> Vec<(f64, f64)>
     let mut y1 = coords[1].1;
     let mut t0: f64 = f64::NAN;
 
-    for idx in 2..coords.len() {
-        let (x2, y2) = coords[idx];
+    for (idx, &(x2, y2)) in coords.iter().enumerate().skip(2) {
         let t1 = monotone_slope3(x0, y0, x1, y1, x2, y2);
         if idx == 2 {
             let t_start = monotone_slope2(x0, y0, x1, y1, t1);
-            push_monotone_cubic_visited(&mut out, x0, y0, x1, y1, t_start, t1, swap);
+            push_monotone_cubic_visited(
+                &mut out,
+                MonotoneCubic {
+                    start: (x0, y0),
+                    end: (x1, y1),
+                    t0: t_start,
+                    t1,
+                    swap,
+                },
+            );
         } else {
-            push_monotone_cubic_visited(&mut out, x0, y0, x1, y1, t0, t1, swap);
+            push_monotone_cubic_visited(
+                &mut out,
+                MonotoneCubic {
+                    start: (x0, y0),
+                    end: (x1, y1),
+                    t0,
+                    t1,
+                    swap,
+                },
+            );
         }
         t0 = t1;
         x0 = x1;
@@ -791,27 +836,29 @@ fn monotone_visited_points_impl(points: &[Point], swap: bool) -> Vec<(f64, f64)>
     }
 
     let t_end = monotone_slope2(x0, y0, x1, y1, t0);
-    push_monotone_cubic_visited(&mut out, x0, y0, x1, y1, t0, t_end, swap);
+    push_monotone_cubic_visited(
+        &mut out,
+        MonotoneCubic {
+            start: (x0, y0),
+            end: (x1, y1),
+            t0,
+            t1: t_end,
+            swap,
+        },
+    );
 
     out
 }
 
-fn push_monotone_cubic_visited(
-    out: &mut Vec<(f64, f64)>,
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
-    t0: f64,
-    t1: f64,
-    swap: bool,
-) {
+fn push_monotone_cubic_visited(out: &mut Vec<(f64, f64)>, segment: MonotoneCubic) {
+    let (x0, y0) = segment.start;
+    let (x1, y1) = segment.end;
     let dx = (x1 - x0) / 3.0;
     let cx1 = x0 + dx;
-    let cy1 = y0 + dx * t0;
+    let cy1 = y0 + dx * segment.t0;
     let cx2 = x1 - dx;
-    let cy2 = y1 - dx * t1;
-    if swap {
+    let cy2 = y1 - dx * segment.t1;
+    if segment.swap {
         out.push((cy1, cx1));
         out.push((cy2, cx2));
         out.push((y1, x1));
@@ -919,39 +966,35 @@ fn bump_y_visited_points(points: &[Point]) -> Vec<(f64, f64)> {
 
 const D3_EPSILON: f64 = 1e-12;
 
-fn catmull_rom_point(
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
+#[derive(Clone, Copy)]
+struct CatmullRomLengths {
     l01_a: f64,
     l12_a: f64,
     l23_a: f64,
     l01_2a: f64,
     l12_2a: f64,
     l23_2a: f64,
-    nx: f64,
-    ny: f64,
-) -> (f64, f64, f64, f64) {
+}
+
+fn catmull_rom_point(points: [(f64, f64); 4], lengths: CatmullRomLengths) -> (f64, f64, f64, f64) {
+    let [(x0, y0), (x1, y1), (x2, y2), (nx, ny)] = points;
     let mut cx1 = x1;
     let mut cy1 = y1;
     let mut cx2 = x2;
     let mut cy2 = y2;
 
-    if l01_a > D3_EPSILON {
-        let a = 2.0 * l01_2a + 3.0 * l01_a * l12_a + l12_2a;
-        let n = 3.0 * l01_a * (l01_a + l12_a);
-        cx1 = (x1 * a - x0 * l12_2a + x2 * l01_2a) / n;
-        cy1 = (y1 * a - y0 * l12_2a + y2 * l01_2a) / n;
+    if lengths.l01_a > D3_EPSILON {
+        let a = 2.0 * lengths.l01_2a + 3.0 * lengths.l01_a * lengths.l12_a + lengths.l12_2a;
+        let n = 3.0 * lengths.l01_a * (lengths.l01_a + lengths.l12_a);
+        cx1 = (x1 * a - x0 * lengths.l12_2a + x2 * lengths.l01_2a) / n;
+        cy1 = (y1 * a - y0 * lengths.l12_2a + y2 * lengths.l01_2a) / n;
     }
 
-    if l23_a > D3_EPSILON {
-        let b = 2.0 * l23_2a + 3.0 * l23_a * l12_a + l12_2a;
-        let m = 3.0 * l23_a * (l23_a + l12_a);
-        cx2 = (x2 * b + x1 * l23_2a - nx * l12_2a) / m;
-        cy2 = (y2 * b + y1 * l23_2a - ny * l12_2a) / m;
+    if lengths.l23_a > D3_EPSILON {
+        let b = 2.0 * lengths.l23_2a + 3.0 * lengths.l23_a * lengths.l12_a + lengths.l12_2a;
+        let m = 3.0 * lengths.l23_a * (lengths.l23_a + lengths.l12_a);
+        cx2 = (x2 * b + x1 * lengths.l23_2a - nx * lengths.l12_2a) / m;
+        cy2 = (y2 * b + y1 * lengths.l23_2a - ny * lengths.l12_2a) / m;
     }
 
     (cx1, cy1, cx2, cy2)
@@ -991,9 +1034,9 @@ fn path_catmull_rom(points: &[Point], alpha: f64) -> String {
     let mut l23_2a = 0.0;
     let mut pt = 0u8;
 
-    for i in 0..n {
-        let x = points[i].x;
-        let y = points[i].y;
+    for point in points.iter().take(n) {
+        let x = point.x;
+        let y = point.y;
 
         if pt > 0 {
             let x23 = x2 - x;
@@ -1014,7 +1057,15 @@ fn path_catmull_rom(points: &[Point], alpha: f64) -> String {
             2 => {
                 pt = 3;
                 let (cx1, cy1, cx2, cy2) = catmull_rom_point(
-                    x0, y0, x1, y1, x2, y2, l01_a, l12_a, l23_a, l01_2a, l12_2a, l23_2a, x, y,
+                    [(x0, y0), (x1, y1), (x2, y2), (x, y)],
+                    CatmullRomLengths {
+                        l01_a,
+                        l12_a,
+                        l23_a,
+                        l01_2a,
+                        l12_2a,
+                        l23_2a,
+                    },
                 );
                 let _ = write!(
                     d,
@@ -1029,7 +1080,15 @@ fn path_catmull_rom(points: &[Point], alpha: f64) -> String {
             }
             _ => {
                 let (cx1, cy1, cx2, cy2) = catmull_rom_point(
-                    x0, y0, x1, y1, x2, y2, l01_a, l12_a, l23_a, l01_2a, l12_2a, l23_2a, x, y,
+                    [(x0, y0), (x1, y1), (x2, y2), (x, y)],
+                    CatmullRomLengths {
+                        l01_a,
+                        l12_a,
+                        l23_a,
+                        l01_2a,
+                        l12_2a,
+                        l23_2a,
+                    },
                 );
                 let _ = write!(
                     d,
@@ -1058,7 +1117,15 @@ fn path_catmull_rom(points: &[Point], alpha: f64) -> String {
 
     if pt == 3 {
         let (cx1, cy1, cx2, cy2) = catmull_rom_point(
-            x0, y0, x1, y1, x2, y2, l01_a, l12_a, 0.0, l01_2a, l12_2a, 0.0, x2, y2,
+            [(x0, y0), (x1, y1), (x2, y2), (x2, y2)],
+            CatmullRomLengths {
+                l01_a,
+                l12_a,
+                l23_a: 0.0,
+                l01_2a,
+                l12_2a,
+                l23_2a: 0.0,
+            },
         );
         let _ = write!(
             d,
@@ -1110,9 +1177,9 @@ fn catmull_rom_visited_points(points: &[Point], alpha: f64) -> Vec<(f64, f64)> {
     let mut l23_2a = 0.0;
     let mut pt = 0u8;
 
-    for i in 0..n {
-        let x = points[i].x;
-        let y = points[i].y;
+    for point in points.iter().take(n) {
+        let x = point.x;
+        let y = point.y;
 
         if pt > 0 {
             let x23 = x2 - x;
@@ -1130,10 +1197,18 @@ fn catmull_rom_visited_points(points: &[Point], alpha: f64) -> Vec<(f64, f64)> {
                 x1 = x;
                 y1 = y;
             }
-            2 | _ => {
+            _ => {
                 pt = 3;
                 let (cx1, cy1, cx2, cy2) = catmull_rom_point(
-                    x0, y0, x1, y1, x2, y2, l01_a, l12_a, l23_a, l01_2a, l12_2a, l23_2a, x, y,
+                    [(x0, y0), (x1, y1), (x2, y2), (x, y)],
+                    CatmullRomLengths {
+                        l01_a,
+                        l12_a,
+                        l23_a,
+                        l01_2a,
+                        l12_2a,
+                        l23_2a,
+                    },
                 );
                 out.push((cx1, cy1));
                 out.push((cx2, cy2));
@@ -1155,7 +1230,15 @@ fn catmull_rom_visited_points(points: &[Point], alpha: f64) -> Vec<(f64, f64)> {
 
     if pt == 3 {
         let (cx1, cy1, cx2, cy2) = catmull_rom_point(
-            x0, y0, x1, y1, x2, y2, l01_a, l12_a, 0.0, l01_2a, l12_2a, 0.0, x2, y2,
+            [(x0, y0), (x1, y1), (x2, y2), (x2, y2)],
+            CatmullRomLengths {
+                l01_a,
+                l12_a,
+                l23_a: 0.0,
+                l01_2a,
+                l12_2a,
+                l23_2a: 0.0,
+            },
         );
         out.push((cx1, cy1));
         out.push((cx2, cy2));
@@ -1194,9 +1277,9 @@ fn path_cardinal(points: &[Point], tension: f64) -> String {
     let mut y2 = points[0].y;
     let mut pt = 0u8;
 
-    for i in 0..n {
-        let x = points[i].x;
-        let y = points[i].y;
+    for point in points.iter().take(n) {
+        let x = point.x;
+        let y = point.y;
         match pt {
             0 => {
                 pt = 1;
@@ -1281,9 +1364,9 @@ fn cardinal_visited_points(points: &[Point], tension: f64) -> Vec<(f64, f64)> {
     let mut y2 = points[0].y;
     let mut pt = 0u8;
 
-    for i in 0..n {
-        let x = points[i].x;
-        let y = points[i].y;
+    for point in points.iter().take(n) {
+        let x = point.x;
+        let y = point.y;
         match pt {
             0 => {
                 pt = 1;
@@ -2055,12 +2138,14 @@ mod tests {
             height: Some(20.0),
             ..Default::default()
         };
-        let mut edge = Edge::default();
-        edge.points = Some(vec![
-            Point { x: 0.0, y: 0.0 },
-            Point { x: 50.0, y: 0.0 },
-            Point { x: 100.0, y: 0.0 },
-        ]);
+        let edge = Edge {
+            points: Some(vec![
+                Point { x: 0.0, y: 0.0 },
+                Point { x: 50.0, y: 0.0 },
+                Point { x: 100.0, y: 0.0 },
+            ]),
+            ..Edge::default()
+        };
         let clipped = clip_endpoints(&edge, &src, &dst);
         assert_eq!(clipped.len(), 3);
         assert!((clipped[0].x - 20.0).abs() < 1e-9);
@@ -2069,8 +2154,10 @@ mod tests {
 
     #[test]
     fn marker_url_uses_diagram_prefix() {
-        let mut edge = Edge::default();
-        edge.arrow_type_end = Some("pointEnd".into());
+        let edge = Edge {
+            arrow_type_end: Some("pointEnd".into()),
+            ..Edge::default()
+        };
         assert_eq!(
             marker_end_url(&edge, "flow-1").as_deref(),
             Some("url(#flow-1-pointEnd)")

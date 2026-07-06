@@ -134,8 +134,7 @@ pub fn layout_with_width(
     // Compute category heights and total height.
     let compact = matches!(d.display_mode.as_deref(), Some(s) if s.eq_ignore_ascii_case("compact"));
     let mut category_heights: Vec<(String, i32)> = Vec::new();
-    let h: i32;
-    if compact {
+    let h: i32 = if compact {
         // displayMode: compact — pack tasks per-section into rows so that
         // non-overlapping tasks share the same vertical slot. Mirrors
         // upstream `ganttRenderer.draw()` lines 1862-1884.
@@ -169,14 +168,14 @@ pub fn layout_with_width(
         // (Upstream's `categoryHeights` only contains sections that have
         // at least one task; preserve that behaviour.)
         let total_rows: i32 = category_heights.iter().map(|(_, h)| *h).sum();
-        h = 2 * TOP_PADDING + total_rows * (BAR_HEIGHT + BAR_GAP);
+        2 * TOP_PADDING + total_rows * (BAR_HEIGHT + BAR_GAP)
     } else {
         for cat in &categories {
             let count = tasks.iter().filter(|t| &t.section_name == cat).count() as i32;
             category_heights.push((cat.clone(), count));
         }
-        h = 2 * TOP_PADDING + (tasks.len() as i32) * (BAR_HEIGHT + BAR_GAP);
-    }
+        2 * TOP_PADDING + (tasks.len() as i32) * (BAR_HEIGHT + BAR_GAP)
+    };
 
     // Time domain.
     let (min_ms, max_ms) = if tasks.is_empty() {
@@ -451,10 +450,7 @@ fn parse_iso_date_lenient(s: &str) -> Option<f64> {
     let m: u32 = parts[1].parse().ok()?;
     // Day part may have trailing time-of-day separated by `T` or space.
     let d_str = parts[2];
-    let d_only: &str = d_str
-        .find(|c: char| c == 'T' || c == ' ')
-        .map(|i| &d_str[..i])
-        .unwrap_or(d_str);
+    let d_only: &str = d_str.find(['T', ' ']).map(|i| &d_str[..i]).unwrap_or(d_str);
     let d: u32 = d_only.parse().ok()?;
     if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
         return None;
@@ -654,7 +650,7 @@ fn get_start_date(
         for id in rest.split_whitespace() {
             if let Some(&idx) = id_to_idx.get(id) {
                 let end = resolved[idx].end_ms;
-                if latest.map_or(true, |cur| end > cur) {
+                if latest.is_none_or(|cur| end > cur) {
                     latest = Some(end);
                 }
             }
@@ -678,7 +674,7 @@ fn get_end_date(
         for id in rest.split_whitespace() {
             if let Some(&idx) = id_to_idx.get(id) {
                 let st = resolved[idx].start_ms;
-                if earliest.map_or(true, |cur| st < cur) {
+                if earliest.is_none_or(|cur| st < cur) {
                     earliest = Some(st);
                 }
             }

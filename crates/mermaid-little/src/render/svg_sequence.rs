@@ -1044,7 +1044,7 @@ pub fn render(d: &SequenceDiagram, _l: &SequenceLayout, theme: &Theme, id: &str)
         let bx_y = 0.0_f64;
         // box.height will be set later after vertical pass.
         // We store partial geometry and finalize after the vertical pass.
-        for (_bi, (bx_x, bx_w, _bx_margin, label, fill)) in box_geom.into_iter().enumerate() {
+        for (bx_x, bx_w, _bx_margin, label, fill) in box_geom.into_iter() {
             let box_padding = box_margin * 2.0;
             let startx = bx_x - box_padding;
             let starty = bx_y - box_padding * 0.25;
@@ -2000,7 +2000,7 @@ pub fn render(d: &SequenceDiagram, _l: &SequenceLayout, theme: &Theme, id: &str)
             // line. To match, we store the raw `starty_for_note` and
             // `note_margin / 2` so the emission pass can round per-line.
             let note_starty_raw = starty_for_note;
-            let note_margin_half = cfg.note_margin as f64 / 2.0;
+            let note_margin_half = cfg.note_margin / 2.0;
 
             notes.push(NoteRender {
                 lines: note_lines.iter().map(|s| s.to_string()).collect(),
@@ -2639,16 +2639,13 @@ pub fn render(d: &SequenceDiagram, _l: &SequenceLayout, theme: &Theme, id: &str)
                 -CIRCLE_OFFSET
             };
             match m.central_connection {
-                Some(CentralConnection::AtTo) => {
-                    if is_reverse_arrow {
-                        circle_to_cx += -base;
-                    }
+                Some(CentralConnection::AtTo) if is_reverse_arrow => {
+                    circle_to_cx += -base;
                 }
-                Some(CentralConnection::AtFrom) => {
-                    if !is_reverse_arrow {
-                        circle_from_cx += base;
-                    }
+                Some(CentralConnection::AtFrom) if !is_reverse_arrow => {
+                    circle_from_cx += base;
                 }
+                Some(CentralConnection::AtTo | CentralConnection::AtFrom) => {}
                 Some(CentralConnection::Dual) => {
                     if is_reverse_arrow {
                         circle_to_cx += -base;
@@ -3540,7 +3537,7 @@ fn compute_stick_ids(d: &SequenceDiagram, n_actors_total: usize) -> StickIds {
 ///   (= radius/2 + 10 = 21);
 /// - top group's `data-{et,type,id}` attrs come AFTER `name=` and AFTER
 ///   `transform=` (mirrors upstream svgDraw `actElem.attr` order).
-/// Mirrors upstream `drawActorTypeBoundary` (mermaid.js line 137422).
+///   Mirrors upstream `drawActorTypeBoundary` (mermaid.js line 137422).
 fn emit_actor_boundary_body(
     out: &mut String,
     a: &ActorRender,
@@ -4107,9 +4104,9 @@ fn emit_actor_queue_body_paths(out: &mut String, a: &ActorRender, actor_y: f64) 
 /// Emit the FULL bottom group for a Queue-type actor — single outer
 /// `<g class="actor actor-bottom">` containing the two queue body paths
 /// + description text. Mirrors upstream `drawActorTypeQueue` (line 581)
-/// when `isFooter=true`: `boxplusLineGroup = elem.append("g").lower()`,
-/// `g.attr('class', cssclass)` where cssclass is `'actor actor-bottom'`,
-/// then path emission, then text.
+///   when `isFooter=true`: `boxplusLineGroup = elem.append("g").lower()`,
+///   `g.attr('class', cssclass)` where cssclass is `'actor actor-bottom'`,
+///   then path emission, then text.
 fn emit_actor_queue_bottom_group(out: &mut String, a: &ActorRender, bottom_y: f64) {
     out.push_str("<g class=\"actor actor-bottom\">");
     emit_actor_queue_body_paths(out, a, bottom_y);
@@ -4672,7 +4669,7 @@ fn emit_note(out: &mut String, n: &NoteRender) {
         push_num(out, n.text_x);
         out.push_str("\">");
         if line_text.is_empty() {
-            out.push_str("\u{200B}");
+            out.push('\u{200B}');
         } else {
             out.push_str(&xml_escape(line_text));
         }
@@ -4998,7 +4995,7 @@ fn emit_actor_popup(
     let panel_position = if mirror { "actor-bottom" } else { "actor-top" };
     out.push_str("\"><rect class=\"actorPopupMenuPanel ");
     out.push_str(panel_cls);
-    out.push_str(" ");
+    out.push(' ');
     out.push_str(panel_position);
     out.push_str("\" x=\"");
     push_num(out, panel_x);
@@ -5138,7 +5135,7 @@ fn emit_message(out: &mut String, id: &str, m: &MsgRender) {
             if line_text.is_empty() {
                 // Upstream `drawText` substitutes a zero-width space (U+200B)
                 // for empty lines so the bbox is still measurable.
-                out.push_str("\u{200B}");
+                out.push('\u{200B}');
             } else {
                 out.push_str(&xml_escape(line_text));
             }
@@ -5389,7 +5386,7 @@ fn wrap_label(label: &str, max_width: f64, family: &str, font_size: f64) -> Stri
     if label.is_empty() {
         return label.to_string();
     }
-    if !split_br(label).get(1).is_none() {
+    if split_br(label).get(1).is_some() {
         // Already contains <br> — return as-is.
         return label.to_string();
     }
@@ -5719,9 +5716,7 @@ fn attr_escape(s: &str) -> String {
 /// UTF-8 leading-byte → byte length lookup. Defaults to 1 for invalid
 /// leads so we always make forward progress.
 fn utf8_char_len(b: u8) -> usize {
-    if b < 0x80 {
-        1
-    } else if b < 0xC0 {
+    if b < 0xC0 {
         1 // continuation byte (shouldn't happen at boundary)
     } else if b < 0xE0 {
         2

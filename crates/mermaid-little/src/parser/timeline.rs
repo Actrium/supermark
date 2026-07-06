@@ -134,7 +134,7 @@ pub fn parse(source: &str) -> Result<TimelineDiagram> {
 /// knobs — `theme`, `themeVariables`, `config.timeline.disableMulticolor`
 /// — because the rest of Config is already folded by the outer
 /// [`crate::preprocess`] pipeline when wiring through `convert_with_id`.
-fn strip_frontmatter<'a>(source: &'a str, d: &mut TimelineDiagram) -> String {
+fn strip_frontmatter(source: &str, d: &mut TimelineDiagram) -> String {
     // Match `^-{3}\s*\n(.*?)\n-{3}\s*\n+` in the same shape as
     // `crate::config::frontmatter`, but we only need the body lines so a
     // hand scan is enough.
@@ -152,7 +152,7 @@ fn strip_frontmatter<'a>(source: &'a str, d: &mut TimelineDiagram) -> String {
     let after_close = &rest[end_rel..];
     let after = after_close
         .strip_prefix("---")
-        .map(|s| s.trim_start_matches(|c: char| c == '\n' || c == '\r' || c == ' ' || c == '\t'))
+        .map(|s| s.trim_start_matches(['\n', '\r', ' ', '\t']))
         .unwrap_or(after_close);
 
     apply_yaml_body(body, d);

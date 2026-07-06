@@ -273,11 +273,8 @@ fn strip_frontmatter(source: &str) -> (String, Option<String>, Option<String>, T
         if indent == 0 {
             in_config = trimmed.starts_with("config:");
             in_treemap = false;
-            if trimmed.starts_with("title:") {
-                let v = trimmed["title:".len()..]
-                    .trim()
-                    .trim_matches('"')
-                    .to_string();
+            if let Some(title_text) = trimmed.strip_prefix("title:") {
+                let v = title_text.trim().trim_matches('"').to_string();
                 if !v.is_empty() {
                     title = Some(v);
                 }
@@ -288,10 +285,8 @@ fn strip_frontmatter(source: &str) -> (String, Option<String>, Option<String>, T
             if let Some(rest) = trimmed.strip_prefix("theme:") {
                 theme = Some(rest.trim().trim_matches('"').to_string());
                 in_treemap = false;
-            } else if trimmed.starts_with("treemap:") {
-                in_treemap = true;
             } else {
-                in_treemap = false;
+                in_treemap = trimmed.starts_with("treemap:");
             }
             continue;
         }

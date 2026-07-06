@@ -19,8 +19,10 @@ mod tests {
 
     #[test]
     fn basic_delegates_to_rect() {
-        let mut n = Node::default();
-        n.id = "b".into();
+        let mut n = Node {
+            id: "b".into(),
+            ..Node::default()
+        };
         n.width = Some(40.0);
         n.height = Some(20.0);
         let got = draw(&n, &ThemeVariables::default()).unwrap();

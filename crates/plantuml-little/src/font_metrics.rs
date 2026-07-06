@@ -53,10 +53,10 @@ fn metrics_provider() -> &'static dyn Metrics {
         use std::sync::OnceLock;
         static M: OnceLock<font_metrics_core::ttf_parser::TtfParserMetrics<'static>> =
             OnceLock::new();
-        return M.get_or_init(|| {
+        M.get_or_init(|| {
             font_metrics_core::ttf_parser::TtfParserMetrics::default_latin()
                 .expect("default Latin TTF subset failed to parse")
-        });
+        })
     }
 
     #[cfg(all(

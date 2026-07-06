@@ -29,8 +29,10 @@ mod tests {
 
     #[test]
     fn lean_left_polygon_matches_upstream() {
-        let mut n = Node::default();
-        n.id = "ll".into();
+        let mut n = Node {
+            id: "ll".into(),
+            ..Node::default()
+        };
         n.width = Some(100.0); // visual_w (= base 60 + 2*shear 40)
         n.height = Some(40.0);
         let theme = ThemeVariables::default();

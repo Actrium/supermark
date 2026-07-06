@@ -22,7 +22,7 @@ pub enum DiagramLayout {
     Ishikawa(ishikawa::IshikawaLayout),
     Journey(journey::JourneyLayout),
     Timeline(timeline::TimelineLayout),
-    Quadrant(quadrant::QuadrantLayout),
+    Quadrant(Box<quadrant::QuadrantLayout>),
     Xychart(xychart::XychartLayout),
     Wardley(wardley::WardleyLayout),
     Gantt(gantt::GanttLayout),

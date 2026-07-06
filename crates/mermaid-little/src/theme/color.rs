@@ -370,43 +370,19 @@ fn parse_hue_unit(raw: &str) -> Option<f64> {
 
 #[inline]
 fn clamp_rgb(v: f64) -> f64 {
-    if v >= 255.0 {
-        255.0
-    } else if v < 0.0 {
-        0.0
-    } else {
-        v
-    }
+    v.clamp(0.0, 255.0)
 }
 #[inline]
 fn clamp_s(v: f64) -> f64 {
-    if v >= 100.0 {
-        100.0
-    } else if v < 0.0 {
-        0.0
-    } else {
-        v
-    }
+    v.clamp(0.0, 100.0)
 }
 #[inline]
 fn clamp_l(v: f64) -> f64 {
-    if v >= 100.0 {
-        100.0
-    } else if v < 0.0 {
-        0.0
-    } else {
-        v
-    }
+    v.clamp(0.0, 100.0)
 }
 #[inline]
 fn clamp_a(v: f64) -> f64 {
-    if v >= 1.0 {
-        1.0
-    } else if v < 0.0 {
-        0.0
-    } else {
-        v
-    }
+    v.clamp(0.0, 1.0)
 }
 #[inline]
 fn clamp_h(v: f64) -> f64 {

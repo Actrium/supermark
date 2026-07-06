@@ -51,8 +51,10 @@ mod tests {
     #[test]
     fn subroutine_has_ten_vertices() {
         // visual_w = 80 (= base_w 64 + 2 × FRAME_WIDTH 8); h = 40.
-        let mut n = Node::default();
-        n.id = "sr".into();
+        let mut n = Node {
+            id: "sr".into(),
+            ..Node::default()
+        };
         n.width = Some(80.0);
         n.height = Some(40.0);
         let theme = ThemeVariables::default();

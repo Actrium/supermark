@@ -9,7 +9,7 @@
 //!   - `orchestrator.ts`                         — space allocation.
 //!   - `components/chartTitle.ts`                — title block.
 //!   - `components/axis/baseAxis.ts`             — axis line + ticks +
-//!                                                 labels + title.
+//!     labels + title.
 //!   - `components/axis/bandAxis.ts`             — band (categorical) scale.
 //!   - `components/axis/linearAxis.ts`           — linear (numeric) scale.
 //!   - `components/plot/barPlot.ts`              — bar rects.
@@ -365,7 +365,7 @@ impl<'a> Orchestrator<'a> {
     fn calculate_vertical(&mut self) {
         let mut available_width = self.cfg.width;
         let mut available_height = self.cfg.height;
-        let plot_x;
+
         let mut plot_y = 0.0;
         let mut chart_width =
             (self.cfg.width * self.cfg.plot_reserved_space_percent / 100.0).floor();
@@ -399,7 +399,7 @@ impl<'a> Orchestrator<'a> {
         let used = self
             .y_axis
             .calculate_space(available_width, available_height);
-        plot_x = used.0;
+        let plot_x = used.0;
         available_width -= used.0;
 
         if available_width > 0.0 {
@@ -442,8 +442,7 @@ impl<'a> Orchestrator<'a> {
         let mut available_width = self.cfg.width;
         let mut available_height = self.cfg.height;
         let mut title_y_end = 0.0;
-        let plot_x;
-        let plot_y;
+
         let mut chart_width =
             (self.cfg.width * self.cfg.plot_reserved_space_percent / 100.0).floor();
         let mut chart_height =
@@ -468,7 +467,7 @@ impl<'a> Orchestrator<'a> {
             .x_axis
             .calculate_space(available_width, available_height);
         available_width -= used.0;
-        plot_x = used.0;
+        let plot_x = used.0;
 
         // yAxis top.
         self.y_axis.set_axis_position(AxisPosition::Top);
@@ -476,7 +475,7 @@ impl<'a> Orchestrator<'a> {
             .y_axis
             .calculate_space(available_width, available_height);
         available_height -= used.1;
-        plot_y = title_y_end + used.1;
+        let plot_y = title_y_end + used.1;
 
         if available_width > 0.0 {
             chart_width += available_width;
@@ -730,8 +729,8 @@ impl Axis {
     ///   * `interpolateNumber(a, b)(t) = a * (1 - t) + b * t`.
     ///   * For descending domains (`d1 < d0`), d3's `bimap` swaps to
     ///     `normalize(d1, d0)` and `interpolate(r1, r0)`.
-    /// Matching the exact operation order is necessary for byte-exact
-    /// parity — the naive `a + (b - a) * t` shape differs by 1 ULP.
+    ///     Matching the exact operation order is necessary for byte-exact
+    ///     parity — the naive `a + (b - a) * t` shape differs by 1 ULP.
     fn scale_numeric(&self, value: f64) -> f64 {
         if let AxisKind::Linear { domain } = &self.kind {
             let r = self.effective_range();
@@ -798,7 +797,8 @@ impl Axis {
             h -= self.cfg.tick_length;
         }
         if self.cfg.show_title && !self.title.is_empty() {
-            let (_tw, th) = max_text_dim(&[self.title.clone()], self.cfg.title_font_size);
+            let (_tw, th) =
+                max_text_dim(std::slice::from_ref(&self.title), self.cfg.title_font_size);
             let height_required = th + self.cfg.title_padding * 2.0;
             self.title_text_height = th;
             if height_required <= h {
@@ -836,7 +836,8 @@ impl Axis {
             w -= self.cfg.tick_length;
         }
         if self.cfg.show_title && !self.title.is_empty() {
-            let (_tw, th) = max_text_dim(&[self.title.clone()], self.cfg.title_font_size);
+            let (_tw, th) =
+                max_text_dim(std::slice::from_ref(&self.title), self.cfg.title_font_size);
             let width_required = th + self.cfg.title_padding * 2.0;
             self.title_text_height = th;
             if width_required <= w {

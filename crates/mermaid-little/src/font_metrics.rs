@@ -62,7 +62,7 @@ fn metrics_provider() -> &'static dyn Metrics {
         use std::sync::OnceLock;
         static M: OnceLock<font_metrics_core::ttf_parser::TtfParserMetrics<'static>> =
             OnceLock::new();
-        return M.get_or_init(|| {
+        M.get_or_init(|| {
             // mermaid-little ports mermaid.js + canvas, whose missing-glyph
             // behaviour is the space-advance fallback (Chrome canvas effective
             // behaviour when no system font covers the codepoint, also matching
@@ -74,7 +74,7 @@ fn metrics_provider() -> &'static dyn Metrics {
                 .with_missing_glyph_fallback(
                     font_metrics_core::ttf_parser::MissingGlyphFallback::Space,
                 )
-        });
+        })
     }
 
     #[cfg(all(

@@ -367,7 +367,7 @@ fn strip_frontmatter(source: &str, d: &mut GanttDiagram) -> String {
         return source.to_string();
     }
     let after_open = match trimmed.find('\n') {
-        Some(idx) if &trimmed[..idx].trim() == &"---" => &trimmed[idx + 1..],
+        Some(idx) if trimmed[..idx].trim() == "---" => &trimmed[idx + 1..],
         _ => return source.to_string(),
     };
     // Find closing `---` line.

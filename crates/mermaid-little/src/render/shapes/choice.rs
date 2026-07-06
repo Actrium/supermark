@@ -147,8 +147,10 @@ mod tests {
 
     #[test]
     fn choice_byte_exact_default() {
-        let mut n = Node::default();
-        n.id = "c".into();
+        let mut n = Node {
+            id: "c".into(),
+            ..Node::default()
+        };
         n.width = Some(28.0);
         n.height = Some(28.0);
         let got = draw(&n, &ThemeVariables::default()).unwrap();

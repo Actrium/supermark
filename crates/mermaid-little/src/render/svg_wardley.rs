@@ -380,17 +380,14 @@ pub fn render(
 
     // ── Nodes ────────────────────────────────────────────────────────
     out.push_str(r#"<g class="wardley-nodes">"#);
+    let node_style = WardleyNodeStyle {
+        component_fill,
+        component_stroke,
+        component_label_color,
+        evolution_stroke,
+    };
     for node in &d.nodes {
-        render_node(
-            &mut out,
-            node,
-            d,
-            l,
-            component_fill,
-            component_stroke,
-            component_label_color,
-            evolution_stroke,
-        );
+        render_node(&mut out, node, d, l, &node_style);
     }
     out.push_str("</g>");
 
@@ -649,15 +646,19 @@ pub fn render(
     Ok(out)
 }
 
+struct WardleyNodeStyle<'a> {
+    component_fill: &'a str,
+    component_stroke: &'a str,
+    component_label_color: &'a str,
+    evolution_stroke: &'a str,
+}
+
 fn render_node(
     out: &mut String,
     node: &WardleyNode,
     d: &WardleyDiagram,
     l: &WardleyLayout,
-    component_fill: &str,
-    component_stroke: &str,
-    component_label_color: &str,
-    evolution_stroke: &str,
+    style: &WardleyNodeStyle<'_>,
 ) {
     let Some((x, y)) = layout_mod::get_position(l, d, &node.id) else {
         return;
@@ -677,7 +678,7 @@ fn render_node(
                 cx = js_num(x),
                 cy = js_num(y),
                 r = js_num(NODE_RADIUS * 2.0),
-                cs = component_stroke,
+                cs = style.component_stroke,
             ));
         }
         Some(SourceStrategy::Buy) => {
@@ -686,7 +687,7 @@ fn render_node(
                 cx = js_num(x),
                 cy = js_num(y),
                 r = js_num(NODE_RADIUS * 2.0),
-                cs = component_stroke,
+                cs = style.component_stroke,
             ));
         }
         Some(SourceStrategy::Build) => {
@@ -703,7 +704,7 @@ fn render_node(
                 cx = js_num(x),
                 cy = js_num(y),
                 r = js_num(NODE_RADIUS * 2.0),
-                cs = component_stroke,
+                cs = style.component_stroke,
             ));
         }
         None => {}
@@ -717,8 +718,8 @@ fn render_node(
             y = js_num(y - SQUARE_SIZE / 2.0),
             w = js_num(SQUARE_SIZE),
             h = js_num(SQUARE_SIZE),
-            cf = component_fill,
-            cs = component_stroke,
+            cf = style.component_fill,
+            cs = style.component_stroke,
         ));
     } else if matches!(node.source_strategy, Some(SourceStrategy::Market)) {
         // Draw triangle lines + 3 small circles for market.
@@ -734,7 +735,7 @@ fn render_node(
             y1 = js_num(y - tri_r),
             x2 = js_num(x - tri_r * cos30),
             y2 = js_num(y + tri_r * sin30),
-            cs = component_stroke,
+            cs = style.component_stroke,
         ));
         // Bottom-left to bottom-right.
         out.push_str(&format!(
@@ -743,7 +744,7 @@ fn render_node(
             y1 = js_num(y + tri_r * sin30),
             x2 = js_num(x + tri_r * cos30),
             y2 = js_num(y + tri_r * sin30),
-            cs = component_stroke,
+            cs = style.component_stroke,
         ));
         // Bottom-right to top.
         out.push_str(&format!(
@@ -752,7 +753,7 @@ fn render_node(
             y1 = js_num(y + tri_r * sin30),
             x2 = js_num(x),
             y2 = js_num(y - tri_r),
-            cs = component_stroke,
+            cs = style.component_stroke,
         ));
         // Small circles.
         for (sx, sy) in [
@@ -765,7 +766,7 @@ fn render_node(
                 cx = js_num(sx),
                 cy = js_num(sy),
                 r = js_num(small_r),
-                cs = component_stroke,
+                cs = style.component_stroke,
             ));
         }
     } else if node.class_name.as_deref() == Some("anchor") {
@@ -776,8 +777,8 @@ fn render_node(
             cx = js_num(x),
             cy = js_num(y),
             r = js_num(NODE_RADIUS),
-            cf = component_fill,
-            cs = component_stroke,
+            cf = style.component_fill,
+            cs = style.component_stroke,
         ));
     }
 
@@ -802,7 +803,7 @@ fn render_node(
             y1 = js_num(y - line_h / 2.0),
             x2 = js_num(x + offset),
             y2 = js_num(y + line_h / 2.0),
-            cs = component_stroke,
+            cs = style.component_stroke,
         ));
     }
 
@@ -830,9 +831,9 @@ fn render_node(
                 .map(|o| o as f64)
                 .unwrap_or(default_off_y);
             let fill = if node.class_name.as_deref() == Some("evolved") {
-                evolution_stroke.to_string()
+                style.evolution_stroke.to_string()
             } else {
-                component_label_color.to_string()
+                style.component_label_color.to_string()
             };
             (lx, ly, "start", "auto", "normal", fill)
         }

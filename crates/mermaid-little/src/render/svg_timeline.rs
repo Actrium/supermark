@@ -24,17 +24,18 @@ pub fn render(
     let mut out = String::with_capacity(16384);
 
     // Root <svg> tag — attribute order matches upstream.
+    let vb = format!(
+        "{} {} {} {}",
+        fmt_num(l.viewbox[0]),
+        fmt_num(l.viewbox[1]),
+        fmt_num(l.viewbox[2]),
+        fmt_num(l.viewbox[3]),
+    );
     out.push_str(&format!(
         r#"<svg id="{id}" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: {mw}px;" viewBox="{vb}" role="graphics-document document" aria-roledescription="timeline">"#,
         id = id,
         mw = fmt_num(l.max_width_px),
-        vb = format!(
-            "{} {} {} {}",
-            fmt_num(l.viewbox[0]),
-            fmt_num(l.viewbox[1]),
-            fmt_num(l.viewbox[2]),
-            fmt_num(l.viewbox[3]),
-        ),
+        vb = vb,
     ));
 
     // TD: `lineWrapper.lower()` at the end of draw moves the axis line
