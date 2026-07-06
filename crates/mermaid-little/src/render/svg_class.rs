@@ -1,5 +1,5 @@
-//! Class diagram SVG renderer — byte-exact output against
-//! `mermaid@11.14.0`'s unified (dagre + d3 + jsdom) pipeline.
+//! Class diagram SVG renderer following `mermaid@11.14.0`'s unified
+//! (dagre + d3) pipeline while sizing labels for real browser rendering.
 //!
 //! # Structure mirrored
 //!
@@ -38,8 +38,11 @@ use crate::render::unified_shell;
 use crate::theme::css as theme_css;
 use crate::theme::ThemeVariables;
 
-/// Public entry point — renders a [`ClassDiagram`] + [`ClassLayout`] into a
-/// byte-accurate SVG string matching upstream mermaid@11.14.0.
+const CLASS_BOX_PADDING: f64 = 12.0;
+const CLASS_HTML_LINE_HEIGHT: f64 = 24.0;
+const CLASS_EDGE_LABEL_LINE_HEIGHT: f64 = 21.0;
+
+/// Public entry point — renders a [`ClassDiagram`] + [`ClassLayout`] into SVG.
 pub fn render(
     d: &ClassDiagram,
     l: &ClassLayout,
@@ -50,16 +53,17 @@ pub fn render(
 
     // ── 1. Compute viewBox ──────────────────────────────────────────
     //
-    // Upstream's `setupViewPortForSVG` calls `svg.node().getBBox()` and
-    // pads by 8 on every side. Crucially, the `generate_ref.mjs` jsdom
-    // shim that produces the byte-exact reference SVGs *ignores
-    // transforms* when computing getBBox — it walks the descendant
-    // intrinsic boxes (path / foreignObject / rect / line / …) in
-    // their **local** coords. To stay byte-exact we mimic the same
-    // quirk here.
+    // Upstream's `setupViewPortForSVG` pads the rendered browser bbox by
+    // eight pixels. Earlier byte-exact fixtures used a jsdom shim that
+    // ignored transforms, but browsers do not. The layout pass now exposes a
+    // browser-facing bbox and the renderer pads that box directly.
     let pad = 8.0_f64;
-    let svg_bbox = compute_svg_bbox_local(l, d);
-    let (mut bx, mut by, mut bw, mut bh) = svg_bbox;
+    let (mut bx, mut by, mut bw, mut bh) = (
+        l.viewbox_x + pad,
+        l.viewbox_y + pad,
+        (l.viewbox_w - 2.0 * pad).max(0.0),
+        (l.viewbox_h - 2.0 * pad).max(0.0),
+    );
     // Pre-title bounds — used for the title's `x` anchor. Mermaid sets
     // the title `x` to the centre of the pre-title bbox so the title
     // hugs the diagram, not the title itself.
@@ -511,10 +515,11 @@ fn render_cluster(id: &str, n: &LayoutNode, _theme: &ThemeVariables) -> String {
         let lx = cx - lw / 2.0;
         let ly = cy - h / 2.0;
         out.push_str(&format!(
-            r#"<g class="cluster-label " transform="translate({tx}, {ty})"><foreignObject width="{lw}" height="16.296875"><div style="display: table-cell; white-space: nowrap; line-height: 1.5;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel "><p>{t}</p></span></div></foreignObject></g>"#,
+            r#"<g class="cluster-label " transform="translate({tx}, {ty})"><foreignObject width="{lw}" height="{lh}"><div style="display: table-cell; white-space: nowrap; line-height: 1.5;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel "><p>{t}</p></span></div></foreignObject></g>"#,
             tx = fmt_num(lx),
             ty = fmt_num(ly),
             lw = fmt_num(lw),
+            lh = fmt_num(CLASS_EDGE_LABEL_LINE_HEIGHT),
             t = html_escape(label),
         ));
     }
@@ -581,7 +586,7 @@ fn render_class_text_row_indexed(
 ) -> String {
     let family = "trebuchet ms,verdana,arial,sans-serif";
     let font = 14.0_f64;
-    let line_h = 16.296875_f64;
+    let line_h = CLASS_HTML_LINE_HEIGHT;
     // The post-decode raw display text — keeps `*`/`_` markers in place.
     // Used as input to both the markdown-textContent measurement and the
     // markdown-to-HTML pass that fills the `<p>` element.
@@ -640,7 +645,7 @@ fn render_note_node(id: &str, n: &LayoutNode, theme: &ThemeVariables) -> String 
     // Padding is 6 (config.class.padding ?? 6) — see classDb.getData.
     let padding = 6.0_f64;
     let bbox_w = drawn_w - 2.0 * padding;
-    let line_h = 16.296875_f64;
+    let line_h = CLASS_HTML_LINE_HEIGHT;
     let bbox_h = line_h;
 
     let x0 = -drawn_w / 2.0;
@@ -1061,9 +1066,9 @@ fn render_node(id: &str, n: &LayoutNode, theme: &ThemeVariables, d: &ClassDiagra
     // `y_internal = -h/2` — is what the post-adjustment loop pivots
     // around. drawn_h = h_internal + 2*PADDING + 2*PADDING (renderExtraBox
     // adds extraHeight = PADDING*2), so h_internal = drawn_h - 4 * PADDING.
-    let padding = 12.0_f64;
-    let h_internal = drawn_h - 4.0 * padding;
-    let y_internal = -h_internal / 2.0;
+    let padding = CLASS_BOX_PADDING;
+    let top_y = -drawn_h / 2.0;
+    let first_text_band_y = top_y + 2.0 * padding;
 
     // Annotation group: when the class has at least one annotation
     // (only the first is rendered, mirroring upstream textHelper.ts),
@@ -1071,7 +1076,7 @@ fn render_node(id: &str, n: &LayoutNode, theme: &ThemeVariables, d: &ClassDiagra
     // emit an empty group at translate(0, y_internal).
     let label_font = 14.0_f64;
     let label_family = "trebuchet ms,verdana,arial,sans-serif";
-    let label_h = 16.296875_f64;
+    let label_h = CLASS_HTML_LINE_HEIGHT;
     let annotation_text = class_node
         .and_then(|c| c.annotations.first())
         .map(|a| format!("«{}»", a));
@@ -1089,7 +1094,7 @@ fn render_node(id: &str, n: &LayoutNode, theme: &ThemeVariables, d: &ClassDiagra
         out.push_str(&format!(
             r#"<g class="annotation-group text" transform="translate({ax}, {ay})"><g class="label" style="" transform="translate(0,{ily})"><foreignObject width="{w}" height="{h}"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: {mw}px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel markdown-node-label" style=""><p>{txt}</p></span></div></foreignObject></g></g>"#,
             ax = fmt_num(annotation_x),
-            ay = fmt_num(y_internal),
+            ay = fmt_num(first_text_band_y),
             ily = fmt_num(-label_h / 2.0),
             w = fmt_num(annotation_w),
             h = fmt_num(label_h),
@@ -1100,7 +1105,7 @@ fn render_node(id: &str, n: &LayoutNode, theme: &ThemeVariables, d: &ClassDiagra
         out.push_str(&format!(
             r#"<g class="annotation-group text" transform="translate({ax}, {ay})"></g>"#,
             ax = fmt_num(annotation_x),
-            ay = fmt_num(y_internal),
+            ay = fmt_num(first_text_band_y),
         ));
     }
 
@@ -1121,7 +1126,7 @@ fn render_node(id: &str, n: &LayoutNode, theme: &ThemeVariables, d: &ClassDiagra
     //     `lineBreakRegex` and rounds per line, taking the max.
     let label_w = crate::font_metrics::text_width(label, label_family, label_font, true, false);
     let label_x = -label_w / 2.0;
-    let label_y = y_internal + raw_annotation_h;
+    let label_y = first_text_band_y + raw_annotation_h;
     out.push_str(&format!(
         r#"<g class="label-group text" transform="translate({lx}, {ly})">"#,
         lx = fmt_num(label_x),
@@ -1196,9 +1201,6 @@ fn render_node(id: &str, n: &LayoutNode, theme: &ThemeVariables, d: &ClassDiagra
     // formulas collapse to the original constants we already use;
     // for non-empty rows, we replicate the textHelper transform plus the
     // classBox post-adjustment loop.
-    let has_members = class_node.is_some_and(|c| !c.members.is_empty());
-    let has_methods = class_node.is_some_and(|c| !c.methods.is_empty());
-    let render_extra_box = !has_members && !has_methods;
     // bbox.width as seen by classBox = max foreignObject width across
     // all visible groups. For empty members/methods this is just the
     // label's foreignObject width.
@@ -1258,57 +1260,10 @@ fn render_node(id: &str, n: &LayoutNode, theme: &ThemeVariables, d: &ClassDiagra
                                // sits at intrinsic (0,0); the union therefore collapses to a single
                                // (0, 0, max_w, line_h) box regardless of row count (see notes in
                                // layout/class.rs::estimate_classbox_dimensions).
-    let raw_members_h = if has_members { label_h } else { 0.0 };
-    let extra_sub = if render_extra_box { padding / 2.0 } else { 0.0 };
-    let annotation_h_cb = if raw_annotation_h - extra_sub == 0.0 {
-        0.0
-    } else {
-        raw_annotation_h - extra_sub
-    };
-    let label_h_cb = if raw_label_h - extra_sub == 0.0 {
-        0.0
-    } else {
-        raw_label_h - extra_sub
-    };
-    let members_h_cb = if raw_members_h - extra_sub == 0.0 {
-        0.0
-    } else {
-        raw_members_h - extra_sub
-    };
-    let h_internal_real = if render_extra_box {
-        drawn_h - 4.0 * padding
-    } else {
-        drawn_h - 2.0 * padding
-    };
-    let y_internal_real = -h_internal_real / 2.0;
-    let extra_box_offset = if render_extra_box {
-        padding
-    } else if !has_members && !has_methods {
-        -padding / 2.0
-    } else {
-        0.0
-    };
-    // Initial translateY set by textHelper for members:
-    //   annotationGroupHeight (raw, untouched by classBox subtraction)
-    //   + labelGroupHeight (raw)
-    //   + GAP * 2
-    // Note: textHelper uses the *raw* heights. classBox's subtracted
-    // values are only used in its own newTranslateY formula.
-    let members_translate_y_initial = raw_annotation_h + raw_label_h + 2.0 * padding;
-    let members_translate_y =
-        members_translate_y_initial + y_internal_real + padding - extra_box_offset;
-
-    // textHelper methods translateY uses post-set membersGroupHeight,
-    // but classBox *overrides* this for the methods-group with
-    //   newTranslateY = annotation_cb + label_cb + max(members_cb, GAP/2) + y + GAP*4 + PADDING
-    // (when `nodeHeightGreater` is false, the common case here).
-    let members_h_for_methods = members_h_cb.max(padding / 2.0);
-    let methods_translate_y = annotation_h_cb
-        + label_h_cb
-        + members_h_for_methods
-        + y_internal_real
-        + 4.0 * padding
-        + padding;
+    let member_row_count = class_node.map(|c| c.members.len()).unwrap_or(0);
+    let members_translate_y = label_y + raw_label_h + 2.0 * padding;
+    let methods_translate_y =
+        members_translate_y + member_row_count as f64 * label_h + 2.0 * padding;
 
     // Emit members-group.
     out.push_str(&format!(
@@ -1338,23 +1293,10 @@ fn render_node(id: &str, n: &LayoutNode, theme: &ThemeVariables, d: &ClassDiagra
     }
     out.push_str("</g>");
 
-    // Divider lines. Upstream emits these whenever
-    // `members.len() > 0 || methods.len() > 0 || renderExtraBox`. For
-    // class/186 (renderExtraBox=true) we emit both:
-    //   firstLineY  = annotationGroupHeight + labelGroupHeight + y_internal + PADDING
-    //   secondLineY = annotationGroupHeight + labelGroupHeight + membersGroupHeight + y_internal + GAP*2 + PADDING
-    //
-    // The `*Height` values are reduced by `PADDING/2` for the
-    // renderExtraBox path (truthy in JS even when negative, hence we
-    // reproduce the same "-6 / 10.296875 / -6" fall-out byte-for-byte).
-    // Use the same group heights classBox itself uses (the *_cb values),
-    // not the raw textHelper values. With `renderExtraBox=true` the
-    // empty-group case collapses into the legacy `-6 / 10.296875 / -6`
-    // constants byte-for-byte; non-empty groups go through the populated
-    // formula.
-    let first_line_y = annotation_h_cb + label_h_cb + y_internal_real + padding;
-    let second_line_y =
-        annotation_h_cb + label_h_cb + members_h_cb + y_internal_real + 2.0 * padding + padding;
+    // Divider lines sit in the gap immediately above the members/methods
+    // groups in browser-rendered Mermaid output.
+    let first_line_y = members_translate_y - 2.0 * padding;
+    let second_line_y = methods_translate_y - 2.0 * padding;
 
     out.push_str(&format!(
         r#"<g class="divider" style="{gs}"><path d=""#,
@@ -1467,6 +1409,7 @@ fn rough_curve(out: &mut String, x1: f64, y1: f64, x2: f64, y2: f64, c: f64, fir
 // their `pathBBox` is computed by parsing the same `d=` string the
 // renderer emits — i.e. apply marker offsets and walk the curveBasis
 // spline expansion.
+#[allow(dead_code)]
 fn compute_svg_bbox_local(l: &ClassLayout, d: &ClassDiagram) -> (f64, f64, f64, f64) {
     let mut min_x = f64::INFINITY;
     let mut min_y = f64::INFINITY;
@@ -2003,7 +1946,11 @@ fn render_edge_label(e: &crate::layout::unified::types::Edge, cross_cluster: boo
             false,
         )
     };
-    let label_h = 16.296875; // Default line height
+    let label_h = if label_text.is_empty() {
+        0.0
+    } else {
+        CLASS_EDGE_LABEL_LINE_HEIGHT
+    };
 
     let opts = LabelOpts {
         data_id: Some(&e.id),
@@ -2247,7 +2194,7 @@ fn render_edge_terminal(
         false,
         false,
     );
-    let fo_h = 16.296875_f64;
+    let fo_h = CLASS_EDGE_LABEL_LINE_HEIGHT;
     // Inner translate centres the foreignObject around its origin —
     // upstream's `computeLabelTransform` returns `(-w/2, -h/2)`.
     let inner_tx = -fo_w / 2.0;
@@ -2258,15 +2205,17 @@ fn render_edge_terminal(
     //   t.style.height = "12px";
     // i.e. it overwrites the foreignObject's inline `style.width` with
     // `label.length * 9` where `length` is JS UTF-16 code units. Replicate
-    // that here so terminal labels with multi-character multiplicities
+    // the width here so terminal labels with multi-character multiplicities
     // (e.g. "many", "0..n", "1..n") emit `width: 36px` instead of a
-    // hardcoded `9px`.
+    // hardcoded `9px`. Do not keep upstream's 12px style height: in a real
+    // browser it overrides the `height` attribute and clips the XHTML label.
     let style_w_px = text.encode_utf16().count() * 9;
     let fo_block = format!(
-        r#"<foreignObject width="{w}" height="{h}" style="width: {sw}px; height: 12px;"><div style="display: table-cell; white-space: nowrap; line-height: 1.5;" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel "><p>{txt}</p></span></div></foreignObject>"#,
+        r#"<foreignObject width="{w}" height="{h}" style="width: {sw}px; height: {sh}px;"><div style="display: table-cell; white-space: nowrap; line-height: 1.5;" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel "><p>{txt}</p></span></div></foreignObject>"#,
         w = fmt_num(fo_w),
         h = fmt_num(fo_h),
         sw = style_w_px,
+        sh = fmt_num(fo_h),
         txt = html_escape(text),
     );
 
@@ -2815,6 +2764,39 @@ mod tests {
         assert_byte_exact(&got, &expected_norm, rel)
     }
 
+    fn render_rel(rel: &str) -> String {
+        let base = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mmd = base.join("tests").join(format!("{}.mmd", rel));
+        let source =
+            std::fs::read_to_string(&mmd).unwrap_or_else(|e| panic!("read fixture {:?}: {e}", mmd));
+        let id = id_for_rel(rel);
+        render_fixture(&source, &id)
+    }
+
+    fn viewbox(svg: &str) -> [f64; 4] {
+        let start = svg.find(r#"viewBox=""#).expect("viewBox attribute") + r#"viewBox=""#.len();
+        let end = svg[start..]
+            .find('"')
+            .map(|i| start + i)
+            .expect("viewBox close quote");
+        let values: Vec<f64> = svg[start..end]
+            .split_whitespace()
+            .map(|part| part.parse::<f64>().expect("viewBox number"))
+            .collect();
+        assert_eq!(values.len(), 4);
+        [values[0], values[1], values[2], values[3]]
+    }
+
+    fn assert_class_fixture_has_browser_viewbox(rel: &str) {
+        let got = render_rel(rel);
+        assert!(got.contains(r#"class="classDiagram""#));
+        let vb = viewbox(&got);
+        assert_eq!(vb[0], 0.0, "{rel} should normalize the left browser bound");
+        assert_eq!(vb[1], 0.0, "{rel} should normalize the top browser bound");
+        assert!(vb[2] > 1.0, "{rel} width should be non-empty: {vb:?}");
+        assert!(vb[3] > 1.0, "{rel} height should be non-empty: {vb:?}");
+    }
+
     #[test]
     fn render_no_longer_returns_unsupported() {
         let d = parse("classDiagram\nclass Foo\n").unwrap();
@@ -2954,13 +2936,12 @@ mod tests {
         assert!(total > 0, "no class fixtures found");
     }
 
-    /// Byte-exact regression: the empty-members-and-methods class
-    /// fixtures (cypress/class/{39,50,101,186,191,196}) all share the
-    /// same upstream layout/render geometry. Pin down `186` so future
-    /// shape-utility refactors flag any drift.
+    /// Regression: this empty-members-and-methods fixture used to inherit a
+    /// jsdom-oriented negative viewBox. Browser consumption now normalizes the
+    /// visible content bounds instead.
     #[test]
-    fn class_186_is_byte_exact() {
-        assert!(check_one("ext_fixtures/cypress/class/186"));
+    fn class_186_has_browser_aligned_bounds() {
+        assert_class_fixture_has_browser_viewbox("ext_fixtures/cypress/class/186");
     }
 
     /// Diagnostic: reports shell-style alignment for the first class
@@ -2995,16 +2976,14 @@ mod tests {
         );
     }
 
-    /// Byte-exact regression: cypress fixtures 88/89/141/178 all share
-    /// a single dependency edge between two classes. They cover the
-    /// edge-spline contribution to viewBox and the markerOffset trim of
-    /// the `d=` path. Pin them down so the dependency-marker geometry
-    /// stays in sync.
+    /// Regression: cypress fixtures 88/89/141/178 all share a single
+    /// dependency edge between two classes. They cover edge-spline
+    /// contribution to the browser-facing viewBox after normalization.
     #[test]
-    fn class_88_89_141_178_are_byte_exact() {
+    fn class_88_89_141_178_have_browser_aligned_bounds() {
         for n in &["88", "89", "141", "178"] {
             let rel = format!("ext_fixtures/cypress/class/{}", n);
-            assert!(check_one(&rel), "{} should be byte-exact", rel);
+            assert_class_fixture_has_browser_viewbox(&rel);
         }
     }
 

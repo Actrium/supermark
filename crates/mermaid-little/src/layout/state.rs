@@ -12,10 +12,11 @@
 //! `stateDiagram`).
 
 use crate::error::Result;
-use crate::font_metrics::{line_height as font_line_height, text_width};
+use crate::font_metrics::text_width;
 use crate::layout::unified::render as unified_render;
 use crate::layout::unified::types::{Edge as LEdge, LayoutData, LayoutResult, Node as LNode};
 use crate::model::state::{NotePosition, ParseItem, StateDiagram, StateKind};
+use crate::render::foreign_object::{html_label_line_height, HTML_LABEL_FONT_SIZE};
 use crate::theme::ThemeVariables;
 
 /// Layout result for one state diagram.
@@ -80,12 +81,10 @@ const DEFAULT_NODE_SPACING: f64 = 50.0;
 const DEFAULT_RANK_SPACING: f64 = 50.0;
 const DEFAULT_LABEL_PAD_X: f64 = 8.0;
 const DEFAULT_LABEL_PAD_Y: f64 = 8.0;
-/// Font size used for node label measurement. Upstream's `labelHelper`
-/// calls `div.getBoundingClientRect()` on the foreignObject HTML label,
-/// which inherits the default 14 px sans-serif from the SVG root — NOT
-/// the theme's `fontSize` (16 px). Using 14 px here makes dagre assign
-/// the same node dimensions as upstream.
-const DEFAULT_FONT_SIZE: f64 = 14.0;
+/// Font size used for HTML labels inside Mermaid foreignObjects. The SVG root
+/// resolves to 16 px and label divs set `line-height: 1.5`, so a one-line
+/// label consumes 24 px in browser layout.
+const DEFAULT_FONT_SIZE: f64 = HTML_LABEL_FONT_SIZE;
 
 /// Public entry.
 pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
@@ -315,7 +314,7 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
                     // Node size = union_w + padding × union_h + padding.
                     n.shape = Some("rectWithTitle".into());
                     let desc_lines = state.description.as_ref().unwrap();
-                    let lh = font_line_height("sans-serif", DEFAULT_FONT_SIZE, node_is_bold, false);
+                    let lh = html_label_line_height(DEFAULT_FONT_SIZE);
                     let title_w =
                         text_width(label, "sans-serif", DEFAULT_FONT_SIZE, node_is_bold, false);
                     let mut max_w = title_w;
@@ -566,11 +565,9 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
                             false,
                             false,
                         );
-                        // Note height is always 46.296875 (16.296875 + 2*15):
-                        // jsdom getBoundingClientRect on the single-line foreignObject returns
-                        // exactly one line height (16.296875) regardless of multi-line content.
-                        const NOTE_HEIGHT: f64 = 46.296875;
                         const NOTE_PAD: f64 = 15.0;
+                        let note_height =
+                            html_label_line_height(DEFAULT_FONT_SIZE) + 2.0 * NOTE_PAD;
                         let note_w = note_text_w + 2.0 * NOTE_PAD;
                         let note_node = LNode {
                             id: note_id.clone(),
@@ -581,7 +578,7 @@ pub fn layout(d: &StateDiagram, theme: &ThemeVariables) -> Result<StateLayout> {
                             look: Some("classic".into()),
                             label: Some(note.text.clone()),
                             width: Some(note_w),
-                            height: Some(NOTE_HEIGHT),
+                            height: Some(note_height),
                             parent_id: Some(parent_id_str.clone()),
                             ..Default::default()
                         };
@@ -1358,10 +1355,10 @@ fn decode_label_entities(s: &str) -> String {
 /// the full joined string gives the same result as measuring the textContent.
 fn measure_edge_label(text: &str) -> (f64, f64) {
     const EDGE_LABEL_FONT: &str = "sans-serif";
-    const EDGE_LABEL_SIZE: f64 = 14.0;
-    let h = font_line_height(EDGE_LABEL_FONT, EDGE_LABEL_SIZE, false, false);
+    const EDGE_LABEL_SIZE: f64 = HTML_LABEL_FONT_SIZE;
+    let h = html_label_line_height(EDGE_LABEL_SIZE);
     if text.is_empty() {
-        return (0.0, h);
+        return (0.0, 0.0);
     }
     // Measure the full text as one string — \n chars have zero advance so the
     // sum equals the textContent width (with <br/> tags stripped).  This
@@ -1388,7 +1385,7 @@ fn measure_lines_box(lines: &[&str], font_size: f64, bold: bool) -> (f64, f64) {
         }
     }
     let lines_n = lines.len().max(1) as f64;
-    let h = lines_n * font_line_height(font_family, font_size, bold, false);
+    let h = lines_n * html_label_line_height(font_size);
     let total_w = max_w + 2.0 * DEFAULT_LABEL_PAD_X;
     let total_h = h + 2.0 * DEFAULT_LABEL_PAD_Y;
     // No minimum width: upstream's labelHelper uses actual text metrics with

@@ -405,22 +405,11 @@ fn basis_spline_tight_bbox(
 /// the title text widens it), matching upstream's `insertTitle` which records
 /// the bounds center before adding the `<text>` element.
 fn compute_viewbox(l: &StateLayout, pad: f64, title: Option<&str>) -> (f64, f64, f64, f64, f64) {
-    // Simulate upstream's `svg.node().getBBox()` with the jsdom shim used
-    // to generate reference SVGs.  That shim collects intrinsic bounding
-    // boxes of all SVG primitives (rect, circle, path, foreignObject …)
-    // while **ignoring all transform attributes**.  Since every node group
-    // carries a `transform="translate(cx,cy)"` that the shim skips, each
-    // node contributes its LOCAL-coordinate bbox to the union:
-    //
-    //   regular state node  →  rect: {x:-w/2, y:-h/2, w, h}
-    //                          foreignObject: {x:0, y:0, w:lw, h:lh}
-    //                          union: {x:-w/2, x_max:max(w/2,lw), y:-h/2, y_max:max(h/2,lh)}
-    //
-    //   start/end circle    →  circle at cx=0,cy=0,r=7: {x:-7, y:-7, w:14, h:14}
-    //
-    // Edge paths live in <g class="edgePaths"> with no transform, so their
-    // `d`-attribute coordinates are already in the same space as node locals
-    // (i.e. the layout's absolute space — both merge correctly).
+    // Compute browser-facing bounds in rendered SVG coordinates. Earlier
+    // ports mirrored jsdom's historical `getBBox()` shim and ignored node
+    // transforms; real browsers apply the node `translate(cx, cy)` transform,
+    // so the viewBox must union transformed node boxes with absolute edge
+    // path and label boxes.
 
     let mut g_x_min: f64 = f64::INFINITY;
     let mut g_x_max: f64 = f64::NEG_INFINITY;
@@ -574,10 +563,12 @@ fn compute_viewbox(l: &StateLayout, pad: f64, title: Option<&str>) -> (f64, f64,
             // Local bbox = union of rect and foreignObject.
             (-hw, lw.max(hw), -hh, lh.max(hh))
         };
-        g_x_min = g_x_min.min(nx_min);
-        g_x_max = g_x_max.max(nx_max);
-        g_y_min = g_y_min.min(ny_min);
-        g_y_max = g_y_max.max(ny_max);
+        let tx = n.x.unwrap_or(0.0);
+        let ty = n.y.unwrap_or(0.0);
+        g_x_min = g_x_min.min(tx + nx_min);
+        g_x_max = g_x_max.max(tx + nx_max);
+        g_y_min = g_y_min.min(ty + ny_min);
+        g_y_max = g_y_max.max(ty + ny_max);
     }
 
     // Edge paths — compute tight bounding box of the rendered basis spline.
@@ -600,13 +591,8 @@ fn compute_viewbox(l: &StateLayout, pad: f64, title: Option<&str>) -> (f64, f64,
             g_y_min = g_y_min.min(by_min);
             g_y_max = g_y_max.max(by_max);
         }
-        // Edge label bbox.
-        // The upstream jsdom shim used to generate reference SVGs calls
-        // getBBox() without applying CSS/SVG transforms. So a foreignObject
-        // with width=lw, height=lh inside nested <g transform=...> groups
-        // contributes its UNTRANSFORMED local bbox [0,lw]×[0,lh] to the
-        // global getBBox union. We replicate this behavior here.
-        if e.label_x.is_some() {
+        // Edge label bbox in browser coordinates.
+        if let (Some(label_x), Some(label_y)) = (e.label_x, e.label_y) {
             // Get label text and measure width.
             let raw_label = e.label.as_deref().unwrap_or("");
             if !raw_label.trim().is_empty() {
@@ -614,13 +600,21 @@ fn compute_viewbox(l: &StateLayout, pad: f64, title: Option<&str>) -> (f64, f64,
                 let decoded = decode_mermaid_entities(raw_label);
                 if !decoded.trim().is_empty() {
                     use crate::font_metrics::text_width as ftw;
-                    let lw = ftw(decoded.trim(), "sans-serif", 14.0, false, false);
-                    let lh = 16.296875_f64; // one line height
-                                            // foreignObject LOCAL bbox (ignoring parent transforms): [0,lw]×[0,lh].
-                    g_x_min = g_x_min.min(0.0);
-                    g_x_max = g_x_max.max(lw);
-                    g_y_min = g_y_min.min(0.0);
-                    g_y_max = g_y_max.max(lh);
+                    use crate::render::foreign_object::{
+                        html_label_line_height, HTML_LABEL_FONT_SIZE,
+                    };
+                    let lw = ftw(
+                        decoded.trim(),
+                        "sans-serif",
+                        HTML_LABEL_FONT_SIZE,
+                        false,
+                        false,
+                    );
+                    let lh = html_label_line_height(HTML_LABEL_FONT_SIZE);
+                    g_x_min = g_x_min.min(label_x - lw / 2.0);
+                    g_x_max = g_x_max.max(label_x + lw / 2.0);
+                    g_y_min = g_y_min.min(label_y - lh / 2.0);
+                    g_y_max = g_y_max.max(label_y + lh / 2.0);
                 }
             }
         }
@@ -644,15 +638,14 @@ fn compute_viewbox(l: &StateLayout, pad: f64, title: Option<&str>) -> (f64, f64,
     let content_center_x = g_x_min + (g_x_max - g_x_min) / 2.0;
 
     // Expand bounds to include the diagram title text if present.
-    // The title <text> element has no inline font attributes, so jsdom's
-    // resolveFont falls back to default: sans-serif 14px.
-    // Its intrinsicBox is {x:0, y:0, width:text_width, height:lh} (x,y
-    // are always 0 regardless of the `x` attribute).
+    // The title <text> element has no inline font attributes. Keep this bound
+    // slightly browser-biased so title text cannot tighten the overall viewBox.
     if let Some(t) = title {
         if !t.is_empty() {
             use crate::font_metrics::text_width as ftw;
-            let tw = ftw(t, "sans-serif", 14.0, false, false);
-            let lh = 16.296875_f64;
+            use crate::render::foreign_object::{html_label_line_height, HTML_LABEL_FONT_SIZE};
+            let tw = ftw(t, "sans-serif", HTML_LABEL_FONT_SIZE, false, false);
+            let lh = html_label_line_height(HTML_LABEL_FONT_SIZE);
             g_x_min = g_x_min.min(0.0);
             g_x_max = g_x_max.max(tw);
             g_y_min = g_y_min.min(0.0);
@@ -1358,7 +1351,9 @@ fn recompute_edge_label_position(e: &Edge, _nodes: &[Node]) -> Option<(f64, f64)
 
 fn emit_edge_label(e: &Edge, nodes: &[Node]) -> String {
     use crate::font_metrics::text_width;
-    use crate::render::foreign_object::{self, LabelOpts};
+    use crate::render::foreign_object::{
+        self, html_label_line_height, LabelOpts, HTML_LABEL_FONT_SIZE,
+    };
 
     let raw = e.label.as_deref().unwrap_or("");
     // Decode mermaid #name; entities before rendering (upstream decodeEntities).
@@ -1388,10 +1383,16 @@ fn emit_edge_label(e: &Edge, nodes: &[Node]) -> String {
     // Since \n has zero advance in our font metrics, text_width(decoded) gives
     // the correct sum: each line's chars plus zero for each \n separator.
     let (lw, lh) = if decoded.is_empty() {
-        (0.0, 16.296875) // default line-height at 14px sans-serif
+        (0.0, 0.0)
     } else {
-        let tw = text_width(decoded.trim(), "sans-serif", 14.0, false, false);
-        (tw, 16.296875)
+        let tw = text_width(
+            decoded.trim(),
+            "sans-serif",
+            HTML_LABEL_FONT_SIZE,
+            false,
+            false,
+        );
+        (tw, html_label_line_height(HTML_LABEL_FONT_SIZE))
     };
 
     let (x, y) = recompute_edge_label_position(e, nodes)
@@ -1717,16 +1718,21 @@ fn emit_state_node(id: &str, n: &Node, _theme: &ThemeVariables) -> Option<String
 /// - A label group containing two foreignObjects: title and description.
 fn emit_rect_with_title(id: &str, n: &Node, _theme: &ThemeVariables) -> Option<String> {
     use crate::font_metrics::text_width as ft_w;
+    use crate::render::foreign_object::{html_label_line_height, HTML_LABEL_FONT_SIZE};
     const FONT_FAMILY: &str = "sans-serif";
-    const FONT_SIZE: f64 = 14.0;
+    const FONT_SIZE: f64 = HTML_LABEL_FONT_SIZE;
     const HALF_PAD: f64 = 4.0; // halfPadding = node.padding / 2 = 8/2 = 4
 
     let _w = n.width.unwrap_or(0.0);
     let h = n.height.unwrap_or(0.0);
     let padding = n.label_padding_x.unwrap_or(8.0);
-    let lh = h - padding; // = line_height (=16.296875)
-                          // Upstream rectWithTitle uses `"node " + node2.classes` (no trailing space),
-                          // not the `get_node_classes` helper (which appends a trailing space).
+    let lh = if h > padding {
+        h - padding
+    } else {
+        html_label_line_height(FONT_SIZE)
+    };
+    // Upstream rectWithTitle uses `"node " + node2.classes` (no trailing space),
+    // not the `get_node_classes` helper (which appends a trailing space).
     let css_cls = n.css_classes.as_deref().unwrap_or("undefined");
     let classes = format!("node {}", css_cls);
     let nid = n.dom_id.clone().unwrap_or_else(|| n.id.clone());

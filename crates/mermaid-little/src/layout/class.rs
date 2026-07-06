@@ -51,6 +51,8 @@ pub struct ClassLayout {
 /// Default padding — matches upstream `classRenderer-v3-unified.ts`
 /// which calls `setupViewPortForSVG(svg, padding=8)`.
 const VIEWBOX_PADDING: f64 = 8.0;
+const CLASS_BOX_PADDING: f64 = 12.0;
+const CLASS_HTML_LINE_HEIGHT: f64 = 24.0;
 
 /// Public entry point.
 pub fn layout(d: &ClassDiagram, theme: &ThemeVariables) -> Result<ClassLayout> {
@@ -238,9 +240,9 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
         // (`tests/support/generate_ref.mjs`) measures `el.textContent`
         // for HTML elements, and `<br/>` contributes empty textContent.
         // So a multi-line note like "Foo\nBar" is measured as a single
-        // joined string "FooBar". bbox.height collapses to a single
-        // 16.296875 line. Padding = 6 ⇒ +12 on each axis.
-        let line_h = 16.296875_f64;
+        // joined string "FooBar". In a real browser the HTML label resolves
+        // to 16 px text with line-height:1.5, i.e. a 24 px line box.
+        let line_h = CLASS_HTML_LINE_HEIGHT;
         let note_padding = 6.0_f64;
         let joined: String = n.text.split('\n').collect();
         // Upstream's note label goes through DOMPurify into a foreignObject;
@@ -287,9 +289,9 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
             // even when the label text is empty — the resulting fO collapses
             // to (0, line_h) which still nudges dagre's rank packing.
             // Without this, the note→class spline collapses by one
-            // line-height (~16 px), shifting downstream y-coordinates.
+            // line-height, shifting downstream y-coordinates.
             e.extra.insert("label_width".into(), "0".into());
-            e.extra.insert("label_height".into(), "16.296875".into());
+            e.extra.insert("label_height".into(), line_h.to_string());
             // Upstream sets arrowTypeStart/End to 'none' (string), which
             // renders as no marker reference. Leave both as None here.
             data.edges.push(e);
@@ -304,7 +306,7 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
     // the `opacity:0; !important` style on the basic rect container.
     let iface_family = "trebuchet ms,verdana,arial,sans-serif";
     let iface_font = 14.0_f64;
-    let iface_line_h = 16.296875_f64;
+    let iface_line_h = CLASS_HTML_LINE_HEIGHT;
     for iface in &d.interfaces {
         // Upstream's `rect` shape measures the label's foreignObject and
         // pads with `labelPaddingX/Y`. For lollipop interfaces the text
@@ -340,7 +342,7 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
     // — `make_edge_label` in the dagre bridge picks these up.
     let label_family = "trebuchet ms,verdana,arial,sans-serif";
     let label_font = 14.0_f64;
-    let label_line_h = 16.296875_f64;
+    let label_line_h = CLASS_HTML_LINE_HEIGHT;
     for (i, r) in d.relations.iter().enumerate() {
         let mut e = Edge {
             id: format!("id_{}_{}_{}", r.id1, r.id2, i + 1),
@@ -502,8 +504,8 @@ fn estimate_classbox_dimensions(c: &ClassNode) -> (f64, f64) {
     // For empty members AND methods (no `hideEmptyMembersBox`): renderExtraBox=true → extraHeight=24.
     let font = 14.0;
     let family = "trebuchet ms,verdana,arial,sans-serif";
-    let line_h = 16.296875_f64; // foreignObject height for label at 14 px
-    let padding = 12.0_f64;
+    let line_h = CLASS_HTML_LINE_HEIGHT;
+    let padding = CLASS_BOX_PADDING;
 
     // Label width (bold, html-label style — measured via foreignObject).
     // The foreignObject width tracks the rendered <p>{display_label}</p>
@@ -537,20 +539,20 @@ fn estimate_classbox_dimensions(c: &ClassNode) -> (f64, f64) {
     let has_members = !c.members.is_empty();
     let has_methods = !c.methods.is_empty();
 
-    // bbox.height — `generate_ref.mjs`'s getBBox shim *ignores* transforms
-    // when computing the union, and every foreignObject (label / each
-    // member / each method) starts at intrinsic (0, 0, w, line_h). Their
-    // union therefore collapses to a single (0, 0, max_w, line_h) box.
-    // We intentionally do NOT add per-row height here.
-    let _ = (has_members, has_methods);
-
-    // h adjustments per classBox.ts:
-    let mut h = bbox_h;
-    if !has_members && !has_methods {
-        h += padding; // GAP
-    } else if has_members && !has_methods {
-        h += padding * 2.0;
-    }
+    // Real browsers include each translated classBox text row in the shape
+    // bbox. The old jsdom fixture shim collapsed every foreignObject to the
+    // same local origin, producing very short boxes whose labels were clipped
+    // when rendered in Chrome/Safari. Count the visible rows and reserve the
+    // same vertical bands Mermaid paints: label/member/method rows, 4 GAPs for
+    // populated class boxes, and the outer top/bottom padding.
+    let annotation_rows = if c.annotations.is_empty() { 0 } else { 1 };
+    let label_rows = c.display_label().split('\n').count().max(1);
+    let row_count = annotation_rows + label_rows + c.members.len() + c.methods.len();
+    let band_gap_h = if has_members || has_methods {
+        padding * 4.0
+    } else {
+        padding
+    };
 
     // extraHeight: with empty members AND methods, renderExtraBox=true →
     // extraHeight = PADDING * 2 = 24. Otherwise 0.
@@ -561,7 +563,7 @@ fn estimate_classbox_dimensions(c: &ClassNode) -> (f64, f64) {
     };
 
     let drawn_w = bbox_w + 2.0 * padding;
-    let drawn_h = h + 2.0 * padding + extra_h;
+    let drawn_h = row_count as f64 * bbox_h + band_gap_h + 2.0 * padding + extra_h;
     (drawn_w, drawn_h)
 }
 
