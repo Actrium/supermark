@@ -1,6 +1,7 @@
 #![cfg(feature = "metrics-ttf-parser")]
 
 use mermaid_little::convert_with_id;
+use mermaid_little::render::foreign_object::{measure_html_markup_label, HtmlLabelFont};
 
 #[derive(Debug)]
 struct ForeignObject {
@@ -32,12 +33,21 @@ fn foreign_objects(svg: &str) -> Vec<ForeignObject> {
     doc.descendants()
         .filter(|n| n.has_tag_name("foreignObject"))
         .map(|node| ForeignObject {
-            text: node
-                .descendants()
-                .filter_map(|n| n.text())
-                .collect::<String>()
-                .trim()
-                .to_string(),
+            text: {
+                let p_text = node
+                    .descendants()
+                    .filter(|n| n.has_tag_name("p"))
+                    .filter_map(|n| n.text())
+                    .collect::<String>();
+                let text = if p_text.is_empty() {
+                    node.descendants()
+                        .filter_map(|n| n.text())
+                        .collect::<String>()
+                } else {
+                    p_text
+                };
+                text.trim().to_string()
+            },
             width: parse_number(node.attribute("width").unwrap_or("0")),
             height: parse_number(node.attribute("height").unwrap_or("0")),
         })
@@ -83,6 +93,34 @@ fn flowchart_html_labels_have_browser_line_height_and_bounds() {
         assert_eq!(
             label.height, 0.0,
             "empty edge labels should not affect bounds"
+        );
+    }
+}
+
+#[test]
+fn flowchart_edge_labels_have_readability_padding() {
+    let source = r#"flowchart TD
+    A[Write Markdown] --> B[Render Preview]
+    B --> C{Review}
+    C -->|Pass| D[Publish]
+    C -->|Fail| A
+"#;
+    let svg = convert_with_id(source, "bounds-flowchart-padding").expect("render flowchart");
+    let labels = foreign_objects(&svg);
+    let font = HtmlLabelFont::default();
+    let seen: Vec<_> = labels.iter().map(|fo| fo.text.as_str()).collect();
+
+    for edge_label in ["Pass", "Fail"] {
+        let label = labels
+            .iter()
+            .find(|fo| fo.text == edge_label)
+            .unwrap_or_else(|| panic!("edge label {edge_label:?} should render; saw {seen:?}"));
+        let (text_width, _) = measure_html_markup_label(edge_label, &font, 200.0, true);
+        let expected = text_width + 8.0;
+        assert!(
+            (label.width - expected).abs() < 1e-9,
+            "edge label {edge_label:?} width {} should include 4px left/right padding over measured text width {text_width}",
+            label.width
         );
     }
 }

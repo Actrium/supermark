@@ -1,0 +1,10 @@
+# Known upstream-alignment warnings intentionally ignored by sweep tests.
+#
+# Format:
+#   <scope>  TAB  <check>  TAB  <reason>
+#
+# These are deliberate mermaid-little rendering policy choices, not missing
+# fixture skips. Keep this file small: each row must have a concrete visual
+# reason and must be covered by a focused test.
+
+flowchart	edge-label-horizontal-padding	Mermaid 11.14.0 keeps flowchart edge-label backgrounds flush with text (`.edgeLabel p { padding: 0; }`); mermaid-little adds 4px left/right padding for readability.

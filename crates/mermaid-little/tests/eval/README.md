@@ -74,6 +74,16 @@ errors / warnings / matches with colour.
 
 Thresholds are tweakable via `CheckConfig`.
 
+## Known Warning / Ignored Alignment Diffs
+
+Rows in `tests/known_alignment_warnings.txt` document intentional
+non-upstream visual adjustments that sweep tests report as warnings instead
+of treating as regressions. Current entry:
+
+| scope | check | reason |
+|---|---|---|
+| flowchart | `edge-label-horizontal-padding` | Upstream Mermaid 11.14.0 keeps flowchart edge-label backgrounds flush with text (`.edgeLabel p { padding: 0; }`); mermaid-little adds 4px left/right padding for readability. |
+
 ## What's deferred
 
 * **SSIM for raw SVGs** — `ssim::ssim_svg` currently returns `Err(..)`.
