@@ -969,6 +969,11 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
     // difference constraints `posC[hi] - posC[lo] >= needed` and solved by
     // longest-path in the positioning pass below. See `span_constraints` use.
     let mut span_constraints: Vec<(usize, usize, f64)> = Vec::new();
+    // `create <name>` sets this; the next message targeting `name` becomes a
+    // create message (Java: SequenceDiagram.pendingCreate). A create message's
+    // arrow ends at the target's head-box edge (not its lifeline center), so
+    // the gap must also accommodate the target's half box width.
+    let mut gap_pending_create: Option<String> = None;
     for event in &sd.events {
         match event {
             SeqEvent::AutoNumber { start } => {
@@ -1063,6 +1068,22 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                     let needed = rose::arrow_preferred_size(&tm, 0.0, 0.0).width
                         + active_right_shift(fi_level)
                         + active_left_shift(ti_level);
+                    // A create message's arrow terminates at the created
+                    // participant's head-box edge instead of its lifeline
+                    // center (Java: ArrowAndParticipant draws to the box, not
+                    // the line). The column gap must therefore also cover the
+                    // target's half effective width so the arrow + head box
+                    // both fit between the two centers.
+                    let is_create_msg = gap_pending_create
+                        .as_deref()
+                        .map(|n| n == msg.to.as_str())
+                        .unwrap_or(false);
+                    gap_pending_create = None;
+                    let needed = if is_create_msg {
+                        needed + effective_widths[ti] / 2.0
+                    } else {
+                        needed
+                    };
                     let span = hi - lo; // number of gaps this message spans
                     if span > 0 {
                         if span == 1 {
@@ -1098,6 +1119,9 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
             SeqEvent::Deactivate(name) | SeqEvent::Destroy(name) => {
                 let level = gap_active_levels.entry(name.as_str()).or_default();
                 *level = level.saturating_sub(1);
+            }
+            SeqEvent::Create(name) => {
+                gap_pending_create = Some(name.clone());
             }
             _ => {}
         }
@@ -1428,6 +1452,20 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                             to_x += ACTIVATION_WIDTH / 2.0;
                         } else {
                             to_x -= ACTIVATION_WIDTH / 2.0;
+                        }
+                    }
+                }
+                // A create message targets the created participant's head-box
+                // edge (Java: ArrowAndParticipant draws the arrow to the
+                // participant box, not the lifeline center), so the arrowhead
+                // sits at the box border instead of piercing into the box.
+                if is_create {
+                    if let Some(pi) = part_name_to_idx.get(&msg.to as &str).copied() {
+                        let p = &participants[pi];
+                        if is_left {
+                            to_x = p.x + p.box_width / 2.0;
+                        } else {
+                            to_x = p.x - p.box_width / 2.0;
                         }
                     }
                 }
@@ -3507,6 +3545,134 @@ mod tests {
             "destroy y ({:.2}) should equal msg.y ({:.2})",
             d.y,
             expected_y
+        );
+    }
+
+    /// `create <name>` followed by a message to `<name>`: the message is flagged
+    /// as a create message and the target participant is marked created with its
+    /// lifeline starting at the create position (issue #36).
+    #[test]
+    fn create_message_flags_target_and_lifeline() {
+        let sd = SequenceDiagram {
+            participants: vec![
+                make_participant("A"),
+                make_participant("B"),
+                make_participant("C"),
+            ],
+            events: vec![
+                SeqEvent::Message(make_message("A", "B", "ping")),
+                SeqEvent::Create("C".to_string()),
+                SeqEvent::Message(make_message("B", "C", "make")),
+                SeqEvent::Message(make_message("B", "C", "call")),
+            ],
+            teoz_mode: false,
+            hide_footbox: false,
+            delta_shadow: 0.0,
+            inline_life_events: vec![],
+            source_seed: 0,
+        };
+        let layout = layout_sequence(&sd, &crate::style::SkinParams::default()).unwrap();
+
+        // The first message to C consumes the pending create; the second does not.
+        assert!(layout.messages[1].is_create, "create message flagged");
+        assert!(
+            !layout.messages[2].is_create,
+            "subsequent message is not a create"
+        );
+
+        // C is created: no top head box, lifeline starts at the create position.
+        let c = &layout.participants[2];
+        assert!(c.created, "target participant marked created");
+        assert!(
+            c.lifeline_start_y > layout.lifeline_top + 1.0,
+            "created lifeline starts below lifeline_top (got start={}, top={})",
+            c.lifeline_start_y,
+            layout.lifeline_top
+        );
+    }
+
+    /// A create message's arrow ends at the target's head-box left edge instead
+    /// of its lifeline center (Java: ArrowAndParticipant draws to the box). A
+    /// subsequent normal message to the same participant still targets the
+    /// center (issue #36).
+    #[test]
+    fn create_message_to_x_targets_box_edge() {
+        let sd = SequenceDiagram {
+            participants: vec![
+                make_participant("A"),
+                make_participant("B"),
+                make_participant("C"),
+            ],
+            events: vec![
+                SeqEvent::Create("C".to_string()),
+                SeqEvent::Message(make_message("B", "C", "make")),
+                SeqEvent::Message(make_message("B", "C", "call")),
+            ],
+            teoz_mode: false,
+            hide_footbox: false,
+            delta_shadow: 0.0,
+            inline_life_events: vec![],
+            source_seed: 0,
+        };
+        let layout = layout_sequence(&sd, &crate::style::SkinParams::default()).unwrap();
+
+        let c = &layout.participants[2];
+        let box_left = c.x - c.box_width / 2.0;
+        // Create arrow (left-to-right) targets the box left edge.
+        assert!(
+            (layout.messages[0].to_x - box_left).abs() < 0.5,
+            "create to_x ({:.2}) should target box left edge ({:.2})",
+            layout.messages[0].to_x,
+            box_left
+        );
+        // Normal message to C targets the lifeline center.
+        assert!(
+            (layout.messages[1].to_x - c.x).abs() < 0.5,
+            "normal to_x ({:.2}) should target lifeline center ({:.2})",
+            layout.messages[1].to_x,
+            c.x
+        );
+    }
+
+    /// The column gap before a created participant must accommodate the target's
+    /// half box width on top of the arrow preferred width, since the create
+    /// arrow terminates at the box edge (issue #36).
+    #[test]
+    fn create_message_widens_gap_by_half_box() {
+        // Diagram *with* a create: B -> C is a create message.
+        let with_create = SequenceDiagram {
+            participants: vec![
+                make_participant("A"),
+                make_participant("B"),
+                make_participant("C"),
+            ],
+            events: vec![
+                SeqEvent::Create("C".to_string()),
+                SeqEvent::Message(make_message("B", "C", "make")),
+            ],
+            teoz_mode: false,
+            hide_footbox: false,
+            delta_shadow: 0.0,
+            inline_life_events: vec![],
+            source_seed: 0,
+        };
+        // Same shape *without* create: B -> C is a normal message.
+        let without_create = SequenceDiagram {
+            events: vec![SeqEvent::Message(make_message("B", "C", "make"))],
+            ..with_create.clone()
+        };
+        let l1 = layout_sequence(&with_create, &crate::style::SkinParams::default()).unwrap();
+        let l2 = layout_sequence(&without_create, &crate::style::SkinParams::default()).unwrap();
+
+        let c_box_half = l2.participants[2].box_width / 2.0;
+        let gap_with_create = l1.participants[2].x - l1.participants[1].x;
+        let gap_without = l2.participants[2].x - l2.participants[1].x;
+        assert!(
+            gap_with_create - gap_without > c_box_half - 1.0,
+            "create should widen the B->C gap by ~half box width (with={:.2}, without={:.2}, half={:.2})",
+            gap_with_create,
+            gap_without,
+            c_box_half
         );
     }
 

@@ -332,21 +332,36 @@ pub fn parse_sequence_diagram_with_original(
                 continue;
             }
             if lower.starts_with("destroy ") {
-                let name = trimmed[8..].trim().to_string();
+                // `destroy [<kind>] <name>` — the optional participant kind
+                // keyword (participant/actor/...) is accepted but ignored; only
+                // the name matters for matching the lifeline to terminate.
+                let name = strip_participant_keyword(trimmed[8..].trim())
+                    .1
+                    .to_string();
                 debug!("parsed destroy: {name}");
                 events.push(SeqEvent::Destroy(name));
                 continue;
             }
-            // `create <name>` — marks the participant as created by the next
-            // message that targets it. Java: SequenceDiagram.pendingCreate.
+            // `create [<kind>] <name>` — marks the participant as created by
+            // the next message that targets it. Java: SequenceDiagram.pendingCreate.
+            // The optional kind keyword (participant/actor/boundary/control/entity/
+            // database/collections/queue) selects the participant shape; `<name>`
+            // follows the same `"Display" as Name` / `Name as "Display"` / `#color`
+            // rules as a regular participant declaration.
             if lower.starts_with("create ") {
-                let name = trimmed[7..].trim().to_string();
+                let (kind, details_rest) = strip_participant_keyword(trimmed[7..].trim());
+                let (name, display_name, color, link_url) =
+                    parse_participant_details(details_rest);
                 if !name.is_empty() {
-                    debug!("parsed create: {name}");
-                    ensure_participant(
+                    debug!("parsed create: name={name}, display={display_name:?}, kind={kind:?}");
+                    ensure_create_participant(
                         &mut declared_participants,
                         &mut auto_participants,
                         &name,
+                        display_name,
+                        kind,
+                        color,
+                        link_url,
                         source_line,
                     );
                     events.push(SeqEvent::Create(name));
@@ -971,6 +986,77 @@ fn parse_fragment_keyword(lower: &str) -> Option<(FragmentKind, usize)> {
     } else {
         None
     }
+}
+
+/// Participant declaration keywords accepted by `participant`/`create`/etc.
+const PARTICIPANT_KEYWORDS: &[&str] = &[
+    "participant",
+    "actor",
+    "boundary",
+    "control",
+    "entity",
+    "database",
+    "collections",
+    "queue",
+];
+
+/// Strip an optional leading participant-kind keyword from `s` (case-insensitive),
+/// returning the parsed kind (if a keyword was present) and the remainder.
+fn strip_participant_keyword(s: &str) -> (Option<ParticipantKind>, &str) {
+    for kw in PARTICIPANT_KEYWORDS {
+        // Match `kw` followed by whitespace, so `actorFoo` is not treated as
+        // kind `actor` + name `Foo`.
+        if s.len() > kw.len()
+            && s[..kw.len()].eq_ignore_ascii_case(kw)
+            && s.as_bytes()[kw.len()].is_ascii_whitespace()
+        {
+            let kind = match *kw {
+                "participant" => ParticipantKind::Default,
+                "actor" => ParticipantKind::Actor,
+                "boundary" => ParticipantKind::Boundary,
+                "control" => ParticipantKind::Control,
+                "entity" => ParticipantKind::Entity,
+                "database" => ParticipantKind::Database,
+                "collections" => ParticipantKind::Collections,
+                "queue" => ParticipantKind::Queue,
+                _ => ParticipantKind::Default,
+            };
+            return (Some(kind), s[kw.len()..].trim_start());
+        }
+    }
+    (None, s)
+}
+
+/// Ensure a participant created via `create [<kind>] <name>` exists in the
+/// auto-created list, preserving the kind / display name / color / link given
+/// on the `create` line. Unlike [`ensure_participant`], this only adds to the
+/// auto-created list (never the declared list) so the bare `create Job` form
+/// keeps the same column ordering as before — declared participants stay first.
+fn ensure_create_participant(
+    declared: &[Participant],
+    auto_created: &mut Vec<Participant>,
+    name: &str,
+    display_name: Option<String>,
+    kind: Option<ParticipantKind>,
+    color: Option<String>,
+    link_url: Option<String>,
+    source_line: usize,
+) {
+    if declared.iter().any(|p| p.name == name) {
+        return;
+    }
+    if auto_created.iter().any(|p| p.name == name) {
+        return;
+    }
+    debug!("auto-creating participant via `create`: {name}");
+    auto_created.push(Participant {
+        name: name.to_string(),
+        display_name,
+        kind: kind.unwrap_or_default(),
+        color,
+        source_line: Some(source_line),
+        link_url,
+    });
 }
 
 /// Ensure participant exists in either the declared or auto-created list
@@ -1623,6 +1709,68 @@ mod tests {
         assert_eq!(create, "Job");
         // The created participant is registered so it gets a column + tail box.
         assert!(diagram.participants.iter().any(|p| p.name == "Job"));
+    }
+
+    /// 6c. Parse `create` with a participant-kind keyword (issue #36 nit)
+    #[test]
+    fn parse_create_with_kind_keyword() {
+        // `create participant Job` must register `Job`, not `"participant Job"`.
+        let src = "@startuml\nClient -> Worker: enqueue\ncreate participant Job\nWorker -> Job: new\n@enduml";
+        let diagram = parse_sequence_diagram(src).unwrap();
+
+        let create = diagram
+            .events
+            .iter()
+            .find_map(|e| match e {
+                SeqEvent::Create(n) => Some(n.clone()),
+                _ => None,
+            })
+            .expect("expected a Create event");
+        assert_eq!(create, "Job");
+        let job = diagram
+            .participants
+            .iter()
+            .find(|p| p.name == "Job")
+            .expect("Job should be registered");
+        assert_eq!(job.kind, ParticipantKind::Default);
+
+        // `create actor Job` selects the Actor shape.
+        let src = "@startuml\nClient -> Worker: enqueue\ncreate actor Job\nWorker -> Job: new\n@enduml";
+        let diagram = parse_sequence_diagram(src).unwrap();
+        let job = diagram
+            .participants
+            .iter()
+            .find(|p| p.name == "Job")
+            .expect("Job should be registered");
+        assert_eq!(job.kind, ParticipantKind::Actor);
+
+        // `create database "Job" as J` registers the alias `J` with display "Job".
+        let src = "@startuml\nClient -> Worker: enqueue\ncreate database \"Job\" as J\nWorker -> J: new\n@enduml";
+        let diagram = parse_sequence_diagram(src).unwrap();
+        let create = diagram
+            .events
+            .iter()
+            .find_map(|e| match e {
+                SeqEvent::Create(n) => Some(n.clone()),
+                _ => None,
+            })
+            .expect("expected a Create event");
+        assert_eq!(create, "J");
+        let j = diagram
+            .participants
+            .iter()
+            .find(|p| p.name == "J")
+            .expect("J should be registered");
+        assert_eq!(j.kind, ParticipantKind::Database);
+        assert_eq!(j.display_name.as_deref(), Some("Job"));
+
+        // Bare `create Job` (no keyword) is unchanged.
+        let src = "@startuml\nClient -> Worker: enqueue\ncreate Job\nWorker -> Job: new\n@enduml";
+        let diagram = parse_sequence_diagram(src).unwrap();
+        assert!(diagram
+            .participants
+            .iter()
+            .all(|p| p.name != "participant Job"));
     }
 
     /// 7. Parse participant declaration with color
