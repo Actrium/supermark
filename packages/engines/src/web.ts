@@ -124,8 +124,11 @@ async function loadWebPlantumlRender(): Promise<DiagramRenderFn> {
   const ensureGraphvizBridge = async () => {
     if (!graphvizBridgePromise) {
       graphvizBridgePromise = (async () => {
-        const spec: string = GRAPHVIZ_WEB_SPEC;
-        const { Graphviz } = (await import(spec)) as GraphvizWebModule;
+        // Static string literal so vite/rollup can bundle the module at build
+        // time. (The `optimizeDeps.exclude` in vite.config still keeps it
+        // un-pre-bundled in dev so viz.wasm stays a sibling of viz.js.)
+        const { Graphviz } =
+          (await import('@actrium/graphviz-anywhere-web')) as GraphvizWebModule;
         const graphviz = await Graphviz.load();
 
         const g = globalThis as unknown as {

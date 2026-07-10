@@ -563,14 +563,16 @@ pub fn parse_activity_diagram(source: &str) -> Result<ActivityDiagram> {
         }
 
         // --- switch (condition) / case (label) / endswitch ---
-        if lower.starts_with("switch") {
+        // Require a delimiter after the keyword (mirrors the `if `/`if(` rule)
+        // so that words like `switchboard` / `caseload` are not mis-tokenized.
+        if lower.starts_with("switch ") || lower.starts_with("switch(") {
             let rest = trimmed[6..].trim();
             let condition = extract_parenthesized(rest).unwrap_or_default();
             debug!("line {line_num}: switch ({condition})");
             events.push(ActivityEvent::Switch { condition });
             continue;
         }
-        if lower.starts_with("case") {
+        if lower.starts_with("case ") || lower.starts_with("case(") {
             let rest = trimmed[4..].trim();
             let label = extract_parenthesized(rest).unwrap_or_default();
             debug!("line {line_num}: case ({label})");
@@ -1482,6 +1484,55 @@ mod tests {
             ActivityEvent::ElseIf { condition, label }
             if condition == "b" && label == "maybe"
         ));
+    }
+
+    #[test]
+    fn parse_switch_case() {
+        let src = "@startuml\nswitch (event?)\ncase (a)\n:do a;\ncase (b)\n:do b;\nendswitch\n@enduml";
+        let diagram = parse_activity_diagram(src).unwrap();
+        assert!(matches!(
+            &diagram.events[0],
+            ActivityEvent::Switch { condition } if condition == "event?"
+        ));
+        assert!(matches!(
+            &diagram.events[1],
+            ActivityEvent::Case { label } if label == "a"
+        ));
+        assert!(matches!(&diagram.events[2], ActivityEvent::Action { .. }));
+        assert!(matches!(
+            &diagram.events[3],
+            ActivityEvent::Case { label } if label == "b"
+        ));
+        assert!(matches!(&diagram.events[4], ActivityEvent::Action { .. }));
+        assert!(matches!(&diagram.events[5], ActivityEvent::EndSwitch));
+    }
+
+    #[test]
+    fn switch_case_keyword_requires_delimiter() {
+        // `switch(` (no space) is still a valid switch.
+        let src = "@startuml\nswitch(x?)\ncase(a)\n:y;\nendswitch\n@enduml";
+        let diagram = parse_activity_diagram(src).unwrap();
+        assert!(matches!(
+            &diagram.events[0],
+            ActivityEvent::Switch { condition } if condition == "x?"
+        ));
+        assert!(matches!(
+            &diagram.events[1],
+            ActivityEvent::Case { label } if label == "a"
+        ));
+
+        // `switchboard` / `caseload` must NOT be tokenized as switch/case —
+        // they are unknown keywords and become actions (or are ignored), never
+        // Switch/Case events.
+        let src = "@startuml\nswitchboard\ncaseload\n@enduml";
+        let diagram = parse_activity_diagram(src).unwrap();
+        assert!(
+            !diagram
+                .events
+                .iter()
+                .any(|e| matches!(e, ActivityEvent::Switch { .. } | ActivityEvent::Case { .. })),
+            "switchboard/caseload must not tokenize as switch/case"
+        );
     }
 
     #[test]
