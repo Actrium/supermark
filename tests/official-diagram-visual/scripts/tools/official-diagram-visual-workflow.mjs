@@ -1236,7 +1236,9 @@ function renderIssueBody(report, repo, options = {}) {
     : '无';
   const errors = report.errors?.length ? report.errors.map(error => `- ${error}`).join('\n') : '- 无';
   const localExpected = report.expected?.pngPath || '';
-  const localOfficialReference = localExpected || report.expected?.sourceSvg || '';
+  const localOfficialReference = options.github
+    ? report.expected?.sourceSvg || ''
+    : localExpected || report.expected?.sourceSvg || '';
   const localActual = report.actual?.pngPath || report.actual?.screenshotPath || '';
   const localDiff = report.visual?.diffPath || '';
   const localRawDiff = report.visual?.raw?.diffPath || '';
@@ -1254,7 +1256,7 @@ function renderIssueBody(report, repo, options = {}) {
   const officialImage = officialReferenceImagePath({
     localOfficialReference,
     officialRenderUrl: report.expected?.officialRenderUrl || '',
-    repo,
+    repo: process.env.GITHUB_REPOSITORY || repo,
     options: { ...options, artifactBaseUrl },
   });
   const actualImage = artifactImagePath(localActual, { ...options, artifactBaseUrl });

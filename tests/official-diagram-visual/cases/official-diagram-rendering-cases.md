@@ -891,7 +891,7 @@ id = 16
 官方渲染效果：
 ![graphviz-datastruct](assets/official-diagram-rendering-cases/graphviz-datastruct.svg)
 
-建议检查文本：`struct1`, `struct2`, `struct3`, `left`, `right`
+建议检查文本：`0x10ba8`, `0xf7fc4380`, `0xf7fc44b8`, `(nil)`, `44.79998779296875`
 
 
 ## ECharts
