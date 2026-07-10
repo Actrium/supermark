@@ -1337,7 +1337,7 @@ ${rawDiffImage ? `![Raw Diff](${rawDiffImage})` : ''}
 
 ## 复现代码
 
-\`\`\`${report.language}
+\`\`\`text
 ${getCaseCodeForIssue(report.id)}
 \`\`\`
 
