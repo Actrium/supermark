@@ -44,18 +44,26 @@ fn main() {
     let (prepared, request) =
         d2_little::prepare_for_external_layout(&script, &opts).expect("prepare");
 
-    if request.multi_board || request.has_sequence || request.has_grid || request.has_near {
-        eprintln!("WARN: request flags multi/seq/grid/near — elk bridge may not match");
-    }
-
-    let elk_graph_json = serde_json::to_string(&request.elk_graph).unwrap();
-    let laid = run_elk(&elk_graph_json).expect("elk.layout");
-    let elk_graph: d2_little::layout_bridge::ElkGraph =
-        serde_json::from_str(&laid).expect("deserialize laid-out graph");
-    let result = d2_little::layout_bridge::LayoutResult { elk_graph };
-
-    let svg = d2_little::render_with_external_layout(prepared, &result).expect("render");
-    let svg_str = String::from_utf8_lossy(&svg).to_string();
+    // Match the production host: sequence / grid / `near:` diagrams fall
+    // back to the dagre `convert` path (engine-independent specialized
+    // layouts). `prepared` is dropped.
+    let svg_str = if request.multi_board
+        || request.has_sequence
+        || request.has_grid
+        || request.has_near
+    {
+        drop(prepared);
+        let svg = d2_little::d2_to_svg(&script).expect("dagre fallback");
+        String::from_utf8_lossy(&svg).to_string()
+    } else {
+        let elk_graph_json = serde_json::to_string(&request.elk_graph).unwrap();
+        let laid = run_elk(&elk_graph_json).expect("elk.layout");
+        let elk_graph: d2_little::layout_bridge::ElkGraph =
+            serde_json::from_str(&laid).expect("deserialize laid-out graph");
+        let result = d2_little::layout_bridge::LayoutResult { elk_graph };
+        let svg = d2_little::render_with_external_layout(prepared, &result).expect("render");
+        String::from_utf8_lossy(&svg).to_string()
+    };
     print!("{}", svg_str);
 
     if let Some(exp_path) = std::env::args().nth(2) {

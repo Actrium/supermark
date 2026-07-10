@@ -52,6 +52,17 @@ fn bridge_svg(script: &str) -> Option<String> {
         ..d2_little::CompileOptions::default()
     };
     let (prepared, request) = d2_little::prepare_for_external_layout(script, &opts).ok()?;
+    // Match the production host: sequence / grid / `near:` diagrams use d2's
+    // engine-independent specialized layouts, so the elk bridge falls back to
+    // the dagre `convert` path (which runs those same layouts). For pure
+    // sequence/grid/near diagrams the elk fixture is byte-identical to the
+    // dagre output, so this fallback is the correct elk result. (Mixed
+    // diagrams — specialized layout + surrounding elk nodes — still differ
+    // and remain in the known-gap set.)
+    if request.multi_board || request.has_sequence || request.has_grid || request.has_near {
+        let svg = d2_little::d2_to_svg(script).ok()?;
+        return Some(String::from_utf8_lossy(&svg).to_string());
+    }
     let elk_graph_json = serde_json::to_string(&request.elk_graph).ok()?;
     let laid = run_elk(&elk_graph_json)?;
     let elk_graph: d2_little::layout_bridge::ElkGraph =
@@ -187,7 +198,7 @@ fn elk_bridge_fixture_parity() {
     }
     // Assert the known-passing floor so the test guards against regressions
     // while the remaining gaps are tracked separately.
-    assert!(passed >= 115, "elk parity regressed below 115: only {passed} passed");
+    assert!(passed >= 190, "elk parity regressed below 190: only {passed} passed");
 }
 
 fn walkdir(root: &str) -> Vec<std::path::PathBuf> {
