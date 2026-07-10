@@ -613,3 +613,157 @@ fn sequenceleftmessage_0002_teoz_structure() {
     assert!(l.messages[1].is_self);
     assert!(l.messages[1].y > l.messages[0].y, "msg[1] below msg[0]");
 }
+
+// ── Issue #28: sequence group frame must not be over-wide ───────────
+//
+// A message whose arrow spans a non-adjacent participant (here Alice -> Log,
+// which crosses Bob) must widen the TOTAL span only when needed, not every
+// gap. The previous code split the message width evenly across each gap,
+// which inflated the Bob -> Log gap (because Alice -> Bob was already very
+// wide from "Authentication Request"). That pushed Log 13.24px to the right
+// and made the alt/group frames 13.24px too wide, so labels sat flush on
+// the border.
+//
+// Golden coordinates below are taken from official PlantUML 1.2026.7beta3
+// (the SVG attached to the issue) and must match pixel-for-pixel.
+const ISSUE28: &str = "@startuml\n\
+Alice -> Bob: Authentication Request\n\
+alt successful case\n\
+  Bob -> Alice: Authentication Accepted\n\
+else some kind of failure\n\
+  Bob -> Alice: Authentication Failure\n\
+  group My own label\n\
+    Alice -> Log : Log attack start\n\
+    loop 1000 times\n\
+      Alice -> Bob: DNS Attack\n\
+    end\n\
+    Alice -> Log : Log attack end\n\
+  end\n\
+else Another type of failure\n\
+  Bob -> Alice: Please repeat\n\
+end\n\
+@enduml";
+
+/// Participant centre X positions must match official PlantUML exactly.
+/// Pre-fix the third participant (Log) was ~13.24px too far right.
+#[test]
+fn issue28_participant_positions_match_official() {
+    let l = layout(ISSUE28);
+    let xs: Vec<f64> = l.participants.iter().map(|p| p.x).collect();
+    assert_eq!(xs.len(), 3, "Alice, Bob, Log");
+
+    // Official PlantUML participant-box centres (head rect x + width/2).
+    let expected = [63.8335_f64, 248.1816, 298.336];
+    for (i, (got, want)) in xs.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (got - want).abs() < 0.01,
+            "participant[{i}] x = {got}, expected {want} (official PlantUML box centre)"
+        );
+    }
+
+    // The Bob -> Log gap is the base spacing only; it must NOT be inflated by
+    // the Alice -> Log messages crossing it. Official centre-to-centre gap
+    // = 298.336 - 248.1816 = 50.1544.
+    let bob_log_gap = xs[2] - xs[1];
+    assert!(
+        (bob_log_gap - 50.1544).abs() < 0.01,
+        "Bob->Log gap = {bob_log_gap:.4}, expected 50.1544 (official base spacing)"
+    );
+}
+
+/// The outermost (alt) frame width must match official PlantUML exactly.
+/// Pre-fix it was 341.2046 (13.24px too wide) because Log was misplaced.
+#[test]
+fn issue28_alt_frame_width_matches_official() {
+    use plantuml_little::model::sequence::FragmentKind;
+    let l = layout(ISSUE28);
+
+    // The outermost frame is the alt; it has the smallest x and largest width.
+    let alt = l
+        .fragments
+        .iter()
+        .find(|f| f.kind == FragmentKind::Alt)
+        .expect("alt fragment present");
+
+    assert!(
+        (alt.x - 10.0).abs() < 0.01,
+        "alt x = {}, expected 10.0",
+        alt.x
+    );
+    assert!(
+        (alt.width - 327.9619).abs() < 0.01,
+        "alt width = {}, expected 327.9619 (official PlantUML); pre-fix was 341.2046",
+        alt.width
+    );
+}
+
+// ── Multi-span message gap distribution (official longest-path) ──────
+//
+// Official PlantUML (teoz RealLine) treats an arrow that spans several
+// participants as a single difference constraint posC[hi] - posC[lo] >=
+// needed, solved by longest-path: every intermediate gap keeps its base
+// width and the FINAL gap absorbs the whole deficit. The pre-fix code
+// distributed `needed` evenly across every gap. Golden values below are
+// official PlantUML output (verified against the teoz engine, which the
+// default sequence renderer mirrors).
+
+/// 3 participants, one long Alice -> C message: gap AB stays at the base
+/// spacing, gap BC absorbs the full remaining width.
+#[test]
+fn multispan_message_puts_deficit_in_last_gap_3p() {
+    let l = layout(
+        "@startuml\n\
+		 participant A\n\
+		 participant B\n\
+		 participant C\n\
+		 A -> C : XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n\
+		 @enduml",
+    );
+    let xs: Vec<f64> = l.participants.iter().map(|p| p.x).collect();
+    let gap_ab = xs[1] - xs[0];
+    let gap_bc = xs[2] - xs[1];
+
+    // gap AB is the base participant spacing (not inflated by the A->C text).
+    assert!(
+        (gap_ab - 33.591).abs() < 0.05,
+        "gap AB = {gap_ab:.3}, expected ~33.591 (base; not inflated)"
+    );
+    // gap BC carries essentially the entire label width.
+    assert!(
+        (gap_bc - 275.394).abs() < 0.05,
+        "gap BC = {gap_bc:.3}, expected ~275.394 (absorbs the deficit)"
+    );
+    // Pre-fix both gaps were ~154 (even split).
+    assert!(
+        gap_bc > gap_ab * 2.0,
+        "deficit must land in the last gap, not be split evenly"
+    );
+}
+
+/// 4 participants, one long Alice -> D message: gaps AB and BC stay at the
+/// base spacing; only gap CD absorbs the deficit.
+#[test]
+fn multispan_message_puts_deficit_in_last_gap_4p() {
+    let l = layout(
+        "@startuml\n\
+		 participant A\n\
+		 participant B\n\
+		 participant C\n\
+		 participant D\n\
+		 A -> D : XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n\
+		 @enduml",
+    );
+    let xs: Vec<f64> = l.participants.iter().map(|p| p.x).collect();
+    let gap_ab = xs[1] - xs[0];
+    let gap_bc = xs[2] - xs[1];
+    let gap_cd = xs[3] - xs[2];
+
+    assert!(
+        (gap_ab - 33.591).abs() < 0.05 && (gap_bc - 33.69).abs() < 0.05,
+        "gaps AB={gap_ab:.3}, BC={gap_bc:.3} must stay at base spacing"
+    );
+    assert!(
+        (gap_cd - 241.704).abs() < 0.05,
+        "gap CD = {gap_cd:.3}, expected ~241.704 (absorbs the deficit)"
+    );
+}
