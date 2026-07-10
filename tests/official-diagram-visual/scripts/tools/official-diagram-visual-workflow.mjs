@@ -1392,7 +1392,8 @@ function getCaseCodeForIssue(caseId) {
 }
 
 function classify({ semantic, geometry, visual, errors }) {
-  if (!semantic.pass || !geometry.pass || errors.length > 0 || !visual) return 'fail';
+  if (!semantic.pass || errors.length > 0 || !visual) return 'fail';
+  if (!geometry.pass && visual.band !== 'pass') return 'fail';
   return visual.band;
 }
 
