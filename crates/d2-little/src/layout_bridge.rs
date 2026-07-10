@@ -348,7 +348,11 @@ pub fn build_layout_request(g: &mut Graph) -> LayoutRequest {
                 node_size_constraints: Some("MINIMUM_SIZE".to_string()),
                 content_alignment: Some("H_CENTER V_CENTER".to_string()),
                 direction: String::new(),
-                algorithm: Some("layered".to_string()),
+                // NOTE: d2 does NOT set `elk.algorithm` on container nodes —
+                // only on the root. Setting it here makes elkjs treat the
+                // compound as a separate layout root and skip hierarchical
+                // child placement (children end up at 0,0). Inherited via
+                // the root's `INCLUDE_CHILDREN`.
                 node_spacing: Some(DEFAULT_NODE_SPACING),
                 edge_node_spacing: Some(DEFAULT_EDGE_NODE_SPACING),
                 self_loop_spacing,
