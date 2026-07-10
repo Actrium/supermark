@@ -81,7 +81,7 @@
     "echarts": "^5",
     "vega": "^5",
     "vega-lite": "^5",
-    "elkjs": "^0.9",
+    "elkjs": "0.8.2",
     "@actrium/plantuml-little-web": "workspace:*",
     "@actrium/d2-little-web": "workspace:*",
     "@actrium/mermaid-little-web": "workspace:*"
@@ -111,9 +111,9 @@
   },
   "devDependencies": {
     "echarts": "^5.5.0",
-    "elkjs": "^0.9.3",
+    "elkjs": "0.8.2",
+    "typescript": "^5.5.0",
     "vega": "^5.30.0",
-    "vega-lite": "^5.21.0",
-    "typescript": "^5.5.0"
+    "vega-lite": "^5.21.0"
   }
 }

@@ -26,24 +26,22 @@ mock.module('@actrium/d2-little-web', () => ({
   prepare: (code: string) => {
     wasmCalls.push('prepare');
     // Sequence-diagram scripts carry `shape: sequence_diagram`; flag it so
-    // the engines layer falls back to dagre. Otherwise emit a flat board.
+    // the engines layer falls back to dagre. Otherwise emit a flat ELK graph.
     const hasSequence = /shape:\s*sequence_diagram/.test(code);
     const request = {
       multi_board: false,
-      boards: [
-        {
-          token: 'root',
-          has_sequence: hasSequence,
-          has_grid: false,
-          has_near: false,
-          has_containers: false,
-          objects: [
-            { id: 'a', width: 40, height: 20, parent_id: null },
-            { id: 'b', width: 40, height: 20, parent_id: null },
-          ],
-          edges: [{ id: 'e1', src: 'a', dst: 'b', has_label: false, label_width: 0, label_height: 0 }],
-        },
-      ],
+      has_sequence: hasSequence,
+      has_grid: false,
+      has_near: false,
+      elk_graph: {
+        id: '',
+        layoutOptions: { 'elk.algorithm': 'layered' },
+        children: [
+          { id: 'a', width: 40, height: 20 },
+          { id: 'b', width: 40, height: 20 },
+        ],
+        edges: [{ id: 'e1', sources: ['a'], targets: ['b'] }],
+      },
     };
     return { handle: 777, request: JSON.stringify(request) };
   },

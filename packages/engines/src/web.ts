@@ -40,32 +40,20 @@ interface D2PrepareResult {
 
 // --- elk layout bridge DTO (mirrors crates/d2-little/src/layout_bridge.rs) ---
 
-interface D2BoardRequest {
-  token: string;
+/** d2-little's `LayoutRequest`: the complete ELK input graph plus feature
+ * flags. The host runs `elkjs.layout(request.elk_graph)` and hands the laid-out
+ * graph back as `D2LayoutResult.elk_graph`. All d2 `d2elklayout` logic
+ * (layoutOptions, node sizing, post-processing) lives in the Rust crate —
+ * the host is a thin elkjs runner. */
+interface D2LayoutRequest {
+  multi_board: boolean;
   has_sequence: boolean;
   has_grid: boolean;
   has_near: boolean;
-  has_containers: boolean;
-  objects: { id: string; width: number; height: number; parent_id: string | null }[];
-  edges: {
-    id: string;
-    src: string;
-    dst: string;
-    has_label: boolean;
-    label_width: number;
-    label_height: number;
-  }[];
-}
-interface D2LayoutRequest {
-  multi_board: boolean;
-  boards: D2BoardRequest[];
+  elk_graph: unknown;
 }
 interface D2LayoutResult {
-  boards: {
-    token: string;
-    objects: { id: string; x: number; y: number }[];
-    edges: { id: string; route: [number, number][]; is_curve?: boolean }[];
-  }[];
+  elk_graph: unknown;
 }
 
 /** A loaded `@actrium/graphviz-anywhere-web` Graphviz instance. */
@@ -350,22 +338,13 @@ async function renderD2ViaElk(d2: WasmRenderModule, code: string): Promise<strin
   let handle = prepared.handle;
   try {
     const request = JSON.parse(prepared.request) as D2LayoutRequest;
-    const board = request.boards[0];
-    if (
-      request.multi_board ||
-      !board ||
-      board.has_sequence ||
-      board.has_grid ||
-      board.has_near ||
-      board.has_containers
-    ) {
+    if (request.multi_board || request.has_sequence || request.has_grid || request.has_near) {
       return null; // fall back to dagre
     }
 
     const elk = await loadElkLayout();
-    const elkGraph = buildElkGraph(board);
-    const laid = await elk.layout(elkGraph);
-    const layoutResult = elkResultToD2(laid);
+    const laid = await elk.layout(request.elk_graph);
+    const layoutResult: D2LayoutResult = { elk_graph: laid };
     const svg = d2.render!(handle, JSON.stringify(layoutResult));
     handle = -1; // render consumed the handle
     if (!String(svg).includes('<svg')) {
@@ -379,7 +358,8 @@ async function renderD2ViaElk(d2: WasmRenderModule, code: string): Promise<strin
   }
 }
 
-/** Lazy elkjs loader — mirrors the echarts/vega dynamic-import pattern. */
+/** Lazy elkjs loader — mirrors the echarts/vega dynamic-import pattern.
+ * Pinned to 0.8.2, the exact version d2 v0.7.1 bundles. */
 async function loadElkLayout(): Promise<{ layout(graph: unknown): Promise<unknown> }> {
   // `elkjs/lib/elk.bundled.js` is the browser-safe build (no Node deps).
   const mod = (await import('elkjs/lib/elk.bundled.js' as string)) as {
@@ -388,109 +368,6 @@ async function loadElkLayout(): Promise<{ layout(graph: unknown): Promise<unknow
   const ELK = mod.default;
   if (!ELK) throw new Error('elkjs bundled build did not export a default ELK constructor.');
   return new ELK();
-}
-
-/**
- * Build the elkjs input graph from a flat d2 board request (MVP: no nesting).
- *
- * Layout options mirror upstream d2's `d2elklayout` defaults
- * (`d2layouts/d2elklayout/layout.go`): `GREEDY_MODEL_ORDER` cycle breaking
- * + `NODES_AND_EDGES` model order + `BALANCED` fixed alignment +
- * `forceNodeModelOrder` per node, so the output matches d2lang.com's elk
- * rendering (clean parallel edge routing) rather than elkjs defaults (which
- * curve backward edges around into S-shapes on fully-connected graphs).
- *
- * d2 also inflates each node's width (or height, for horizontal directions)
- * by `max(incoming, outgoing) * PORT_SPACING` when a node has ≥2 edges on a
- * side, so multiple edges attach at distinct ports instead of overlapping —
- * reproduced here.
- */
-function buildElkGraph(board: D2BoardRequest): unknown {
-  const PORT_SPACING = 40;
-  const incoming: Record<string, number> = {};
-  const outgoing: Record<string, number> = {};
-  for (const e of board.edges) {
-    outgoing[e.src] = (outgoing[e.src] ?? 0) + 1;
-    incoming[e.dst] = (incoming[e.dst] ?? 0) + 1;
-  }
-
-  // Root-level options (d2 DefaultLayout root LayoutOptions).
-  const rootOpts = {
-    'elk.algorithm': 'layered',
-    'elk.direction': 'DOWN',
-    'elk.layered.thoroughness': 8,
-    'elk.layered.spacing.edgeEdgeBetweenLayers': 50,
-    'elk.spacing.edgeNode': 40,
-    'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-    'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
-    'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-    'elk.layered.cycleBreaking.strategy': 'GREEDY_MODEL_ORDER',
-    'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-    'elk.contentAlignment': 'H_CENTER V_CENTER',
-    'spacing.nodeNodeBetweenLayers': 70,
-    'spacing.edgeNodeBetweenLayers': 40,
-    'elk.spacing.nodeSelfLoop': 50,
-  };
-  // Per-node options — forceNodeModelOrder preserves declaration order.
-  const nodeOpts = {
-    ...rootOpts,
-    'elk.layered.crossingMinimization.forceNodeModelOrder': true,
-  };
-
-  return {
-    id: 'root',
-    layoutOptions: rootOpts,
-    children: board.objects.map(o => {
-      const ec = Math.max(incoming[o.id] ?? 0, outgoing[o.id] ?? 0);
-      const inflate = (incoming[o.id] ?? 0) >= 2 || (outgoing[o.id] ?? 0) >= 2;
-      // MVP is vertical (DOWN) only, so inflation widens the node.
-      const width = inflate ? Math.max(o.width, ec * PORT_SPACING) : o.width;
-      return { id: o.id, width, height: o.height, layoutOptions: nodeOpts };
-    }),
-    edges: board.edges.map(e => ({
-      id: e.id,
-      sources: [e.src],
-      targets: [e.dst],
-    })),
-  };
-}
-
-/** Map elkjs output back into the d2 layout-result DTO. */
-function elkResultToD2(laid: unknown): D2LayoutResult {
-  const root = laid as {
-    children?: {
-      id: string;
-      // elkjs places positions either nested (`position`) or flat on the
-      // node depending on version / build; accept both.
-      position?: { x: number; y: number };
-      x?: number;
-      y?: number;
-    }[];
-    edges?: {
-      id: string;
-      sections?: {
-        startPoint: { x: number; y: number };
-        endPoint: { x: number; y: number };
-        bendPoints?: { x: number; y: number }[];
-      }[];
-    }[];
-  };
-  const objects = (root.children ?? []).map(c => ({
-    id: c.id,
-    x: c.position?.x ?? c.x ?? 0,
-    y: c.position?.y ?? c.y ?? 0,
-  }));
-  const edges = (root.edges ?? []).map(e => {
-    const section = e.sections?.[0];
-    const route: [number, number][] = [];
-    if (section) {
-      route.push([section.startPoint.x, section.startPoint.y]);
-      for (const bp of section.bendPoints ?? []) route.push([bp.x, bp.y]);
-      route.push([section.endPoint.x, section.endPoint.y]);
-    }
-    return { id: e.id, route, is_curve: false };
-  });
-  return { boards: [{ token: 'root', objects, edges }] };
 }
 
 function injectD2Dimensions(svg: string): string {

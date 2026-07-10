@@ -35,7 +35,7 @@
     },
     "crates/d2-little/packages/web": {
       "name": "@actrium/d2-little-web",
-      "version": "0.7.2",
+      "version": "0.7.1-1",
       "devDependencies": {
         "typescript": "^5.7.0",
       },
@@ -277,7 +277,7 @@
       },
       "devDependencies": {
         "echarts": "^5.5.0",
-        "elkjs": "^0.9.3",
+        "elkjs": "0.8.2",
         "typescript": "^5.5.0",
         "vega": "^5.30.0",
         "vega-lite": "^5.21.0",
@@ -287,7 +287,7 @@
         "@actrium/mermaid-little-web": "workspace:*",
         "@actrium/plantuml-little-web": "workspace:*",
         "echarts": "^5",
-        "elkjs": "^0.9",
+        "elkjs": "0.8.2",
         "vega": "^5",
         "vega-lite": "^5",
       },
@@ -1941,7 +1941,7 @@
 
     "electron-to-chromium": ["electron-to-chromium@1.5.267", "", {}, "sha512-0Drusm6MVRXSOJpGbaSVgcQsuB4hEkMpHXaVstcPmhu5LIedxs1xNK/nIxmQIU/RPC0+1/o0AVZfBTkTNJOdUw=="],
 
-    "elkjs": ["elkjs@0.9.3", "", {}, "sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxfOmt8KjswHmI5EwCQcPMpOYhQ=="],
+    "elkjs": ["elkjs@0.8.2", "", {}, "sha512-L6uRgvZTH+4OF5NE/MBbzQx/WYpru1xCBE9respNj6qznEewGUIfhzmm7horWWxbNO2M0WckQypGctR8lH79xQ=="],
 
     "emittery": ["emittery@0.13.1", "", {}, "sha512-DeWwawk6r5yR9jFgnDKYt4sLS0LmHJJi3ZOnb5/JdbYwj3nW+FxQnHIjhBKz8YLC7oRNPVM9NQ47I3CVx34eqQ=="],
 

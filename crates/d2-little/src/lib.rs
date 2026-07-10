@@ -1634,7 +1634,7 @@ pub fn prepare_for_external_layout(
     };
 
     prepare_graph_for_layout(&mut g, theme_id, sketch, metrics)?;
-    let request = crate::layout_bridge::build_layout_request(&g);
+    let request = crate::layout_bridge::build_layout_request(&mut g);
 
     Ok((
         PreparedLayout {
@@ -1668,11 +1668,7 @@ pub fn render_with_external_layout(
         config,
     } = prepared;
 
-    let board = result
-        .boards
-        .first()
-        .ok_or_else(|| "layout_bridge: LayoutResult has no boards".to_string())?;
-    crate::layout_bridge::apply_layout(&mut graph, board)?;
+    crate::layout_bridge::apply_layout(&mut graph, result)?;
 
     let font_family = if sketch {
         Some(crate::fonts::FontFamily::HandDrawn)
@@ -2589,39 +2585,25 @@ mod tests {
         let (prepared, request) =
             prepare_for_external_layout("a -> b", &opts).expect("prepare");
 
-        let board_req = &request.boards[0];
-        assert!(!board_req.has_containers);
-        assert_eq!(board_req.objects.len(), 2);
+        assert_eq!(request.elk_graph.children.len(), 2);
+        assert_eq!(request.elk_graph.edges.len(), 1);
 
-        // Echo the request back as a result with arbitrary-but-valid flat
-        // positions and straight 2-point routes.
-        use crate::layout_bridge::{BoardLayout, EdgeRoute, LayoutResult, ObjPos};
-        let objects: Vec<ObjPos> = board_req
-            .objects
-            .iter()
-            .enumerate()
-            .map(|(i, o)| ObjPos {
-                id: o.id.clone(),
-                x: i as f64 * 120.0,
-                y: 0.0,
-            })
-            .collect();
-        let edges: Vec<EdgeRoute> = board_req
-            .edges
-            .iter()
-            .map(|e| EdgeRoute {
-                id: e.id.clone(),
-                route: vec![(40.0, 20.0), (140.0, 20.0)],
-                is_curve: false,
-            })
-            .collect();
-        let result = LayoutResult {
-            boards: vec![BoardLayout {
-                token: "root".to_string(),
-                objects,
-                edges,
-            }],
-        };
+        // Echo the request graph back as a result with arbitrary-but-valid
+        // flat positions and a straight 2-point section per edge.
+        use crate::layout_bridge::{ElkEdgeSection, ElkGraph, ElkPoint, LayoutResult};
+        let mut elk_graph: ElkGraph = request.elk_graph.clone();
+        for (i, c) in elk_graph.children.iter_mut().enumerate() {
+            c.x = i as f64 * 120.0;
+            c.y = 0.0;
+        }
+        for e in &mut elk_graph.edges {
+            e.sections = vec![ElkEdgeSection {
+                start: ElkPoint { x: 40.0, y: 20.0 },
+                end: ElkPoint { x: 140.0, y: 20.0 },
+                bend_points: vec![],
+            }];
+        }
+        let result = LayoutResult { elk_graph };
 
         let svg_bytes = render_with_external_layout(prepared, &result).expect("render");
         let svg = String::from_utf8_lossy(&svg_bytes);
