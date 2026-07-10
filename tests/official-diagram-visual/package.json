@@ -1,6 +1,7 @@
 {
   "name": "supramark-official-diagram-visual-workflow",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "visual:official-diagrams": "node scripts/tools/official-diagram-visual-workflow.mjs"
