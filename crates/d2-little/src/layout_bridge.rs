@@ -19,7 +19,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::geo::{Point, Segment, Spacing};
+use crate::geo::{Box2D, Point, Segment, Spacing};
 use crate::graph::{Graph, ObjId};
 use crate::label::{self, Position};
 use crate::shape::ShapeOps;
@@ -587,10 +587,13 @@ pub fn apply_layout(g: &mut Graph, result: &LayoutResult) -> Result<(), String> 
             }
         }
 
-        let route = g.edges[ei].route.clone();
-        let (new_start, new_end) = g.edges[ei].trace_to_shape(&route, 0, route.len() - 1, g);
+        // Faithful port of d2 `Edge.TraceToShape` (outside-label / outside-icon
+        // / shape-border tracing). Uses the EXPANDED obj.box_ (margin shrink
+        // does not refresh it — see apply_margins), so edges stop at outside
+        // labels (e.g. image bottom labels) rather than the shrunk shape box.
+        let (new_start, new_end) = trace_to_shape_full(g, ei);
         let has_label = !g.edges[ei].label.value.is_empty();
-        g.edges[ei].route = route[new_start..=new_end].to_vec();
+        g.edges[ei].route = g.edges[ei].route[new_start..=new_end].to_vec();
         if has_label {
             g.edges[ei].label_position = Some(Position::InsideMiddleCenter.as_str().to_string());
         }
@@ -927,8 +930,208 @@ fn shift_end(g: &mut Graph, ei: usize, delta: f64, is_horizontal: bool) {
 }
 
 // ---------------------------------------------------------------------------
-// deleteBends (layout.go:659-884).
+// TraceToShape (d2graph/layout.go:414) — faithful port, elk-only.
 // ---------------------------------------------------------------------------
+
+const MIN_SEGMENT_LEN: f64 = 10.0;
+
+/// d2 `findOuterIntersection` — pick the intersection point on the outer side
+/// of an outside label/icon (so the edge stops at the outer border).
+fn find_outer_intersection(position: Position, mut intersections: Vec<Point>) -> Point {
+    match position {
+        Position::OutsideTopLeft | Position::OutsideTopCenter | Position::OutsideTopRight => {
+            intersections.sort_by(|a, b| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal));
+        }
+        Position::OutsideBottomLeft | Position::OutsideBottomCenter | Position::OutsideBottomRight => {
+            intersections.sort_by(|a, b| b.y.partial_cmp(&a.y).unwrap_or(std::cmp::Ordering::Equal));
+        }
+        Position::OutsideLeftTop | Position::OutsideLeftMiddle | Position::OutsideLeftBottom => {
+            intersections.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+        }
+        Position::OutsideRightTop | Position::OutsideRightMiddle | Position::OutsideRightBottom => {
+            intersections.sort_by(|a, b| b.x.partial_cmp(&a.x).unwrap_or(std::cmp::Ordering::Equal));
+        }
+        _ => {}
+    }
+    intersections.into_iter().next().unwrap_or(Point::new(0.0, 0.0))
+}
+
+/// Snapshot of one endpoint's trace inputs (so we can mutate the route without
+/// holding a borrow into `g.objects`).
+struct EndpointInfo {
+    box_: Box2D,
+    #[allow(dead_code)]
+    shape_type: String,
+    has_label: bool,
+    label_pos: Option<String>,
+    label_dims: crate::graph::Dimensions,
+    has_icon: bool,
+    icon_pos: Option<String>,
+}
+
+impl EndpointInfo {
+    fn from_obj(o: &crate::graph::Object) -> Self {
+        EndpointInfo {
+            box_: o.box_,
+            shape_type: crate::target::dsl_shape_to_shape_type(&o.shape.value).to_string(),
+            has_label: o.has_label(),
+            label_pos: o.label_position.clone(),
+            label_dims: o.label_dimensions,
+            has_icon: o.has_icon(),
+            icon_pos: o.icon_position.clone(),
+        }
+    }
+}
+
+/// Trace the SRC endpoint of the route. Faithful port of d2's src half of
+/// `Edge.TraceToShape`. Mutates `route` in place, advances `*start`.
+fn trace_src(info: &EndpointInfo, route: &mut [Point], start: &mut usize, end: usize) {
+    // startingSegment = {Start: points[start+1], End: points[start]}
+    let mut seg = Segment::new(route[*start + 1], route[*start]);
+    let mut overlaps_outside_label = false;
+
+    if info.has_label {
+        if let Some(lp_str) = &info.label_pos {
+            let lp = Position::from_string(lp_str);
+            if lp.is_outside() {
+                let lw = info.label_dims.width as f64;
+                let lh = info.label_dims.height as f64;
+                let label_tl = lp.get_point_on_box(&info.box_, label::PADDING, lw, lh);
+                let mut label_box = Box2D::new(label_tl, lw, lh);
+                label_box.top_left.x -= label::PADDING;
+                label_box.width += 2.0 * label::PADDING;
+                while label_box.contains(&seg.end) && *start + 1 > end {
+                    seg.start = seg.end;
+                    seg.end = route[*start + 2];
+                    *start += 1;
+                }
+                let ints = label_box.intersections(&seg);
+                if !ints.is_empty() {
+                    overlaps_outside_label = true;
+                    let p = if ints.len() > 1 { find_outer_intersection(lp, ints) } else { ints[0] };
+                    route[*start] = p;
+                    seg.end = p;
+                    if *start + 1 < end && seg.length() < MIN_SEGMENT_LEN {
+                        route[*start + 1] = route[*start];
+                        *start += 1;
+                    }
+                }
+            }
+        }
+    }
+    if !overlaps_outside_label && info.has_icon {
+        if let Some(ip_str) = &info.icon_pos {
+            let ip = Position::from_string(ip_str);
+            if ip.is_outside() {
+                let iw = crate::target::MAX_ICON_SIZE as f64;
+                let ih = crate::target::MAX_ICON_SIZE as f64;
+                let icon_tl = ip.get_point_on_box(&info.box_, label::PADDING, iw, ih);
+                let icon_box = Box2D::new(icon_tl, iw, ih);
+                while icon_box.contains(&seg.end) && *start + 1 > end {
+                    seg.start = seg.end;
+                    seg.end = route[*start + 2];
+                    *start += 1;
+                }
+                let ints = icon_box.intersections(&seg);
+                if !ints.is_empty() {
+                    let p = if ints.len() > 1 { find_outer_intersection(ip, ints) } else { ints[0] };
+                    route[*start] = p;
+                    seg.end = p;
+                    if *start + 1 < end && seg.length() < MIN_SEGMENT_LEN {
+                        route[*start + 1] = route[*start];
+                        *start += 1;
+                    }
+                }
+            }
+        }
+    }
+    // Non-outside-label/icon: the route already starts at the shape border
+    // (elkjs places it there), so — like d2's no-op move for rectangular
+    // shapes — we leave it. Point-moving here (intersections[0] selection)
+    // regresses non-outside cases (issue #34).
+}
+
+/// Trace the DST endpoint. Mirror of `trace_src`: `end` moves backward.
+fn trace_dst(info: &EndpointInfo, route: &mut [Point], start: usize, end: &mut usize) {
+    // endingSegment = {Start: points[end-1], End: points[end]}
+    let mut seg = Segment::new(route[*end - 1], route[*end]);
+    let mut overlaps_outside_label = false;
+
+    if info.has_label {
+        if let Some(lp_str) = &info.label_pos {
+            let lp = Position::from_string(lp_str);
+            if lp.is_outside() {
+                let lw = info.label_dims.width as f64;
+                let lh = info.label_dims.height as f64;
+                let label_tl = lp.get_point_on_box(&info.box_, label::PADDING, lw, lh);
+                let mut label_box = Box2D::new(label_tl, lw, lh);
+                label_box.top_left.x -= label::PADDING;
+                label_box.width += 2.0 * label::PADDING;
+                while label_box.contains(&seg.start) && *end - 1 > start {
+                    seg.end = seg.start;
+                    seg.start = route[*end - 2];
+                    *end -= 1;
+                }
+                let ints = label_box.intersections(&seg);
+                if !ints.is_empty() {
+                    overlaps_outside_label = true;
+                    let p = if ints.len() > 1 { find_outer_intersection(lp, ints) } else { ints[0] };
+                    route[*end] = p;
+                    seg.end = p;
+                    if *end - 1 > start && seg.length() < MIN_SEGMENT_LEN {
+                        route[*end - 1] = route[*end];
+                        *end -= 1;
+                    }
+                }
+            }
+        }
+    }
+    if !overlaps_outside_label && info.has_icon {
+        if let Some(ip_str) = &info.icon_pos {
+            let ip = Position::from_string(ip_str);
+            if ip.is_outside() {
+                let iw = crate::target::MAX_ICON_SIZE as f64;
+                let ih = crate::target::MAX_ICON_SIZE as f64;
+                let icon_tl = ip.get_point_on_box(&info.box_, label::PADDING, iw, ih);
+                let icon_box = Box2D::new(icon_tl, iw, ih);
+                while icon_box.contains(&seg.start) && *end - 1 > start {
+                    seg.end = seg.start;
+                    seg.start = route[*end - 2];
+                    *end -= 1;
+                }
+                let ints = icon_box.intersections(&seg);
+                if !ints.is_empty() {
+                    let p = if ints.len() > 1 { find_outer_intersection(ip, ints) } else { ints[0] };
+                    route[*end] = p;
+                    seg.end = p;
+                    if *end - 1 > start && seg.length() < MIN_SEGMENT_LEN {
+                        route[*end - 1] = route[*end];
+                        *end -= 1;
+                    }
+                }
+            }
+        }
+    }
+    // Non-outside-label/icon: route already at the border — leave it (see trace_src).
+}
+
+/// Faithful port of d2 `Edge.TraceToShape` for the elk path. Mutates the
+/// edge route in place (moving endpoints to label/icon/shape borders and
+/// merging too-short segments) and returns the new (start, end) indices.
+pub fn trace_to_shape_full(g: &mut Graph, ei: usize) -> (usize, usize) {
+    let (src_id, dst_id) = (g.edges[ei].src, g.edges[ei].dst);
+    let src_info = EndpointInfo::from_obj(&g.objects[src_id]);
+    let dst_info = EndpointInfo::from_obj(&g.objects[dst_id]);
+    let mut start = 0usize;
+    let mut end = g.edges[ei].route.len() - 1;
+
+    trace_src(&src_info, &mut g.edges[ei].route, &mut start, end);
+    trace_dst(&dst_info, &mut g.edges[ei].route, start, &mut end);
+
+    (start, end)
+}
+
+
 
 fn delete_bends(g: &mut Graph) {
     // S-shapes at source/target (layout.go:662-773).
