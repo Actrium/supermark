@@ -71,7 +71,12 @@ jobs:
           PLAYWRIGHT_VIEWPORT: ${{ github.event.inputs.playwright_viewport || '1280x900' }}
           PLAYWRIGHT_DEVICE_SCALE_FACTOR: "1"
           REPO_PATH_PREFIX: "tests/official-diagram-visual"
-        run: npm run visual:official-diagrams
+        run: |
+          if [ "$PLAYWRIGHT_HEADLESS" = "0" ]; then
+            xvfb-run -a npm run visual:official-diagrams
+          else
+            npm run visual:official-diagrams
+          fi
 
       - name: Upload visual regression artifacts
         if: always()
