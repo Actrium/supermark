@@ -37,8 +37,6 @@ interface GraphvizWebModule {
   Graphviz: { load(): Promise<GraphvizInstance> };
 }
 
-const GRAPHVIZ_WEB_SPEC = '@actrium/graphviz-anywhere-web';
-
 /** Probe a wasm-bindgen module for its optional `default`/`init` entry. */
 function pickWasmInit(mod: WasmRenderModule): WasmInitFn | null {
   if (typeof mod.default === 'function') return mod.default as WasmInitFn;
