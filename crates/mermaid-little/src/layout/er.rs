@@ -220,15 +220,11 @@ fn measure_width(text: &str) -> f64 {
 pub fn split_br(text: &str) -> Vec<&str> {
     let mut parts: Vec<&str> = Vec::new();
     let mut rest = text;
-    loop {
-        if let Some(pos) = rest.find("<br") {
-            let after = &rest[pos + 3..];
-            if let Some(end_off) = after.find('>') {
-                parts.push(&rest[..pos]);
-                rest = &after[end_off + 1..];
-            } else {
-                break;
-            }
+    while let Some(pos) = rest.find("<br") {
+        let after = &rest[pos + 3..];
+        if let Some(end_off) = after.find('>') {
+            parts.push(&rest[..pos]);
+            rest = &after[end_off + 1..];
         } else {
             break;
         }
@@ -425,12 +421,14 @@ pub(crate) fn attr_entity_bbox(a: &AttrLayout) -> (f64, f64) {
 
 pub fn layout(d: &ErDiagram, theme: &ThemeVariables) -> Result<ErLayout> {
     // ── 1. Build unified LayoutData ─────────────────────────────────
-    let mut data = LayoutData::default();
-    data.direction = Some(d.direction.clone());
-    data.node_spacing = Some(NODE_SPACING);
-    data.rank_spacing = Some(RANK_SPACING);
-    data.diagram_type = Some("er".to_string());
-    data.layout_algorithm = Some("dagre".to_string());
+    let mut data = LayoutData {
+        direction: Some(d.direction.clone()),
+        node_spacing: Some(NODE_SPACING),
+        rank_spacing: Some(RANK_SPACING),
+        diagram_type: Some("er".to_string()),
+        layout_algorithm: Some("dagre".to_string()),
+        ..Default::default()
+    };
 
     let label_h = measure_label_height();
 
@@ -468,15 +466,17 @@ pub fn layout(d: &ErDiagram, theme: &ThemeVariables) -> Result<ErLayout> {
             let a = compute_attr_layout(&rendered_label, &entity.attributes);
             attr_entity_bbox(&a)
         };
-        let mut n = Node::default();
-        n.id = entity.id.clone();
-        n.label = Some(rendered_label);
-        n.shape = Some("erBox".to_string());
-        n.width = Some(w);
-        n.height = Some(h);
-        n.css_classes = Some(entity.css_classes.clone());
-        n.look = Some("classic".to_string());
-        n.label_type = Some("markdown".to_string());
+        let n = Node {
+            id: entity.id.clone(),
+            label: Some(rendered_label),
+            shape: Some("erBox".to_string()),
+            width: Some(w),
+            height: Some(h),
+            css_classes: Some(entity.css_classes.clone()),
+            look: Some("classic".to_string()),
+            label_type: Some("markdown".to_string()),
+            ..Default::default()
+        };
         data.nodes.push(n);
     }
 
@@ -484,22 +484,24 @@ pub fn layout(d: &ErDiagram, theme: &ThemeVariables) -> Result<ErLayout> {
     // pack an edge-label rank row between entities.
     for (i, rel) in d.relationships.iter().enumerate() {
         let label_w = measure_width(&rel.role_a);
-        let mut e = Edge::default();
-        e.id = edge_id(rel, i);
-        e.source = Some(rel.entity_a.clone());
-        e.target = Some(rel.entity_b.clone());
-        e.start = Some(rel.entity_a.clone());
-        e.end = Some(rel.entity_b.clone());
-        e.label = Some(rel.role_a.clone());
-        e.label_type = Some("markdown".to_string());
-        e.arrow_type_end = Some(rel.card_a.as_lower());
-        e.arrow_type_start = Some(rel.card_b.as_lower());
-        e.pattern = Some(rel.rel_type.edge_pattern().to_string());
-        e.curve = Some("basis".to_string());
-        e.classes = Some("relationshipLine".to_string());
-        e.thickness = Some("normal".to_string());
-        e.labelpos = Some("c".to_string());
-        e.look = Some("classic".to_string());
+        let mut e = Edge {
+            id: edge_id(rel, i),
+            source: Some(rel.entity_a.clone()),
+            target: Some(rel.entity_b.clone()),
+            start: Some(rel.entity_a.clone()),
+            end: Some(rel.entity_b.clone()),
+            label: Some(rel.role_a.clone()),
+            label_type: Some("markdown".to_string()),
+            arrow_type_end: Some(rel.card_a.as_lower()),
+            arrow_type_start: Some(rel.card_b.as_lower()),
+            pattern: Some(rel.rel_type.edge_pattern().to_string()),
+            curve: Some("basis".to_string()),
+            classes: Some("relationshipLine".to_string()),
+            thickness: Some("normal".to_string()),
+            labelpos: Some("c".to_string()),
+            look: Some("classic".to_string()),
+            ..Default::default()
+        };
         // The dagre edge-label packing reads width/height from the edge
         // label meta; populating via the unified `extra` map keeps this
         // simple without mutating dagre_bridge.
@@ -512,17 +514,15 @@ pub fn layout(d: &ErDiagram, theme: &ThemeVariables) -> Result<ErLayout> {
     let result: LayoutResult = unified_render::layout(&data, "dagre", theme)?;
 
     // ── 3. Pack ErLayout ─────────────────────────────────────────────
-    let mut out = ErLayout::default();
-    out.direction = d.direction.clone();
-    out.classes = d.classes.clone();
+    let mut out = ErLayout {
+        direction: d.direction.clone(),
+        classes: d.classes.clone(),
+        ..Default::default()
+    };
 
     for (idx, name) in d.entity_keys.iter().enumerate() {
         let entity = &d.entities[name];
-        let n = result
-            .nodes
-            .get(idx)
-            .cloned()
-            .unwrap_or_else(|| Node::default());
+        let n = result.nodes.get(idx).cloned().unwrap_or_else(Node::default);
         let w = n.width.unwrap_or(0.0);
         let h = n.height.unwrap_or(0.0);
         let x = n.x.unwrap_or(0.0);
@@ -633,16 +633,12 @@ pub fn layout(d: &ErDiagram, theme: &ThemeVariables) -> Result<ErLayout> {
                         .unwrap_or_default();
                     // Empty/whitespace-only label → suppress the label
                     // transform (mirror non-self-edge handling above).
-                    let label_x = if label_str.trim().is_empty() && !label_str.is_empty() {
-                        None
-                    } else if label_str.is_empty() {
+                    let label_x = if label_str.trim().is_empty() {
                         None
                     } else {
                         seg.label_x
                     };
-                    let label_y = if label_str.trim().is_empty() && !label_str.is_empty() {
-                        None
-                    } else if label_str.is_empty() {
+                    let label_y = if label_str.trim().is_empty() {
                         None
                     } else {
                         seg.label_y
@@ -958,19 +954,18 @@ fn resolve_styled_font(
             let val = val.trim();
             match prop {
                 "font-size" => {
-                    if let Some(num) = val.trim_end_matches("px").parse::<f64>().ok() {
+                    if let Ok(num) = val.trim_end_matches("px").parse::<f64>() {
                         font_size = num;
                     }
                 }
-                "font-weight" => {
-                    if val == "bold"
+                "font-weight"
+                    if (val == "bold"
                         || val == "bolder"
                         || val.starts_with('7')
                         || val.starts_with('8')
-                        || val.starts_with('9')
-                    {
-                        bold = true;
-                    }
+                        || val.starts_with('9')) =>
+                {
+                    bold = true;
                 }
                 _ => {}
             }

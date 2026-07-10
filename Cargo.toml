@@ -64,11 +64,3 @@ panic = "abort"
 # crates would both claim the same `links` key.
 [patch.crates-io]
 graphviz-anywhere = { path = "crates/graphviz-anywhere/packages/rust" }
-
-# mermaid-little declares `dagre` against its upstream git repo
-# (https://github.com/Actrium/dagre-rs.git, branch = main). Inside the
-# super-monorepo we want it resolved to the in-tree subtree at
-# crates/dagre instead — a single dagre crate compiles into the workspace,
-# and cargo-deny does not flag a git source we never end up fetching.
-[patch."https://github.com/Actrium/dagre-rs.git"]
-dagre = { path = "crates/dagre" }

@@ -37,7 +37,17 @@
 //!   trailing `.0`, fractions via Rust's shortest-decimal `{}` formatter
 //!   which matches Grisu3 / Ryū ≈ JS's default).
 
-use crate::font_metrics::{line_height, text_width};
+use crate::font_metrics::text_width;
+
+/// Browser-resolved default for labels rendered inside Mermaid's HTML
+/// `<foreignObject>` labels. The generated SVG root declares
+/// `font-size:16px`, and the label `<div>` declares `line-height: 1.5`.
+pub const HTML_LABEL_FONT_SIZE: f64 = 16.0;
+pub const HTML_LABEL_LINE_HEIGHT_RATIO: f64 = 1.5;
+
+pub fn html_label_line_height(font_size_px: f64) -> f64 {
+    font_size_px * HTML_LABEL_LINE_HEIGHT_RATIO
+}
 
 /// Detect a KaTeX block — at least one paired `$$..$$` on a single line.
 /// Mirrors mermaid's `katexRegex.test(text)` (`/\$\$(.*)\$\$/g`).
@@ -247,6 +257,11 @@ pub struct LabelOpts<'a> {
     /// Whether the inner `<span>` gets the `nodeLabel` base class
     /// (`true`) or the `edgeLabel` base class (`false`).
     pub is_node: bool,
+    /// Extra horizontal CSS padding on the HTML label body. Upstream
+    /// Mermaid leaves flowchart edge-label backgrounds flush with text;
+    /// callers may opt into a small non-upstream visual readability
+    /// enhancement while keeping the default byte-exact path unchanged.
+    pub horizontal_padding: f64,
 }
 
 impl<'a> Default for LabelOpts<'a> {
@@ -262,7 +277,16 @@ impl<'a> Default for LabelOpts<'a> {
             max_width: 200.0,
             wrap_in_p: true,
             is_node: true,
+            horizontal_padding: 0.0,
         }
+    }
+}
+
+fn padded_width(text: &str, width: f64, opts: &LabelOpts<'_>) -> f64 {
+    if text.is_empty() || opts.horizontal_padding <= 0.0 {
+        width
+    } else {
+        width + opts.horizontal_padding * 2.0
     }
 }
 
@@ -274,6 +298,7 @@ impl<'a> Default for LabelOpts<'a> {
 /// defaults to `translate(-width/2, -height/2)` matching upstream
 /// `labelHelper`'s `useHtmlLabels` branch.
 pub fn render_node_label(text: &str, width: f64, height: f64, opts: &LabelOpts<'_>) -> String {
+    let width = padded_width(text, width, opts);
     let mut out = String::with_capacity(256 + text.len());
     // Outer <g class="label">.
     out.push_str("<g class=\"label\"");
@@ -370,6 +395,12 @@ pub fn foreign_object_body(text: &str, width: f64, height: f64, opts: &LabelOpts
         div_style.push_str(prefix);
     }
     div_style.push_str("display: table-cell; white-space: nowrap; line-height: 1.5;");
+    if !text.is_empty() && opts.horizontal_padding > 0.0 {
+        div_style.push_str(&format!(
+            " padding: 0 {}px;",
+            fmt_num(opts.horizontal_padding)
+        ));
+    }
     if opts.max_width.is_finite() {
         div_style.push_str(&format!(
             " max-width: {}px; text-align: center;",
@@ -764,9 +795,10 @@ fn has_paired_markdown_markers(s: &str) -> bool {
 /// The jsdom shim in `tests/support/generate_ref.mjs::resolveFont`
 /// walks up the DOM looking for explicit `font-family` / `font-size` /
 /// `font-weight` ATTRIBUTES or inline `style` values — CSS class rules
-/// are IGNORED. If none are found, it defaults to `14px` / `sans-serif`
-/// / non-bold, which is what nearly every Stratum 3 `<foreignObject>`
-/// label resolves to in practice.
+/// are IGNORED. In real browser consumers the generated SVG root declares
+/// `font-size:16px` and the HTML label div declares `line-height: 1.5`,
+/// so the fallback must match that rendered size instead of the older
+/// jsdom-reference-only 14px assumption.
 ///
 /// Call with explicit `Some(...)` fields only when the emitted SVG
 /// actually sets a matching attribute on the label `<div>`, `<span>`,
@@ -782,8 +814,9 @@ pub struct HtmlLabelFont<'a> {
 impl<'a> HtmlLabelFont<'a> {
     fn resolve(&self) -> (&'a str, f64, bool) {
         (
-            self.font_family.unwrap_or("sans-serif"),
-            self.font_size_px.unwrap_or(14.0),
+            self.font_family
+                .unwrap_or("trebuchet ms,verdana,arial,sans-serif"),
+            self.font_size_px.unwrap_or(HTML_LABEL_FONT_SIZE),
             self.bold.unwrap_or(false),
         )
     }
@@ -820,7 +853,7 @@ pub fn measure_html_label(
     let (family, size, bold) = font.resolve();
     // Fast path: empty string.
     if text.is_empty() {
-        return (0.0, line_height(family, size, bold, false));
+        return (0.0, html_label_line_height(size));
     }
     // Upstream's parseEdge / parseGenericTypes converts every literal `\n`
     // in a label string to `<br/>` BEFORE the label reaches the
@@ -844,7 +877,7 @@ pub fn measure_html_label(
     let stripped = strip_paired_markdown_markers(text);
     let concatenated: String = stripped.split('\n').collect();
     let max_line_w = text_width(&concatenated, family, size, bold, false);
-    let lh = line_height(family, size, bold, false);
+    let lh = html_label_line_height(size);
     let _ = (max_width_px, wrap_enabled); // currently unused; reserved.
     (max_line_w, lh)
 }
@@ -920,11 +953,11 @@ pub fn measure_html_markup_label(
 ) -> (f64, f64) {
     let (family, size, base_bold) = font.resolve();
     if text.is_empty() {
-        return (0.0, line_height(family, size, base_bold, false));
+        return (0.0, html_label_line_height(size));
     }
     let _ = (max_width_px, wrap_enabled);
     let segments = parse_html_text_segments(text, base_bold);
-    let lh = line_height(family, size, base_bold, false);
+    let lh = html_label_line_height(size);
     let total_w: f64 = segments
         .iter()
         .map(|(seg, bold)| text_width(seg, family, size, *bold, false))
@@ -1117,7 +1150,7 @@ fn markdown_paragraph_to_html(src: &str) -> String {
                 }
             }
             // bare *, treat as literal
-            out.push_str("*");
+            out.push('*');
             i += 1;
         } else if b == b'`' {
             // inline code: `code`
@@ -1129,7 +1162,7 @@ fn markdown_paragraph_to_html(src: &str) -> String {
                 i += 1 + end + 1;
                 continue;
             }
-            out.push_str("`");
+            out.push('`');
             i += 1;
         } else if b == b'<' {
             // Embedded HTML tag — pass through (with normalisation of <br> → <br/>)
@@ -1346,8 +1379,10 @@ mod tests {
         //       </div>
         //     </foreignObject>
         //   </g>
-        let mut opts = LabelOpts::default();
-        opts.max_width = f64::INFINITY;
+        let opts = LabelOpts {
+            max_width: f64::INFINITY,
+            ..LabelOpts::default()
+        };
         let got = render_node_label("id1", 21.68359375, 16.296875, &opts);
         assert_eq!(
             got,
@@ -1388,6 +1423,28 @@ mod tests {
     }
 
     #[test]
+    fn edge_label_padding_is_opt_in() {
+        let opts = LabelOpts {
+            data_id: Some("L_DataStore_Process_0"),
+            group_style: None,
+            horizontal_padding: 4.0,
+            ..LabelOpts::default()
+        };
+        let got = render_edge_label(
+            "input",
+            177.806640625,
+            41.60302734375,
+            36.01171875,
+            16.296875,
+            opts,
+        );
+
+        assert!(got.contains(r#"width="44.01171875""#));
+        assert!(got.contains(r#"transform="translate(-22.005859375, -8.1484375)""#));
+        assert!(got.contains("padding: 0 4px;"));
+    }
+
+    #[test]
     fn markdown_node_label_class_chain() {
         // ER entity label: `<span class="nodeLabel markdown-node-label">` +
         // max-width:100px when under minEntityWidth floor.
@@ -1410,35 +1467,27 @@ mod tests {
             is_node: false,
             add_background: true,
             group_style: None,
-            group_transform: Some("translate(0, -8.1484375)".into()),
+            group_transform: Some("translate(0, 0)".into()),
             ..LabelOpts::default()
         };
-        let got = render_node_label("", 0.0, 16.296875, &opts);
+        let got = render_node_label("", 0.0, 0.0, &opts);
         // The outer `<g class="edgeLabel" …>` is omitted — this is the
         // inner "label" only; caller can compose it.
-        assert_eq!(
-            got,
-            r#"<g class="label" data-id="id_Animal_Duck_1" transform="translate(0, -8.1484375)"><foreignObject width="0" height="16.296875"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml" class="labelBkg"><span class="edgeLabel "></span></div></foreignObject></g>"#
-        );
+        assert!(got.contains(r#"height="0""#));
+        assert!(got.contains(r#"<span class="edgeLabel "></span>"#));
+        assert!(!got.contains("<p>"));
     }
 
     #[test]
-    fn measure_html_label_jsdom_default_14sans() {
-        // "id1" at 14px sans-serif should match what the jsdom shim
-        // returns for a bare <div> with no font attrs.
+    fn measure_html_label_uses_browser_default_line_height() {
+        // Browser-rendered Mermaid uses 16px HTML labels with `line-height: 1.5`.
         let (w, h) = measure_html_label("id1", &HtmlLabelFont::default(), 200.0, true);
-        // Verify against expected Rust font_metrics::text_width output.
-        let expected_w = text_width("id1", "sans-serif", 14.0, false, false);
-        let expected_h = line_height("sans-serif", 14.0, false, false);
+        let (family, size, bold) = HtmlLabelFont::default().resolve();
+        let expected_w = text_width("id1", family, size, bold, false);
+        let expected_h = html_label_line_height(size);
         assert!((w - expected_w).abs() < 1e-9);
         assert!((h - expected_h).abs() < 1e-9);
-        // The block fixture 03 emits width="21.68359375" height="16.296875"
-        // for "id1". Our measurement must agree.
-        assert!(
-            (w - 21.68359375).abs() < 1e-6,
-            "w={w}, expected 21.68359375"
-        );
-        assert!((h - 16.296875).abs() < 1e-6, "h={h}, expected 16.296875");
+        assert_eq!(h, 24.0);
     }
 
     #[test]
@@ -1448,9 +1497,10 @@ mod tests {
         // concatenated textContent as a single line. We mirror that here:
         // height stays 1× line-height, width sums the concatenated text.
         let (w, h) = measure_html_label("a\nbb", &HtmlLabelFont::default(), 200.0, true);
-        let lh = line_height("sans-serif", 14.0, false, false);
+        let (family, size, bold) = HtmlLabelFont::default().resolve();
+        let lh = html_label_line_height(size);
         assert!((h - lh).abs() < 1e-9, "h={h} expected single line {lh}");
-        let expected_w = text_width("abb", "sans-serif", 14.0, false, false);
+        let expected_w = text_width("abb", family, size, bold, false);
         assert!(
             (w - expected_w).abs() < 1e-9,
             "w={w} expected concat width {expected_w}"

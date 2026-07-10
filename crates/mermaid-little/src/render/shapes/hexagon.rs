@@ -48,8 +48,10 @@ mod tests {
 
     #[test]
     fn hexagon_points_match_upstream() {
-        let mut n = Node::default();
-        n.id = "h".into();
+        let mut n = Node {
+            id: "h".into(),
+            ..Node::default()
+        };
         // visual w=100, h=40, m = 40/4 = 10
         n.width = Some(100.0);
         n.height = Some(40.0);

@@ -899,10 +899,12 @@ impl<'a> Parser<'a> {
             Tok::Columns(n) => {
                 self.next_tok()?;
                 // Sentinel node — extracted by populate().
-                let mut n_node = BlockNode::default();
-                n_node.id = "__column_setting__".into();
-                n_node.shape = BlockShape::Composite;
-                n_node.columns = Some(n);
+                let n_node = BlockNode {
+                    id: "__column_setting__".into(),
+                    shape: BlockShape::Composite,
+                    columns: Some(n),
+                    ..Default::default()
+                };
                 Ok(vec![n_node])
             }
             Tok::SpaceBlock(w) => {
@@ -993,43 +995,38 @@ impl<'a> Parser<'a> {
         // Look for a link token — if present, this is a chain.
         let mut out = Vec::new();
         let mut current = first;
-        loop {
-            match self.peek_tok()? {
-                Tok::Link { .. } => {
-                    let link_tok = self.next_tok()?;
-                    if let Tok::Link { typestr, label } = link_tok {
-                        let next_node = self.parse_node()?;
-                        let edge_data = edge_str_to_edge_data(&typestr);
-                        // Upstream blockDB.ts prepends an occurrence count to
-                        // disambiguate repeated src-dst pairs: id = count + "-" + base_id.
-                        let base_id = format!("{}-{}", current.id, next_node.id);
-                        let count = {
-                            let c = self.edge_count.entry(base_id.clone()).or_insert(0);
-                            *c += 1;
-                            *c
-                        };
-                        let edge_id = format!("{}-{}", count, base_id);
-                        self.edges.push(BlockEdge {
-                            id: edge_id,
-                            start: current.id.clone(),
-                            end: next_node.id.clone(),
-                            label,
-                            arrow_type_end: edge_data,
-                            arrow_type_start: "arrow_open".into(),
-                        });
-                        // Emit leading node (without width_in_columns set by SIZE).
-                        out.push(BlockNode {
-                            id: current.id.clone(),
-                            label: current.label.clone(),
-                            shape: current.shape,
-                            width_in_columns: 1,
-                            arrow_dirs: current.arrow_dirs.clone(),
-                            ..Default::default()
-                        });
-                        current = next_node;
-                    }
-                }
-                _ => break,
+        while let Tok::Link { .. } = self.peek_tok()? {
+            let link_tok = self.next_tok()?;
+            if let Tok::Link { typestr, label } = link_tok {
+                let next_node = self.parse_node()?;
+                let edge_data = edge_str_to_edge_data(&typestr);
+                // Upstream blockDB.ts prepends an occurrence count to
+                // disambiguate repeated src-dst pairs: id = count + "-" + base_id.
+                let base_id = format!("{}-{}", current.id, next_node.id);
+                let count = {
+                    let c = self.edge_count.entry(base_id.clone()).or_insert(0);
+                    *c += 1;
+                    *c
+                };
+                let edge_id = format!("{}-{}", count, base_id);
+                self.edges.push(BlockEdge {
+                    id: edge_id,
+                    start: current.id.clone(),
+                    end: next_node.id.clone(),
+                    label,
+                    arrow_type_end: edge_data,
+                    arrow_type_start: "arrow_open".into(),
+                });
+                // Emit leading node (without width_in_columns set by SIZE).
+                out.push(BlockNode {
+                    id: current.id.clone(),
+                    label: current.label.clone(),
+                    shape: current.shape,
+                    width_in_columns: 1,
+                    arrow_dirs: current.arrow_dirs.clone(),
+                    ..Default::default()
+                });
+                current = next_node;
             }
         }
         // The terminal node may have a SIZE suffix.

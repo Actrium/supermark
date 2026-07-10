@@ -279,11 +279,11 @@ fn extract_init_directives(src: &str) -> (Vec<serde_yml::Value>, String) {
                                                                // with `{` since directive body starts with e.g.
                                                                // `init: {...}` or `init:{...}`.
                 let wrapped = format!("{{{directive_body}}}");
-                if let Ok(val) = serde_yml::from_str::<serde_yml::Value>(&wrapped) {
-                    if let serde_yml::Value::Mapping(m) = &val {
-                        if let Some(init) = m.get(serde_yml::Value::String("init".into())) {
-                            values.push(init.clone());
-                        }
+                if let Ok(serde_yml::Value::Mapping(m)) =
+                    serde_yml::from_str::<serde_yml::Value>(&wrapped)
+                {
+                    if let Some(init) = m.get(serde_yml::Value::String("init".into())) {
+                        values.push(init.clone());
                     }
                 }
                 i = end_pos;

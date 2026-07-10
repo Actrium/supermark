@@ -83,8 +83,10 @@ mod tests {
 
     #[test]
     fn double_circle_classic_gap() {
-        let mut n = Node::default();
-        n.id = "d".into();
+        let mut n = Node {
+            id: "d".into(),
+            ..Node::default()
+        };
         n.width = Some(60.0);
         let theme = ThemeVariables::default();
         let got = draw(&n, &theme).unwrap();
@@ -94,8 +96,10 @@ mod tests {
 
     #[test]
     fn double_circle_neo_gap() {
-        let mut n = Node::default();
-        n.id = "d".into();
+        let mut n = Node {
+            id: "d".into(),
+            ..Node::default()
+        };
         n.width = Some(60.0);
         n.look = Some("neo".into());
         let theme = ThemeVariables::default();

@@ -861,9 +861,9 @@ impl<'a> LineParser<'a> {
             let mut args: Option<String> = None;
             let mut rest = tail;
             // Extract name up to '(' or whitespace.
-            let mut chars = rest.char_indices();
+            let chars = rest.char_indices();
             let mut end = rest.len();
-            while let Some((idx, c)) = chars.next() {
+            for (idx, c) in chars {
                 if c == '(' || c.is_whitespace() {
                     end = idx;
                     break;
@@ -1145,8 +1145,8 @@ fn split_semicolons_outside_quotes(s: &str) -> Vec<String> {
     let mut result = Vec::new();
     let mut current = String::new();
     let mut in_quote = false;
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
+    let chars = s.chars();
+    for c in chars {
         match c {
             '"' => {
                 in_quote = !in_quote;
@@ -1288,7 +1288,7 @@ fn strip_md_continuation_indents(src: &str) -> String {
         } else {
             out.push('\n');
             // Strip leading ASCII space/tab characters on this line.
-            let trimmed = line.trim_start_matches(|c: char| c == ' ' || c == '\t');
+            let trimmed = line.trim_start_matches([' ', '\t']);
             out.push_str(trimmed);
         }
     }
@@ -1302,8 +1302,8 @@ fn split_semis(s: &str) -> Vec<String> {
     let mut depth_sq = 0i32;
     let mut depth_cu = 0i32;
     let mut in_str = false;
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
+    let chars = s.chars().peekable();
+    for c in chars {
         if in_str {
             current.push(c);
             if c == '"' {
@@ -1492,12 +1492,8 @@ fn scan_arrow(s: &str) -> Option<(&str, &str)> {
         return None;
     }
     // Dotted is `-.` or `<-.` etc. — after an optional `-`, comes `.`.
-    let mut is_dotted = false;
-    if bytes[i] == b'-' && i + 1 < bytes.len() && bytes[i + 1] == b'.' {
-        is_dotted = true;
-    } else if bytes[i] == b'.' {
-        is_dotted = true;
-    }
+    let is_dotted =
+        bytes[i] == b'.' || (bytes[i] == b'-' && i + 1 < bytes.len() && bytes[i + 1] == b'.');
     let body_ch = if is_dotted { b'.' } else { bytes[i] };
 
     // Consume body. For dotted, the body is a mix of `.` and `-`.
@@ -1692,9 +1688,9 @@ fn classify_arrow(arrow: &str) -> Option<(EdgeStroke, usize, ArrowType, ArrowTyp
     }
     let stroke = if span_bytes[0] == b'=' {
         EdgeStroke::Thick
-    } else if span_bytes[0] == b'-' && span_bytes.len() > 1 && span_bytes[1] == b'.' {
-        EdgeStroke::Dotted
-    } else if span_bytes[0] == b'.' {
+    } else if span_bytes[0] == b'.'
+        || (span_bytes[0] == b'-' && span_bytes.len() > 1 && span_bytes[1] == b'.')
+    {
         EdgeStroke::Dotted
     } else if span_bytes[0] == b'-' {
         let mut is_dotted = false;
@@ -1824,9 +1820,7 @@ fn classify_arrow(arrow: &str) -> Option<(EdgeStroke, usize, ArrowType, ArrowTyp
 ///   idString:::className                  — class suffix
 ///
 /// Returns (id, shape, label, class_suffix, bytes_consumed).
-fn parse_one_vertex(
-    s: &str,
-) -> Option<(
+type ParsedVertex = (
     String,
     Option<String>,
     Option<Label>,
@@ -1834,7 +1828,9 @@ fn parse_one_vertex(
     usize,
     bool,
     Option<String>,
-)> {
+);
+
+fn parse_one_vertex(s: &str) -> Option<ParsedVertex> {
     // Read id up to a shape-starter / whitespace / `&` / link-starter.
     let bytes = s.as_bytes();
     let mut i = 0;
@@ -2242,13 +2238,11 @@ fn renumber_auto_subgraph_ids(diag: &mut FlowchartDiagram) {
 
     // Assign counter values: counter increments for every subgraph in post-order;
     // auto-id subgraphs get their new name from the counter at that point.
-    let mut counter = 0usize;
     let mut new_ids: HashMap<usize, String> = HashMap::new();
-    for &idx in &full_post_order {
+    for (counter, &idx) in full_post_order.iter().enumerate() {
         if auto_re(&diag.subgraphs[idx].id) {
             new_ids.insert(idx, format!("subGraph{}", counter));
         }
-        counter += 1;
     }
 
     if new_ids.is_empty() {

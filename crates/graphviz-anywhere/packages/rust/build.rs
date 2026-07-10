@@ -302,9 +302,9 @@ fn try_repo_output(manifest_dir: &Path) -> bool {
 ///   * `GRAPHVIZ_ANYWHERE_ALLOW_DOWNLOAD=1` — opt in to the network fallback.
 ///   * `GRAPHVIZ_ANYWHERE_NO_DOWNLOAD=1`    — force it off (wins over allow).
 ///   * `GRAPHVIZ_ANYWHERE_RELEASE_BASE_URL` — override the release base URL
-///       (default `https://github.com/Actrium/supramark/releases/download`).
+///     (default `https://github.com/Actrium/supramark/releases/download`).
 ///   * `GRAPHVIZ_ANYWHERE_RELEASE_VERSION`  — override the tag version
-///       (defaults to CARGO_PKG_VERSION).
+///     (defaults to CARGO_PKG_VERSION).
 fn try_github_release() -> bool {
     // Hard-off always wins; otherwise require explicit opt-in because no
     // standalone release feed exists for this crate yet.
@@ -324,19 +324,6 @@ fn try_github_release() -> bool {
         );
         return false;
     };
-
-    // Windows .zip assets are not auto-extracted yet.
-    // TODO: windows zip extraction — implement curl+unzip (or PowerShell
-    // Expand-Archive) to handle .zip assets for Windows targets.
-    if asset.ends_with(".zip") {
-        eprintln!(
-            "graphviz-anywhere: automatic download of Windows .zip assets is not yet \
-             implemented.  Set GRAPHVIZ_ANYWHERE_DIR to point at the directory \
-             containing graphviz_api.lib, or drop the prebuilt lib under \
-             packages/rust/prebuilt/{target}/"
-        );
-        return false;
-    }
 
     let release_version = env::var("GRAPHVIZ_ANYWHERE_RELEASE_VERSION")
         .ok()
@@ -389,8 +376,9 @@ fn try_github_release() -> bool {
             return false;
         }
 
+        let tar_flag = if asset.ends_with(".zip") { "-xf" } else { "-xzf" };
         let untar = Command::new("tar")
-            .args(["-xzf"])
+            .arg(tar_flag)
             .arg(&archive)
             .arg("-C")
             .arg(&staging)

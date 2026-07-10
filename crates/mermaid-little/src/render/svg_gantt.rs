@@ -1,9 +1,6 @@
 //! Gantt diagram SVG renderer.
 //!
 //! Mirrors `packages/mermaid/src/diagrams/gantt/ganttRenderer.js` `draw()`.
-//! Under the headless reference run the chart width is 0; almost every
-//! coordinate ends up negative, which the reference SVGs already
-//! contain. We replicate this exactly.
 
 use crate::error::Result;
 use crate::layout::gantt::{
@@ -121,7 +118,7 @@ pub fn render(
     }
 
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 // ── Exclude rect ─────────────────────────────────────────────────────

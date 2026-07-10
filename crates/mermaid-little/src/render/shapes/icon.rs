@@ -7,11 +7,8 @@ const ICON_SIZE: f64 = 48.0;
 const ICON_SVG_PAD: f64 = 16.0;
 
 fn icon_pack_fill(icon_val: &str) -> &str {
-    if icon_val.starts_with("aws:") {
-        "#087ebf"
-    } else {
-        "#087ebf"
-    }
+    let _ = icon_val;
+    "#087ebf"
 }
 
 pub fn draw(node: &Node, theme: &ThemeVariables) -> Result<String> {

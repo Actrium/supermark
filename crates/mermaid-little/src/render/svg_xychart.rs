@@ -89,7 +89,7 @@ pub fn render(
     // 5. Trailing mermaid-tmp-group anchor.
     out.push_str(r#"<g class="mermaid-tmp-group"></g></svg>"#);
 
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 // ── Element emission ─────────────────────────────────────────────────

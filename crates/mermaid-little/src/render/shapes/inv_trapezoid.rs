@@ -30,8 +30,10 @@ mod tests {
 
     #[test]
     fn inv_trapezoid_points_match_upstream() {
-        let mut n = Node::default();
-        n.id = "itr".into();
+        let mut n = Node {
+            id: "itr".into(),
+            ..Node::default()
+        };
         n.width = Some(100.0); // visual_w (= base 60 + 2*shear 40)
         n.height = Some(40.0);
         let theme = ThemeVariables::default();

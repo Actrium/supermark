@@ -148,6 +148,10 @@ Mirrors plantuml-little:
   against a native pure-Rust pipeline; CI's `test-reference` job opts
   in to `MERMAID_LITTLE_TEST_BACKEND=wasm` for cross-platform
   determinism.
+- **Known intentional alignment warnings.** `tests/known_alignment_warnings.txt`
+  records narrow, reviewed visual improvements that intentionally differ
+  from upstream. Current entry: flowchart edge labels get 4px horizontal
+  padding because Mermaid 11.14.0 keeps their backgrounds flush with text.
 
 ## Acknowledgments
 

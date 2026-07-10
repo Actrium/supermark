@@ -10,8 +10,8 @@
 //! jsdom's font metric assumptions for label measurement, and (c) the
 //! precise stylis CSS scoping transform. We reuse the shape registry
 //! + markers + edges modules that Wave 3 built, emit structurally
-//! correct SVG here, and leave the fine byte-level polish for
-//! follow-up iterations.
+//!   correct SVG here, and leave the fine byte-level polish for
+//!   follow-up iterations.
 
 use crate::error::Result;
 use crate::layout::flowchart::FlowchartLayout;
@@ -25,6 +25,15 @@ use crate::render::svg_er::fade;
 use crate::render::unified_shell;
 use crate::theme::css as theme_css;
 use crate::theme::ThemeVariables;
+
+/// Non-upstream readability enhancement for flowchart edge labels.
+///
+/// Mermaid 11.14.0 renders edge-label backgrounds flush with the text
+/// (`.edgeLabel p { padding: 0; }`). That is byte-aligned but visually tight,
+/// especially for short labels like `Pass` / `Fail`. Keep node labels and
+/// other diagram families byte-oriented; flowchart edge labels deliberately
+/// get a small symmetric horizontal cushion.
+const FLOWCHART_EDGE_LABEL_PADDING_X: f64 = 4.0;
 
 /// Compute the viewBox matching the upstream jsdom `getBBox()` shim.
 ///
@@ -567,6 +576,7 @@ fn font_size_postprocess_node_svg(node: &UNode, svg: &str) -> String {
 /// the `x` attribute of the `<text class="flowchartTitleText">` element it
 /// appends — the title is then measured by jsdom's getBBox shim and pushes the
 /// outer bbox horizontally.
+#[allow(dead_code)]
 fn compute_viewbox(
     l: &FlowchartLayout,
     padding: f64,
@@ -986,6 +996,199 @@ fn compute_viewbox(
     (vb_x, vb_y, vb_w, vb_h, content_center_x)
 }
 
+/// Compute a viewBox for real browser rendering.
+///
+/// Older code mirrored the deterministic jsdom reference shim, which ignores
+/// many transforms while calculating `getBBox()`. Real Mermaid output is
+/// consumed by browsers, and browsers include the node/label transforms when
+/// deciding whether content is inside the SVG viewport. The shim-aligned box
+/// can therefore pass byte fixtures while clipping labels and bottom nodes in
+/// Chrome/Safari. This function unions the same high-level geometry the
+/// renderer emits, but in browser coordinates.
+fn compute_viewbox_browser(
+    l: &FlowchartLayout,
+    padding: f64,
+    title: Option<&str>,
+) -> (f64, f64, f64, f64, f64) {
+    use crate::render::foreign_object::{
+        measure_html_markup_label, replace_fa_icons, HtmlLabelFont,
+    };
+
+    struct BrowserBounds {
+        min_x: f64,
+        min_y: f64,
+        max_x: f64,
+        max_y: f64,
+    }
+
+    impl BrowserBounds {
+        fn empty() -> Self {
+            Self {
+                min_x: f64::INFINITY,
+                min_y: f64::INFINITY,
+                max_x: f64::NEG_INFINITY,
+                max_y: f64::NEG_INFINITY,
+            }
+        }
+
+        fn expand_box(&mut self, bx: f64, by: f64, bw: f64, bh: f64) {
+            if bw == 0.0 && bh == 0.0 {
+                return;
+            }
+            self.min_x = self.min_x.min(bx);
+            self.min_y = self.min_y.min(by);
+            self.max_x = self.max_x.max(bx + bw);
+            self.max_y = self.max_y.max(by + bh);
+        }
+
+        fn is_empty(&self) -> bool {
+            !self.min_x.is_finite()
+        }
+
+        fn width(&self) -> f64 {
+            self.max_x - self.min_x
+        }
+
+        fn height(&self) -> f64 {
+            self.max_y - self.min_y
+        }
+    }
+
+    let mut bounds = BrowserBounds::empty();
+
+    let font = HtmlLabelFont::default();
+
+    for n in &l.nodes {
+        if is_cyclic_helper_from_anchor_rewrite(n, l) {
+            continue;
+        }
+
+        let cx = n.x.unwrap_or(0.0);
+        let cy = n.y.unwrap_or(0.0);
+        let w = n.width.unwrap_or(0.0);
+        let h = n.height.unwrap_or(0.0);
+        bounds.expand_box(cx - w / 2.0, cy - h / 2.0, w, h);
+
+        let label_text = n.label.as_deref().unwrap_or("");
+        if !label_text.is_empty() {
+            let is_markdown = n.label_type.as_deref() == Some("markdown");
+            let label_escaped = if is_markdown {
+                crate::render::foreign_object::markdown_label_to_html(label_text)
+            } else {
+                crate::render::foreign_object::string_label_to_html(label_text)
+            };
+            let processed = replace_fa_icons(&label_escaped);
+            let node_bold = n
+                .css_styles
+                .as_deref()
+                .map(node_styles_have_bold)
+                .unwrap_or(false);
+            let label_font = if node_bold {
+                let mut f = font.clone();
+                f.bold = Some(true);
+                f
+            } else {
+                font.clone()
+            };
+            let (lw, lh) = if crate::render::foreign_object::contains_katex_marker(&processed) {
+                match crate::render::foreign_object::try_render_katex_label(&processed, &label_font)
+                {
+                    Some((_, w, h)) => (w, h),
+                    None => measure_html_markup_label(&processed, &label_font, 200.0, true),
+                }
+            } else {
+                measure_html_markup_label(&processed, &label_font, 200.0, true)
+            };
+            bounds.expand_box(cx - lw / 2.0, cy - lh / 2.0, lw, lh);
+        }
+    }
+
+    for e in &l.edges {
+        if is_replaced_self_loop(e) || is_cyclic_segment_from_anchor_rewrite(e) {
+            continue;
+        }
+        let Some(points) = &e.points else { continue };
+        if points.is_empty() {
+            continue;
+        }
+
+        let arrow_end = e.arrow_type_end.as_deref().unwrap_or("none");
+        let arrow_start = e.arrow_type_start.as_deref().unwrap_or("none");
+
+        let mut adjusted: Vec<Point> = points.clone();
+        apply_marker_offsets(&mut adjusted, arrow_end, arrow_start);
+
+        let curve_name = e.curve.as_deref().unwrap_or("basis");
+        let ctype = edges::CurveType::parse(curve_name).unwrap_or(edges::CurveType::Basis);
+        let visited = edges::pathbbox_points(&adjusted, ctype);
+        if visited.is_empty() {
+            continue;
+        }
+
+        let mut path_min_x = f64::INFINITY;
+        let mut path_min_y = f64::INFINITY;
+        let mut path_max_x = f64::NEG_INFINITY;
+        let mut path_max_y = f64::NEG_INFINITY;
+        for (px, py) in visited.iter() {
+            let rx = (px * 1000.0).round() / 1000.0;
+            let ry = (py * 1000.0).round() / 1000.0;
+            path_min_x = path_min_x.min(rx);
+            path_min_y = path_min_y.min(ry);
+            path_max_x = path_max_x.max(rx);
+            path_max_y = path_max_y.max(ry);
+        }
+        if path_min_x.is_finite() {
+            bounds.expand_box(
+                path_min_x,
+                path_min_y,
+                path_max_x - path_min_x,
+                path_max_y - path_min_y,
+            );
+        }
+    }
+
+    for e in &l.edges {
+        if is_replaced_self_loop(e) || is_cyclic_segment_from_anchor_rewrite(e) {
+            continue;
+        }
+        let label_text = e.label.as_deref().unwrap_or("");
+        if label_text.is_empty() {
+            continue;
+        }
+        let processed = replace_fa_icons(label_text);
+        let (lw, lh) = measure_html_markup_label(&processed, &font, 200.0, true);
+        let lw = lw + FLOWCHART_EDGE_LABEL_PADDING_X * 2.0;
+        let dagre_lx = e.label_x.unwrap_or(0.0);
+        let dagre_ly = e.label_y.unwrap_or(0.0);
+        let (lx, ly) = recompute_edge_label_position(e, l).unwrap_or((dagre_lx, dagre_ly));
+        bounds.expand_box(lx - lw / 2.0, ly - lh / 2.0, lw, lh);
+    }
+
+    if bounds.is_empty() {
+        return (0.0, 0.0, 1.0, 1.0, 0.0);
+    }
+
+    let content_center_x = bounds.min_x + bounds.width() / 2.0;
+
+    if let Some(t) = title {
+        if !t.is_empty() {
+            let tw = crate::font_metrics::text_width(t, "sans-serif", 16.0, false, false);
+            let lh = crate::render::foreign_object::html_label_line_height(16.0);
+            let title_y = bounds.min_y - 25.0 - lh;
+            bounds.expand_box(content_center_x - tw / 2.0, title_y, tw, lh);
+        }
+    }
+
+    let content_w = bounds.width();
+    let content_h = bounds.height();
+    let vb_x = bounds.min_x - padding;
+    let vb_y = bounds.min_y - padding;
+    let vb_w = (content_w + 2.0 * padding).max(1.0);
+    let vb_h = (content_h + 2.0 * padding).max(1.0);
+
+    (vb_x, vb_y, vb_w, vb_h, content_center_x)
+}
+
 /// Render a flowchart diagram as SVG.
 pub fn render(
     d: &FlowchartDiagram,
@@ -1011,7 +1214,7 @@ pub fn render(
         .clusters
         .iter()
         .filter_map(|c| {
-            let mut b = c.bounds.as_ref()?.clone();
+            let mut b = *c.bounds.as_ref()?;
             // Pick up the matching cluster node so we can look up the
             // pre-computed outer translate (only present on isolated
             // clusters that participated in the inner-pass).
@@ -1294,7 +1497,7 @@ pub fn render(
     // bounds including shape geometry, edge curves, and label
     // positions. We compute from layout nodes and edges.
     let (vb_x, vb_y, vb_w, vb_h, content_center_x) =
-        compute_viewbox(l, padding, d.meta.title.as_deref());
+        compute_viewbox_browser(l, padding, d.meta.title.as_deref());
 
     // ── Assemble final SVG ─────────────────────────────────────────
     let acc_title = d.meta.acc_title.as_deref();
@@ -1369,7 +1572,7 @@ pub fn render(
     // so this is a pure string rewrite of the final SVG.
     let out = postprocess_imgs(&out);
 
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 /// See call site for full documentation. Splits the input into `<p>...</p>` blocks
@@ -1573,7 +1776,7 @@ fn render_empty_cluster_as_node(
         crate::render::foreign_object::measure_html_markup_label(&for_measure, &font, 200.0, true)
     } else if !label.is_empty() {
         (
-            crate::font_metrics::text_width(&label, "sans-serif", 16.0, false, false) as f64,
+            crate::font_metrics::text_width(&label, "sans-serif", 16.0, false, false),
             22.0,
         )
     } else {
@@ -1595,8 +1798,8 @@ fn render_empty_cluster_as_node(
             let patched = diamond_br_postprocess(&demoted, &patched);
             let patched = font_size_postprocess_node_svg(&demoted, &patched);
             let patched = tooltip_postprocess_node_svg(&demoted, &patched);
-            let patched = link_postprocess_node_svg(&demoted, &patched);
-            patched
+
+            link_postprocess_node_svg(&demoted, &patched)
         }
         Err(_) => String::new(),
     }
@@ -2162,7 +2365,7 @@ fn render_isolated_cluster_inner_root(
             if l.isolated_cluster_ids.contains(&c.id) {
                 return None;
             }
-            Some((c.id.clone(), b.clone()))
+            Some((c.id.clone(), *b))
         })
         .collect();
 
@@ -2397,10 +2600,7 @@ fn render_helper_node(node: &UNode, theme: &ThemeVariables) -> String {
         .shape
         .clone()
         .unwrap_or_else(|| "labelRect".to_string());
-    match crate::render::shapes::draw(&shape_id, node, theme) {
-        Ok(svg) => svg,
-        Err(_) => String::new(),
-    }
+    crate::render::shapes::draw(&shape_id, node, theme).unwrap_or_default()
 }
 
 /// Return true if `node_id`'s parent is `cluster_id`.
@@ -3291,9 +3491,8 @@ fn render_edge_path(
 
 fn render_edge_label(e: &UEdge, html_labels: bool, l: &FlowchartLayout) -> String {
     use crate::render::foreign_object::{
-        markdown_label_to_html, measure_html_label, measure_html_markup_label,
-        render_edge_label as fo_edge, replace_fa_icons, string_label_to_html, HtmlLabelFont,
-        LabelOpts,
+        markdown_label_to_html, measure_html_markup_label, render_edge_label as fo_edge,
+        replace_fa_icons, string_label_to_html, HtmlLabelFont, LabelOpts,
     };
     use crate::render::shapes::types::{build_div_style_prefix, build_label_style};
     let label_text = e.label.clone().unwrap_or_default();
@@ -3337,8 +3536,7 @@ fn render_edge_label(e: &UEdge, html_labels: bool, l: &FlowchartLayout) -> Strin
             }
         }
     } else if is_empty {
-        let (_, lh) = measure_html_label("X", &HtmlLabelFont::default(), 200.0, true);
-        (0.0, lh, None)
+        (0.0, 0.0, None)
     } else {
         let (w, h) = measure_html_markup_label(&processed, &HtmlLabelFont::default(), 200.0, true);
         (w, h, None)
@@ -3401,6 +3599,11 @@ fn render_edge_label(e: &UEdge, html_labels: bool, l: &FlowchartLayout) -> Strin
             None
         } else {
             Some(&span_label_style)
+        },
+        horizontal_padding: if is_empty {
+            0.0
+        } else {
+            FLOWCHART_EDGE_LABEL_PADDING_X
         },
         ..LabelOpts::default()
     };
@@ -3840,7 +4043,7 @@ fn dedent(s: &str) -> String {
             continue;
         }
         // Skip pure-whitespace lines (no non-ws content after the indent).
-        if line.chars().skip(n).next().is_none() {
+        if line.chars().nth(n).is_none() {
             continue;
         }
         min_indent = Some(min_indent.map(|m| m.min(n)).unwrap_or(n));
@@ -3891,7 +4094,7 @@ fn dedent(s: &str) -> String {
 /// `createCssStyles`. Selectors depend on `flowchart.htmlLabels`:
 /// - htmlLabels=true (default): `> *`, `span`
 /// - htmlLabels=false: `rect`, `polygon`, `ellipse`, `circle`, `path`
-/// Plus a `tspan` rule with `color → fill` rewrites for text styles.
+///   Plus a `tspan` rule with `color → fill` rewrites for text styles.
 fn flowchart_class_def_css(id: &str, d: &FlowchartDiagram) -> String {
     let mut out = String::new();
     let html_labels = d.html_labels.unwrap_or(true);

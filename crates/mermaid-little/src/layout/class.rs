@@ -51,6 +51,8 @@ pub struct ClassLayout {
 /// Default padding — matches upstream `classRenderer-v3-unified.ts`
 /// which calls `setupViewPortForSVG(svg, padding=8)`.
 const VIEWBOX_PADDING: f64 = 8.0;
+const CLASS_BOX_PADDING: f64 = 12.0;
+const CLASS_HTML_LINE_HEIGHT: f64 = 24.0;
 
 /// Public entry point.
 pub fn layout(d: &ClassDiagram, theme: &ThemeVariables) -> Result<ClassLayout> {
@@ -232,24 +234,15 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
     // `getData` emits them with `shape: 'note'` and wires a special
     // relation to the target class.
     for n in &d.notes {
-        let mut note = Node::default();
-        note.id = n.id.clone();
-        note.label = Some(n.text.clone());
-        note.shape = Some("note".into());
-        // Upstream `classDb.getData` does NOT set a `cssClasses` on the
-        // note Node, so `getNodeClasses` falls back to "undefined"
-        // (`<g class="node undefined ">`).
-        note.css_classes = None;
-        note.parent_id = n.parent.clone();
         // Upstream `note.ts`: `totalWidth = bbox.width + 2 * padding` with
         // `padding = config.class.padding ?? 6`. The bbox.width comes from
         // `div.getBoundingClientRect()` — the testing harness shim
         // (`tests/support/generate_ref.mjs`) measures `el.textContent`
         // for HTML elements, and `<br/>` contributes empty textContent.
         // So a multi-line note like "Foo\nBar" is measured as a single
-        // joined string "FooBar". bbox.height collapses to a single
-        // 16.296875 line. Padding = 6 ⇒ +12 on each axis.
-        let line_h = 16.296875_f64;
+        // joined string "FooBar". In a real browser the HTML label resolves
+        // to 16 px text with line-height:1.5, i.e. a 24 px line box.
+        let line_h = CLASS_HTML_LINE_HEIGHT;
         let note_padding = 6.0_f64;
         let joined: String = n.text.split('\n').collect();
         // Upstream's note label goes through DOMPurify into a foreignObject;
@@ -262,30 +255,43 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
         let measured = strip_html_tags(&joined);
         let family = "trebuchet ms,verdana,arial,sans-serif";
         let w = font_metrics::text_width(&measured, family, 14.0, false, false);
-        note.width = Some(w + 2.0 * note_padding);
-        note.height = Some(line_h + 2.0 * note_padding);
+        let note = Node {
+            id: n.id.clone(),
+            label: Some(n.text.clone()),
+            shape: Some("note".into()),
+            // Upstream `classDb.getData` does NOT set a `cssClasses` on the
+            // note Node, so `getNodeClasses` falls back to "undefined"
+            // (`<g class="node undefined ">`).
+            css_classes: None,
+            parent_id: n.parent.clone(),
+            width: Some(w + 2.0 * note_padding),
+            height: Some(line_h + 2.0 * note_padding),
+            ..Default::default()
+        };
         data.nodes.push(note);
         if !n.class_id.is_empty() {
             // Upstream `classDb.getData` emits a dotted relation from the
             // note to its target class. Edge id format is
             // `edgeNote{note.index}` and `style: ['fill: none']` carries
             // through to the rendered `style="fill: none;;;fill: none"`.
-            let mut e = Edge::default();
-            e.id = format!("edgeNote{}", n.index);
-            e.source = Some(n.id.clone());
-            e.target = Some(n.class_id.clone());
-            e.classes = Some("relation".into());
-            e.thickness = Some("normal".into());
-            e.pattern = Some("dotted".into());
-            e.style = Some(vec!["fill: none".into()]);
+            let mut e = Edge {
+                id: format!("edgeNote{}", n.index),
+                source: Some(n.id.clone()),
+                target: Some(n.class_id.clone()),
+                classes: Some("relation".into()),
+                thickness: Some("normal".into()),
+                pattern: Some("dotted".into()),
+                style: Some(vec!["fill: none".into()]),
+                ..Default::default()
+            };
             // Upstream `insertEdgeLabel` always sets `edge.width = bbox.width`
             // and `edge.height = bbox.height` from the foreignObject body,
             // even when the label text is empty — the resulting fO collapses
             // to (0, line_h) which still nudges dagre's rank packing.
             // Without this, the note→class spline collapses by one
-            // line-height (~16 px), shifting downstream y-coordinates.
+            // line-height, shifting downstream y-coordinates.
             e.extra.insert("label_width".into(), "0".into());
-            e.extra.insert("label_height".into(), "16.296875".into());
+            e.extra.insert("label_height".into(), line_h.to_string());
             // Upstream sets arrowTypeStart/End to 'none' (string), which
             // renders as no marker reference. Leave both as None here.
             data.edges.push(e);
@@ -300,25 +306,27 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
     // the `opacity:0; !important` style on the basic rect container.
     let iface_family = "trebuchet ms,verdana,arial,sans-serif";
     let iface_font = 14.0_f64;
-    let iface_line_h = 16.296875_f64;
+    let iface_line_h = CLASS_HTML_LINE_HEIGHT;
     for iface in &d.interfaces {
-        let mut node = Node::default();
-        node.id = iface.id.clone();
-        node.label = Some(iface.label.clone());
-        node.shape = Some("rect".into());
-        // Upstream sets `cssStyles: ['opacity: 0;']`; surface that as a
-        // style entry the rect shape will fold into the container's
-        // `style=` attribute.
-        node.css_styles = Some(vec!["opacity: 0;".into()]);
-        // No explicit cssClasses upstream → renders as `node undefined`.
-        node.css_classes = None;
-        node.look = Some("classic".into());
         // Upstream's `rect` shape measures the label's foreignObject and
         // pads with `labelPaddingX/Y`. For lollipop interfaces the text
         // is plain (no markup) so we use the same trebuchet metrics.
         let w = font_metrics::text_width(&iface.label, iface_family, iface_font, false, false);
-        node.width = Some(w);
-        node.height = Some(iface_line_h);
+        let node = Node {
+            id: iface.id.clone(),
+            label: Some(iface.label.clone()),
+            shape: Some("rect".into()),
+            // Upstream sets `cssStyles: ['opacity: 0;']`; surface that as a
+            // style entry the rect shape will fold into the container's
+            // `style=` attribute.
+            css_styles: Some(vec!["opacity: 0;".into()]),
+            // No explicit cssClasses upstream → renders as `node undefined`.
+            css_classes: None,
+            look: Some("classic".into()),
+            width: Some(w),
+            height: Some(iface_line_h),
+            ..Default::default()
+        };
         data.nodes.push(node);
     }
 
@@ -334,38 +342,40 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
     // — `make_edge_label` in the dagre bridge picks these up.
     let label_family = "trebuchet ms,verdana,arial,sans-serif";
     let label_font = 14.0_f64;
-    let label_line_h = 16.296875_f64;
+    let label_line_h = CLASS_HTML_LINE_HEIGHT;
     for (i, r) in d.relations.iter().enumerate() {
-        let mut e = Edge::default();
-        e.id = format!("id_{}_{}_{}", r.id1, r.id2, i + 1);
-        e.source = Some(r.id1.clone());
-        e.target = Some(r.id2.clone());
-        e.label = if r.title.is_empty() {
-            None
-        } else {
-            Some(r.title.clone())
+        let mut e = Edge {
+            id: format!("id_{}_{}_{}", r.id1, r.id2, i + 1),
+            source: Some(r.id1.clone()),
+            target: Some(r.id2.clone()),
+            label: if r.title.is_empty() {
+                None
+            } else {
+                Some(r.title.clone())
+            },
+            arrow_type_start: Some(end_marker_name(r.end1)),
+            arrow_type_end: Some(end_marker_name(r.end2)),
+            pattern: Some(match r.line {
+                LineType::Solid => "solid".into(),
+                LineType::Dotted => "dashed".into(),
+            }),
+            thickness: Some("normal".into()),
+            classes: Some("relation".into()),
+            start_label_right: if r.title1.is_empty() {
+                None
+            } else {
+                Some(r.title1.clone())
+            },
+            end_label_left: if r.title2.is_empty() {
+                None
+            } else {
+                Some(r.title2.clone())
+            },
+            curve: Some("basis".into()),
+            look: Some("classic".into()),
+            labelpos: Some("c".into()),
+            ..Default::default()
         };
-        e.arrow_type_start = Some(end_marker_name(r.end1));
-        e.arrow_type_end = Some(end_marker_name(r.end2));
-        e.pattern = Some(match r.line {
-            LineType::Solid => "solid".into(),
-            LineType::Dotted => "dashed".into(),
-        });
-        e.thickness = Some("normal".into());
-        e.classes = Some("relation".into());
-        e.start_label_right = if r.title1.is_empty() {
-            None
-        } else {
-            Some(r.title1.clone())
-        };
-        e.end_label_left = if r.title2.is_empty() {
-            None
-        } else {
-            Some(r.title2.clone())
-        };
-        e.curve = Some("basis".into());
-        e.look = Some("classic".into());
-        e.labelpos = Some("c".into());
         // Surface label bbox so dagre packs an extra rank for it.
         if !r.title.is_empty() {
             let lw = font_metrics::text_width(&r.title, label_family, label_font, false, false);
@@ -380,32 +390,35 @@ fn build_layout_data(d: &ClassDiagram, _theme: &ThemeVariables) -> LayoutData {
 }
 
 fn cluster_node(ns: &crate::model::class::Namespace) -> Node {
-    let mut n = Node::default();
-    n.id = ns.id.clone();
-    n.dom_id = Some(ns.dom_id.clone());
-    n.label = Some(ns.id.clone());
-    n.is_group = true;
-    n.shape = Some("rect".into());
-    n.css_classes = Some("namespace".into());
-    n
+    Node {
+        id: ns.id.clone(),
+        dom_id: Some(ns.dom_id.clone()),
+        label: Some(ns.id.clone()),
+        is_group: true,
+        shape: Some("rect".into()),
+        css_classes: Some("namespace".into()),
+        ..Default::default()
+    }
 }
 
 fn class_to_node(c: &ClassNode, d: &ClassDiagram) -> Node {
-    let mut n = Node::default();
-    n.id = c.id.clone();
-    n.dom_id = Some(c.dom_id.clone());
-    // Title row renders the generic-augmented form (`Foo<T>` after
-    // tilde decoding) — see `ClassNode::display_label`.
-    n.label = Some(c.display_label());
-    n.shape = Some("classBox".into());
-    n.css_classes = Some(
-        std::iter::once("default")
-            .chain(c.css_classes.iter().map(String::as_str))
-            .collect::<Vec<_>>()
-            .join(" "),
-    );
-    n.parent_id = c.parent.clone();
-    n.look = Some("classic".into());
+    let mut n = Node {
+        id: c.id.clone(),
+        dom_id: Some(c.dom_id.clone()),
+        // Title row renders the generic-augmented form (`Foo<T>` after
+        // tilde decoding) — see `ClassNode::display_label`.
+        label: Some(c.display_label()),
+        shape: Some("classBox".into()),
+        css_classes: Some(
+            std::iter::once("default")
+                .chain(c.css_classes.iter().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" "),
+        ),
+        parent_id: c.parent.clone(),
+        look: Some("classic".into()),
+        ..Default::default()
+    };
     if c.have_callback {
         n.have_callback = Some(true);
     }
@@ -491,8 +504,8 @@ fn estimate_classbox_dimensions(c: &ClassNode) -> (f64, f64) {
     // For empty members AND methods (no `hideEmptyMembersBox`): renderExtraBox=true → extraHeight=24.
     let font = 14.0;
     let family = "trebuchet ms,verdana,arial,sans-serif";
-    let line_h = 16.296875_f64; // foreignObject height for label at 14 px
-    let padding = 12.0_f64;
+    let line_h = CLASS_HTML_LINE_HEIGHT;
+    let padding = CLASS_BOX_PADDING;
 
     // Label width (bold, html-label style — measured via foreignObject).
     // The foreignObject width tracks the rendered <p>{display_label}</p>
@@ -526,20 +539,20 @@ fn estimate_classbox_dimensions(c: &ClassNode) -> (f64, f64) {
     let has_members = !c.members.is_empty();
     let has_methods = !c.methods.is_empty();
 
-    // bbox.height — `generate_ref.mjs`'s getBBox shim *ignores* transforms
-    // when computing the union, and every foreignObject (label / each
-    // member / each method) starts at intrinsic (0, 0, w, line_h). Their
-    // union therefore collapses to a single (0, 0, max_w, line_h) box.
-    // We intentionally do NOT add per-row height here.
-    let _ = (has_members, has_methods);
-
-    // h adjustments per classBox.ts:
-    let mut h = bbox_h;
-    if !has_members && !has_methods {
-        h += padding; // GAP
-    } else if has_members && !has_methods {
-        h += padding * 2.0;
-    }
+    // Real browsers include each translated classBox text row in the shape
+    // bbox. The old jsdom fixture shim collapsed every foreignObject to the
+    // same local origin, producing very short boxes whose labels were clipped
+    // when rendered in Chrome/Safari. Count the visible rows and reserve the
+    // same vertical bands Mermaid paints: label/member/method rows, 4 GAPs for
+    // populated class boxes, and the outer top/bottom padding.
+    let annotation_rows = if c.annotations.is_empty() { 0 } else { 1 };
+    let label_rows = c.display_label().split('\n').count().max(1);
+    let row_count = annotation_rows + label_rows + c.members.len() + c.methods.len();
+    let band_gap_h = if has_members || has_methods {
+        padding * 4.0
+    } else {
+        padding
+    };
 
     // extraHeight: with empty members AND methods, renderExtraBox=true →
     // extraHeight = PADDING * 2 = 24. Otherwise 0.
@@ -550,7 +563,7 @@ fn estimate_classbox_dimensions(c: &ClassNode) -> (f64, f64) {
     };
 
     let drawn_w = bbox_w + 2.0 * padding;
-    let drawn_h = h + 2.0 * padding + extra_h;
+    let drawn_h = row_count as f64 * bbox_h + band_gap_h + 2.0 * padding + extra_h;
     (drawn_w, drawn_h)
 }
 

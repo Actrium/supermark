@@ -240,8 +240,10 @@ mod tests {
 
     #[test]
     fn registry_dispatches_implemented_shapes() {
-        let mut n = Node::default();
-        n.id = "n".into();
+        let mut n = Node {
+            id: "n".into(),
+            ..Node::default()
+        };
         n.width = Some(40.0);
         n.height = Some(20.0);
         let theme = ThemeVariables::default();

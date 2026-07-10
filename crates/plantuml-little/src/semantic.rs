@@ -15,9 +15,9 @@
 //! (`Ok(None)`, "semantic not supported"), so the engine still works as a
 //! render-only engine without the feature.
 
-use supramark_diagram_core::{DiagramEngine, DiagramError, RenderOutput};
 #[cfg(feature = "semantic-serde")]
 use supramark_diagram_core::EngineAst;
+use supramark_diagram_core::{DiagramEngine, DiagramError, RenderOutput};
 
 /// plantuml engine instance. Stateless; can be registered directly via
 /// `Arc::new(PlantumlEngine)` into a `DiagramRegistry`.

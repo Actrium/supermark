@@ -4,7 +4,7 @@
 
 [package]
 name = "plantuml-little"
-version = "1.2026.2-3"
+version = "1.2026.2-4"
 edition = "2021"
 rust-version = "1.82"
 license = "GPL-3.0-or-later OR LGPL-3.0-or-later OR Apache-2.0 OR EPL-2.0 OR MIT"
@@ -49,7 +49,7 @@ path = "src/main.rs"
 required-features = ["cli", "metrics-ttf-parser"]
 
 [features]
-default = ["cli", "remote"]
+default = ["cli", "remote", "metrics-ttf-parser"]
 # Semantic AST: when on, derives serde::Serialize for model types and enables PlantumlEngine::semantic.
 semantic-serde = ["dep:serde"]
 # CLI front-end (env_logger + main.rs). Disabled automatically on wasm32.
@@ -60,13 +60,11 @@ remote = ["dep:ureq"]
 
 # Metrics-impl selection. The metrics-* family is mutually exclusive —
 # exactly one impl must be active per build. The default feature set
-# above deliberately selects NONE: production consumers MUST set
-# `default-features = false` and explicitly pick one of the platform
-# impls below, so the choice is visible in the consumer's Cargo.toml
-# rather than implicit. `cargo test` here is unblocked by a dev-dep on
-# `plantuml-little` itself (see [dev-dependencies]) that flips on
-# `metrics-ttf-parser` so the existing 268+ byte-equal-with-Java
-# reference SVG suite keeps running unchanged.
+# selects `metrics-ttf-parser` so crates.io verification and normal native
+# consumers compile out of the box with byte-exact metrics. Web/RN hosts
+# still set `default-features = false` and explicitly pick their platform
+# bridge (`metrics-host-callback` or `metrics-ffi-callback`) so that choice
+# remains visible in the consumer's Cargo.toml.
 #
 # Historical note: prior to 2026-05-10 this slot was `metrics-static-
 # dejavu`, gated by ~22K LOC of offline-baked Java-FontMetrics-equivalent
@@ -115,7 +113,7 @@ metrics-ffi-callback = []
 # Imported as `font_metrics_core` (via `package =`) because plantuml-
 # little's own `crate::font_metrics` wrapper module would otherwise
 # shadow the dep in the crate-root namespace.
-font_metrics_core = { package = "font-metrics", path = "../font-metrics", version = "0.1" }
+font_metrics_core = { package = "supramark-font-metrics", path = "../font-metrics", version = "0.1" }
 thiserror = "1"
 log = "0.4"
 env_logger = { version = "0.11", optional = true }

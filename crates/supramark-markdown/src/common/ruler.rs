@@ -42,9 +42,9 @@ use std::slice::Iter;
 /// This data structure contains any number of elements (M, T), where T is any type and
 /// M (mark) is its identifier.
 ///
-///  - `M` is used for ordering and dependency checking, it must implement `Eq + Copy + Hash + Debug`
-/// . Common choices for `M` are `u32`, `&'static str`, or a special `Symbol` type
-/// designed for this purpose.
+///  - `M` is used for ordering and dependency checking, it must implement
+///    `Eq + Copy + Hash + Debug`. Common choices for `M` are `u32`,
+///    `&'static str`, or a special `Symbol` type designed for this purpose.
 ///
 ///  - `T` is any user-defined type. It's usually a function or boxed trait.
 ///

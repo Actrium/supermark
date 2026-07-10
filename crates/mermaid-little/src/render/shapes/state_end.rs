@@ -34,8 +34,10 @@ mod tests {
 
     #[test]
     fn state_end_radii_match_upstream_ratio() {
-        let mut n = Node::default();
-        n.id = "se".into();
+        let mut n = Node {
+            id: "se".into(),
+            ..Node::default()
+        };
         n.width = Some(14.0);
         let got = draw(&n, &ThemeVariables::default()).unwrap();
         // outer=7, inner=5

@@ -100,8 +100,10 @@ mod tests {
 
     #[test]
     fn classbox_has_two_dividers() {
-        let mut n = Node::default();
-        n.id = "cls".into();
+        let mut n = Node {
+            id: "cls".into(),
+            ..Node::default()
+        };
         n.width = Some(150.0);
         n.height = Some(120.0);
         n.label = Some("MyClass".into());
@@ -115,8 +117,10 @@ mod tests {
     /// label stack is wired through.
     #[test]
     fn classbox_title_uses_foreign_object() {
-        let mut n = Node::default();
-        n.id = "cls".into();
+        let mut n = Node {
+            id: "cls".into(),
+            ..Node::default()
+        };
         n.width = Some(120.0);
         n.height = Some(90.0);
         n.label = Some("Animal".into());

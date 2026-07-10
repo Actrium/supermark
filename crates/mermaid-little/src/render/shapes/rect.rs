@@ -175,8 +175,10 @@ mod tests {
 
     #[test]
     fn plain_rect_emits_foreign_object_label() {
-        let mut n = Node::default();
-        n.id = "n1".into();
+        let mut n = Node {
+            id: "n1".into(),
+            ..Node::default()
+        };
         n.width = Some(100.0);
         n.height = Some(50.0);
         n.x = Some(60.0);
@@ -197,8 +199,10 @@ mod tests {
 
     #[test]
     fn rect_without_label_omits_label_block() {
-        let mut n = Node::default();
-        n.id = "n2".into();
+        let mut n = Node {
+            id: "n2".into(),
+            ..Node::default()
+        };
         n.width = Some(20.0);
         n.height = Some(10.0);
         let theme = ThemeVariables::default();

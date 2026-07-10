@@ -389,13 +389,8 @@ fn strip_frontmatter(source: &str) -> FrontmatterData {
                 config_indent = None;
             }
         }
-        if trimmed_line.starts_with("title:") {
-            title = Some(
-                trimmed_line["title:".len()..]
-                    .trim()
-                    .trim_matches('"')
-                    .to_string(),
-            );
+        if let Some(title_text) = trimmed_line.strip_prefix("title:") {
+            title = Some(title_text.trim().trim_matches('"').to_string());
         } else if trimmed_line.starts_with("config:") {
             config_indent = Some(indent);
         } else if config_indent.is_some() && trimmed_line.starts_with("theme:") {
@@ -525,7 +520,7 @@ fn scan_value(block: &str, key: &str) -> Option<String> {
     let mut value_part = rest[after_colon + 1..].trim_start().to_string();
     // Trim trailing comma/brace/whitespace.
     let end = value_part
-        .find(|c: char| c == ',' || c == '}' || c == '\n')
+        .find([',', '}', '\n'])
         .unwrap_or(value_part.len());
     value_part.truncate(end);
     let v = value_part
@@ -622,7 +617,7 @@ fn parse_ident(s: &str) -> String {
 fn parse_order_after(s: &str) -> Option<i64> {
     if let Some(idx) = s.find("order:") {
         let after = &s[idx + 6..];
-        let token = after.trim().split_whitespace().next().unwrap_or("");
+        let token = after.split_whitespace().next().unwrap_or("");
         token.parse::<i64>().ok()
     } else {
         None

@@ -95,7 +95,10 @@ mod tests {
     #[test]
     fn semantic_er_has_entities() {
         let src = "erDiagram\n    CUSTOMER ||--o{ ORDER : places\n";
-        let env = MermaidEngine.semantic(src).unwrap().expect("er should have semantics");
+        let env = MermaidEngine
+            .semantic(src)
+            .unwrap()
+            .expect("er should have semantics");
         assert_eq!(env.engine, "mermaid");
         assert_eq!(env.kind, "er");
         let data = serde_json::to_value(&env).unwrap();

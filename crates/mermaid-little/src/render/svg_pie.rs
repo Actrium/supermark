@@ -119,7 +119,7 @@ pub fn render(d: &PieDiagram, l: &PieLayout, theme: &ThemeVariables, id: &str) -
 
     out.push_str("</g>");
     out.push_str("</svg>");
-    Ok(out)
+    Ok(crate::make_foreign_objects_non_clipping(&out))
 }
 
 const PIE_CENTER: (f64, f64) = (225.0, 225.0);

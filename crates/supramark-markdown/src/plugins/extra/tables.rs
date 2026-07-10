@@ -156,18 +156,13 @@ struct RowContent {
     srcmap: Vec<(usize, usize)>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum ColumnAlignment {
+    #[default]
     None,
     Left,
     Right,
     Center,
-}
-
-impl Default for ColumnAlignment {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl TableScanner {

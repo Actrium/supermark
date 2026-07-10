@@ -80,8 +80,10 @@ mod tests {
 
     #[test]
     fn cylinder_path_byte_exact() {
-        let mut n = Node::default();
-        n.id = "db".into();
+        let mut n = Node {
+            id: "db".into(),
+            ..Node::default()
+        };
         n.width = Some(50.0);
         n.height = Some(40.0);
         let theme = ThemeVariables::default();

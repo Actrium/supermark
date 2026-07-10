@@ -193,9 +193,9 @@ impl<'a> TtfParserMetrics<'a> {
 impl TtfParserMetrics<'static> {
     /// Construct a [`TtfParserMetrics`] backed by an embedded DejaVu
     /// Latin subset (Sans / Sans-Bold / Sans-Italic / Sans-BoldItalic
-    /// + the four Mono variants). Each face is bundled via
-    /// `include_bytes!`, so the returned value owns no external buffer
-    /// and has `'static` lifetime.
+    /// and the four Mono variants). Each face is bundled via `include_bytes!`,
+    /// so the returned value owns no external buffer and has `'static`
+    /// lifetime.
     ///
     /// Codepoint coverage spans Basic Latin, Latin-1 Supplement, Latin
     /// Extended-A/B, IPA Extensions, Spacing Modifier Letters,

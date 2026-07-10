@@ -158,10 +158,7 @@ fn parse_number(s: &str) -> Option<f64> {
     if trimmed.is_empty() {
         return Some(0.0);
     }
-    match trimmed.parse::<f64>() {
-        Ok(n) => Some(n),
-        Err(_) => None,
-    }
+    trimmed.parse::<f64>().ok()
 }
 
 fn is_comment_line(line: &str) -> bool {
@@ -195,7 +192,7 @@ fn strip_kw_simple<'a>(s: &'a str, kw: &str) -> Option<&'a str> {
 
 /// Strip a leading YAML frontmatter block (between two `---` lines)
 /// and lift `title:` plus `config.journey.*` keys into `d`.
-fn strip_frontmatter<'a>(source: &'a str, d: &mut JourneyDiagram) -> String {
+fn strip_frontmatter(source: &str, d: &mut JourneyDiagram) -> String {
     // Skip leading whitespace lines for detection purposes, but preserve
     // the rest verbatim.
     let lead = source.trim_start_matches(['\n', '\r', ' ', '\t']);
@@ -206,7 +203,7 @@ fn strip_frontmatter<'a>(source: &'a str, d: &mut JourneyDiagram) -> String {
     let bytes_before_lead = source.len() - lead.len();
     let after_open = &lead[3..];
     // Accept \n or \r\n after the opening ---.
-    let body = after_open.trim_start_matches(|c: char| c == '\n' || c == '\r');
+    let body = after_open.trim_start_matches(['\n', '\r']);
     // Closing marker on its own line.
     let close_idx = find_line_start(body, "---");
     let Some(close_idx) = close_idx else {
@@ -214,7 +211,7 @@ fn strip_frontmatter<'a>(source: &'a str, d: &mut JourneyDiagram) -> String {
     };
     let yaml_block = &body[..close_idx];
     let after_close = &body[close_idx + 3..];
-    let after_close = after_close.trim_start_matches(|c: char| c == '\n' || c == '\r');
+    let after_close = after_close.trim_start_matches(['\n', '\r']);
     parse_frontmatter_yaml(yaml_block, d);
     // Preserve any whitespace before the opening `---` (there shouldn't
     // be any that matters) — drop the frontmatter entirely.
@@ -227,11 +224,10 @@ fn find_line_start(s: &str, needle: &str) -> Option<usize> {
     let mut i = 0;
     while i < s.len() {
         let rest = &s[i..];
-        if rest.starts_with(needle) {
+        if let Some(after) = rest.strip_prefix(needle) {
             // Must be at start of a line or beginning.
             if i == 0 || s.as_bytes()[i - 1] == b'\n' {
                 // Next char must be newline / \r / EOS.
-                let after = &rest[needle.len()..];
                 if after.is_empty()
                     || after.starts_with('\n')
                     || after.starts_with('\r')

@@ -69,8 +69,10 @@ mod tests {
 
     #[test]
     fn erbox_has_name_divider() {
-        let mut n = Node::default();
-        n.id = "e".into();
+        let mut n = Node {
+            id: "e".into(),
+            ..Node::default()
+        };
         n.width = Some(200.0);
         n.height = Some(80.0);
         n.padding = Some(24.0);
