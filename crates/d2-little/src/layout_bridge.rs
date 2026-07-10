@@ -967,6 +967,7 @@ struct EndpointInfo {
     label_dims: crate::graph::Dimensions,
     has_icon: bool,
     icon_pos: Option<String>,
+    has_modifier: bool,
 }
 
 impl EndpointInfo {
@@ -979,6 +980,7 @@ impl EndpointInfo {
             label_dims: o.label_dimensions,
             has_icon: o.has_icon(),
             icon_pos: o.icon_position.clone(),
+            has_modifier: o.get_modifier_element_adjustments() != (0.0, 0.0),
         }
     }
 }
@@ -1045,10 +1047,24 @@ fn trace_src(info: &EndpointInfo, route: &mut [Point], start: &mut usize, end: u
             }
         }
     }
-    // Non-outside-label/icon: the route already starts at the shape border
-    // (elkjs places it there), so — like d2's no-op move for rectangular
-    // shapes — we leave it. Point-moving here (intersections[0] selection)
-    // regresses non-outside cases (issue #34).
+    // Non-outside-label/icon: only 3d/multiple shapes need the endpoint moved
+    // to the (offset) box border — elkjs placed the route at the original
+    // border, but the modifier offset shifted the trace box. For plain
+    // rectangles the route is already at the border, and intersections[0]
+    // selection is a float-fragile no-op that regresses issue #34, so skip.
+    if info.has_modifier {
+        let ints = info.box_.intersections(&seg);
+        if !ints.is_empty() {
+            route[*start] = ints[0];
+            seg.end = ints[0];
+            if *start + 1 < end && seg.length() < MIN_SEGMENT_LEN {
+                route[*start + 1] = route[*start];
+                *start += 1;
+            }
+        }
+        let shape = crate::shape::Shape::new(&info.shape_type, info.box_);
+        route[*start] = crate::shape::trace_to_shape_border(&shape, &route[*start], &route[*start + 1]);
+    }
 }
 
 /// Trace the DST endpoint. Mirror of `trace_src`: `end` moves backward.
@@ -1112,7 +1128,21 @@ fn trace_dst(info: &EndpointInfo, route: &mut [Point], start: usize, end: &mut u
             }
         }
     }
-    // Non-outside-label/icon: route already at the border — leave it (see trace_src).
+    // Non-outside-label/icon: only 3d/multiple shapes need the endpoint moved
+    // to the offset box border (see trace_src).
+    if info.has_modifier {
+        let ints = info.box_.intersections(&seg);
+        if !ints.is_empty() {
+            route[*end] = ints[0];
+            seg.start = ints[0];
+            if *end - 1 > start && seg.length() < MIN_SEGMENT_LEN {
+                route[*end - 1] = route[*end];
+                *end -= 1;
+            }
+        }
+        let shape = crate::shape::Shape::new(&info.shape_type, info.box_);
+        route[*end] = crate::shape::trace_to_shape_border(&shape, &route[*end], &route[*end - 1]);
+    }
 }
 
 /// Faithful port of d2 `Edge.TraceToShape` for the elk path. Mutates the
