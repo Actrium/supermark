@@ -3,7 +3,7 @@
 
 Iterates all `tests/e2e_testdata/<cat>/<name>/elk/sketch.exp.svg` whose script
 is known (from tests/e2e_dagre_svg_cases.json), runs the dump_elk example
-(prepare -> node elk_runner.js -> render), and reports byte-exact pass/fail.
+(prepare -> node elk_runner.mjs -> render), and reports byte-exact pass/fail.
 
 Usage: python3 scripts/elk_parity_check.py [binary]
   binary defaults to target/debug/examples/dump_elk
@@ -15,7 +15,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "../../target/debug/examples/dump_elk")
-RUNNER = os.path.join(ROOT, "tests/elk_runner.js")
+RUNNER = os.path.join(ROOT, "tests/elk_runner.mjs")
 
 
 def load_scripts():

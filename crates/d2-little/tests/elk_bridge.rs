@@ -1,6 +1,6 @@
 //! Integration tests for the elkjs layout bridge.
 //!
-//! These drive the full prepare → elkjs (`node tests/elk_runner.js`) → render
+//! These drive the full prepare → elkjs (`node tests/elk_runner.mjs`) → render
 //! pipeline natively (no wasm) and assert byte-exact SVG parity with upstream
 //! d2's elk output. `elkjs` must be `0.8.2` (the version d2 v0.7.1 bundles);
 //! the runner lives in the supramark workspace's engines package.
@@ -17,7 +17,7 @@ use std::process::{Command, Stdio};
 const ISSUE34: &str = "Spiderman 1\nSpiderman 2\nSpiderman 3\n\n* -> *: 👉\n";
 
 fn elk_runner_path() -> String {
-    format!("{}/tests/elk_runner.js", env!("CARGO_MANIFEST_DIR"))
+    format!("{}/tests/elk_runner.mjs", env!("CARGO_MANIFEST_DIR"))
 }
 
 /// Run elkjs on an ELK input graph JSON, returning the laid-out graph JSON.

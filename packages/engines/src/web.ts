@@ -361,6 +361,12 @@ async function renderD2ViaElk(d2: WasmRenderModule, code: string): Promise<strin
 /** Lazy elkjs loader — mirrors the echarts/vega dynamic-import pattern.
  * Pinned to 0.8.2, the exact version d2 v0.7.1 bundles. */
 async function loadElkLayout(): Promise<{ layout(graph: unknown): Promise<unknown> }> {
+  // Test override: lets unit tests inject a fake elk without relying on
+  // `mock.module` intercepting the dynamic `elkjs` import (which is flaky
+  // across environments). `null` restores the real lazy loader.
+  if (_elkLoaderOverride) {
+    return _elkLoaderOverride();
+  }
   // `elkjs/lib/elk.bundled.js` is the browser-safe build (no Node deps).
   const mod = (await import('elkjs/lib/elk.bundled.js' as string)) as {
     default?: new () => { layout(graph: unknown): Promise<unknown> };
@@ -369,6 +375,19 @@ async function loadElkLayout(): Promise<{ layout(graph: unknown): Promise<unknow
   if (!ELK) throw new Error('elkjs bundled build did not export a default ELK constructor.');
   return new ELK();
 }
+
+// --- elk loader test override (see `loadElkLayout`) ---
+type ElkLoader = () => Promise<{ layout(graph: unknown): Promise<unknown> }>;
+let _elkLoaderOverride: ElkLoader | null = null;
+/** @internal Test-only: inject a fake elk loader. Pass `null` to restore. */
+export function _setElkLoaderForTest(loader: ElkLoader | null): void {
+  _elkLoaderOverride = loader;
+}
+
+// Re-exported for direct unit testing of the bridge orchestration without
+// the `mock.module`-intercepts-dynamic-import coupling.
+export { renderD2ViaElk };
+export type { D2LayoutRequest, D2LayoutResult, WasmRenderModule };
 
 function injectD2Dimensions(svg: string): string {
   const openTag = svg.match(/<svg\b[^>]*>/);

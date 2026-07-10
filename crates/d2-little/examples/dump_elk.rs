@@ -1,5 +1,5 @@
 //! Drive the elkjs bridge end-to-end on a D2 source (native, no wasm):
-//! prepare → node elk_runner.js (elkjs@0.8.2) → render → SVG.
+//! prepare → node elk_runner.mjs (elkjs@0.8.2) → render → SVG.
 //!
 //! Usage:
 //!   cargo run --example dump_elk -- "<d2 source>" > out.svg
@@ -14,7 +14,7 @@ use std::process::{Command, Stdio};
 fn run_elk(elk_graph_json: &str) -> Result<String, String> {
     // Locate the runner relative to the crate root (CARGO_MANIFEST_DIR is
     // set at compile time), so the example works from any cwd.
-    let runner = format!("{}/tests/elk_runner.js", env!("CARGO_MANIFEST_DIR"));
+    let runner = format!("{}/tests/elk_runner.mjs", env!("CARGO_MANIFEST_DIR"));
     let mut child = Command::new("node")
         .arg(&runner)
         .stdin(Stdio::piped())

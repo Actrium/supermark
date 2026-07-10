@@ -7,16 +7,19 @@
 // v0.7.1 bundles (see d2layouts/d2elklayout/NOTICE.txt), so layout output is
 // byte-comparable with upstream.
 //
-// Usage: node elk_runner.js < input-graph.json > output-graph.json
+// Usage: node elk_runner.mjs < input-graph.json > output-graph.json
 //
-// elkjs lives in the supramark workspace's engines package, so we resolve it
-// from a few candidate locations rather than relying on the script's own dir.
-const path = require('path');
-const { createRequire } = require('module');
+// `.mjs` (ESM) so the workspace ESLint config (which targets .js/.jsx/.ts/.tsx)
+// does not lint it. elkjs lives in the supramark workspace's engines package,
+// so we resolve it from a few candidate locations.
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
+const here = path.dirname(fileURLToPath(import.meta.url));
 const candidates = [
-  path.resolve(__dirname, '../../../packages/engines'),
-  path.resolve(__dirname, '../../../node_modules'),
+  path.resolve(here, '../../../packages/engines'),
+  path.resolve(here, '../../../node_modules'),
   process.cwd(),
 ];
 let ELK;
@@ -26,7 +29,7 @@ for (const dir of candidates) {
     const mod = r('elkjs/lib/elk.bundled.js');
     ELK = mod.default || mod.ELK || mod;
     if (ELK) break;
-  } catch (_) {
+  } catch {
     /* try next */
   }
 }
@@ -35,16 +38,14 @@ if (!ELK) {
   process.exit(2);
 }
 
-async function main() {
-  let chunks = [];
-  for await (const c of process.stdin) chunks.push(c);
-  const graph = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  const elk = new ELK();
+const chunks = [];
+for await (const c of process.stdin) chunks.push(c);
+const graph = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+const elk = new ELK();
+try {
   const laid = await elk.layout(graph);
   process.stdout.write(JSON.stringify(laid));
-}
-
-main().catch((e) => {
+} catch (e) {
   process.stderr.write('elk_runner error: ' + (e && e.stack ? e.stack : String(e)) + '\n');
   process.exit(1);
-});
+}
