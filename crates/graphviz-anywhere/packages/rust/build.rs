@@ -144,20 +144,10 @@ fn try_prebuilt(manifest_dir: &Path) -> bool {
         }
     }
 
-    // 2. Legacy layout — only when host OS == target OS.
-    let host_os = env::var("CARGO_CFG_TARGET_OS")
-        .or_else(|_| env::var("HOST"))
-        .unwrap_or_default();
-    // HOST env is something like "aarch64-apple-darwin"; derive the OS word.
-    let host_os_word = if host_os.contains("darwin") || host_os == "macos" {
-        "macos"
-    } else if host_os.contains("linux") || host_os == "linux" {
-        "linux"
-    } else if host_os.contains("windows") || host_os == "windows" {
-        "windows"
-    } else {
-        ""
-    };
+    // 2. Legacy layout — it has no architecture component, so only use it for
+    // an exact native build. `CARGO_CFG_TARGET_OS` describes the target and
+    // must not be used to infer the host here.
+    let host = env::var("HOST").unwrap_or_default();
     let target_os_word = target_os.as_str();
 
     // Match legacy folder name to target OS.
@@ -168,11 +158,7 @@ fn try_prebuilt(manifest_dir: &Path) -> bool {
         _ => return false,
     };
 
-    // Only use the legacy path when host OS word matches target OS.
-    let host_matches = host_os_word == legacy_folder
-        || host_os_word.is_empty() /* conservative: allow if we can't detect */;
-
-    if host_matches {
+    if legacy_prebuilt_is_compatible(&host, &target) {
         let dir = manifest_dir.join("prebuilt").join(legacy_folder);
         let lib_name = if target_os_word == "windows" {
             "graphviz_api.lib"

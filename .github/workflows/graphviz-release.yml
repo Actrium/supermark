@@ -154,7 +154,7 @@ jobs:
         shell: bash
         env:
           GRAPHVIZ_ANYWHERE_NO_DOWNLOAD: "1"
-          GRAPHVIZ_ANYWHERE_DIR: ${{ github.workspace }}/output/macos-universal/lib
+          GRAPHVIZ_ANYWHERE_DIR: ${{ github.workspace }}/crates/graphviz-anywhere/output/macos-universal/lib
         run: |
           # Verify both Darwin targets against the universal library (host + cross)
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -426,7 +426,7 @@ jobs:
         shell: bash
         env:
           GRAPHVIZ_ANYWHERE_NO_DOWNLOAD: "1"
-          GRAPHVIZ_ANYWHERE_DIR: ${{ github.workspace }}/output/windows-x86_64/lib
+          GRAPHVIZ_ANYWHERE_DIR: ${{ github.workspace }}/crates/graphviz-anywhere/output/windows-x86_64/lib
         run: |
           rustup target add x86_64-pc-windows-msvc
           cargo build --release --target x86_64-pc-windows-msvc -p graphviz-anywhere-example
@@ -438,7 +438,7 @@ jobs:
         shell: bash
         env:
           GRAPHVIZ_ANYWHERE_NO_DOWNLOAD: "1"
-          GRAPHVIZ_ANYWHERE_DIR: ${{ github.workspace }}/output/windows-arm64/lib
+          GRAPHVIZ_ANYWHERE_DIR: ${{ github.workspace }}/crates/graphviz-anywhere/output/windows-arm64/lib
         run: |
           rustup target add aarch64-pc-windows-msvc
           cargo build --release --target aarch64-pc-windows-msvc -p graphviz-anywhere-example

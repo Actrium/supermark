@@ -116,6 +116,16 @@ pub fn is_ios_target(target: &str) -> bool {
     )
 }
 
+/// Returns whether the legacy per-OS prebuilt layout is safe to use.
+///
+/// Legacy directories do not encode an architecture, so they are only valid
+/// for a native build where Cargo's host and target triples match exactly.
+/// Missing host metadata must fail closed rather than risk linking a host
+/// archive into a cross-compiled binary.
+pub fn legacy_prebuilt_is_compatible(host: &str, target: &str) -> bool {
+    !host.is_empty() && host == target
+}
+
 /// Returns `true` when the default native link is static.
 ///
 /// Desktop and iOS executables must be self-contained: a Cargo build-script
@@ -384,6 +394,26 @@ mod tests {
         assert!(is_ios_target("x86_64-apple-ios"));
         assert!(!is_ios_target("aarch64-apple-darwin"));
         assert!(!is_ios_target("aarch64-linux-android"));
+    }
+
+    #[test]
+    fn legacy_prebuilt_is_native_only() {
+        assert!(legacy_prebuilt_is_compatible(
+            "aarch64-apple-darwin",
+            "aarch64-apple-darwin"
+        ));
+        assert!(!legacy_prebuilt_is_compatible(
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin"
+        ));
+        assert!(!legacy_prebuilt_is_compatible(
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu"
+        ));
+        assert!(!legacy_prebuilt_is_compatible(
+            "",
+            "x86_64-pc-windows-msvc"
+        ));
     }
 
     // ── asset_is_static (static vs. dynamic link policy) ─────────────────────────

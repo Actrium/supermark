@@ -38,7 +38,7 @@ CI or airgapped environments). Override the release tag with
 - **Toolchain**: `aarch64-linux-gnu-gcc`, CMake cross-file or `ARCH=aarch64`
 - **Build**: `./scripts/build-linux.sh --arch aarch64`
 - **Output**: `output/linux-aarch64/lib/libgraphviz_api.a`
-- **Release asset**: `graphviz-native-linux-aarch64.tar.gz` (CI uses `ubuntu-24.04-arm` runner when available)
+- **Release asset**: `graphviz-native-linux-aarch64.tar.gz` (CI uses the native `ubuntu-22.04-arm` runner)
 - **Override**: `GRAPHVIZ_ANYWHERE_DIR=output/linux-aarch64 cargo build --target aarch64-unknown-linux-gnu`
 - **build.rs auto-resolve**: ✅
 - **Common errors**: cross-linker not on PATH → `apt-get install gcc-aarch64-linux-gnu`
