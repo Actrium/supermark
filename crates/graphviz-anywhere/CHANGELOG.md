@@ -6,6 +6,32 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-07-12
+
+### Fixed
+
+- **Self-contained desktop executables** — Linux and macOS release downloads
+  now link the static archive that was already shipped beside the shared
+  library. Final Cargo binaries no longer depend on `libgraphviz_api.so` or
+  `libgraphviz_api.dylib`, so downstream build-script rpaths cannot disappear
+  and a same-named system library cannot satisfy the load with an incompatible
+  ABI.
+- **Windows env override** — source output contains both the DLL import library
+  and `graphviz_api_static.lib`. The resolver now selects the merged static
+  archive first and accepts canonical `graphviz_api.lib` as static only when no
+  sibling DLL identifies it as an import library.
+- **ABI-safe target resolution** — GNU-built Linux assets are no longer
+  auto-selected for musl targets, and MSVC `.lib` assets are no longer selected
+  for `windows-gnu`. These targets now require an explicit compatible native
+  build instead of failing later with opaque linker or loader errors.
+- **Runtime smoke coverage** — CI executes a real DOT-to-SVG example from the
+  downloaded release assets on Linux, macOS, and Windows and asserts desktop
+  executables have no Graphviz shared-library dependency.
+- **Release isolation** — the native/Cargo release no longer attempts to
+  publish independently-versioned web and React Native npm packages. A Rust
+  patch release therefore cannot fail midway or accidentally consume an npm
+  version before the crates.io publish step.
+
 ## [0.2.1] — 2026-05-11
 
 ### Fixed
@@ -140,7 +166,8 @@ Target version: **0.2.0** (cross-target build.rs + asset coverage)
 
 ---
 
-[Unreleased]: https://github.com/Actrium/graphviz-anywhere/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Actrium/supramark/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/Actrium/supramark/compare/v0.2.3...v0.2.4
 [0.2.1]: https://github.com/Actrium/graphviz-anywhere/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Actrium/graphviz-anywhere/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/Actrium/graphviz-anywhere/releases/tag/v0.1.8

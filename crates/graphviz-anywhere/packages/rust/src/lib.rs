@@ -681,7 +681,7 @@ mod tests {
     fn engine_implements_clone_copy() {
         let e1 = Engine::Dot;
         let e2 = e1;
-        let e3 = e1.clone();
+        let e3 = e1;
         assert_eq!(e1, e2);
         assert_eq!(e2, e3);
     }
@@ -696,7 +696,7 @@ mod tests {
     fn format_implements_clone_copy() {
         let f1 = Format::Svg;
         let f2 = f1;
-        let f3 = f1.clone();
+        let f3 = f1;
         assert_eq!(f1, f2);
         assert_eq!(f2, f3);
     }

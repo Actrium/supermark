@@ -81,21 +81,43 @@ fn try_env_override() -> bool {
     };
 
     let base = PathBuf::from(dir);
-    let mut found = false;
+    let target = env::var("TARGET").unwrap_or_default();
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let prefer_static = asset_is_static(&target);
+    let lib_dirs: Vec<PathBuf> = ["lib", "lib64", "build", "."]
+        .into_iter()
+        .map(|sub| base.join(sub))
+        .filter(|path| path.exists())
+        .collect();
 
-    for sub in ["lib", "lib64", "build", "."] {
-        let lib_dir = base.join(sub);
-        if lib_dir.exists() {
-            emit_search_path(&lib_dir, true);
-            found = true;
+    if prefer_static {
+        if let Some((static_lib, link_name)) = find_static_override(&lib_dirs, &target_os) {
+            emit_static_link(&static_lib, link_name);
+            emit_static_sys_libs(&target_os);
+            return true;
+        }
+    } else {
+        let dynamic_name = if target_os == "windows" {
+            if target.contains("windows-gnu") {
+                "libgraphviz_api.dll.a"
+            } else {
+                "graphviz_api.lib"
+            }
+        } else if target_os == "macos" {
+            "libgraphviz_api.dylib"
+        } else {
+            "libgraphviz_api.so"
+        };
+        for lib_dir in &lib_dirs {
+            if lib_dir.join(dynamic_name).exists() {
+                emit_search_path(lib_dir, true);
+                println!("cargo:rustc-link-lib=dylib=graphviz_api");
+                return true;
+            }
         }
     }
 
-    if found {
-        println!("cargo:rustc-link-lib=dylib=graphviz_api");
-    }
-
-    found
+    false
 }
 
 /// Try to link against a static lib already present in `packages/rust/prebuilt/`.
@@ -122,20 +144,10 @@ fn try_prebuilt(manifest_dir: &Path) -> bool {
         }
     }
 
-    // 2. Legacy layout — only when host OS == target OS.
-    let host_os = env::var("CARGO_CFG_TARGET_OS")
-        .or_else(|_| env::var("HOST"))
-        .unwrap_or_default();
-    // HOST env is something like "aarch64-apple-darwin"; derive the OS word.
-    let host_os_word = if host_os.contains("darwin") || host_os == "macos" {
-        "macos"
-    } else if host_os.contains("linux") || host_os == "linux" {
-        "linux"
-    } else if host_os.contains("windows") || host_os == "windows" {
-        "windows"
-    } else {
-        ""
-    };
+    // 2. Legacy layout — it has no architecture component, so only use it for
+    // an exact native build. `CARGO_CFG_TARGET_OS` describes the target and
+    // must not be used to infer the host here.
+    let host = env::var("HOST").unwrap_or_default();
     let target_os_word = target_os.as_str();
 
     // Match legacy folder name to target OS.
@@ -146,11 +158,7 @@ fn try_prebuilt(manifest_dir: &Path) -> bool {
         _ => return false,
     };
 
-    // Only use the legacy path when host OS word matches target OS.
-    let host_matches = host_os_word == legacy_folder
-        || host_os_word.is_empty() /* conservative: allow if we can't detect */;
-
-    if host_matches {
+    if legacy_prebuilt_is_compatible(&host, &target) {
         let dir = manifest_dir.join("prebuilt").join(legacy_folder);
         let lib_name = if target_os_word == "windows" {
             "graphviz_api.lib"
@@ -229,8 +237,6 @@ fn try_repo_output(manifest_dir: &Path) -> bool {
                 false, // Android: .so preferred
             ));
         }
-    } else if target_os == "macos" {
-        candidates.push((rn_root.join("macos").join("Frameworks").join("lib"), false));
     }
 
     // ── Walk candidates ──────────────────────────────────────────────────────
@@ -255,12 +261,8 @@ fn try_repo_output(manifest_dir: &Path) -> bool {
                 return true;
             }
         } else {
-            // Dynamic desktop/mobile targets: link the self-contained shared
-            // library. A static `.a` is intentionally NOT preferred here — it
-            // cannot embed the C++ runtime (libstdc++) or expat, which the
-            // unified .so already pulls in via --whole-archive; linking the .a
-            // statically would leave those symbols undefined. (Static linking
-            // is only used for iOS, handled by the want_static branch above.)
+            // Android links the shared library staged by the application
+            // package. Desktop and iOS candidates use the static branch above.
             let dylib = if target_os == "macos" {
                 dir.join("libgraphviz_api.dylib")
             } else {
@@ -376,7 +378,11 @@ fn try_github_release() -> bool {
             return false;
         }
 
-        let tar_flag = if asset.ends_with(".zip") { "-xf" } else { "-xzf" };
+        let tar_flag = if asset.ends_with(".zip") {
+            "-xf"
+        } else {
+            "-xzf"
+        };
         let untar = Command::new("tar")
             .arg(tar_flag)
             .arg(&archive)
@@ -402,10 +408,12 @@ fn try_github_release() -> bool {
     }
 
     let is_static = asset_is_static(&target);
-    emit_search_path(&lib_subdir, !is_static);
     if is_static {
-        println!("cargo:rustc-link-lib=static=graphviz_api");
+        emit_static_link(&lib_file, "graphviz_api");
+        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        emit_static_sys_libs(&target_os);
     } else {
+        emit_search_path(&lib_subdir, true);
         println!("cargo:rustc-link-lib=dylib=graphviz_api");
     }
     println!("cargo:rerun-if-env-changed=GRAPHVIZ_ANYWHERE_RELEASE_VERSION");

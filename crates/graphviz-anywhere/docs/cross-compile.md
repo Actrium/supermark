@@ -12,6 +12,11 @@ for each supported target triple.
 3. Sibling `output/<platform>/lib/` (local build tree)
 4. Auto-download from GitHub Release (`curl` + `tar`)
 
+Linux, macOS, Windows MSVC, and iOS resolve a static archive; Android resolves
+its package-staged shared library. The resolver deliberately does not map GNU
+Linux assets to musl or MSVC assets to Windows GNU because those ABIs are not
+interchangeable.
+
 Set `GRAPHVIZ_ANYWHERE_NO_DOWNLOAD=1` to make step 4 a hard error (useful in
 CI or airgapped environments). Override the release tag with
 `GRAPHVIZ_ANYWHERE_RELEASE_VERSION=<version>`.
@@ -22,7 +27,7 @@ CI or airgapped environments). Override the release tag with
 
 - **Toolchain**: `gcc` / `clang`, CMake 3.16+, `bison`, `flex`, `pkg-config`
 - **Build**: `./scripts/build-linux.sh --arch x86_64`
-- **Output**: `output/linux-x86_64/lib/libgraphviz_api.so`
+- **Output**: `output/linux-x86_64/lib/libgraphviz_api.a`
 - **Prebuilt path**: `packages/rust/prebuilt/linux/libgraphviz_api.a`
 - **Release asset**: `graphviz-native-linux-x86_64.tar.gz`
 - **Override**: `GRAPHVIZ_ANYWHERE_DIR=output/linux-x86_64 cargo build`
@@ -32,8 +37,8 @@ CI or airgapped environments). Override the release tag with
 
 - **Toolchain**: `aarch64-linux-gnu-gcc`, CMake cross-file or `ARCH=aarch64`
 - **Build**: `./scripts/build-linux.sh --arch aarch64`
-- **Output**: `output/linux-aarch64/lib/libgraphviz_api.so`
-- **Release asset**: `graphviz-native-linux-aarch64.tar.gz` (CI uses `ubuntu-24.04-arm` runner when available)
+- **Output**: `output/linux-aarch64/lib/libgraphviz_api.a`
+- **Release asset**: `graphviz-native-linux-aarch64.tar.gz` (CI uses the native `ubuntu-22.04-arm` runner)
 - **Override**: `GRAPHVIZ_ANYWHERE_DIR=output/linux-aarch64 cargo build --target aarch64-unknown-linux-gnu`
 - **build.rs auto-resolve**: ✅
 - **Common errors**: cross-linker not on PATH → `apt-get install gcc-aarch64-linux-gnu`
@@ -42,7 +47,7 @@ CI or airgapped environments). Override the release tag with
 
 - **Toolchain**: Xcode 14+, `bison`/`flex` from Homebrew
 - **Build**: `./scripts/build-macos.sh --arch universal`
-- **Output**: `output/macos-universal/lib/libgraphviz_api.dylib`
+- **Output**: `output/macos-universal/lib/libgraphviz_api.a`
 - **Prebuilt path**: `packages/rust/prebuilt/macos/libgraphviz_api.a`
 - **Release asset**: `graphviz-native-macos-universal.tar.gz`
 - **Override**: `GRAPHVIZ_ANYWHERE_DIR=output/macos-universal cargo build`
@@ -117,11 +122,14 @@ CI or airgapped environments). Override the release tag with
 
 - **Toolchain**: MSVC 2022, CMake, `bison`/`flex` (winflexbison)
 - **Build**: `./scripts/build-windows.sh`
-- **Output**: `output/windows-x86_64/`; release ships as `.tar.gz`
+- **Output**: `output/windows-x86_64/lib/graphviz_api_static.lib`; the release
+  renames the merged static archive to canonical `lib/graphviz_api.lib`
 - **Release asset**: `graphviz-native-windows-x86_64.tar.gz`
 - **Override**: `$env:GRAPHVIZ_ANYWHERE_DIR = "output\windows-x86_64"; cargo build`
 - **build.rs**: env override works; auto-download extracts the `.tar.gz` release asset
-- **Common errors**: MSVC tools not on PATH when building from source; use a Developer Command Prompt/Git Bash or set `GRAPHVIZ_ANYWHERE_DIR` to a prebuilt directory containing `graphviz_api.lib`
+- **Common errors**: do not point the override at the DLL import library; use
+  `graphviz_api_static.lib`, or a release directory whose canonical
+  `graphviz_api.lib` is the merged static archive
 
 ## aarch64-pc-windows-msvc
 
@@ -144,11 +152,9 @@ The `@actrium/graphviz-anywhere-rn` postinstall script downloads a prebuilt
 native library into `packages/react-native/ios/Frameworks/` and the Android
 JNI libs. This is **separate** from what `build.rs` does.
 
-`build.rs`'s `try_repo_output` now also scans the RN postinstall paths
-(`packages/react-native/ios/Frameworks/lib/`, `packages/react-native/android/libs/<abi>/`)
-when the Rust crate is built inside the same monorepo as the RN package — no
-extra setup needed beyond running `npm install` in `packages/react-native/`
-first.
+`build.rs` scans the Android RN JNI staging paths when the Rust crate is built
+inside the same monorepo. Desktop Rust binaries deliberately do not consume RN
+framework shared libraries; they keep the static, self-contained contract.
 
 If you want to point at a custom location, the env override always wins:
 
