@@ -179,6 +179,64 @@ jobs:
             echo "::endgroup::"
           done
 
+  # Exercise the exact crates.io fallback used by downstream `cargo install`
+  # consumers. A library-only `cargo build` cannot detect a missing rpath or a
+  # loader selecting an ABI-incompatible same-named shared library, so this job
+  # builds and runs a final executable with a real DOT -> SVG render.
+  graphviz-release-runtime-smoke:
+    name: Graphviz release runtime (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux static-link dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ libexpat1-dev zlib1g-dev
+
+      - name: Test target and ABI mappings
+        shell: bash
+        run: cargo test -p graphviz-anywhere --test build_helpers_tests
+
+      - name: Build final executable from release asset
+        shell: bash
+        env:
+          GRAPHVIZ_ANYWHERE_ALLOW_DOWNLOAD: "1"
+          # PRs for the next crate version run before that tag exists. Use the
+          # latest published assets while exercising the current build script.
+          GRAPHVIZ_ANYWHERE_RELEASE_VERSION: "0.2.3"
+        run: cargo build --release -p graphviz-anywhere-example
+
+      - name: Run DOT-to-SVG smoke without loader overrides
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            target/release/graphviz-anywhere-example.exe > graphviz-smoke.log
+          else
+            env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH \
+              target/release/graphviz-anywhere-example > graphviz-smoke.log
+          fi
+          grep -q "SVG output" graphviz-smoke.log
+
+      - name: Assert no Graphviz desktop runtime dependency
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            ! otool -L target/release/graphviz-anywhere-example | grep -q libgraphviz_api
+          else
+            ! ldd target/release/graphviz-anywhere-example | grep -q libgraphviz_api
+          fi
+
   # plantuml-little's Rust tests (parser / layout / render unit tests) do not
   # run in the "Test & Build" job — that job only exercises the RN JS wrappers,
   # and `cargo test -p plantuml-little` needs the graphviz-anywhere native lib,
@@ -311,4 +369,3 @@ jobs:
         env:
           PLANTUML_LITTLE_TEST_BACKEND: wasm
         run: bash crates/plantuml-little/scripts/check_reference_failures.sh
-

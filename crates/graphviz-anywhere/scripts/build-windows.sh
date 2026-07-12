@@ -17,10 +17,7 @@
 #   - Visual Studio 2022 with "MSVC v143 - VS 2022 C++ ARM64 build tools"
 #     component installed (workload: Desktop development with C++).
 #   - CMake generator platform "ARM64" (passed automatically below).
-# The arm64 build has NOT been smoke-tested locally (no ARM64 Windows host
-# available).  CI validation is required before shipping release assets.
-# TODO(verify-in-ci): run a matrix job on windows-11-arm runner once
-# GitHub Actions makes it GA, or use QEMU/cross-toolchain on windows-latest.
+# CI builds and executes the ARM64 example on a native windows-11-arm runner.
 # ────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -71,7 +68,6 @@ prepare_graphviz_source "${GV_PATCHED}"
 # htmllex.c fails with "Cannot open include file: 'expat.h'".)
 log_info "Configuring Graphviz..."
 mkdir -p "${BUILD_DIR}/graphviz"
-# TODO(verify-in-ci): ARM64 generator path untested — needs windows-arm64 runner
 cmake -S "${GV_PATCHED}" -B "${BUILD_DIR}/graphviz" \
     -G "Visual Studio 17 2022" -A "${CMAKE_PLATFORM}" \
     "${GV_CMAKE_COMMON_ARGS[@]}" \
@@ -121,7 +117,6 @@ install(TARGETS graphviz_api
 )
 CMAKE_EOF
 
-# TODO(verify-in-ci): ARM64 wrapper CMake path untested — needs windows-arm64 runner
 cmake -S "${BUILD_DIR}/wrapper" -B "${BUILD_DIR}/wrapper/build" \
     -G "Visual Studio 17 2022" -A "${CMAKE_PLATFORM}" \
     -DSRC_DIR="${WRAPPER_SRC}" \
@@ -148,18 +143,24 @@ log_info "Building merged static library (graphviz_api_static.lib) via lib.exe..
 LIBEXE=""
 VSWHERE="C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
 if [ -f "${VSWHERE}" ]; then
-    VS_INSTALL="$("${VSWHERE}" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>/dev/null | tr -d '\r')"
+    VS_INSTALL="$("${VSWHERE}" -latest -products '*' -property installationPath 2>/dev/null | tr -d '\r')"
     if [ -n "${VS_INSTALL}" ]; then
         # VC tools version string lives in a single-line text file
         VC_VER_FILE="${VS_INSTALL}/VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt"
         if [ -f "${VC_VER_FILE}" ]; then
             VC_VER="$(cat "${VC_VER_FILE}" | tr -d '[:space:]')"
-            case "$ARCH" in
-                x86_64) HOST_SUBDIR="x64" ;;
-                arm64)  HOST_SUBDIR="x64" ;;  # cross-compile: host tools are x64
-            esac
-            CANDIDATE="${VS_INSTALL}/VC/Tools/MSVC/${VC_VER}/bin/Host${HOST_SUBDIR}/${HOST_SUBDIR}/lib.exe"
-            [ -f "${CANDIDATE}" ] && LIBEXE="${CANDIDATE}"
+            if [ "$ARCH" = "arm64" ]; then
+                HOST_TOOL_DIRS=("Hostarm64/arm64" "Hostx64/x64" "Hostx86/x86")
+            else
+                HOST_TOOL_DIRS=("Hostx64/x64" "Hostx86/x86")
+            fi
+            for host_dir in "${HOST_TOOL_DIRS[@]}"; do
+                CANDIDATE="${VS_INSTALL}/VC/Tools/MSVC/${VC_VER}/bin/${host_dir}/lib.exe"
+                if [ -f "${CANDIDATE}" ]; then
+                    LIBEXE="${CANDIDATE}"
+                    break
+                fi
+            done
         fi
     fi
 fi
