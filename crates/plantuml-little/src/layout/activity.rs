@@ -906,26 +906,15 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         /// (the while machinery wires its own exit) and for non-nested cases.
         nested_exit_node_idx: Option<usize>,
     }
-    #[allow(dead_code)] // fields used by deferred pass
     struct SwitchFrame {
         diamond_idx: usize,
         diamond_cx: f64,
-        diamond_cy: f64,
-        diamond_left_x: f64,
-        diamond_right_x: f64,
         diamond_bottom_y: f64,
         cases: Vec<CaseBranch>,
-        saved_y_cursor: f64,
         saved_last_flow_node_idx: Option<usize>,
     }
-    #[allow(dead_code)] // diamond side coords kept for parity with DeferredIfEdges
     struct DeferredSwitchEdges {
         diamond_idx: usize,
-        diamond_cx: f64,
-        diamond_cy: f64,
-        diamond_left_x: f64,
-        diamond_right_x: f64,
-        diamond_bottom_y: f64,
         cases: Vec<CaseBranch>,
         merge_y: f64,
         /// The 24×24 merge diamond where all cases rejoin (Java's `FtileDiamond`
@@ -1563,6 +1552,22 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
 
             // ---- Switch / Case / EndSwitch → multi-way branch ----------------
             ActivityEvent::Switch { condition } => {
+                if !switch_stack.is_empty() {
+                    log::warn!(
+                        "switch nested inside a case is not fully supported: the \
+                         nested switch's width is not counted in the case column \
+                         (issue #39)"
+                    );
+                }
+                if !swimlane_layouts.is_empty() {
+                    log::warn!(
+                        "switch inside a swimlane is not fully supported: case \
+                         columns are not spread and may stack (issue #39)"
+                    );
+                }
+                // NOTE: unlike If/While, a nested Switch does not register itself
+                // onto the parent case's `case.nodes`, so its tile width is not
+                // accounted for in `case_tile_geometry`. See the warn above.
                 // Hexagonal diamond with the condition text inside (same shape
                 // and sizing as the if-diamond, matching official PlantUML).
                 let font_size = HEXAGON_LABEL_FONT_SIZE;
@@ -1592,12 +1597,8 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 switch_stack.push(SwitchFrame {
                     diamond_idx,
                     diamond_cx: cx,
-                    diamond_cy: y + h / 2.0,
-                    diamond_left_x: x,
-                    diamond_right_x: x + w,
                     diamond_bottom_y: y + h,
                     cases: Vec::new(),
-                    saved_y_cursor: y_cursor,
                     saved_last_flow_node_idx: last_flow_node_idx,
                 });
 
@@ -1607,12 +1608,8 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 //   FtileDecorateInLabel adds label_h to the tile top
                 //   → case_start = diamond_bottom + getYdelta1a + label_h
                 //     = diamond_bottom + max(10, label_h) + 10 + label_h
-                let case_label_h = font_metrics::line_height(
-                    "SansSerif",
-                    HEXAGON_LABEL_FONT_SIZE,
-                    false,
-                    false,
-                );
+                let case_label_h =
+                    font_metrics::line_height("SansSerif", HEXAGON_LABEL_FONT_SIZE, false, false);
                 let switch_ydelta1a = case_label_h.max(10.0) + 10.0;
                 y_cursor = y + h + switch_ydelta1a + case_label_h;
                 last_flow_node_idx = Some(diamond_idx);
@@ -1705,11 +1702,6 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     );
                     deferred_switch_edges.push(DeferredSwitchEdges {
                         diamond_idx: frame.diamond_idx,
-                        diamond_cx: frame.diamond_cx,
-                        diamond_cy: frame.diamond_cy,
-                        diamond_left_x: frame.diamond_left_x,
-                        diamond_right_x: frame.diamond_right_x,
-                        diamond_bottom_y: frame.diamond_bottom_y,
                         cases: frame.cases,
                         merge_y,
                         merge_diamond_idx: Some(merge_diamond_idx),
@@ -2024,6 +2016,13 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
 
             // ---- Fork / ForkAgain / EndFork → horizontal bars ----------------
             ActivityEvent::Fork | ActivityEvent::ForkAgain | ActivityEvent::EndFork => {
+                if matches!(event, ActivityEvent::Fork) && !switch_stack.is_empty() {
+                    log::warn!(
+                        "fork nested inside a case is not fully supported: the \
+                         fork bar's width is not counted in the case column \
+                         (issue #39)"
+                    );
+                }
                 let w = FORK_BAR_WIDTH;
                 let h = FORK_BAR_HEIGHT;
                 let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
@@ -2447,7 +2446,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         // The case body is a vertical stack (FtileAssemblySimple), so the merged
         // width comes from the widest element.  The merged left/right may be
         // asymmetric when the widest element is not the first one.
-        let (raw_w, raw_left, raw_right) = if case.nodes.is_empty() {
+        let (_raw_w, raw_left, raw_right) = if case.nodes.is_empty() {
             (40.0, 20.0, 20.0)
         } else {
             // Java FtileGeometryMerger (appendBottom) over all case nodes:
@@ -2455,15 +2454,30 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             let mut merged_left = 0.0_f64;
             let mut merged_right = 0.0_f64;
             for &idx in &case.nodes {
-                let (nw, nl, nr) = if nested.contains(&idx) {
+                let (_nw, nl, nr) = if nested.contains(&idx) {
                     if let Some(die) = if_by_diamond.get(&idx) {
                         let dw = nodes[idx].width;
-                        let then_w = die.then_branch.nodes.iter()
-                            .map(|&i| nodes[i].width).fold(0.0_f64, f64::max);
-                        let else_w = die.else_branch.as_ref()
-                            .map(|b| b.nodes.iter().map(|&i| nodes[i].width).fold(0.0_f64, f64::max))
+                        let then_w = die
+                            .then_branch
+                            .nodes
+                            .iter()
+                            .map(|&i| nodes[i].width)
+                            .fold(0.0_f64, f64::max);
+                        let else_w = die
+                            .else_branch
+                            .as_ref()
+                            .map(|b| {
+                                b.nodes
+                                    .iter()
+                                    .map(|&i| nodes[i].width)
+                                    .fold(0.0_f64, f64::max)
+                            })
                             .unwrap_or(0.0);
-                        let nude_w = if die.has_else { then_w + 20.0 + else_w } else { then_w };
+                        let nude_w = if die.has_else {
+                            then_w + 20.0 + else_w
+                        } else {
+                            then_w
+                        };
                         let w = dw.max(nude_w).max(HEXAGON_HALF_SIZE * 2.0);
                         (w, w / 2.0, w / 2.0)
                     } else if let Some(body) = while_body_by_idx.get(&idx) {
@@ -2555,7 +2569,11 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             // case n-1 at tile[0].w + w13 + 30
             // width = tile[0].w + 15 + w13 + 15 + tile[n-1].w
             // diamond at tile[0].left + 15 + diamond.left
-            let suppx = if n > 1 { (w13 - w9) / (n as f64 - 1.0) } else { 0.0 };
+            let suppx = if n > 1 {
+                (w13 - w9) / (n as f64 - 1.0)
+            } else {
+                0.0
+            };
             let mut rel = vec![0.0_f64; n];
             for i in 1..n {
                 rel[i] = rel[i - 1] + tiles[i - 1].0 + suppx;
@@ -2566,14 +2584,10 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             }
             let total_w = tiles[0].0 + 15.0 + w13 + 15.0 + tiles[n - 1].0;
             let diamond_cx = tiles[0].1 + 15.0 + diamond_w / 2.0;
-            let offsets: Vec<f64> = rel.iter()
-                .map(|&r| r + tiles[0..n].iter().nth(0).map(|t| t.1).unwrap_or(0.0))
-                .map(|x| x - diamond_cx)
+            // case cx = rel[i] + tile[i].width/2
+            let offsets: Vec<f64> = (0..n)
+                .map(|i| rel[i] + tiles[i].0 / 2.0 - diamond_cx)
                 .collect();
-            // Actually compute case cx = rel[i] + tile[i].width/2
-            let offsets: Vec<f64> = (0..n).map(|i| {
-                rel[i] + tiles[i].0 / 2.0 - diamond_cx
-            }).collect();
             let group_half = total_w / 2.0;
             (offsets, group_half)
         } else {
@@ -2593,24 +2607,31 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             // rect cx = tile_left + tile[i].left (the FtileBox left, NOT
             // tile_w/2).  This differs from tile_w/2 when FtileDecorateInLabel
             // widens the tile (inlabel_w > rect_w/2).
-            let offsets: Vec<f64> = (0..n).map(|i| {
-                rel[i] + tiles[i].1 - nude_cx
-            }).collect();
+            let offsets: Vec<f64> = (0..n).map(|i| rel[i] + tiles[i].1 - nude_cx).collect();
             let group_half = nude_w / 2.0;
             (offsets, group_half)
         }
     }
 
+    // Lookups used by the nested-aware case-width helper (Pass 2b case
+    // spreading and Pass 3e empty-case stub placement).
+    let if_by_diamond: HashMap<usize, &DeferredIfEdges> = deferred_if_edges
+        .iter()
+        .map(|die| (die.diamond_idx, die))
+        .collect();
+    let while_body_by_idx: HashMap<usize, &Vec<usize>> = while_loopbacks
+        .iter()
+        .map(|(idx, body, ..)| (*idx, body))
+        .collect();
+
+    // Pass 2b: diagram centring + switch case-spreading. Gated on
+    // `swimlane_layouts.is_empty()` because swimlane placement owns the x-axis
+    // (each node sits at its lane centre). With swimlanes present this whole
+    // pass is skipped, so switch case columns are NOT spread and stack at the
+    // lane centre — the degraded swimlane+switch path (see the warn in the
+    // Switch handler). Empty-case stubs fall back to the diamond centre via
+    // `case_offsets` being empty.
     if swimlane_layouts.is_empty() && !nodes.is_empty() {
-        // Lookups used by the nested-aware case-width helper.
-        let if_by_diamond: HashMap<usize, &DeferredIfEdges> = deferred_if_edges
-            .iter()
-            .map(|die| (die.diamond_idx, die))
-            .collect();
-        let while_body_by_idx: HashMap<usize, &Vec<usize>> = while_loopbacks
-            .iter()
-            .map(|(idx, body, ..)| (*idx, body))
-            .collect();
         // Collect the widest flow node (excluding branch-internal nodes).
         // For if-diamonds, consider the entire if-block width (diamond + branches).
         let mut max_half_w = nodes
@@ -2636,7 +2657,13 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             // official PlantUML reserves room for both, so the centre margin
             // covers half + max(end_label_w, HEXAGON_HALF_SIZE) + HEXAGON_HALF_SIZE.
             let end_label_w = if !end_label.is_empty() {
-                font_metrics::text_width(end_label, "SansSerif", HEXAGON_LABEL_FONT_SIZE, false, false)
+                font_metrics::text_width(
+                    end_label,
+                    "SansSerif",
+                    HEXAGON_LABEL_FONT_SIZE,
+                    false,
+                    false,
+                )
             } else {
                 0.0
             };
@@ -2871,17 +2898,14 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 | ActivityEvent::Action { .. }
                 | ActivityEvent::If { .. }
                 | ActivityEvent::ElseIf { .. }
-                | ActivityEvent::Else { .. }
                 | ActivityEvent::EndIf
                 | ActivityEvent::While { .. }
-                | ActivityEvent::EndWhile { .. }
                 | ActivityEvent::Repeat
                 | ActivityEvent::RepeatWhile { .. }
                 | ActivityEvent::Fork
                 | ActivityEvent::ForkAgain
                 | ActivityEvent::EndFork
                 | ActivityEvent::Switch { .. }
-                | ActivityEvent::Case { .. }
                 | ActivityEvent::EndSwitch
                 | ActivityEvent::Note { .. }
                 | ActivityEvent::FloatingNote { .. }
@@ -2889,7 +2913,15 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 | ActivityEvent::SyncBar(_) => {
                     node_lane.push(cur_lane);
                 }
-                ActivityEvent::GotoSyncBar(_)
+                // Events that emit no node. Keeping node_lane 1:1 with `nodes`
+                // avoids shifting later nodes' lane assignment. `Else` only
+                // emits in the malformed else-without-if fallback; that
+                // degraded input falls back to lane 0 at the consumer bounds
+                // check.
+                ActivityEvent::Else { .. }
+                | ActivityEvent::EndWhile { .. }
+                | ActivityEvent::Case { .. }
+                | ActivityEvent::GotoSyncBar(_)
                 | ActivityEvent::ResumeFromSyncBar(_)
                 | ActivityEvent::Label { .. }
                 | ActivityEvent::Goto { .. }
@@ -3223,9 +3255,9 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             })
             .collect();
         edges.retain(|edge| {
-            !switch_ranges
-                .iter()
-                .any(|&(diamond_idx, post_idx)| edge.from_index < diamond_idx && edge.to_index >= post_idx)
+            !switch_ranges.iter().any(|&(diamond_idx, post_idx)| {
+                edge.from_index < diamond_idx && edge.to_index >= post_idx
+            })
         });
     }
     // Remove the build_edges edge that jumps from a while diamond straight
@@ -3330,7 +3362,14 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 m.x,
                 m.x + m.width,
             ),
-            None => (diamond_cx, die.merge_y, die.merge_y, die.merge_y, diamond_left_x, diamond_right_x),
+            None => (
+                diamond_cx,
+                die.merge_y,
+                die.merge_y,
+                die.merge_y,
+                diamond_left_x,
+                diamond_right_x,
+            ),
         };
 
         if die.has_else {
@@ -3486,8 +3525,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 // Legacy: a branch ends in break/goto (no merge diamond) —
                 // route the surviving else-branch to the next flow node.
                 if !else_branch.has_goto && !else_branch.has_break {
-                    if let (Some(last_idx), Some(next)) =
-                        (else_branch.nodes.last(), next_flow_idx)
+                    if let (Some(last_idx), Some(next)) = (else_branch.nodes.last(), next_flow_idx)
                     {
                         let last = &nodes[*last_idx];
                         let last_cx = last.x + last.width / 2.0;
@@ -3755,6 +3793,30 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         }
 
         let n = dse.cases.len();
+        // Case column offsets from Pass 2b's spread, reused for empty-case
+        // stub placement so an empty case lines up with its column even when
+        // its siblings are wide. Under swimlane, Pass 2b is skipped (cases
+        // stack at the lane centre) so offsets stay empty and empty stubs
+        // stack with the rest — the degraded swimlane+switch path.
+        let case_offsets: Vec<f64> = if swimlane_layouts.is_empty() && n > 0 {
+            let tiles: Vec<(f64, f64, f64)> = dse
+                .cases
+                .iter()
+                .map(|c| {
+                    case_tile_geometry(
+                        c,
+                        &nodes,
+                        &nested_entry_diamonds,
+                        &if_by_diamond,
+                        &while_body_by_idx,
+                    )
+                })
+                .collect();
+            let (offsets, _) = case_layout(&tiles, diamond.width);
+            offsets
+        } else {
+            Vec::new()
+        };
         // 1. Diamond → each case's first node, with the case label as edge label.
         //    Outer cases enter from the diamond's left/right side at mid-height
         //    (a long downward arrow, matching official PlantUML); the middle
@@ -3786,7 +3848,12 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 let is_middle_case = !(i == 0 && n > 1) && !(i == n - 1 && n > 1);
                 let points = if is_middle_case && n > 2 {
                     let stub_y = start_y + HEXAGON_HALF_SIZE;
-                    vec![(start_x, start_y), (start_x, stub_y), (case_cx, stub_y), (case_cx, case_top)]
+                    vec![
+                        (start_x, start_y),
+                        (start_x, stub_y),
+                        (case_cx, stub_y),
+                        (case_cx, case_top),
+                    ]
                 } else {
                     vec![(start_x, start_y), (case_cx, start_y), (case_cx, case_top)]
                 };
@@ -3803,11 +3870,11 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 // diamond so the case label is still visible.
                 let case_cx = if n == 1 {
                     diamond_cx
+                } else if i < case_offsets.len() {
+                    diamond_cx + case_offsets[i]
                 } else {
-                    // Spread empty cases too
-                    let max_case_w = 40.0_f64;
-                    let spacing = max_case_w + 20.0;
-                    diamond_cx + (i as f64 - (n as f64 - 1.0) / 2.0) * spacing
+                    // Swimlane (degraded): stack at the diamond centre.
+                    diamond_cx
                 };
                 let (md_x, md_y) = md_attach(case_cx, md_cx, md_cy, md_top, 24.0);
                 edges.push(ActivityEdgeLayout {
@@ -3884,7 +3951,12 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             let is_middle = !(i == 0 && n > 1) && !(i == n - 1 && n > 1);
             let points = if is_middle {
                 let stub_y = origin_y + 5.0;
-                vec![(origin_x, origin_y), (origin_x, stub_y), (md_x, stub_y), (md_x, md_y)]
+                vec![
+                    (origin_x, origin_y),
+                    (origin_x, stub_y),
+                    (md_x, stub_y),
+                    (md_x, md_y),
+                ]
             } else {
                 vec![(origin_x, origin_y), (origin_x, md_y), (md_x, md_y)]
             };
@@ -3928,10 +4000,6 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 label_xy: None,
             });
         }
-
-        // Suppress unused-variable warnings for the diamond side coordinates
-        // (kept for parity with the if-branch implementation and future use).
-        let _ = (diamond_left_x, diamond_right_x, diamond_cy);
     }
 
     // --- Pass 3a2: goto loop-back edges ----------------------------------------
@@ -5813,7 +5881,10 @@ mod tests {
         assert!(action.y > if_node.y + if_node.height);
 
         // The third node is the merge diamond where the if-branches rejoin.
-        assert!(matches!(layout.nodes[2].kind, ActivityNodeKindLayout::Diamond));
+        assert!(matches!(
+            layout.nodes[2].kind,
+            ActivityNodeKindLayout::Diamond
+        ));
 
         // Edges: diamond→action + action→merge-diamond at minimum.
         assert!(!layout.edges.is_empty());
@@ -5902,7 +5973,10 @@ mod tests {
         );
 
         // The last node is the switch merge diamond where cases rejoin.
-        assert!(matches!(layout.nodes[5].kind, ActivityNodeKindLayout::Diamond));
+        assert!(matches!(
+            layout.nodes[5].kind,
+            ActivityNodeKindLayout::Diamond
+        ));
 
         // Edges should include the 3 diamond→case branch edges (labelled with
         // the case labels).
@@ -6020,9 +6094,10 @@ mod tests {
             "if-diamond should have exactly one labelled inbound edge (the case entry), got {labelled_inbound}"
         );
         // That edge carries the case-A label.
-        assert!(layout.edges.iter().any(|e| {
-            e.to_index == if_diamond.index && e.label == "A"
-        }));
+        assert!(layout
+            .edges
+            .iter()
+            .any(|e| { e.to_index == if_diamond.index && e.label == "A" }));
 
         // The case labels A and B both appear on switch branch edges.
         let labels: Vec<&str> = layout
@@ -6119,23 +6194,39 @@ mod tests {
     fn switch_single_case() {
         let d = diagram(vec![
             ActivityEvent::Start,
-            ActivityEvent::Switch { condition: "x?".into() },
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
             ActivityEvent::Case { label: "A".into() },
-            ActivityEvent::Action { text: "do A".into() },
+            ActivityEvent::Action {
+                text: "do A".into(),
+            },
             ActivityEvent::EndSwitch,
             ActivityEvent::Stop,
         ]);
         let layout = layout_activity(&d).unwrap();
         // switch diamond + 1 case action + merge diamond = 3 nodes (plus start/stop).
         assert!(layout.nodes.len() >= 5);
-        let switch = layout.nodes.iter()
+        let switch = layout
+            .nodes
+            .iter()
             .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
             .expect("switch diamond");
-        let action = layout.nodes.iter().find(|n| n.text == "do A").expect("case action");
+        let action = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "do A")
+            .expect("case action");
         // The case action should be below the switch diamond.
-        assert!(action.y > switch.y, "case action should be below switch diamond");
+        assert!(
+            action.y > switch.y,
+            "case action should be below switch diamond"
+        );
         // Case label "A" should appear on an edge.
-        assert!(layout.edges.iter().any(|e| e.label == "A"), "case A label missing");
+        assert!(
+            layout.edges.iter().any(|e| e.label == "A"),
+            "case A label missing"
+        );
     }
 
     // 8e. switch with an empty case (no action) — must not panic, case label visible.
@@ -6143,9 +6234,13 @@ mod tests {
     fn switch_empty_case() {
         let d = diagram(vec![
             ActivityEvent::Start,
-            ActivityEvent::Switch { condition: "x?".into() },
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
             ActivityEvent::Case { label: "A".into() },
-            ActivityEvent::Action { text: "do A".into() },
+            ActivityEvent::Action {
+                text: "do A".into(),
+            },
             ActivityEvent::Case { label: "B".into() },
             // Empty case B — no action.
             ActivityEvent::EndSwitch,
@@ -6153,7 +6248,9 @@ mod tests {
         ]);
         let layout = layout_activity(&d).unwrap();
         // Both case labels should appear on edges.
-        let labels: Vec<&str> = layout.edges.iter()
+        let labels: Vec<&str> = layout
+            .edges
+            .iter()
             .filter(|e| !e.label.is_empty())
             .map(|e| e.label.as_str())
             .collect();
@@ -6167,11 +6264,17 @@ mod tests {
     fn switch_no_following_node() {
         let d = diagram(vec![
             ActivityEvent::Start,
-            ActivityEvent::Switch { condition: "x?".into() },
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
             ActivityEvent::Case { label: "A".into() },
-            ActivityEvent::Action { text: "do A".into() },
+            ActivityEvent::Action {
+                text: "do A".into(),
+            },
             ActivityEvent::Case { label: "B".into() },
-            ActivityEvent::Action { text: "do B".into() },
+            ActivityEvent::Action {
+                text: "do B".into(),
+            },
             ActivityEvent::EndSwitch,
             // No action/stop after endswitch.
         ]);
@@ -6180,6 +6283,29 @@ mod tests {
         assert!(layout.nodes.len() >= 4);
         assert!(layout.edges.iter().any(|e| e.label == "A"));
         assert!(layout.edges.iter().any(|e| e.label == "B"));
+        // Even with no following flow node, both cases must route into the
+        // switch's merge diamond — the terminal merge still collects them, so
+        // cases do not dangle. (Only the merge→next edge is absent, which is
+        // correct for a terminal switch.)
+        let switch = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
+            .expect("switch diamond");
+        let merge = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::Diamond))
+            .expect("merge diamond");
+        let merge_edges = layout
+            .edges
+            .iter()
+            .filter(|e| e.from_index == switch.index && e.to_index == merge.index)
+            .count();
+        assert!(
+            merge_edges >= 2,
+            "both cases should route into the merge diamond, got {merge_edges}"
+        );
     }
 
     // 8g. switch with 4 cases — middle cases (indices 1, 2) enter from
@@ -6188,7 +6314,9 @@ mod tests {
     fn switch_four_cases() {
         let d = diagram(vec![
             ActivityEvent::Start,
-            ActivityEvent::Switch { condition: "x?".into() },
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
             ActivityEvent::Case { label: "A".into() },
             ActivityEvent::Action { text: "a".into() },
             ActivityEvent::Case { label: "B".into() },
@@ -6202,14 +6330,18 @@ mod tests {
         ]);
         let layout = layout_activity(&d).unwrap();
         // 4 case labels.
-        let labels: Vec<&str> = layout.edges.iter()
+        let labels: Vec<&str> = layout
+            .edges
+            .iter()
             .filter(|e| !e.label.is_empty())
             .map(|e| e.label.as_str())
             .collect();
         assert!(labels.contains(&"A") && labels.contains(&"B"));
         assert!(labels.contains(&"C") && labels.contains(&"D"));
         // The first case should be left of the switch, last case right.
-        let switch = layout.nodes.iter()
+        let switch = layout
+            .nodes
+            .iter()
             .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
             .expect("switch diamond");
         let switch_cx = switch.x + switch.width / 2.0;
@@ -6226,22 +6358,39 @@ mod tests {
     fn switch_multi_action_case() {
         let d = diagram(vec![
             ActivityEvent::Start,
-            ActivityEvent::Switch { condition: "x?".into() },
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
             ActivityEvent::Case { label: "A".into() },
-            ActivityEvent::Action { text: "step 1".into() },
-            ActivityEvent::Action { text: "step 2".into() },
+            ActivityEvent::Action {
+                text: "step 1".into(),
+            },
+            ActivityEvent::Action {
+                text: "step 2".into(),
+            },
             ActivityEvent::Case { label: "B".into() },
-            ActivityEvent::Action { text: "step 3".into() },
+            ActivityEvent::Action {
+                text: "step 3".into(),
+            },
             ActivityEvent::EndSwitch,
             ActivityEvent::Stop,
         ]);
         let layout = layout_activity(&d).unwrap();
         // Intra-case edge: step 1 → step 2 (within case A).
-        let step1 = layout.nodes.iter().find(|n| n.text == "step 1").expect("step 1");
-        let step2 = layout.nodes.iter().find(|n| n.text == "step 2").expect("step 2");
-        let intra = layout.edges.iter().find(|e| {
-            e.from_index == step1.index && e.to_index == step2.index
-        });
+        let step1 = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "step 1")
+            .expect("step 1");
+        let step2 = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "step 2")
+            .expect("step 2");
+        let intra = layout
+            .edges
+            .iter()
+            .find(|e| e.from_index == step1.index && e.to_index == step2.index);
         assert!(intra.is_some(), "intra-case edge step1→step2 missing");
         // step 2 should be below step 1.
         assert!(step2.y > step1.y, "step 2 should be below step 1");
@@ -6252,20 +6401,35 @@ mod tests {
     fn switch_case_with_noelse_if() {
         let d = diagram(vec![
             ActivityEvent::Start,
-            ActivityEvent::Switch { condition: "t?".into() },
+            ActivityEvent::Switch {
+                condition: "t?".into(),
+            },
             ActivityEvent::Case { label: "A".into() },
-            ActivityEvent::If { condition: "x?".into(), then_label: "y".into() },
-            ActivityEvent::Action { text: "A yes".into() },
+            ActivityEvent::If {
+                condition: "x?".into(),
+                then_label: "y".into(),
+            },
+            ActivityEvent::Action {
+                text: "A yes".into(),
+            },
             ActivityEvent::EndIf,
             ActivityEvent::Case { label: "B".into() },
-            ActivityEvent::Action { text: "Action B".into() },
+            ActivityEvent::Action {
+                text: "Action B".into(),
+            },
             ActivityEvent::EndSwitch,
             ActivityEvent::Stop,
         ]);
         let layout = layout_activity(&d).unwrap();
         // if-diamond and A yes must not overlap (the original bug).
-        let a_yes = layout.nodes.iter().find(|n| n.text == "A yes").expect("A yes");
-        let if_diamond = layout.nodes.iter()
+        let a_yes = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "A yes")
+            .expect("A yes");
+        let if_diamond = layout
+            .nodes
+            .iter()
             .find(|n| matches!(n.kind, ActivityNodeKindLayout::IfDiamond { .. }) && n.text == "x?")
             .expect("if diamond");
         let if_cx = if_diamond.x + if_diamond.width / 2.0;
@@ -6276,10 +6440,15 @@ mod tests {
             "no-else then-branch should be centred under if-diamond: yes_cx={yes_cx}, if_cx={if_cx}"
         );
         // Exactly one labelled inbound edge to the if-diamond (case-A entry).
-        let labelled_inbound = layout.edges.iter()
+        let labelled_inbound = layout
+            .edges
+            .iter()
             .filter(|e| e.to_index == if_diamond.index && !e.label.is_empty())
             .count();
-        assert_eq!(labelled_inbound, 1, "if-diamond should have one labelled inbound (case entry)");
+        assert_eq!(
+            labelled_inbound, 1,
+            "if-diamond should have one labelled inbound (case entry)"
+        );
     }
 
     // 8j. switch with has-else if nested in case (PR #55 original test).
@@ -6287,23 +6456,44 @@ mod tests {
     fn switch_case_with_has_else_if() {
         let d = diagram(vec![
             ActivityEvent::Start,
-            ActivityEvent::Switch { condition: "test?".into() },
+            ActivityEvent::Switch {
+                condition: "test?".into(),
+            },
             ActivityEvent::Case { label: "A".into() },
-            ActivityEvent::If { condition: "x?".into(), then_label: "yes".into() },
-            ActivityEvent::Action { text: "A yes".into() },
+            ActivityEvent::If {
+                condition: "x?".into(),
+                then_label: "yes".into(),
+            },
+            ActivityEvent::Action {
+                text: "A yes".into(),
+            },
             ActivityEvent::Else { label: "no".into() },
-            ActivityEvent::Action { text: "A no".into() },
+            ActivityEvent::Action {
+                text: "A no".into(),
+            },
             ActivityEvent::EndIf,
             ActivityEvent::Case { label: "B".into() },
-            ActivityEvent::Action { text: "Action B".into() },
+            ActivityEvent::Action {
+                text: "Action B".into(),
+            },
             ActivityEvent::EndSwitch,
-            ActivityEvent::Action { text: "after".into() },
+            ActivityEvent::Action {
+                text: "after".into(),
+            },
             ActivityEvent::Stop,
         ]);
         let layout = layout_activity(&d).unwrap();
         // Branch nodes must not overlap (the original bug).
-        let a_yes = layout.nodes.iter().find(|n| n.text == "A yes").expect("A yes");
-        let a_no = layout.nodes.iter().find(|n| n.text == "A no").expect("A no");
+        let a_yes = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "A yes")
+            .expect("A yes");
+        let a_no = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "A no")
+            .expect("A no");
         let yes_cx = a_yes.x + a_yes.width / 2.0;
         let no_cx = a_no.x + a_no.width / 2.0;
         assert!(
@@ -6311,15 +6501,22 @@ mod tests {
             "if-branch nodes must not overlap: yes_cx={yes_cx}, no_cx={no_cx}"
         );
         // if-diamond sits under case A (left of switch), Action B under case B (right).
-        let switch = layout.nodes.iter()
+        let switch = layout
+            .nodes
+            .iter()
             .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
             .expect("switch diamond");
         let switch_cx = switch.x + switch.width / 2.0;
-        let if_diamond = layout.nodes.iter()
+        let if_diamond = layout
+            .nodes
+            .iter()
             .find(|n| matches!(n.kind, ActivityNodeKindLayout::IfDiamond { .. }) && n.text == "x?")
             .expect("if diamond");
         let if_cx = if_diamond.x + if_diamond.width / 2.0;
-        assert!(if_cx < switch_cx, "if-diamond should be in case A (left of switch)");
+        assert!(
+            if_cx < switch_cx,
+            "if-diamond should be in case A (left of switch)"
+        );
     }
 
     // 8k. FtileSwitchNude SMALL_DIAMOND mode: 3 equal cases should be
@@ -6328,23 +6525,41 @@ mod tests {
     fn switch_small_diamond_mode_symmetric() {
         let d = diagram(vec![
             ActivityEvent::Start,
-            ActivityEvent::Switch { condition: "x?".into() },
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
             ActivityEvent::Case { label: "A".into() },
-            ActivityEvent::Action { text: "do A".into() },
+            ActivityEvent::Action {
+                text: "do A".into(),
+            },
             ActivityEvent::Case { label: "B".into() },
-            ActivityEvent::Action { text: "do B".into() },
+            ActivityEvent::Action {
+                text: "do B".into(),
+            },
             ActivityEvent::Case { label: "C".into() },
-            ActivityEvent::Action { text: "do C".into() },
+            ActivityEvent::Action {
+                text: "do C".into(),
+            },
             ActivityEvent::EndSwitch,
             ActivityEvent::Stop,
         ]);
         let layout = layout_activity(&d).unwrap();
-        let switch = layout.nodes.iter()
+        let switch = layout
+            .nodes
+            .iter()
             .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
             .expect("switch diamond");
         let switch_cx = switch.x + switch.width / 2.0;
-        let case_a = layout.nodes.iter().find(|n| n.text == "do A").expect("case A");
-        let case_c = layout.nodes.iter().find(|n| n.text == "do C").expect("case C");
+        let case_a = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "do A")
+            .expect("case A");
+        let case_c = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "do C")
+            .expect("case C");
         let a_cx = case_a.x + case_a.width / 2.0;
         let c_cx = case_c.x + case_c.width / 2.0;
         // Cases should be roughly symmetric around the switch.
@@ -6363,18 +6578,28 @@ mod tests {
     fn switch_action_tile_not_inflated() {
         let d = diagram(vec![
             ActivityEvent::Start,
-            ActivityEvent::Switch { condition: "x?".into() },
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
             ActivityEvent::Case { label: "A".into() },
-            ActivityEvent::Action { text: "do something long enough".into() },
+            ActivityEvent::Action {
+                text: "do something long enough".into(),
+            },
             ActivityEvent::Case { label: "B".into() },
-            ActivityEvent::Action { text: "also long enough action".into() },
+            ActivityEvent::Action {
+                text: "also long enough action".into(),
+            },
             ActivityEvent::EndSwitch,
             ActivityEvent::Stop,
         ]);
         let layout = layout_activity(&d).unwrap();
         // Both cases should have their action rect width as the tile width
         // (no min-width inflation since actions are > 30px).
-        let case_a = layout.nodes.iter().find(|n| n.text == "do something long enough").expect("case A");
+        let case_a = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "do something long enough")
+            .expect("case A");
         assert!(case_a.width > 30.0, "action should be > 30px wide");
     }
 
@@ -6430,7 +6655,10 @@ mod tests {
         assert_eq!(layout.nodes.len(), 2);
 
         let while_node = &layout.nodes[0];
-        assert!(matches!(while_node.kind, ActivityNodeKindLayout::IfDiamond { .. }));
+        assert!(matches!(
+            while_node.kind,
+            ActivityNodeKindLayout::IfDiamond { .. }
+        ));
         assert!(while_node.text.contains("count < 10"));
     }
 

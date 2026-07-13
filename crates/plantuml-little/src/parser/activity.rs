@@ -1488,7 +1488,8 @@ mod tests {
 
     #[test]
     fn parse_switch_case() {
-        let src = "@startuml\nswitch (event?)\ncase (a)\n:do a;\ncase (b)\n:do b;\nendswitch\n@enduml";
+        let src =
+            "@startuml\nswitch (event?)\ncase (a)\n:do a;\ncase (b)\n:do b;\nendswitch\n@enduml";
         let diagram = parse_activity_diagram(src).unwrap();
         assert!(matches!(
             &diagram.events[0],

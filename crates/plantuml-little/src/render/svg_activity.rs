@@ -1866,8 +1866,12 @@ fn render_edge(
         if !edge.label.is_empty() {
             let (mx, my, anchor, font_size) = match edge.label_xy {
                 Some((lx, ly)) => {
-                    let ascent =
-                        font_metrics::ascent("SansSerif", HEXAGON_LABEL_FONT_SIZE_RENDER, false, false);
+                    let ascent = font_metrics::ascent(
+                        "SansSerif",
+                        HEXAGON_LABEL_FONT_SIZE_RENDER,
+                        false,
+                        false,
+                    );
                     let descent = font_metrics::descent(
                         "SansSerif",
                         HEXAGON_LABEL_FONT_SIZE_RENDER,
@@ -1881,17 +1885,11 @@ fn render_edge(
                 }
                 None => {
                     let mid = edge.points.len() / 2;
-                    let (mx, my) = edge.points[mid];
+                    let (mx, my) = edge.points.get(mid).copied().unwrap_or((0.0, 0.0));
                     (mx, my, "middle", ACTION_FONT_SIZE)
                 }
             };
-            let tl = font_metrics::text_width(
-                &edge.label,
-                "SansSerif",
-                font_size,
-                false,
-                false,
-            );
+            let tl = font_metrics::text_width(&edge.label, "SansSerif", font_size, false, false);
             sg.set_fill_color(text_color);
             sg.svg_text(
                 &edge.label,
@@ -1925,7 +1923,8 @@ fn render_edge(
                 let ascent = font_metrics::ascent("SansSerif", font_size, false, false);
                 let descent = font_metrics::descent("SansSerif", font_size, false, false);
                 let baseline_y = ly + (ascent - descent) / 2.0;
-                let tl = font_metrics::text_width(&edge.label, "SansSerif", font_size, false, false);
+                let tl =
+                    font_metrics::text_width(&edge.label, "SansSerif", font_size, false, false);
                 sg.set_fill_color(text_color);
                 sg.svg_text(
                     &edge.label,
@@ -2160,7 +2159,16 @@ fn render_loopback_simple2(
     let ox = arrow_x;
     let oy = up_arrow_y;
     PolygonShape {
-        points: vec![ox - 4.0, oy + 10.0, ox, oy, ox + 4.0, oy + 10.0, ox, oy + 6.0],
+        points: vec![
+            ox - 4.0,
+            oy + 10.0,
+            ox,
+            oy,
+            ox + 4.0,
+            oy + 10.0,
+            ox,
+            oy + 6.0,
+        ],
     }
     .draw(sg, &poly_style);
     // End arrow at the final point (direction from the penultimate point).
