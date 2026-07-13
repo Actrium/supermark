@@ -1,0 +1,10 @@
+@startuml
+participant Alice
+participant Bob
+
+Bob -> Bob: self
+note left of Bob
+  own slot after self
+end note
+Alice -> Bob: ok
+@enduml

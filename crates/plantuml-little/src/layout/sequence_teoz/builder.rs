@@ -1430,6 +1430,7 @@ pub fn build_teoz_layout(sd: &SequenceDiagram, skin: &SkinParams) -> Result<SeqL
                 text,
                 parallel,
                 color,
+                ..
             } => {
                 let idx = name_to_idx.get(participant).copied().unwrap_or(0);
                 let center = livings[idx].pos_c;
@@ -1455,6 +1456,7 @@ pub fn build_teoz_layout(sd: &SequenceDiagram, skin: &SkinParams) -> Result<SeqL
                 text,
                 parallel,
                 color,
+                ..
             } => {
                 let idx = name_to_idx.get(participant).copied().unwrap_or(0);
                 let center = livings[idx].pos_c;
