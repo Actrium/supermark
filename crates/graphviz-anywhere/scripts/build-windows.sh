@@ -51,6 +51,24 @@ esac
 BUILD_DIR="${BUILD_DIR:-${PROJECT_ROOT}/build/windows-${ARCH}}"
 INSTALL_DIR="${INSTALL_DIR:-${PROJECT_ROOT}/output/windows-${ARCH}}"
 
+# Graphviz vendors x64-only Windows dependencies (GD/Cairo/Pango) in its
+# source tree. Native ARM64 builds must not auto-discover or link them. The
+# wrapper's DOT-to-SVG surface only needs Graphviz's core renderer/layout
+# targets, so disabling these optional plugins preserves the supported API.
+WINDOWS_ARCH_CMAKE_ARGS=()
+if [ "${ARCH}" = "arm64" ]; then
+    WINDOWS_ARCH_CMAKE_ARGS+=(
+        -Duse_win_pre_inst_libs=OFF
+        -DCMAKE_DISABLE_FIND_PACKAGE_CAIRO=TRUE
+        -DCMAKE_DISABLE_FIND_PACKAGE_PANGOCAIRO=TRUE
+        -DCMAKE_DISABLE_FIND_PACKAGE_GD=TRUE
+        -DWITH_GHOSTSCRIPT=OFF
+        -DWITH_GDK=OFF
+        -DWITH_GTK=OFF
+        -DWITH_POPPLER=OFF
+    )
+fi
+
 log_info "Building Graphviz for Windows ${ARCH} (CMake platform: ${CMAKE_PLATFORM})"
 
 check_command "cmake"
@@ -112,6 +130,7 @@ mkdir -p "${BUILD_DIR}/graphviz"
 cmake -S "${GV_PATCHED}" -B "${BUILD_DIR}/graphviz" \
     -G "${VS_GENERATOR}" -A "${CMAKE_PLATFORM}" \
     "${GV_CMAKE_COMMON_ARGS[@]}" \
+    "${WINDOWS_ARCH_CMAKE_ARGS[@]}" \
     -DCMAKE_INSTALL_PREFIX="${BUILD_DIR}/graphviz-install"
 
 log_info "Building Graphviz library targets..."

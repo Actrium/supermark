@@ -16,6 +16,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `windows-latest` image while retaining explicit `CMAKE_GENERATOR` overrides.
 - **Independent Windows diagnostics** — x64 and ARM64 release jobs no longer
   cancel each other on the first matrix failure.
+- **Native ARM64 dependency boundary** — ARM64 builds explicitly ignore the
+  Graphviz source tree's bundled x64 GD/Cairo/Pango libraries and build only
+  the core layout/SVG surface used by the Rust wrapper.
+- **Git Bash packaging** — release archives use a POSIX-converted workspace
+  path so GNU tar does not interpret a Windows drive prefix as a remote host.
 
 ## [0.2.4] — 2026-07-12
 
