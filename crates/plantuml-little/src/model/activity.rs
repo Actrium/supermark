@@ -69,6 +69,17 @@ pub enum ActivityEvent {
     ForkAgain,
     /// end fork
     EndFork,
+    /// `partition NAME { … }` — a named group wrapping a nested event list.
+    /// Mirrors Java `InstructionPartition` → `InstructionGroup` → `FtileGroup`.
+    Partition {
+        name: String,
+        events: Vec<ActivityEvent>,
+    },
+    /// Internal: emitted by `flatten_events` in the layout module to mark the
+    /// start of a partition frame.  Never produced by the parser.
+    PartitionStart { name: String },
+    /// Internal: emitted by `flatten_events` to mark the end of a partition.
+    PartitionEnd,
     /// Swimlane switch
     Swimlane { name: String },
     /// Note

@@ -57,8 +57,8 @@ pub const ACTIVATION_BG: &str = "#FFFFFF";
 pub const DESTROY_COLOR: &str = "#A80036";
 /// Divider line color. Java: `#888888`
 pub const DIVIDER_COLOR: &str = "#888888";
-/// Fork/join bar fill. Java: `#000000`
-pub const FORK_FILL: &str = "#000000";
+/// Fork/join bar fill. Java: activityBar BackGroundColor = #555555
+pub const FORK_FILL: &str = "#555555";
 /// Initial/start state fill. Java: `#222222`
 pub const INITIAL_FILL: &str = "#222222";
 

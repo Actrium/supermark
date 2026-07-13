@@ -113,6 +113,26 @@ reference_test!(
     "fixtures/activity/a0002.puml"
 );
 reference_test!(
+    reference_fixtures_activity_partition_simple_puml,
+    "fixtures/activity/partition_simple.puml"
+);
+reference_test!(
+    reference_fixtures_activity_fork_simple_puml,
+    "fixtures/activity/fork_simple.puml"
+);
+reference_test!(
+    reference_fixtures_activity_fork_three_branches_puml,
+    "fixtures/activity/fork_three_branches.puml"
+);
+reference_test!(
+    reference_fixtures_activity_partition_with_fork_puml,
+    "fixtures/activity/partition_with_fork.puml"
+);
+reference_test!(
+    reference_fixtures_activity_fork_with_partition_puml,
+    "fixtures/activity/fork_with_partition.puml"
+);
+reference_test!(
     reference_fixtures_activity_activity_creole_table_01_puml,
     "fixtures/activity/activity_creole_table_01.puml"
 );

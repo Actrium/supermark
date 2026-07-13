@@ -333,8 +333,7 @@ pub fn render_activity(
     } else {
         // No swimlanes: Java draws nodes first, then edges (connections).
         // When a `render_order` permutation is present (e.g. for `repeat`
-        // blocks), walk nodes in that order so the repeat body is drawn
-        // before diamond1/hex — matching Java `FtileRepeat.drawU`.
+        // blocks or partition frames), walk nodes in that order.
         if let Some(order) = layout.render_order.as_ref() {
             for &pos in order {
                 if let Some(node) = nodes_ref.get(pos) {
@@ -903,6 +902,7 @@ fn render_node(
                 LineShape { x1, y1, x2, y2 }.draw(sg, &line_style);
             }
         }
+        ActivityNodeKindLayout::Partition => render_partition(sg, node),
     }
 }
 
@@ -1507,8 +1507,11 @@ fn render_if_diamond(
 
 /// Fork bar: thin black horizontal rectangle
 fn render_fork_bar(sg: &mut SvgGraphic, node: &ActivityNodeLayout) {
+    // Java FtileBlackBlock: URectangle.build(width, height).rounded(5)
+    // The SVG driver divides rx/ry by 2, so SVG rx=ry=2.5.
+    // Both fill and stroke use the activityBar BackGroundColor (#555555).
     sg.push_raw(&format!(
-        r#"<rect fill="{FORK_FILL}" height="{}" stroke="none" width="{}" x="{}" y="{}"/>"#,
+        r##"<rect fill="{FORK_FILL}" height="{}" rx="2.5" ry="2.5" style="stroke:{FORK_FILL};stroke-width:1;" width="{}" x="{}" y="{}"/>"##,
         fmt_coord(node.height),
         fmt_coord(node.width),
         fmt_coord(node.x),
@@ -1518,6 +1521,81 @@ fn render_fork_bar(sg: &mut SvgGraphic, node: &ActivityNodeLayout) {
 
 /// Sync bar (old-style activity `===NAME===`): dark gray horizontal bar
 const SYNC_BAR_FILL: &str = "#555555";
+
+/// Partition frame (Java `FtileGroup` + `USymbolFrame`).  Draws:
+/// 1. A `fill="none" stroke="#000000" stroke-width="1.5"` rectangle (no
+///    rounding — `roundCorner=0` for partition).
+/// 2. A folded-corner tab path at the top-left.
+/// 3. The title text at font-size 14, sans-serif.
+///
+/// Geometry (from `USymbolFrame.drawFrame`):
+///   textWidth  = titleW + 10
+///   cornersize = 10
+///   textHeight = titleH + 3
+///   tab path (relative to frame top-left):
+///     moveTo(textWidth, 0)
+///     lineTo(textWidth, textHeight - cornersize)
+///     lineTo(textWidth - cornersize, textHeight)
+///     lineTo(0, textHeight)
+///   title text at (frame_left + 3, frame_top + 1 + ascent(14))
+fn render_partition(sg: &mut SvgGraphic, node: &ActivityNodeLayout) {
+    const PARTITION_BORDER: &str = "#000000";
+    const PARTITION_STROKE_WIDTH: f64 = 1.5;
+    let title_font_size = 14.0_f64;
+
+    // Frame rectangle (no rounding).
+    sg.push_raw(&format!(
+        r#"<rect fill="none" height="{h}" style="stroke:{border};stroke-width:{sw};" width="{w}" x="{x}" y="{y}"/>"#,
+        h = fmt_coord(node.height),
+        w = fmt_coord(node.width),
+        x = fmt_coord(node.x),
+        y = fmt_coord(node.y),
+        border = PARTITION_BORDER,
+        sw = fmt_coord(PARTITION_STROKE_WIDTH),
+    ));
+
+    // Title metrics.
+    let title_w = font_metrics::text_width(&node.text, "SansSerif", title_font_size, false, false);
+    let title_h = font_metrics::line_height("SansSerif", title_font_size, false, false);
+    let text_width = title_w + 10.0;
+    let cornersize = 10.0_f64;
+    let text_height = title_h + 3.0;
+
+    // Tab path (folded corner, top-left).
+    let p_x0 = node.x + text_width;
+    let p_y0 = node.y;
+    let p_x1 = node.x + text_width;
+    let p_y1 = node.y + text_height - cornersize;
+    let p_x2 = node.x + text_width - cornersize;
+    let p_y2 = node.y + text_height;
+    let p_x3 = node.x;
+    let p_y3 = node.y + text_height;
+    sg.push_raw(&format!(
+        r#"<path d="M{x0},{y0} L{x1},{y1} L{x2},{y2} L{x3},{y3}" fill="none" style="stroke:{border};stroke-width:{sw};"/>"#,
+        x0 = fmt_coord(p_x0),
+        y0 = fmt_coord(p_y0),
+        x1 = fmt_coord(p_x1),
+        y1 = fmt_coord(p_y1),
+        x2 = fmt_coord(p_x2),
+        y2 = fmt_coord(p_y2),
+        x3 = fmt_coord(p_x3),
+        y3 = fmt_coord(p_y3),
+        border = PARTITION_BORDER,
+        sw = fmt_coord(PARTITION_STROKE_WIDTH),
+    ));
+
+    // Title text at (frame_left + 3, frame_top + 1 + ascent).
+    let text_x = node.x + 3.0;
+    let ascent = font_metrics::ascent("SansSerif", title_font_size, false, false);
+    let text_y = node.y + 1.0 + ascent;
+    sg.push_raw(&format!(
+        r##"<text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="{tl}" x="{x}" y="{y}">{text}</text>"##,
+        tl = fmt_coord(title_w),
+        x = fmt_coord(text_x),
+        y = fmt_coord(text_y),
+        text = xml_escape(&node.text),
+    ));
+}
 
 fn render_sync_bar(sg: &mut SvgGraphic, node: &ActivityNodeLayout) {
     sg.push_raw(&format!(
