@@ -407,7 +407,15 @@ jobs:
           node-version: '22'
 
       - name: Install elkjs@0.8.2 for elk bridge tests
-        run: npm install elkjs@0.8.2 --prefix packages/engines --no-save --no-audit --no-fund
+        # npm can't parse packages/engines/package.json (bun `workspace:*`
+        # protocol), so install elkjs in an isolated dir and symlink it into
+        # packages/engines/node_modules — where the elk runner resolves it
+        # via Node's upward module walk.
+        run: |
+          mkdir -p /tmp/elkjs && cd /tmp/elkjs && npm init -y >/dev/null
+          npm install elkjs@0.8.2 --no-audit --no-fund
+          mkdir -p packages/engines/node_modules
+          ln -s /tmp/elkjs/node_modules/elkjs packages/engines/node_modules/elkjs
 
       - name: cargo test (lib + integration)
         run: cargo test -p d2-little --lib --tests
