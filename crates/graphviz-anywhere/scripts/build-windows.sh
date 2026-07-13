@@ -208,9 +208,9 @@ if [ -f "${VSWHERE}" ]; then
         if [ -f "${VC_VER_FILE}" ]; then
             VC_VER="$(cat "${VC_VER_FILE}" | tr -d '[:space:]')"
             if [ "$ARCH" = "arm64" ]; then
-                HOST_TOOL_DIRS=("Hostarm64/arm64" "Hostx64/x64" "Hostx86/x86")
+                HOST_TOOL_DIRS=("Hostarm64/arm64" "Hostx64/arm64" "Hostx86/arm64")
             else
-                HOST_TOOL_DIRS=("Hostx64/x64" "Hostx86/x86")
+                HOST_TOOL_DIRS=("Hostx64/x64" "Hostarm64/x64" "Hostx86/x64")
             fi
             for host_dir in "${HOST_TOOL_DIRS[@]}"; do
                 CANDIDATE="${VS_INSTALL}/VC/Tools/MSVC/${VC_VER}/bin/${host_dir}/lib.exe"
