@@ -1,0 +1,13 @@
+# Single source of truth for the Rust toolchain used by every contributor and
+# by CI. Pinned to an exact stable so `cargo fmt` / `cargo clippy` behave
+# identically everywhere — a new stable can add lints (e.g. clippy::manual_filter
+# in 1.97) that would otherwise break CI while passing on an older local install.
+#
+# To upgrade: bump `channel` and fix any new fmt/clippy findings in the same PR.
+# rustup reads this file and auto-installs the toolchain + components/targets on
+# the first `cargo` invocation, so CI needs no version literal of its own.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"
