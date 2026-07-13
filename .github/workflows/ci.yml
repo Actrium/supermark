@@ -369,3 +369,81 @@ jobs:
         env:
           PLANTUML_LITTLE_TEST_BACKEND: wasm
         run: bash crates/plantuml-little/scripts/check_reference_failures.sh
+
+  # d2-little: full Rust suite + lint gate. The `d2-rust-tests` job above runs
+  # only `--lib`, so the 26 integration tests under crates/d2-little/tests/*.rs
+  # (e2e, dagre_cross_validate, font_byte_match, chroma_go_e2e, ...) never run
+  # in CI, and the crate's own fmt/clippy gate (crates/d2-little/.github/
+  # workflows/ci.yml) is dormant in the monorepo. d2-little is self-contained
+  # (no graphviz / fonttools native deps), so a plain toolchain suffices.
+  d2-little-full:
+    name: d2-little Rust (integration + fmt + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: rustfmt
+        run: cargo fmt -p d2-little --check
+
+      - name: clippy (deny warnings)
+        run: cargo clippy -p d2-little --all-targets -- -D warnings
+
+      # NOTE: when the elk bridge (PR #69) lands, tests/elk_bridge.rs needs Node +
+      # elkjs available or its byte-exact/parity cases skip vacuously. Add before
+      # the test step:
+      #   - uses: actions/setup-node@v4
+      #     with: { node-version: "22" }
+      #   - run: npm install elkjs@0.8.2   # or the runner d2-little expects
+      # so the "byte-exact vs upstream d2" claim is guarded, not skipped.
+      - name: cargo test (lib + integration)
+        run: cargo test -p d2-little --lib --tests
+
+  # plantuml-little: the port integration tests (issue #28 frame width, issue
+  # #36 create/destroy geometry) live under tests/port_sequence_*.rs and are
+  # skipped by the `--lib`-only plantuml-rust-tests job. Reuses the cached
+  # graphviz native lib. Do NOT run `--test reference_tests` here — that suite
+  # is gated via check_reference_failures.sh (xfail vs known_failures.txt) in
+  # the plantuml-reference job; running it bare fails on the ~50 known bugs.
+  plantuml-little-integration:
+    name: plantuml-little Rust (port integration tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Graphviz build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake bison flex pkg-config
+
+      - name: Graphviz submodule revision
+        id: gv
+        run: echo "sha=$(git rev-parse HEAD:crates/graphviz-anywhere/graphviz)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Graphviz native lib
+        id: gv-cache
+        uses: actions/cache@v4
+        with:
+          path: crates/graphviz-anywhere/output
+          key: graphviz-api-linux-x86_64-${{ steps.gv.outputs.sha }}-${{ hashFiles('crates/graphviz-anywhere/scripts/**') }}
+
+      - name: Build Graphviz native lib
+        if: steps.gv-cache.outputs.cache-hit != 'true'
+        run: (cd crates/graphviz-anywhere && ./scripts/build-linux.sh)
+
+      # Explicit targets so the xfail-gated reference_tests suite is excluded.
+      # Extend as new port_* integration files are added.
+      - name: cargo test (port integration tests)
+        run: >
+          cargo test -p plantuml-little
+          --test port_sequence_layout
+          --test port_sequence_render
