@@ -40,6 +40,13 @@ fn run_elk(elk_graph_json: &str) -> Option<String> {
     }
     let out = child.wait_with_output().ok()?;
     if !out.status.success() {
+        if std::env::var("D2_ELK_DEBUG").is_ok() {
+            eprintln!(
+                "elk_runner exited {:?}: {}",
+                out.status.code(),
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
         return None;
     }
     Some(String::from_utf8_lossy(&out.stdout).to_string())

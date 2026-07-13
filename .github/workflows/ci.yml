@@ -424,7 +424,9 @@ jobs:
       # explicitly so the `>=190` floor guards against elk-bridge regressions
       # — without this a silent drift in parity would not fail CI.
       - name: elk bridge parity sweep (>=190 floor)
-        run: cargo test -p d2-little --test elk_bridge -- --ignored elk_bridge_fixture_parity
+        env:
+          D2_ELK_DEBUG: '1'
+        run: cargo test -p d2-little --test elk_bridge -- --ignored elk_bridge_fixture_parity --nocapture
 
   # plantuml-little: the port integration tests (issue #28 frame width, issue
   # #36 create/destroy geometry) live under tests/port_sequence_*.rs and are
