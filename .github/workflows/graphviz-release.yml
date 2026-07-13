@@ -343,6 +343,9 @@ jobs:
 
   build-windows:
     strategy:
+      # Validate both architectures independently. One runner/image outage must
+      # not cancel the other leg before it can produce diagnostic evidence.
+      fail-fast: false
       matrix:
         include:
           - arch: x86_64
@@ -449,13 +452,13 @@ jobs:
         shell: bash
         run: |
           stage="${RUNNER_TEMP}/graphviz-native-windows-${{ matrix.arch }}"
+          archive="$(cygpath -u "${GITHUB_WORKSPACE}")/graphviz-native-windows-${{ matrix.arch }}.tar.gz"
           mkdir -p "$stage/lib" "$stage/include"
           cp "output/windows-${{ matrix.arch }}/lib/graphviz_api_static.lib" \
              "$stage/lib/graphviz_api.lib"
           cp "output/windows-${{ matrix.arch }}/include/graphviz_api.h" \
              "$stage/include/graphviz_api.h"
-          tar -czf "${GITHUB_WORKSPACE}/graphviz-native-windows-${{ matrix.arch }}.tar.gz" \
-              -C "$stage" .
+          tar -czf "$archive" -C "$stage" .
 
       - uses: actions/upload-artifact@v7
         with:
