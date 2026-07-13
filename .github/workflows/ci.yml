@@ -410,12 +410,14 @@ jobs:
         # npm can't parse packages/engines/package.json (bun `workspace:*`
         # protocol), so install elkjs in an isolated dir and symlink it into
         # packages/engines/node_modules — where the elk runner resolves it
-        # via Node's upward module walk.
+        # via Node's upward module walk. The `cd` is wrapped in a subshell so
+        # the repo-relative `ln -s` target still resolves from the workspace root.
         run: |
-          mkdir -p /tmp/elkjs && cd /tmp/elkjs && npm init -y >/dev/null
-          npm install elkjs@0.8.2 --no-audit --no-fund
+          mkdir -p /tmp/elkjs-install
+          (cd /tmp/elkjs-install && npm init -y >/dev/null && npm install elkjs@0.8.2 --no-audit --no-fund)
           mkdir -p packages/engines/node_modules
-          ln -s /tmp/elkjs/node_modules/elkjs packages/engines/node_modules/elkjs
+          ln -s /tmp/elkjs-install/node_modules/elkjs packages/engines/node_modules/elkjs
+          node -e 'require("module").createRequire(process.cwd()+"/packages/engines/package.json")("elkjs/lib/elk.bundled.js"); console.log("elkjs resolves OK")'
 
       - name: cargo test (lib + integration)
         run: cargo test -p d2-little --lib --tests
