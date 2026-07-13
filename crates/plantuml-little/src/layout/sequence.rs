@@ -950,6 +950,10 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
     // the constraint solver ensures centerX >= arrowPreferredWidth. Track this
     // so we can apply it when positioning participants.
     let mut min_first_center: f64 = 0.0;
+    // Multi-participant (span > 1) message constraints, collected as Java teoz
+    // difference constraints `posC[hi] - posC[lo] >= needed` and solved by
+    // longest-path in the positioning pass below. See `span_constraints` use.
+    let mut span_constraints: Vec<(usize, usize, f64)> = Vec::new();
     for event in &sd.events {
         match event {
             SeqEvent::AutoNumber { start } => {
@@ -1046,11 +1050,24 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                         + active_left_shift(ti_level);
                     let span = hi - lo; // number of gaps this message spans
                     if span > 0 {
-                        let per_gap = needed / span as f64;
-                        for min_gap in &mut min_gaps[lo..hi] {
-                            if per_gap > *min_gap {
-                                *min_gap = per_gap;
+                        if span == 1 {
+                            // Adjacent participants: widen the single gap directly.
+                            if needed > min_gaps[lo] {
+                                min_gaps[lo] = needed;
                             }
+                        } else {
+                            // Multi-participant span: the arrow + label needs the
+                            // TOTAL width from `lo` to `hi` to be >= `needed`, not
+                            // each individual gap. Java (teoz RealLine) models this
+                            // as a difference constraint `posC[hi] - posC[lo] >=
+                            // needed`, solved by longest-path when positioning.
+                            // Only the final gap absorbs any deficit; earlier gaps
+                            // keep their base width. Splitting `needed` evenly
+                            // across every gap over-constrains already-satisfied
+                            // spans (e.g. an Alice->Log message crossing a very
+                            // wide Alice->Bob gap wrongly inflates Bob->Log) —
+                            // see issue #28.
+                            span_constraints.push((lo, hi, needed));
                         }
                     }
                 }
@@ -1143,7 +1160,12 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
         effective_margin
     };
 
-    // 3. Position participants left-to-right using computed gaps
+    // 3. Position participants left-to-right using computed gaps.
+    // This is a longest-path solve over difference constraints: each adjacent
+    // `min_gaps[i-1]` gives `posC[i] >= posC[i-1] + min_gaps[i-1]`, and each
+    // multi-span message gives `posC[hi] >= posC[lo] + needed`. A single forward
+    // pass is exact because every constraint has lo < i, so posC[lo] is already
+    // finalized when participant i is placed.
     let mut participants: Vec<ParticipantLayout> = Vec::with_capacity(n);
     let mut prev_center: Option<f64> = None;
     for (i, p) in sd.participants.iter().enumerate() {
@@ -1151,7 +1173,18 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
             // Java: first participant center uses effective width (including
             // ParticipantPadding) so the padded box edge sits at left_margin.
             None => (left_margin + effective_widths[i] / 2.0).max(min_first_center),
-            Some(pc) => pc + min_gaps[i - 1],
+            Some(pc) => {
+                // Adjacent gap: participant boxes + span-1 messages + activation.
+                let mut cx = pc + min_gaps[i - 1];
+                // Multi-span message difference constraints (Java teoz RealLine):
+                // posC[i] >= posC[lo] + needed.
+                for &(lo, hi, needed) in &span_constraints {
+                    if hi == i {
+                        cx = cx.max(participants[lo].x + needed);
+                    }
+                }
+                cx
+            }
         };
 
         participants.push(ParticipantLayout {
