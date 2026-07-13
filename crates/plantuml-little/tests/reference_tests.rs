@@ -133,6 +133,10 @@ reference_test!(
     "fixtures/activity/fork_with_partition.puml"
 );
 reference_test!(
+    reference_fixtures_activity_issue33_puml,
+    "fixtures/activity/issue33.puml"
+);
+reference_test!(
     reference_fixtures_activity_activity_creole_table_01_puml,
     "fixtures/activity/activity_creole_table_01.puml"
 );
@@ -1198,4 +1202,4 @@ reference_test!(
     "fixtures/yaml/basic.puml"
 );
 
-// Total: 270 reference tests
+// Total: 271 reference tests

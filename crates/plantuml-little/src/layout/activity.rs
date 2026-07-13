@@ -2275,7 +2275,17 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 // assembly gap and leaving 10px.
                 let (frame_top, _gap_before) = if let Some(prev_idx) = last_flow_node_idx {
                     let prev_bottom = nodes[prev_idx].y + nodes[prev_idx].height;
-                    (prev_bottom + 10.0, 10.0)
+                    // When the previous flow node sits inside one or more closed
+                    // partitions, the partition frame(s) extend below the inner
+                    // node by the bottom margin.  The next partition's frame
+                    // must sit below the *frame* bottom — using the inner node
+                    // bottom would make consecutive partitions overlap.
+                    let effective_bottom = partition_ranges
+                        .iter()
+                        .filter(|&&(first, p_idx)| prev_idx >= first && prev_idx < p_idx)
+                        .map(|&(_, p_idx)| nodes[p_idx].y + nodes[p_idx].height)
+                        .fold(prev_bottom, f64::max);
+                    (effective_bottom + 10.0, 10.0)
                 } else {
                     (y_cursor, 0.0)
                 };
@@ -3692,18 +3702,29 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
     };
     if !x_compress_slots.is_empty() {
         log::debug!("  X-compression: {} slots", x_compress_slots.len());
+        // Capture original right edges for `ignoreForCompressionOnX` shapes
+        // (fork bars, partition frames) BEFORE transforming x.  These shapes
+        // span one or more compression slots, so the right edge must be
+        // transformed from the *original* right edge — not from the already-
+        // transformed left + original width, which would double-apply the slot
+        // sitting between the left and right edges and shrink the shape.
+        let bar_orig_right: Vec<f64> = fork_groups
+            .iter()
+            .map(|fg| nodes[fg.top_bar_idx].x + nodes[fg.top_bar_idx].width)
+            .collect();
+        let part_orig_right: Vec<f64> = partition_ranges
+            .iter()
+            .map(|&(_, p_idx)| nodes[p_idx].x + nodes[p_idx].width)
+            .collect();
         for node in &mut nodes {
             node.x = apply_x_compress(node.x, &x_compress_slots);
             // Width is NOT transformed — it's the difference between
             // transformed right and left edges.
         }
         // Recompute fork/partition bar widths from transformed edges.
-        for fg in &fork_groups {
+        for (fg, orig_right) in fork_groups.iter().zip(bar_orig_right.iter()) {
             let left = nodes[fg.top_bar_idx].x;
-            let right = apply_x_compress(
-                nodes[fg.top_bar_idx].x + nodes[fg.top_bar_idx].width,
-                &x_compress_slots,
-            );
+            let right = apply_x_compress(*orig_right, &x_compress_slots);
             nodes[fg.top_bar_idx].width = right - left;
             nodes[fg.bottom_bar_idx].width = right - left;
             nodes[fg.bottom_bar_idx].x = left;
@@ -3711,12 +3732,9 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         // Transform partition frame widths too.
         // partition_ranges stores (first_inner_idx, partition_node_idx).
         // The partition frame node is at the second index.
-        for (_, p_idx) in &partition_ranges {
+        for ((_, p_idx), orig_right) in partition_ranges.iter().zip(part_orig_right.iter()) {
             let left = nodes[*p_idx].x;
-            let right = apply_x_compress(
-                nodes[*p_idx].x + nodes[*p_idx].width,
-                &x_compress_slots,
-            );
+            let right = apply_x_compress(*orig_right, &x_compress_slots);
             nodes[*p_idx].width = right - left;
         }
         // Transform edge x-coordinates.
@@ -3759,11 +3777,22 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         }
     }
 
-    // Reorder edges to match Java's drawing order: partition inner edges
-    // are drawn first (during FtileGroup.drawU → inner assembly), then
-    // outer assembly edges in their natural sequence.
+    // Reorder edges to match Java's `FtileWithConnection.drawU` emission
+    // order.  Java draws the delegated subtree first, then its own
+    // connection — a post-order traversal where an inter-tile connection is
+    // emitted AFTER the right tile's internal edges.  For the flat node
+    // array this means: edge sort key = (top_level_tile_rep(to_index),
+    // subgroup) where subgroup=0 for edges internal to a tile (from & to in
+    // the same outermost tile) and subgroup=1 for inter-tile connections.
+    // `top_level_tile_rep` is the start of the outermost partition/fork
+    // containing the node (or the node itself for singletons).
     if !partition_ranges.is_empty() {
-        edges = reorder_edges_for_partitions(edges, &partition_ranges);
+        let mut tiles: Vec<(usize, usize)> =
+            partition_ranges.iter().map(|&(f, p)| (f, p)).collect();
+        for fg in &fork_groups {
+            tiles.push((fg.top_bar_idx, fg.bottom_bar_idx));
+        }
+        edges = reorder_edges_for_partitions(edges, &tiles);
     }
 
     log::debug!(
@@ -3800,7 +3829,6 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
 
 /// A compression slot: an empty X-interval [start, end] that will be
 /// removed from the coordinate space.
-#[derive(Debug)]
 struct CompressSlot {
     start: f64,
     end: f64,
@@ -4475,36 +4503,49 @@ fn apply_partition_render_order(
     result
 }
 
-/// Reorder edges so that inner-partition edges come first (matching Java's
-/// drawing order: FtileGroup draws inner content before the outer assembly
-/// draws its connections).
+/// Reorder edges to match Java's `FtileWithConnection.drawU` emission
+/// order.  `FtileWithConnection.drawU` draws its delegated subtree first,
+/// then its own connection — a post-order traversal where an inter-tile
+/// connection `[A→B]` is emitted AFTER both A's and B's internal edges.
+/// For the flat node array this collapses to: emit `tile[0]`'s internal
+/// edges, then for each subsequent tile `tile[k]` emit its internal edges
+/// followed by the inter-tile connection `c[k-1,k]` leading into it.
+///
+/// We reproduce that order by stable-sorting edges by
+/// `(top_level_tile_rep(to_index), subgroup)` where `subgroup=0` for edges
+/// internal to a tile (from & to in the same outermost tile) and
+/// `subgroup=1` for inter-tile connections.  `tiles` is the union of all
+/// partition spans and fork spans; `top_level_tile_rep(idx)` is the start
+/// of the outermost such tile containing `idx`, or `idx` itself when `idx`
+/// is a singleton (start/stop/action outside any tile).
 fn reorder_edges_for_partitions(
     edges: Vec<ActivityEdgeLayout>,
-    partition_ranges: &[(usize, usize)],
+    tiles: &[(usize, usize)],
 ) -> Vec<ActivityEdgeLayout> {
-    /// Returns true if `idx` is an inner node of the partition with the
-    /// given (first_inner, partition_node) range.
-    fn is_inner(idx: usize, (first, part): (usize, usize)) -> bool {
-        idx >= first && idx < part
-    }
-
-    let mut inner: Vec<ActivityEdgeLayout> = Vec::new();
-    let mut outer: Vec<ActivityEdgeLayout> = Vec::new();
-
-    for edge in edges {
-        let from = edge.from_index;
-        let to = edge.to_index;
-        let both_inner = partition_ranges
-            .iter()
-            .any(|&range| is_inner(from, range) && is_inner(to, range));
-        if both_inner {
-            inner.push(edge);
-        } else {
-            outer.push(edge);
+    /// Start of the outermost tile containing `idx`, or `idx` itself when
+    /// `idx` is not inside any tile.  Among nested containing tiles the
+    /// outermost has the smallest start index.
+    fn top_level_rep(tiles: &[(usize, usize)], idx: usize) -> usize {
+        let mut best: Option<usize> = None;
+        for &(s, e) in tiles {
+            if idx >= s && idx <= e && best.map_or(true, |b| s < b) {
+                best = Some(s);
+            }
         }
+        best.unwrap_or(idx)
     }
-    inner.extend(outer);
-    inner
+
+    let mut indexed: Vec<(usize, ActivityEdgeLayout)> = edges.into_iter().enumerate().collect();
+    indexed.sort_by(|(i, a), (j, b)| {
+        let a_to = top_level_rep(tiles, a.to_index);
+        let a_from = top_level_rep(tiles, a.from_index);
+        let b_to = top_level_rep(tiles, b.to_index);
+        let b_from = top_level_rep(tiles, b.from_index);
+        let a_sub = if a_from == a_to { 0u8 } else { 1u8 };
+        let b_sub = if b_from == b_to { 0u8 } else { 1u8 };
+        (a_to, a_sub, *i).cmp(&(b_to, b_sub, *j))
+    });
+    indexed.into_iter().map(|(_, e)| e).collect()
 }
 
 /// Compute a render-order permutation so the inner repeat body (the interior
