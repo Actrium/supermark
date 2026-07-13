@@ -65,8 +65,7 @@ fn bridge_svg(script: &str) -> Option<String> {
     }
     let elk_graph_json = serde_json::to_string(&request.elk_graph).ok()?;
     let laid = run_elk(&elk_graph_json)?;
-    let elk_graph: d2_little::layout_bridge::ElkGraph =
-        serde_json::from_str(&laid).ok()?;
+    let elk_graph: d2_little::layout_bridge::ElkGraph = serde_json::from_str(&laid).ok()?;
     let result = d2_little::layout_bridge::LayoutResult { elk_graph };
     let svg = d2_little::render_with_external_layout(prepared, &result).ok()?;
     Some(String::from_utf8_lossy(&svg).to_string())
@@ -84,7 +83,13 @@ fn has_vertical_segment(path: &str) -> bool {
         .collect();
     let pts: Vec<(f64, f64)> = coords
         .chunks(2)
-        .filter_map(|c| if c.len() == 2 { Some((c[0], c[1])) } else { None })
+        .filter_map(|c| {
+            if c.len() == 2 {
+                Some((c[0], c[1]))
+            } else {
+                None
+            }
+        })
         .collect();
     pts.windows(2)
         .any(|w| (w[0].0 - w[1].0).abs() < 0.5 && (w[0].1 - w[1].1).abs() > 10.0)
@@ -96,9 +101,11 @@ fn elk_bridge_issue34_byte_exact_golden() {
         eprintln!("skip: node/elkjs unavailable");
         return;
     };
-    let golden =
-        std::fs::read_to_string(format!("{}/tests/elk_golden/issue34.svg", env!("CARGO_MANIFEST_DIR")))
-            .expect("golden issue34.svg missing");
+    let golden = std::fs::read_to_string(format!(
+        "{}/tests/elk_golden/issue34.svg",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("golden issue34.svg missing");
     assert_eq!(svg, golden, "issue #34 elk output drifted from golden");
 }
 
@@ -132,11 +139,23 @@ fn elk_bridge_issue34_vertical_edges() {
             .filter(|s| !s.is_empty())
             .filter_map(|s| s.parse::<f64>().ok())
             .collect();
-        let pts: Vec<(f64, f64)> = coords.chunks(2).filter_map(|c| {
-            if c.len() == 2 { Some((c[0], c[1])) } else { None }
-        }).collect();
-        let has_vertical = pts.windows(2).any(|w| (w[0].0 - w[1].0).abs() < 0.5 && (w[0].1 - w[1].1).abs() > 10.0);
-        assert!(path.contains("S ") || has_vertical, "non-vertical edge path: {path}");
+        let pts: Vec<(f64, f64)> = coords
+            .chunks(2)
+            .filter_map(|c| {
+                if c.len() == 2 {
+                    Some((c[0], c[1]))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let has_vertical = pts
+            .windows(2)
+            .any(|w| (w[0].0 - w[1].0).abs() < 0.5 && (w[0].1 - w[1].1).abs() > 10.0);
+        assert!(
+            path.contains("S ") || has_vertical,
+            "non-vertical edge path: {path}"
+        );
     }
 }
 
@@ -173,13 +192,21 @@ fn elk_bridge_fixture_parity() {
         let rel = entry.strip_prefix(&testdata).unwrap();
         let mut parts = rel.components();
         let (family, name) = match (parts.next(), parts.next()) {
-            (Some(a), Some(b)) => (a.as_os_str().to_string_lossy().to_string(), b.as_os_str().to_string_lossy().to_string()),
+            (Some(a), Some(b)) => (
+                a.as_os_str().to_string_lossy().to_string(),
+                b.as_os_str().to_string_lossy().to_string(),
+            ),
             _ => continue,
         };
-        let Some(script) = script_for(&family, &name) else { skipped += 1; continue; };
+        let Some(script) = script_for(&family, &name) else {
+            skipped += 1;
+            continue;
+        };
         let exp = std::fs::read_to_string(&elk_svg).unwrap();
         match bridge_svg(&script) {
-            None => { skipped += 1; }
+            None => {
+                skipped += 1;
+            }
             Some(ours) => {
                 if ours == exp {
                     passed += 1;
@@ -198,12 +225,17 @@ fn elk_bridge_fixture_parity() {
     }
     // Assert the known-passing floor so the test guards against regressions
     // while the remaining gaps are tracked separately.
-    assert!(passed >= 190, "elk parity regressed below 190: only {passed} passed");
+    assert!(
+        passed >= 190,
+        "elk parity regressed below 190: only {passed} passed"
+    );
 }
 
 fn walkdir(root: &str) -> Vec<std::path::PathBuf> {
     fn rec(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
         for e in rd.flatten() {
             let p = e.path();
             if p.is_dir() {

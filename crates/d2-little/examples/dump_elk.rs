@@ -47,23 +47,20 @@ fn main() {
     // Match the production host: sequence / grid / `near:` diagrams fall
     // back to the dagre `convert` path (engine-independent specialized
     // layouts). `prepared` is dropped.
-    let svg_str = if request.multi_board
-        || request.has_sequence
-        || request.has_grid
-        || request.has_near
-    {
-        drop(prepared);
-        let svg = d2_little::d2_to_svg(&script).expect("dagre fallback");
-        String::from_utf8_lossy(&svg).to_string()
-    } else {
-        let elk_graph_json = serde_json::to_string(&request.elk_graph).unwrap();
-        let laid = run_elk(&elk_graph_json).expect("elk.layout");
-        let elk_graph: d2_little::layout_bridge::ElkGraph =
-            serde_json::from_str(&laid).expect("deserialize laid-out graph");
-        let result = d2_little::layout_bridge::LayoutResult { elk_graph };
-        let svg = d2_little::render_with_external_layout(prepared, &result).expect("render");
-        String::from_utf8_lossy(&svg).to_string()
-    };
+    let svg_str =
+        if request.multi_board || request.has_sequence || request.has_grid || request.has_near {
+            drop(prepared);
+            let svg = d2_little::d2_to_svg(&script).expect("dagre fallback");
+            String::from_utf8_lossy(&svg).to_string()
+        } else {
+            let elk_graph_json = serde_json::to_string(&request.elk_graph).unwrap();
+            let laid = run_elk(&elk_graph_json).expect("elk.layout");
+            let elk_graph: d2_little::layout_bridge::ElkGraph =
+                serde_json::from_str(&laid).expect("deserialize laid-out graph");
+            let result = d2_little::layout_bridge::LayoutResult { elk_graph };
+            let svg = d2_little::render_with_external_layout(prepared, &result).expect("render");
+            String::from_utf8_lossy(&svg).to_string()
+        };
     print!("{}", svg_str);
 
     if let Some(exp_path) = std::env::args().nth(2) {
@@ -74,7 +71,12 @@ fn main() {
             .position(|(a, b)| a != b)
             .unwrap_or(svg_str.len().min(exp.len()));
         eprintln!("--- diff vs {} ---", exp_path);
-        eprintln!("ours len={}, exp len={}, first diff at {}", svg_str.len(), exp.len(), pos);
+        eprintln!(
+            "ours len={}, exp len={}, first diff at {}",
+            svg_str.len(),
+            exp.len(),
+            pos
+        );
         let s = pos.saturating_sub(60);
         eprintln!("OURS: {:?}", &svg_str[s..(pos + 80).min(svg_str.len())]);
         eprintln!("EXP : {:?}", &exp[s..(pos + 80).min(exp.len())]);

@@ -82,7 +82,7 @@ impl PrepareResult {
 /// dagre layout. Returns a handle plus a layout-request JSON the host
 /// feeds to its external layout engine (elkjs). The host falls back to
 /// [`convert`] when `request.multi_board === true` or any feature flag
-/// (`has_sequence` / `has_grid` / `has_near` / `has_containers`) is set.
+/// (`has_sequence` / `has_grid` / `has_near`) is set.
 ///
 /// Contracts:
 /// - Each `prepare` allocates a handle; the host MUST pair it with a

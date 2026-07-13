@@ -296,10 +296,8 @@ fn get_longest_edge_chain_tail(g: &Graph, container: ObjId) -> ObjId {
 /// Position every non-root object's label and icon based on object
 /// properties alone (icon / label / children presence, label-vs-box
 /// overflow). This is the same per-object pass that runs at the top of
-/// [`layout_with_exclude`]; external layout backends (e.g. the elkjs
-/// bridge, which skips dagre entirely) call this so default label
-/// placement matches dagre's conventions without running dagre.
-pub fn position_object_labels(g: &mut crate::graph::Graph) {
+/// [`layout_with_exclude`].
+fn position_object_labels(g: &mut crate::graph::Graph) {
     for i in 0..g.objects.len() {
         if i == g.root {
             continue;

@@ -25,8 +25,8 @@ pub mod graph;
 pub mod grid;
 pub mod ir;
 pub mod label;
-pub mod layout_bridge;
 pub mod latex;
+pub mod layout_bridge;
 pub mod parser;
 pub mod semantic;
 pub mod sequence;
@@ -1589,7 +1589,7 @@ pub struct PreparedLayout {
 /// plus a [`crate::layout_bridge::LayoutRequest`] describing the geometry
 /// the host layout engine must place. The host falls back to [`d2_to_svg`]
 /// when the request is multi-board or carries an unsupported feature flag
-/// (`has_sequence` / `has_grid` / `has_near` / `has_containers`).
+/// (`has_sequence` / `has_grid` / `has_near`).
 pub fn prepare_for_external_layout(
     input: &str,
     opts: &CompileOptions,
@@ -1675,7 +1675,7 @@ pub fn render_with_external_layout(
     } else {
         None
     };
-    let mut diagram = crate::exporter::export(&mut graph, font_family, None)?;
+    let mut diagram = crate::exporter::export(&graph, font_family, None)?;
 
     diagram.config = Some(crate::target::Config {
         sketch: Some(sketch),
@@ -1686,10 +1686,7 @@ pub fn render_with_external_layout(
         layout_engine: config.as_ref().and_then(|c| c.layout_engine.clone()),
         theme_overrides: config.as_ref().and_then(|c| c.theme_overrides.clone()),
         dark_theme_overrides: config.as_ref().and_then(|c| c.dark_theme_overrides.clone()),
-        data: config
-            .as_ref()
-            .map(|c| c.data.clone())
-            .unwrap_or_default(),
+        data: config.as_ref().map(|c| c.data.clone()).unwrap_or_default(),
     });
 
     render_diagram(&diagram, theme_id, dark_theme_id, pad, sketch, center)
@@ -2581,9 +2578,11 @@ mod tests {
         // itself): prepare a graph, feed a synthetic flat layout back, and
         // confirm export + render still produce a valid SVG with the
         // objects placed at the supplied positions.
-        let opts = CompileOptions { pad: Some(0), ..CompileOptions::default() };
-        let (prepared, request) =
-            prepare_for_external_layout("a -> b", &opts).expect("prepare");
+        let opts = CompileOptions {
+            pad: Some(0),
+            ..CompileOptions::default()
+        };
+        let (prepared, request) = prepare_for_external_layout("a -> b", &opts).expect("prepare");
 
         assert_eq!(request.elk_graph.children.len(), 2);
         assert_eq!(request.elk_graph.edges.len(), 1);
@@ -2616,7 +2615,10 @@ mod tests {
     fn external_layout_bridge_flags_multi_board() {
         // layers/scenarios/steps must surface as multi_board so the host
         // falls back to dagre rather than feeding a partial layout.
-        let opts = CompileOptions { pad: Some(0), ..CompileOptions::default() };
+        let opts = CompileOptions {
+            pad: Some(0),
+            ..CompileOptions::default()
+        };
         // A multi-board diagram (layers create separate boards).
         let src = "a -> b\n\nlayers: {\n  one: {\n    c -> d\n  }\n}\n";
         let (_prepared, request) = prepare_for_external_layout(src, &opts).expect("prepare");

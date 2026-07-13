@@ -6,7 +6,9 @@
 //! `elk.layout`, then post-processes the result (parent-relative → absolute
 //! coordinates, margin shrink-back, `TraceToShape`, `deleteBends`). This
 //! module is a faithful Rust port of `d2layouts/d2elklayout/layout.go`
-//! (d2 v0.7.1), so output is byte-comparable with upstream d2 elk.
+//! (d2 v0.7.1). Output matches upstream d2 elk byte-for-byte on flat
+//! rectangle diagrams (the issue #34 class); broader parity against the
+//! v0.7.1 goldens sits around 69% — see `tests/elk_bridge.rs`.
 //!
 //! The host calls [`build_layout_request`] to get the complete ELK input
 //! graph (plus feature flags for fallback decisions), runs `elkjs@0.8.2`
@@ -47,14 +49,20 @@ const DEFAULT_SELF_LOOP_SPACING: i64 = 50;
 /// between-layers spacings).
 #[derive(Default, Clone, Serialize, Deserialize, Debug)]
 pub struct ElkOpts {
-    #[serde(skip_serializing_if = "Option::is_none", rename = "elk.spacing.edgeNode")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "elk.spacing.edgeNode"
+    )]
     pub edge_node: Option<i64>,
     #[serde(
         skip_serializing_if = "Option::is_none",
         rename = "elk.layered.nodePlacement.bk.fixedAlignment"
     )]
     pub fixed_alignment: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "elk.layered.thoroughness")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "elk.layered.thoroughness"
+    )]
     pub thoroughness: Option<i64>,
     #[serde(
         skip_serializing_if = "Option::is_none",
@@ -63,9 +71,15 @@ pub struct ElkOpts {
     pub edge_edge_between_layers_spacing: Option<i64>,
     #[serde(rename = "elk.direction")]
     pub direction: String,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "elk.hierarchyHandling")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "elk.hierarchyHandling"
+    )]
     pub hierarchy_handling: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "elk.edgeLabels.inline")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "elk.edgeLabels.inline"
+    )]
     pub inline_edge_labels: Option<bool>,
     #[serde(
         skip_serializing_if = "Option::is_none",
@@ -87,15 +101,27 @@ pub struct ElkOpts {
         rename = "elk.layered.edgeRouting.selfLoopDistribution"
     )]
     pub self_loop_distribution: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "elk.nodeSize.constraints")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "elk.nodeSize.constraints"
+    )]
     pub node_size_constraints: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "elk.contentAlignment")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "elk.contentAlignment"
+    )]
     pub content_alignment: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "elk.nodeSize.minimum")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "elk.nodeSize.minimum"
+    )]
     pub node_size_minimum: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "elk.port.side")]
     pub port_side: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "elk.portConstraints")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "elk.portConstraints"
+    )]
     pub port_constraints: Option<String>,
 
     // ConfigurableOpts (flattened — Go embeds the struct).
@@ -288,8 +314,7 @@ pub fn build_layout_request(g: &mut Graph) -> LayoutRequest {
         position_labels_icons(obj);
     }
 
-    let mut elk_nodes: std::collections::HashMap<ObjId, ElkNode> =
-        std::collections::HashMap::new();
+    let mut elk_nodes: std::collections::HashMap<ObjId, ElkNode> = std::collections::HashMap::new();
 
     // BFS walk (layout.go:223-356). Parent before child.
     let walk_order = bfs_walk_order(g, g.root);
@@ -309,13 +334,21 @@ pub fn build_layout_request(g: &mut Graph) -> LayoutRequest {
         let mut width = g.objects[obj_id].width;
         let mut height = g.objects[obj_id].height;
 
-        if incoming >= 2.0 || outgoing >= 2.0 && g.objects[obj_id].width_attr.is_none() {
+        // Mirrors d2elklayout/layout.go:245-253: when a node has >=2 in/out
+        // edges, grow it along the flow axis to fit port spacing — but only if
+        // the user did not set an explicit dimension on that axis (Right|Left
+        // respects height_attr, Down|Up respects width_attr).
+        if incoming >= 2.0 || outgoing >= 2.0 {
             match direction {
                 Direction::Right | Direction::Left => {
-                    height = height.max(incoming.max(outgoing) * PORT_SPACING);
+                    if g.objects[obj_id].height_attr.is_none() {
+                        height = height.max(incoming.max(outgoing) * PORT_SPACING);
+                    }
                 }
                 _ => {
-                    width = width.max(incoming.max(outgoing) * PORT_SPACING);
+                    if g.objects[obj_id].width_attr.is_none() {
+                        width = width.max(incoming.max(outgoing) * PORT_SPACING);
+                    }
                 }
             }
         }
@@ -324,7 +357,8 @@ pub fn build_layout_request(g: &mut Graph) -> LayoutRequest {
             height += g.objects[obj_id].label_dimensions.height as f64 + label::PADDING;
         }
 
-        let (margin, _padding) = g.objects[obj_id].spacing_opt(label::PADDING, label::PADDING, false);
+        let (margin, _padding) =
+            g.objects[obj_id].spacing_opt(label::PADDING, label::PADDING, false);
         let w = margin.left + width + margin.right;
         let h = margin.top + height + margin.bottom;
 
@@ -359,15 +393,18 @@ pub fn build_layout_request(g: &mut Graph) -> LayoutRequest {
                 ..Default::default()
             };
             if opts.self_loop_spacing == DEFAULT_SELF_LOOP_SPACING {
-                opts.self_loop_spacing =
-                    opts.self_loop_spacing.max(children_max_self_loop(g, obj_id, is_width) / 2 + 5);
+                opts.self_loop_spacing = opts
+                    .self_loop_spacing
+                    .max(children_max_self_loop(g, obj_id, is_width) / 2 + 5);
             }
             match direction {
                 Direction::Down | Direction::Up | Direction::None => {
-                    opts.node_size_minimum = Some(format!("({}, {})", h.ceil() as i64, w.ceil() as i64));
+                    opts.node_size_minimum =
+                        Some(format!("({}, {})", h.ceil() as i64, w.ceil() as i64));
                 }
                 Direction::Right | Direction::Left => {
-                    opts.node_size_minimum = Some(format!("({}, {})", w.ceil() as i64, h.ceil() as i64));
+                    opts.node_size_minimum =
+                        Some(format!("({}, {})", w.ceil() as i64, h.ceil() as i64));
                 }
             }
             if g.objects[obj_id].is_container() {
@@ -492,7 +529,8 @@ pub fn apply_layout(g: &mut Graph, result: &LayoutResult) -> Result<(), String> 
     for c in &laid.children {
         index_elk_nodes(c, &mut elk_by_id);
     }
-    let mut elk_edge_by_id: std::collections::HashMap<&str, &ElkEdge> = std::collections::HashMap::new();
+    let mut elk_edge_by_id: std::collections::HashMap<&str, &ElkEdge> =
+        std::collections::HashMap::new();
     for e in &laid.edges {
         elk_edge_by_id.insert(e.id.as_str(), e);
     }
@@ -564,27 +602,25 @@ pub fn apply_layout(g: &mut Graph, result: &LayoutResult) -> Result<(), String> 
 
         let (src_dx, src_dy) = g.objects[src_id].get_modifier_element_adjustments();
         let mut original_src_tl = None;
-        if src_dx != 0.0 || src_dy != 0.0 {
-            if start.x > g.objects[src_id].top_left.x + src_dx
-                && start.y < g.objects[src_id].top_left.y + g.objects[src_id].height - src_dy
-            {
-                original_src_tl = Some(g.objects[src_id].top_left);
-                let o = original_src_tl.unwrap();
-                g.objects[src_id].top_left = Point::new(o.x + src_dx, o.y - src_dy);
-                g.objects[src_id].update_box();
-            }
+        if (src_dx != 0.0 || src_dy != 0.0)
+            && start.x > g.objects[src_id].top_left.x + src_dx
+            && start.y < g.objects[src_id].top_left.y + g.objects[src_id].height - src_dy
+        {
+            original_src_tl = Some(g.objects[src_id].top_left);
+            let o = original_src_tl.unwrap();
+            g.objects[src_id].top_left = Point::new(o.x + src_dx, o.y - src_dy);
+            g.objects[src_id].update_box();
         }
         let (dst_dx, dst_dy) = g.objects[dst_id].get_modifier_element_adjustments();
         let mut original_dst_tl = None;
-        if dst_dx != 0.0 || dst_dy != 0.0 {
-            if end.x > g.objects[dst_id].top_left.x + dst_dx
-                && end.y < g.objects[dst_id].top_left.y + g.objects[dst_id].height - dst_dy
-            {
-                original_dst_tl = Some(g.objects[dst_id].top_left);
-                let o = original_dst_tl.unwrap();
-                g.objects[dst_id].top_left = Point::new(o.x + dst_dx, o.y - dst_dy);
-                g.objects[dst_id].update_box();
-            }
+        if (dst_dx != 0.0 || dst_dy != 0.0)
+            && end.x > g.objects[dst_id].top_left.x + dst_dx
+            && end.y < g.objects[dst_id].top_left.y + g.objects[dst_id].height - dst_dy
+        {
+            original_dst_tl = Some(g.objects[dst_id].top_left);
+            let o = original_dst_tl.unwrap();
+            g.objects[dst_id].top_left = Point::new(o.x + dst_dx, o.y - dst_dy);
+            g.objects[dst_id].update_box();
         }
 
         // Faithful port of d2 `Edge.TraceToShape` (outside-label / outside-icon
@@ -736,6 +772,8 @@ fn apply_margins(g: &mut Graph, adjustments: &[Spacing]) {
         }
     }
 
+    // Index, not iterator: the body mutably borrows `g.objects[obj_id]`.
+    #[allow(clippy::needless_range_loop)]
     for obj_id in 0..g.objects.len() {
         let margin = adjustments[obj_id];
         if margin.left == 0.0 && margin.right == 0.0 && margin.top == 0.0 && margin.bottom == 0.0 {
@@ -751,9 +789,15 @@ fn apply_margins(g: &mut Graph, adjustments: &[Spacing]) {
             for &ei in &edges {
                 let e = &mut g.edges[ei];
                 let l = e.route.len();
-                if l == 0 { continue; }
-                if e.src == obj_id && e.route[0].x == tl_x { e.route[0].x += margin.left; }
-                if e.dst == obj_id && e.route[l - 1].x == tl_x { e.route[l - 1].x += margin.left; }
+                if l == 0 {
+                    continue;
+                }
+                if e.src == obj_id && e.route[0].x == tl_x {
+                    e.route[0].x += margin.left;
+                }
+                if e.dst == obj_id && e.route[l - 1].x == tl_x {
+                    e.route[l - 1].x += margin.left;
+                }
             }
             g.objects[obj_id].top_left.x += margin.left;
             shift_descendants(g, obj_id, margin.left / 2.0, 0.0);
@@ -764,9 +808,15 @@ fn apply_margins(g: &mut Graph, adjustments: &[Spacing]) {
             for &ei in &edges {
                 let e = &mut g.edges[ei];
                 let l = e.route.len();
-                if l == 0 { continue; }
-                if e.src == obj_id && e.route[0].x == tl_x + w { e.route[0].x -= margin.right; }
-                if e.dst == obj_id && e.route[l - 1].x == tl_x + w { e.route[l - 1].x -= margin.right; }
+                if l == 0 {
+                    continue;
+                }
+                if e.src == obj_id && e.route[0].x == tl_x + w {
+                    e.route[0].x -= margin.right;
+                }
+                if e.dst == obj_id && e.route[l - 1].x == tl_x + w {
+                    e.route[l - 1].x -= margin.right;
+                }
             }
             shift_descendants(g, obj_id, -margin.right / 2.0, 0.0);
             g.objects[obj_id].width -= margin.right;
@@ -776,9 +826,15 @@ fn apply_margins(g: &mut Graph, adjustments: &[Spacing]) {
             for &ei in &edges {
                 let e = &mut g.edges[ei];
                 let l = e.route.len();
-                if l == 0 { continue; }
-                if e.src == obj_id && e.route[0].y == tl_y { e.route[0].y += margin.top; }
-                if e.dst == obj_id && e.route[l - 1].y == tl_y { e.route[l - 1].y += margin.top; }
+                if l == 0 {
+                    continue;
+                }
+                if e.src == obj_id && e.route[0].y == tl_y {
+                    e.route[0].y += margin.top;
+                }
+                if e.dst == obj_id && e.route[l - 1].y == tl_y {
+                    e.route[l - 1].y += margin.top;
+                }
             }
             g.objects[obj_id].top_left.y += margin.top;
             shift_descendants(g, obj_id, 0.0, margin.top / 2.0);
@@ -789,9 +845,15 @@ fn apply_margins(g: &mut Graph, adjustments: &[Spacing]) {
             for &ei in &edges {
                 let e = &mut g.edges[ei];
                 let l = e.route.len();
-                if l == 0 { continue; }
-                if e.src == obj_id && e.route[0].y == tl_y + h { e.route[0].y -= margin.bottom; }
-                if e.dst == obj_id && e.route[l - 1].y == tl_y + h { e.route[l - 1].y -= margin.bottom; }
+                if l == 0 {
+                    continue;
+                }
+                if e.src == obj_id && e.route[0].y == tl_y + h {
+                    e.route[0].y -= margin.bottom;
+                }
+                if e.dst == obj_id && e.route[l - 1].y == tl_y + h {
+                    e.route[l - 1].y -= margin.bottom;
+                }
             }
             shift_descendants(g, obj_id, 0.0, -margin.bottom / 2.0);
             g.objects[obj_id].height -= margin.bottom;
@@ -833,13 +895,24 @@ fn shift_descendants(g: &mut Graph, obj: ObjId, dx: f64, dy: f64) {
                     p.y += dy;
                 }
             } else if is_src {
-                if dx == 0.0 { shift_start(g, ei, dy, false); }
-                else if dy == 0.0 { shift_start(g, ei, dx, true); }
-                else { g.edges[ei].route[0].x += dx; g.edges[ei].route[0].y += dy; }
+                if dx == 0.0 {
+                    shift_start(g, ei, dy, false);
+                } else if dy == 0.0 {
+                    shift_start(g, ei, dx, true);
+                } else {
+                    g.edges[ei].route[0].x += dx;
+                    g.edges[ei].route[0].y += dy;
+                }
             } else if is_dst {
-                if dx == 0.0 { shift_end(g, ei, dy, false); }
-                else if dy == 0.0 { shift_end(g, ei, dx, true); }
-                else { let l = g.edges[ei].route.len(); g.edges[ei].route[l - 1].x += dx; g.edges[ei].route[l - 1].y += dy; }
+                if dx == 0.0 {
+                    shift_end(g, ei, dy, false);
+                } else if dy == 0.0 {
+                    shift_end(g, ei, dx, true);
+                } else {
+                    let l = g.edges[ei].route.len();
+                    g.edges[ei].route[l - 1].x += dx;
+                    g.edges[ei].route[l - 1].y += dy;
+                }
             }
             if is_src || is_dst {
                 moved.insert(ei);
@@ -854,7 +927,9 @@ fn is_descendant_of(g: &Graph, self_id: ObjId, ancestor: ObjId) -> bool {
     }
     let mut p = g.objects[self_id].parent;
     while let Some(pid) = p {
-        if pid == ancestor { return true; }
+        if pid == ancestor {
+            return true;
+        }
         p = g.objects[pid].parent;
     }
     false
@@ -874,26 +949,51 @@ fn descendants_list(g: &Graph, obj: ObjId) -> Vec<ObjId> {
 
 fn shift_start(g: &mut Graph, ei: usize, delta: f64, is_horizontal: bool) {
     let route = &mut g.edges[ei].route;
-    if route.len() < 2 { return; }
+    if route.len() < 2 {
+        return;
+    }
     let pos = |p: &Point| if is_horizontal { p.x } else { p.y };
     let is_increasing = pos(&route[0]) < pos(&route[1]);
-    if is_horizontal { route[0].x += delta; } else { route[0].y += delta; }
-    if is_increasing == (delta < 0.0) { return; }
+    if is_horizontal {
+        route[0].x += delta;
+    } else {
+        route[0].y += delta;
+    }
+    if is_increasing == (delta < 0.0) {
+        return;
+    }
     let start = route[0];
-    let is_aligned = |p: &Point| if is_horizontal { p.y == start.y } else { p.x == start.x };
+    let is_aligned = |p: &Point| {
+        if is_horizontal {
+            p.y == start.y
+        } else {
+            p.x == start.x
+        }
+    };
     let is_past_start = |p: &Point| {
-        if delta > 0.0 { pos(p) < pos(&start) } else { pos(p) > pos(&start) }
+        if delta > 0.0 {
+            pos(p) < pos(&start)
+        } else {
+            pos(p) > pos(&start)
+        }
     };
     let mut to_remove = vec![false; route.len()];
     let mut needs_removal = false;
     for i in 1..route.len().saturating_sub(1) {
-        if !is_aligned(&route[i]) { break; }
-        if is_past_start(&route[i]) { to_remove[i] = true; needs_removal = true; }
+        if !is_aligned(&route[i]) {
+            break;
+        }
+        if is_past_start(&route[i]) {
+            to_remove[i] = true;
+            needs_removal = true;
+        }
     }
     if needs_removal {
         let mut new_route = Vec::with_capacity(route.len());
         for (i, p) in route.iter().enumerate() {
-            if !to_remove[i] { new_route.push(*p); }
+            if !to_remove[i] {
+                new_route.push(*p);
+            }
         }
         *route = new_route;
     }
@@ -901,29 +1001,54 @@ fn shift_start(g: &mut Graph, ei: usize, delta: f64, is_horizontal: bool) {
 
 fn shift_end(g: &mut Graph, ei: usize, delta: f64, is_horizontal: bool) {
     let route = &mut g.edges[ei].route;
-    if route.len() < 2 { return; }
+    if route.len() < 2 {
+        return;
+    }
     let pos = |p: &Point| if is_horizontal { p.x } else { p.y };
     let last = route.len() - 1;
     let is_increasing = pos(&route[last - 1]) < pos(&route[last]);
-    if is_horizontal { route[last].x += delta; } else { route[last].y += delta; }
-    if is_increasing == (delta > 0.0) { return; }
+    if is_horizontal {
+        route[last].x += delta;
+    } else {
+        route[last].y += delta;
+    }
+    if is_increasing == (delta > 0.0) {
+        return;
+    }
     let end = route[last];
-    let is_aligned = |p: &Point| if is_horizontal { p.y == end.y } else { p.x == end.x };
+    let is_aligned = |p: &Point| {
+        if is_horizontal {
+            p.y == end.y
+        } else {
+            p.x == end.x
+        }
+    };
     let is_past_end = |p: &Point| {
-        if delta > 0.0 { pos(p) < pos(&end) } else { pos(p) > pos(&end) }
+        if delta > 0.0 {
+            pos(p) < pos(&end)
+        } else {
+            pos(p) > pos(&end)
+        }
     };
     let mut to_remove = vec![false; route.len()];
     let mut needs_removal = false;
     let mut i = route.len().saturating_sub(2);
     while i > 0 {
-        if !is_aligned(&route[i]) { break; }
-        if is_past_end(&route[i]) { to_remove[i] = true; needs_removal = true; }
+        if !is_aligned(&route[i]) {
+            break;
+        }
+        if is_past_end(&route[i]) {
+            to_remove[i] = true;
+            needs_removal = true;
+        }
         i -= 1;
     }
     if needs_removal {
         let mut new_route = Vec::with_capacity(route.len());
         for (i, p) in route.iter().enumerate() {
-            if !to_remove[i] { new_route.push(*p); }
+            if !to_remove[i] {
+                new_route.push(*p);
+            }
         }
         *route = new_route;
     }
@@ -940,20 +1065,29 @@ const MIN_SEGMENT_LEN: f64 = 10.0;
 fn find_outer_intersection(position: Position, mut intersections: Vec<Point>) -> Point {
     match position {
         Position::OutsideTopLeft | Position::OutsideTopCenter | Position::OutsideTopRight => {
-            intersections.sort_by(|a, b| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal));
+            intersections
+                .sort_by(|a, b| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal));
         }
-        Position::OutsideBottomLeft | Position::OutsideBottomCenter | Position::OutsideBottomRight => {
-            intersections.sort_by(|a, b| b.y.partial_cmp(&a.y).unwrap_or(std::cmp::Ordering::Equal));
+        Position::OutsideBottomLeft
+        | Position::OutsideBottomCenter
+        | Position::OutsideBottomRight => {
+            intersections
+                .sort_by(|a, b| b.y.partial_cmp(&a.y).unwrap_or(std::cmp::Ordering::Equal));
         }
         Position::OutsideLeftTop | Position::OutsideLeftMiddle | Position::OutsideLeftBottom => {
-            intersections.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+            intersections
+                .sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
         }
         Position::OutsideRightTop | Position::OutsideRightMiddle | Position::OutsideRightBottom => {
-            intersections.sort_by(|a, b| b.x.partial_cmp(&a.x).unwrap_or(std::cmp::Ordering::Equal));
+            intersections
+                .sort_by(|a, b| b.x.partial_cmp(&a.x).unwrap_or(std::cmp::Ordering::Equal));
         }
         _ => {}
     }
-    intersections.into_iter().next().unwrap_or(Point::new(0.0, 0.0))
+    intersections
+        .into_iter()
+        .next()
+        .unwrap_or(Point::new(0.0, 0.0))
 }
 
 /// Snapshot of one endpoint's trace inputs (so we can mutate the route without
@@ -992,57 +1126,66 @@ fn trace_src(info: &EndpointInfo, route: &mut [Point], start: &mut usize, end: u
     let mut seg = Segment::new(route[*start + 1], route[*start]);
     let mut overlaps_outside_label = false;
 
-    if info.has_label {
-        if let Some(lp_str) = &info.label_pos {
-            let lp = Position::from_string(lp_str);
-            if lp.is_outside() {
-                let lw = info.label_dims.width as f64;
-                let lh = info.label_dims.height as f64;
-                let label_tl = lp.get_point_on_box(&info.box_, label::PADDING, lw, lh);
-                let mut label_box = Box2D::new(label_tl, lw, lh);
-                label_box.top_left.x -= label::PADDING;
-                label_box.width += 2.0 * label::PADDING;
-                while label_box.contains(&seg.end) && *start + 1 > end {
-                    seg.start = seg.end;
-                    seg.end = route[*start + 2];
+    if info.has_label
+        && let Some(lp_str) = &info.label_pos
+    {
+        let lp = Position::from_string(lp_str);
+        if lp.is_outside() {
+            let lw = info.label_dims.width as f64;
+            let lh = info.label_dims.height as f64;
+            let label_tl = lp.get_point_on_box(&info.box_, label::PADDING, lw, lh);
+            let mut label_box = Box2D::new(label_tl, lw, lh);
+            label_box.top_left.x -= label::PADDING;
+            label_box.width += 2.0 * label::PADDING;
+            while label_box.contains(&seg.end) && *start + 1 > end {
+                seg.start = seg.end;
+                seg.end = route[*start + 2];
+                *start += 1;
+            }
+            let ints = label_box.intersections(&seg);
+            if !ints.is_empty() {
+                overlaps_outside_label = true;
+                let p = if ints.len() > 1 {
+                    find_outer_intersection(lp, ints)
+                } else {
+                    ints[0]
+                };
+                route[*start] = p;
+                seg.end = p;
+                if *start + 1 < end && seg.length() < MIN_SEGMENT_LEN {
+                    route[*start + 1] = route[*start];
                     *start += 1;
-                }
-                let ints = label_box.intersections(&seg);
-                if !ints.is_empty() {
-                    overlaps_outside_label = true;
-                    let p = if ints.len() > 1 { find_outer_intersection(lp, ints) } else { ints[0] };
-                    route[*start] = p;
-                    seg.end = p;
-                    if *start + 1 < end && seg.length() < MIN_SEGMENT_LEN {
-                        route[*start + 1] = route[*start];
-                        *start += 1;
-                    }
                 }
             }
         }
     }
-    if !overlaps_outside_label && info.has_icon {
-        if let Some(ip_str) = &info.icon_pos {
-            let ip = Position::from_string(ip_str);
-            if ip.is_outside() {
-                let iw = crate::target::MAX_ICON_SIZE as f64;
-                let ih = crate::target::MAX_ICON_SIZE as f64;
-                let icon_tl = ip.get_point_on_box(&info.box_, label::PADDING, iw, ih);
-                let icon_box = Box2D::new(icon_tl, iw, ih);
-                while icon_box.contains(&seg.end) && *start + 1 > end {
-                    seg.start = seg.end;
-                    seg.end = route[*start + 2];
+    if !overlaps_outside_label
+        && info.has_icon
+        && let Some(ip_str) = &info.icon_pos
+    {
+        let ip = Position::from_string(ip_str);
+        if ip.is_outside() {
+            let iw = crate::target::MAX_ICON_SIZE as f64;
+            let ih = crate::target::MAX_ICON_SIZE as f64;
+            let icon_tl = ip.get_point_on_box(&info.box_, label::PADDING, iw, ih);
+            let icon_box = Box2D::new(icon_tl, iw, ih);
+            while icon_box.contains(&seg.end) && *start + 1 > end {
+                seg.start = seg.end;
+                seg.end = route[*start + 2];
+                *start += 1;
+            }
+            let ints = icon_box.intersections(&seg);
+            if !ints.is_empty() {
+                let p = if ints.len() > 1 {
+                    find_outer_intersection(ip, ints)
+                } else {
+                    ints[0]
+                };
+                route[*start] = p;
+                seg.end = p;
+                if *start + 1 < end && seg.length() < MIN_SEGMENT_LEN {
+                    route[*start + 1] = route[*start];
                     *start += 1;
-                }
-                let ints = icon_box.intersections(&seg);
-                if !ints.is_empty() {
-                    let p = if ints.len() > 1 { find_outer_intersection(ip, ints) } else { ints[0] };
-                    route[*start] = p;
-                    seg.end = p;
-                    if *start + 1 < end && seg.length() < MIN_SEGMENT_LEN {
-                        route[*start + 1] = route[*start];
-                        *start += 1;
-                    }
                 }
             }
         }
@@ -1063,7 +1206,8 @@ fn trace_src(info: &EndpointInfo, route: &mut [Point], start: &mut usize, end: u
             }
         }
         let shape = crate::shape::Shape::new(&info.shape_type, info.box_);
-        route[*start] = crate::shape::trace_to_shape_border(&shape, &route[*start], &route[*start + 1]);
+        route[*start] =
+            crate::shape::trace_to_shape_border(&shape, &route[*start], &route[*start + 1]);
     }
 }
 
@@ -1073,57 +1217,66 @@ fn trace_dst(info: &EndpointInfo, route: &mut [Point], start: usize, end: &mut u
     let mut seg = Segment::new(route[*end - 1], route[*end]);
     let mut overlaps_outside_label = false;
 
-    if info.has_label {
-        if let Some(lp_str) = &info.label_pos {
-            let lp = Position::from_string(lp_str);
-            if lp.is_outside() {
-                let lw = info.label_dims.width as f64;
-                let lh = info.label_dims.height as f64;
-                let label_tl = lp.get_point_on_box(&info.box_, label::PADDING, lw, lh);
-                let mut label_box = Box2D::new(label_tl, lw, lh);
-                label_box.top_left.x -= label::PADDING;
-                label_box.width += 2.0 * label::PADDING;
-                while label_box.contains(&seg.start) && *end - 1 > start {
-                    seg.end = seg.start;
-                    seg.start = route[*end - 2];
+    if info.has_label
+        && let Some(lp_str) = &info.label_pos
+    {
+        let lp = Position::from_string(lp_str);
+        if lp.is_outside() {
+            let lw = info.label_dims.width as f64;
+            let lh = info.label_dims.height as f64;
+            let label_tl = lp.get_point_on_box(&info.box_, label::PADDING, lw, lh);
+            let mut label_box = Box2D::new(label_tl, lw, lh);
+            label_box.top_left.x -= label::PADDING;
+            label_box.width += 2.0 * label::PADDING;
+            while label_box.contains(&seg.start) && *end - 1 > start {
+                seg.end = seg.start;
+                seg.start = route[*end - 2];
+                *end -= 1;
+            }
+            let ints = label_box.intersections(&seg);
+            if !ints.is_empty() {
+                overlaps_outside_label = true;
+                let p = if ints.len() > 1 {
+                    find_outer_intersection(lp, ints)
+                } else {
+                    ints[0]
+                };
+                route[*end] = p;
+                seg.end = p;
+                if *end - 1 > start && seg.length() < MIN_SEGMENT_LEN {
+                    route[*end - 1] = route[*end];
                     *end -= 1;
-                }
-                let ints = label_box.intersections(&seg);
-                if !ints.is_empty() {
-                    overlaps_outside_label = true;
-                    let p = if ints.len() > 1 { find_outer_intersection(lp, ints) } else { ints[0] };
-                    route[*end] = p;
-                    seg.end = p;
-                    if *end - 1 > start && seg.length() < MIN_SEGMENT_LEN {
-                        route[*end - 1] = route[*end];
-                        *end -= 1;
-                    }
                 }
             }
         }
     }
-    if !overlaps_outside_label && info.has_icon {
-        if let Some(ip_str) = &info.icon_pos {
-            let ip = Position::from_string(ip_str);
-            if ip.is_outside() {
-                let iw = crate::target::MAX_ICON_SIZE as f64;
-                let ih = crate::target::MAX_ICON_SIZE as f64;
-                let icon_tl = ip.get_point_on_box(&info.box_, label::PADDING, iw, ih);
-                let icon_box = Box2D::new(icon_tl, iw, ih);
-                while icon_box.contains(&seg.start) && *end - 1 > start {
-                    seg.end = seg.start;
-                    seg.start = route[*end - 2];
+    if !overlaps_outside_label
+        && info.has_icon
+        && let Some(ip_str) = &info.icon_pos
+    {
+        let ip = Position::from_string(ip_str);
+        if ip.is_outside() {
+            let iw = crate::target::MAX_ICON_SIZE as f64;
+            let ih = crate::target::MAX_ICON_SIZE as f64;
+            let icon_tl = ip.get_point_on_box(&info.box_, label::PADDING, iw, ih);
+            let icon_box = Box2D::new(icon_tl, iw, ih);
+            while icon_box.contains(&seg.start) && *end - 1 > start {
+                seg.end = seg.start;
+                seg.start = route[*end - 2];
+                *end -= 1;
+            }
+            let ints = icon_box.intersections(&seg);
+            if !ints.is_empty() {
+                let p = if ints.len() > 1 {
+                    find_outer_intersection(ip, ints)
+                } else {
+                    ints[0]
+                };
+                route[*end] = p;
+                seg.end = p;
+                if *end - 1 > start && seg.length() < MIN_SEGMENT_LEN {
+                    route[*end - 1] = route[*end];
                     *end -= 1;
-                }
-                let ints = icon_box.intersections(&seg);
-                if !ints.is_empty() {
-                    let p = if ints.len() > 1 { find_outer_intersection(ip, ints) } else { ints[0] };
-                    route[*end] = p;
-                    seg.end = p;
-                    if *end - 1 > start && seg.length() < MIN_SEGMENT_LEN {
-                        route[*end - 1] = route[*end];
-                        *end -= 1;
-                    }
                 }
             }
         }
@@ -1161,8 +1314,6 @@ pub fn trace_to_shape_full(g: &mut Graph, ei: usize) -> (usize, usize) {
     (start, end)
 }
 
-
-
 fn delete_bends(g: &mut Graph) {
     // S-shapes at source/target (layout.go:662-773).
     for &is_source in &[true, false] {
@@ -1171,10 +1322,22 @@ fn delete_bends(g: &mut Graph) {
                 continue;
             }
             let (endpoint_id, start_idx, corner_idx, end_idx, column_index) = if is_source {
-                (g.edges[ei].src, 0usize, 1usize, 2usize, g.edges[ei].src_table_column_index)
+                (
+                    g.edges[ei].src,
+                    0usize,
+                    1usize,
+                    2usize,
+                    g.edges[ei].src_table_column_index,
+                )
             } else {
                 let l = g.edges[ei].route.len();
-                (g.edges[ei].dst, l - 1, l - 2, l - 3, g.edges[ei].dst_table_column_index)
+                (
+                    g.edges[ei].dst,
+                    l - 1,
+                    l - 2,
+                    l - 3,
+                    g.edges[ei].dst_table_column_index,
+                )
             };
             let start = g.edges[ei].route[start_idx];
             let corner = g.edges[ei].route[corner_idx];
@@ -1194,22 +1357,38 @@ fn delete_bends(g: &mut Graph) {
                     end.x > endpoint_tl.x + 10.0 && end.x < endpoint_tl.x + endpoint_w - 10.0 + dx
                 }
             };
-            if !attached { continue; }
+            if !attached {
+                continue;
+            }
 
-            let new_start_raw = if is_horizontal { Point::new(start.x, end.y) } else { Point::new(end.x, start.y) };
+            let new_start_raw = if is_horizontal {
+                Point::new(start.x, end.y)
+            } else {
+                Point::new(end.x, start.y)
+            };
             let endpoint_box = g.objects[endpoint_id].box_;
-            let shape_type = crate::target::dsl_shape_to_shape_type(&g.objects[endpoint_id].shape.value);
+            let shape_type =
+                crate::target::dsl_shape_to_shape_type(&g.objects[endpoint_id].shape.value);
             let endpoint_shape = crate::shape::Shape::new(shape_type, endpoint_box);
-            let new_start = crate::shape::trace_to_shape_border(&endpoint_shape, &new_start_raw, &end);
+            let new_start =
+                crate::shape::trace_to_shape_border(&endpoint_shape, &new_start_raw, &end);
 
             let old_segment = Segment::new(start, corner);
             let new_segment = Segment::new(new_start, end);
             let old_intersects = count_object_intersects(g, ei, &old_segment);
             let new_intersects = count_object_intersects(g, ei, &new_segment);
-            if new_intersects > old_intersects { continue; }
-            let (old_cross, old_over, old_close, old_touch) = count_edge_intersects(g, ei, &old_segment);
-            let (new_cross, new_over, new_close, new_touch) = count_edge_intersects(g, ei, &new_segment);
-            if new_cross > old_cross || new_over > old_over || new_close > old_close || new_touch > old_touch {
+            if new_intersects > old_intersects {
+                continue;
+            }
+            let (old_cross, old_over, old_close, old_touch) =
+                count_edge_intersects(g, ei, &old_segment);
+            let (new_cross, new_over, new_close, new_touch) =
+                count_edge_intersects(g, ei, &new_segment);
+            if new_cross > old_cross
+                || new_over > old_over
+                || new_close > old_close
+                || new_touch > old_touch
+            {
                 continue;
             }
 
@@ -1231,11 +1410,15 @@ fn delete_bends(g: &mut Graph) {
     let mut points: HashMap<(i64, i64), i64> = HashMap::new();
     for e in &g.edges {
         for p in &e.route {
-            *points.entry((p.x.round() as i64, p.y.round() as i64)).or_insert(0) += 1;
+            *points
+                .entry((p.x.round() as i64, p.y.round() as i64))
+                .or_insert(0) += 1;
         }
     }
     for ei in 0..g.edges.len() {
-        if g.edges[ei].route.len() < 6 || g.edges[ei].src == g.edges[ei].dst { continue; }
+        if g.edges[ei].route.len() < 6 || g.edges[ei].src == g.edges[ei].dst {
+            continue;
+        }
         let mut i = 1;
         let len = g.edges[ei].route.len();
         while i + 3 < len {
@@ -1244,35 +1427,57 @@ fn delete_bends(g: &mut Graph) {
             let corner = g.edges[ei].route[i + 1];
             let end = g.edges[ei].route[i + 2];
             let after = g.edges[ei].route[i + 3];
-            let c = *points.get(&(corner.x.round() as i64, corner.y.round() as i64)).unwrap_or(&0);
-            if c > 1 { i += 1; continue; }
+            let c = *points
+                .get(&(corner.x.round() as i64, corner.y.round() as i64))
+                .unwrap_or(&0);
+            if c > 1 {
+                i += 1;
+                continue;
+            }
 
             let (new_corner, not_ladder) = if start.x.ceil() == corner.x.ceil() {
                 let nc = Point::new(end.x, start.y);
-                let nl = (end.x > start.x) != (start.x > before.x) || (end.y > start.y) != (after.y > end.y);
+                let nl = (end.x > start.x) != (start.x > before.x)
+                    || (end.y > start.y) != (after.y > end.y);
                 (nc, nl)
             } else {
                 let nc = Point::new(start.x, end.y);
-                let nl = (end.y > start.y) != (start.y > before.y) || (end.x > start.x) != (after.x > end.x);
+                let nl = (end.y > start.y) != (start.y > before.y)
+                    || (end.x > start.x) != (after.x > end.x);
                 (nc, nl)
             };
-            if not_ladder { i += 1; continue; }
+            if not_ladder {
+                i += 1;
+                continue;
+            }
 
             let old_s1 = Segment::new(start, corner);
             let old_s2 = Segment::new(corner, end);
             let new_s1 = Segment::new(start, new_corner);
             let new_s2 = Segment::new(new_corner, end);
-            let old_int = count_object_intersects(g, ei, &old_s1) + count_object_intersects(g, ei, &old_s2);
-            let new_int = count_object_intersects(g, ei, &new_s1) + count_object_intersects(g, ei, &new_s2);
-            if new_int > old_int { i += 1; continue; }
+            let old_int =
+                count_object_intersects(g, ei, &old_s1) + count_object_intersects(g, ei, &old_s2);
+            let new_int =
+                count_object_intersects(g, ei, &new_s1) + count_object_intersects(g, ei, &new_s2);
+            if new_int > old_int {
+                i += 1;
+                continue;
+            }
             let (oc1, oo1, oc1c, ot1) = count_edge_intersects(g, ei, &old_s1);
             let (oc2, oo2, oc2c, ot2) = count_edge_intersects(g, ei, &old_s2);
             let (nc1, no1, nc1c, nt1) = count_edge_intersects(g, ei, &new_s1);
             let (nc2, no2, nc2c, nt2) = count_edge_intersects(g, ei, &new_s2);
-            let (old_cross, old_over, old_close, old_touch) = (oc1 + oc2, oo1 + oo2, oc1c + oc2c, ot1 + ot2);
-            let (new_cross, new_over, new_close, new_touch) = (nc1 + nc2, no1 + no2, nc1c + nc2c, nt1 + nt2);
-            if new_cross > old_cross || new_over > old_over || new_close > old_close || new_touch > old_touch {
-                i += 1; continue;
+            let (old_cross, old_over, old_close, old_touch) =
+                (oc1 + oc2, oo1 + oo2, oc1c + oc2c, ot1 + ot2);
+            let (new_cross, new_over, new_close, new_touch) =
+                (nc1 + nc2, no1 + no2, nc1c + nc2c, nt1 + nt2);
+            if new_cross > old_cross
+                || new_over > old_over
+                || new_close > old_close
+                || new_touch > old_touch
+            {
+                i += 1;
+                continue;
             }
             // commit
             let mut new_route = Vec::with_capacity(g.edges[ei].route.len() - 1);
@@ -1290,7 +1495,9 @@ fn count_object_intersects(g: &Graph, ei: usize, s: &Segment) -> i64 {
     let dst = g.edges[ei].dst;
     let mut count = 0i64;
     for (i, o) in g.objects.iter().enumerate() {
-        if i == src || i == dst { continue; }
+        if i == src || i == dst {
+            continue;
+        }
         if o.box_.intersects_segment(s, EDGE_NODE_SPACING as f64 - 1.0) {
             count += 1;
         }
@@ -1305,7 +1512,9 @@ fn count_edge_intersects(g: &Graph, ei: usize, s: &Segment) -> (i64, i64, i64, i
     let mut close_overlaps = 0i64;
     let mut touching = 0i64;
     for (oi, e) in g.edges.iter().enumerate() {
-        if oi == ei { continue; }
+        if oi == ei {
+            continue;
+        }
         for w in e.route.windows(2) {
             let other = Segment::new(w[0], w[1]);
             let other_is_horizontal = other.start.y.ceil() == other.end.y.ceil();
@@ -1317,7 +1526,9 @@ fn count_edge_intersects(g: &Graph, ei: usize, s: &Segment) -> (i64, i64, i64, i
                             overlaps += 1;
                             if d < EDGE_NODE_SPACING as f64 / 4.0 {
                                 close_overlaps += 1;
-                                if d < 1.0 { touching += 1; }
+                                if d < 1.0 {
+                                    touching += 1;
+                                }
                             }
                         }
                     } else {
@@ -1326,7 +1537,9 @@ fn count_edge_intersects(g: &Graph, ei: usize, s: &Segment) -> (i64, i64, i64, i
                             overlaps += 1;
                             if d < EDGE_NODE_SPACING as f64 / 4.0 {
                                 close_overlaps += 1;
-                                if d < 1.0 { touching += 1; }
+                                if d < 1.0 {
+                                    touching += 1;
+                                }
                             }
                         }
                     }
@@ -1351,9 +1564,13 @@ struct ShapePadding {
     right: i64,
 }
 
-impl ShapePadding {
-    fn to_string(&self) -> String {
-        format!("[top={},left={},bottom={},right={}]", self.top, self.left, self.bottom, self.right)
+impl std::fmt::Display for ShapePadding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[top={},left={},bottom={},right={}]",
+            self.top, self.left, self.bottom, self.right
+        )
     }
 }
 
@@ -1363,7 +1580,9 @@ fn parse_padding(in_: &str) -> ShapePadding {
         if let Some(idx) = haystack.find(&pat) {
             let rest = &haystack[idx + pat.len()..];
             let num: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-            if let Ok(v) = num.parse::<i64>() { return v; }
+            if let Ok(v) = num.parse::<i64>() {
+                return v;
+            }
         }
         0
     }
@@ -1376,9 +1595,17 @@ fn parse_padding(in_: &str) -> ShapePadding {
 }
 
 /// d2 `adjustPadding` (layout.go:1018-1108).
-fn adjust_padding(g: &Graph, obj_id: ObjId, width: f64, height: f64, padding: ShapePadding) -> ShapePadding {
+fn adjust_padding(
+    g: &Graph,
+    obj_id: ObjId,
+    width: f64,
+    height: f64,
+    padding: ShapePadding,
+) -> ShapePadding {
     let obj = &g.objects[obj_id];
-    if !obj.is_container() { return padding; }
+    if !obj.is_container() {
+        return padding;
+    }
     let mut extra_top = 0i64;
     let mut extra_bottom = 0i64;
     let mut extra_left = 0i64;
@@ -1387,8 +1614,12 @@ fn adjust_padding(g: &Graph, obj_id: ObjId, width: f64, height: f64, padding: Sh
         let label_height = obj.label_dimensions.height as i64 + 2 * label::PADDING as i64;
         let label_width = obj.label_dimensions.width as i64 + 2 * label::PADDING as i64;
         match Position::from_string(obj.label_position.as_deref().unwrap_or("")) {
-            Position::InsideTopLeft | Position::InsideTopCenter | Position::InsideTopRight => extra_top = label_height,
-            Position::InsideBottomLeft | Position::InsideBottomCenter | Position::InsideBottomRight => extra_bottom = label_height,
+            Position::InsideTopLeft | Position::InsideTopCenter | Position::InsideTopRight => {
+                extra_top = label_height
+            }
+            Position::InsideBottomLeft
+            | Position::InsideBottomCenter
+            | Position::InsideBottomRight => extra_bottom = label_height,
             Position::InsideMiddleLeft => extra_left = label_width,
             Position::InsideMiddleRight => extra_right = label_width,
             _ => {}
@@ -1397,8 +1628,12 @@ fn adjust_padding(g: &Graph, obj_id: ObjId, width: f64, height: f64, padding: Sh
     let max_icon_size = crate::target::MAX_ICON_SIZE as i64 + 2 * label::PADDING as i64;
     if obj.icon.is_some() && obj.icon_position.is_some() {
         match Position::from_string(obj.icon_position.as_deref().unwrap_or("")) {
-            Position::InsideTopLeft | Position::InsideTopCenter | Position::InsideTopRight => extra_top = extra_top.max(max_icon_size),
-            Position::InsideBottomLeft | Position::InsideBottomCenter | Position::InsideBottomRight => extra_bottom = extra_bottom.max(max_icon_size),
+            Position::InsideTopLeft | Position::InsideTopCenter | Position::InsideTopRight => {
+                extra_top = extra_top.max(max_icon_size)
+            }
+            Position::InsideBottomLeft
+            | Position::InsideBottomCenter
+            | Position::InsideBottomRight => extra_bottom = extra_bottom.max(max_icon_size),
             Position::InsideMiddleLeft => extra_left = extra_left.max(max_icon_size),
             Position::InsideMiddleRight => extra_right = extra_right.max(max_icon_size),
             _ => {}
@@ -1407,8 +1642,12 @@ fn adjust_padding(g: &Graph, obj_id: ObjId, width: f64, height: f64, padding: Sh
     let mut max_child_w = f64::NEG_INFINITY;
     let mut max_child_h = f64::NEG_INFINITY;
     for &c in &obj.children_array {
-        if g.objects[c].width > max_child_w { max_child_w = g.objects[c].width; }
-        if g.objects[c].height > max_child_h { max_child_h = g.objects[c].height; }
+        if g.objects[c].width > max_child_w {
+            max_child_w = g.objects[c].width;
+        }
+        if g.objects[c].height > max_child_h {
+            max_child_h = g.objects[c].height;
+        }
     }
     let w = width + max_child_w + (extra_left + extra_right) as f64;
     let h = height + max_child_h + (extra_top + extra_bottom) as f64;
@@ -1456,8 +1695,14 @@ mod tests {
             assert!(e.labels.is_empty());
         }
         let opts = req.elk_graph.layout_options.as_ref().unwrap();
-        assert_eq!(opts.cycle_breaking_strategy.as_deref(), Some("GREEDY_MODEL_ORDER"));
-        assert_eq!(opts.consider_model_order.as_deref(), Some("NODES_AND_EDGES"));
+        assert_eq!(
+            opts.cycle_breaking_strategy.as_deref(),
+            Some("GREEDY_MODEL_ORDER")
+        );
+        assert_eq!(
+            opts.consider_model_order.as_deref(),
+            Some("NODES_AND_EDGES")
+        );
         assert_eq!(opts.fixed_alignment.as_deref(), Some("BALANCED"));
         assert_eq!(opts.direction, "DOWN");
         assert_eq!(opts.node_spacing, Some(70));
@@ -1478,11 +1723,21 @@ mod tests {
         let req = build_layout_request(&mut g);
         assert_eq!(req.elk_graph.children.len(), 3);
         assert_eq!(req.elk_graph.edges.len(), 6);
-        assert_eq!(req.elk_graph.layout_options.as_ref().unwrap().direction, "DOWN");
+        assert_eq!(
+            req.elk_graph.layout_options.as_ref().unwrap().direction,
+            "DOWN"
+        );
         // Labeled edges carry an inline edge label (d2 InlineEdgeLabels).
         for e in &req.elk_graph.edges {
             assert_eq!(e.labels.len(), 1);
-            assert_eq!(e.labels[0].layout_options.as_ref().unwrap().inline_edge_labels, Some(true));
+            assert_eq!(
+                e.labels[0]
+                    .layout_options
+                    .as_ref()
+                    .unwrap()
+                    .inline_edge_labels,
+                Some(true)
+            );
         }
     }
 }

@@ -322,7 +322,10 @@ async function loadWebD2Render(): Promise<DiagramRenderFn> {
 
 /** Does the D2 source request the elk layout engine? */
 function requestsElkLayout(code: string): boolean {
-  return /layout-engine\s*:\s*elk\b/i.test(code);
+  // Anchor to a line so a node label that happens to contain the text
+  // (e.g. `a: "layout-engine: elk"`) doesn't falsely route to elk, and
+  // accept an optionally-quoted value (`elk` / `"elk"` / `'elk'`).
+  return /^\s*layout-engine\s*:\s*["']?elk["']?\s*$/im.test(code);
 }
 
 /**
