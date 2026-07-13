@@ -55,6 +55,47 @@ log_info "Building Graphviz for Windows ${ARCH} (CMake platform: ${CMAKE_PLATFOR
 
 check_command "cmake"
 
+# Select the generator from the Visual Studio installation that is actually
+# present. GitHub's `windows-latest` image can advance independently (for
+# example from VS 2022 to VS 2026), so hard-coding one generator makes an
+# otherwise compatible build fail before configuration begins.
+VSWHERE="C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+VS_GENERATOR="${CMAKE_GENERATOR:-}"
+if [ -z "${VS_GENERATOR}" ] && [ -f "${VSWHERE}" ]; then
+    VS_VERSION="$("${VSWHERE}" -latest -products '*' -property installationVersion 2>/dev/null | tr -d '\r')"
+    VS_MAJOR="${VS_VERSION%%.*}"
+    case "${VS_MAJOR}" in
+        18) VS_GENERATOR="Visual Studio 18 2026" ;;
+        17) VS_GENERATOR="Visual Studio 17 2022" ;;
+        16) VS_GENERATOR="Visual Studio 16 2019" ;;
+        "") ;;
+        *)
+            log_error "Unsupported Visual Studio version reported by vswhere: ${VS_VERSION}"
+            exit 1
+            ;;
+    esac
+fi
+
+# Custom installations may not ship vswhere. In that case use the newest
+# Visual Studio generator advertised by CMake itself. A caller can always set
+# CMAKE_GENERATOR explicitly to override detection.
+if [ -z "${VS_GENERATOR}" ]; then
+    for candidate in \
+        "Visual Studio 18 2026" \
+        "Visual Studio 17 2022" \
+        "Visual Studio 16 2019"; do
+        if cmake --help 2>&1 | grep -Fq "${candidate}"; then
+            VS_GENERATOR="${candidate}"
+            break
+        fi
+    done
+fi
+if [[ "${VS_GENERATOR}" != Visual\ Studio\ * ]]; then
+    log_error "Unable to select a Visual Studio CMake generator (got: ${VS_GENERATOR:-none})"
+    exit 1
+fi
+log_info "Using CMake generator: ${VS_GENERATOR}"
+
 # Prepare patched source
 mkdir -p "${BUILD_DIR}"
 GV_PATCHED="${BUILD_DIR}/graphviz-src"
@@ -69,7 +110,7 @@ prepare_graphviz_source "${GV_PATCHED}"
 log_info "Configuring Graphviz..."
 mkdir -p "${BUILD_DIR}/graphviz"
 cmake -S "${GV_PATCHED}" -B "${BUILD_DIR}/graphviz" \
-    -G "Visual Studio 17 2022" -A "${CMAKE_PLATFORM}" \
+    -G "${VS_GENERATOR}" -A "${CMAKE_PLATFORM}" \
     "${GV_CMAKE_COMMON_ARGS[@]}" \
     -DCMAKE_INSTALL_PREFIX="${BUILD_DIR}/graphviz-install"
 
@@ -118,7 +159,7 @@ install(TARGETS graphviz_api
 CMAKE_EOF
 
 cmake -S "${BUILD_DIR}/wrapper" -B "${BUILD_DIR}/wrapper/build" \
-    -G "Visual Studio 17 2022" -A "${CMAKE_PLATFORM}" \
+    -G "${VS_GENERATOR}" -A "${CMAKE_PLATFORM}" \
     -DSRC_DIR="${WRAPPER_SRC}" \
     -DGV_BUILD_DIR="${BUILD_DIR}/graphviz" \
     -DGV_INSTALL_DIR="${GV_INSTALL}" \
@@ -141,7 +182,6 @@ log_info "Building merged static library (graphviz_api_static.lib) via lib.exe..
 # Locate lib.exe from the MSVC toolchain.  vswhere is the canonical locator on
 # windows-latest runners; fall back to PATH lookup for custom environments.
 LIBEXE=""
-VSWHERE="C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
 if [ -f "${VSWHERE}" ]; then
     VS_INSTALL="$("${VSWHERE}" -latest -products '*' -property installationPath 2>/dev/null | tr -d '\r')"
     if [ -n "${VS_INSTALL}" ]; then

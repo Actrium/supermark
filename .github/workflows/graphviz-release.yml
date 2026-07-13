@@ -343,6 +343,9 @@ jobs:
 
   build-windows:
     strategy:
+      # Validate both architectures independently. One runner/image outage must
+      # not cancel the other leg before it can produce diagnostic evidence.
+      fail-fast: false
       matrix:
         include:
           - arch: x86_64

@@ -120,7 +120,9 @@ CI or airgapped environments). Override the release tag with
 
 ## x86_64-pc-windows-msvc
 
-- **Toolchain**: MSVC 2022, CMake, `bison`/`flex` (winflexbison)
+- **Toolchain**: MSVC 2019 / 2022 / 2026, CMake, `bison`/`flex`
+  (winflexbison). The build selects the installed Visual Studio generator via
+  `vswhere`; set `CMAKE_GENERATOR` only when an explicit override is required.
 - **Build**: `./scripts/build-windows.sh`
 - **Output**: `output/windows-x86_64/lib/graphviz_api_static.lib`; the release
   renames the merged static archive to canonical `lib/graphviz_api.lib`
@@ -133,10 +135,15 @@ CI or airgapped environments). Override the release tag with
 
 ## aarch64-pc-windows-msvc
 
-- **Status**: skeleton/planned; not yet in CI or Release assets
-- **Override**: `$env:GRAPHVIZ_ANYWHERE_DIR = "path\to\arm64-lib"; cargo build`
-- **build.rs**: env override only; will emit a warning and fall through to panic if no lib found
-- **Common errors**: MSVC ARM64 cross-compilation requires Visual Studio "ARM64 build tools" component
+- **Toolchain**: native Windows ARM64 runner with the MSVC ARM64 build tools
+- **Build**: `./scripts/build-windows.sh --arch arm64`
+- **Output**: `output/windows-arm64/lib/graphviz_api_static.lib`; the release
+  renames it to canonical `lib/graphviz_api.lib`
+- **Release asset**: `graphviz-native-windows-arm64.tar.gz`
+- **Override**: `$env:GRAPHVIZ_ANYWHERE_DIR = "output\windows-arm64"; cargo build --target aarch64-pc-windows-msvc`
+- **build.rs**: env override and release-asset fallback are both supported
+- **Common errors**: the Visual Studio installation must include the ARM64 C++
+  build tools; x64-only installations cannot produce this target
 
 ## wasm32-unknown-unknown
 

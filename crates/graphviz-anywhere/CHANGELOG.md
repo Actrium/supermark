@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.5] — 2026-07-13
+
+### Fixed
+
+- **Visual Studio image compatibility** — the Windows native build now selects
+  the installed VS 2019, 2022, or 2026 CMake generator via `vswhere` instead of
+  hard-coding VS 2022. This keeps release builds working as GitHub advances the
+  `windows-latest` image while retaining explicit `CMAKE_GENERATOR` overrides.
+- **Independent Windows diagnostics** — x64 and ARM64 release jobs no longer
+  cancel each other on the first matrix failure.
+
 ## [0.2.4] — 2026-07-12
 
 ### Fixed
