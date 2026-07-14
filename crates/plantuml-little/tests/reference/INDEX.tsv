@@ -5,6 +5,7 @@ fixtures/activity/activity_mono_multi_line.puml	reference/activity/activity_mono
 fixtures/activity/activity_mono_multi_line2.puml	reference/activity/activity_mono_multi_line2.svg
 fixtures/activity/activity_mono_multi_line2_v2.puml	reference/activity/activity_mono_multi_line2_v2.svg
 fixtures/activity/activity_mono_multi_line_v2.puml	reference/activity/activity_mono_multi_line_v2.svg
+fixtures/activity/if_else_endif.puml	reference/activity/if_else_endif.svg
 fixtures/activity/swimlane001.puml	reference/activity/swimlane001.svg
 fixtures/archimate/basic.puml	reference/archimate/basic.svg
 fixtures/archimate/layers.puml	reference/archimate/layers.svg

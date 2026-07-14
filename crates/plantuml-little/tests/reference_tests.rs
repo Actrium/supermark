@@ -137,6 +137,10 @@ reference_test!(
     "fixtures/activity/activity_mono_multi_line_v2.puml"
 );
 reference_test!(
+    reference_fixtures_activity_if_else_endif_puml,
+    "fixtures/activity/if_else_endif.puml"
+);
+reference_test!(
     reference_fixtures_activity_swimlane001_puml,
     "fixtures/activity/swimlane001.puml"
 );
