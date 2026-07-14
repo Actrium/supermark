@@ -161,6 +161,14 @@ reference_test!(
     "fixtures/activity_advanced/goto_label.puml"
 );
 reference_test!(
+    reference_fixtures_activity_advanced_switch_nested_puml,
+    "fixtures/activity_advanced/switch_nested.puml"
+);
+reference_test!(
+    reference_fixtures_activity_advanced_switch_webhook_puml,
+    "fixtures/activity_advanced/switch_webhook.puml"
+);
+reference_test!(
     reference_fixtures_archimate_basic_puml,
     "fixtures/archimate/basic.puml"
 );

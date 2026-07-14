@@ -335,9 +335,7 @@ pub fn parse_sequence_diagram_with_original(
                 // `destroy [<kind>] <name>` — the optional participant kind
                 // keyword (participant/actor/...) is accepted but ignored; only
                 // the name matters for matching the lifeline to terminate.
-                let name = strip_participant_keyword(trimmed[8..].trim())
-                    .1
-                    .to_string();
+                let name = strip_participant_keyword(trimmed[8..].trim()).1.to_string();
                 debug!("parsed destroy: {name}");
                 events.push(SeqEvent::Destroy(name));
                 continue;
@@ -350,8 +348,7 @@ pub fn parse_sequence_diagram_with_original(
             // rules as a regular participant declaration.
             if lower.starts_with("create ") {
                 let (kind, details_rest) = strip_participant_keyword(trimmed[7..].trim());
-                let (name, display_name, color, link_url) =
-                    parse_participant_details(details_rest);
+                let (name, display_name, color, link_url) = parse_participant_details(details_rest);
                 if !name.is_empty() {
                     debug!("parsed create: name={name}, display={display_name:?}, kind={kind:?}");
                     ensure_create_participant(
@@ -1735,7 +1732,8 @@ mod tests {
         assert_eq!(job.kind, ParticipantKind::Default);
 
         // `create actor Job` selects the Actor shape.
-        let src = "@startuml\nClient -> Worker: enqueue\ncreate actor Job\nWorker -> Job: new\n@enduml";
+        let src =
+            "@startuml\nClient -> Worker: enqueue\ncreate actor Job\nWorker -> Job: new\n@enduml";
         let diagram = parse_sequence_diagram(src).unwrap();
         let job = diagram
             .participants

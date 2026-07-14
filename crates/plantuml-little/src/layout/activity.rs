@@ -111,6 +111,10 @@ pub enum ActivityNodeKindLayout {
     GotoLines {
         segments: Vec<(f64, f64, f64, f64)>,
     },
+    /// Square diamond used by `switch (cond)` — the condition text lives in
+    /// `node.text` and is centred inside the diamond.  Case labels are rendered
+    /// as edge labels on the branch connections from the diamond's sides.
+    SwitchDiamond,
 }
 
 /// Note position in the layout coordinate space.
@@ -150,8 +154,10 @@ pub enum ActivityEdgeKindLayout {
     /// Multi-segment polyline with a down-arrow at end.
     IfMerge,
     /// If-merge with an emphasize-direction DOWN arrow on the first long
-    /// vertical segment (used for implicit else when then-branch has break/goto).
-    IfMergeEmphasize,
+    /// vertical segment (used for the while exit and the no-else implicit
+    /// else).  When `mid_arrow_y` is set the arrow tip is placed there;
+    /// otherwise it sits near the bottom of the segment (`sy2 - 26`).
+    IfMergeEmphasize { mid_arrow_y: Option<f64> },
     /// Goto loop-back plain lines (no arrow).
     GotoNoArrow,
 }
@@ -881,11 +887,64 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         has_else: bool,
         then_branch: IfBranch,
         else_branch: Option<IfBranch>,
-        merge_y: f64,                     // y where branches merge
-        merge_diamond_idx: Option<usize>, // Java FtileDiamond (24x24) at the merge point
+        merge_y: f64, // y where branches merge
         post_merge_node_idx: Option<usize>,
+        /// The small 24×24 merge diamond drawn where the if-branches rejoin
+        /// (Java's `FtileDiamond` merge). `None` for old-style / fallback.
+        /// Branches route INTO this diamond; the diamond's bottom connects to
+        /// the next flow node (non-nested) or to the enclosing switch's merge
+        /// diamond (nested in a case).
+        merge_diamond_idx: Option<usize>,
     }
     let mut deferred_if_edges: Vec<DeferredIfEdges> = Vec::new();
+
+    // --- Switch/Case/EndSwitch branch tracking --------------------------------
+    // Stack of open `switch` blocks.  Each frame tracks the diamond node and
+    // N case branches (one per `case (label)`).  Like the if-frame, edges are
+    // deferred to a post-placement pass so the diamond and all case nodes can
+    // be connected with properly routed polylines.
+    struct CaseBranch {
+        label: String,
+        nodes: Vec<usize>,
+        last_node_idx: Option<usize>,
+        bottom_y: f64,
+        /// True when the last element added to this case is a nested
+        /// `if`/`while` block (its entry diamond is in `nodes`). The nested
+        /// machinery owns the case's exit edge, so the switch suppresses its
+        /// own case-exit merge for this case. Reset to `false` whenever a
+        /// direct action is subsequently claimed by the case.
+        ends_with_nested: bool,
+        /// When `ends_with_nested` via a nested `if`, the if's merge-diamond
+        /// node index — the switch routes the case-exit from this diamond into
+        /// the switch's own merge diamond. `None` for a nested `while` tail
+        /// (the while machinery wires its own exit) and for non-nested cases.
+        nested_exit_node_idx: Option<usize>,
+    }
+    struct SwitchFrame {
+        diamond_idx: usize,
+        diamond_cx: f64,
+        diamond_bottom_y: f64,
+        cases: Vec<CaseBranch>,
+        saved_last_flow_node_idx: Option<usize>,
+    }
+    struct DeferredSwitchEdges {
+        diamond_idx: usize,
+        cases: Vec<CaseBranch>,
+        merge_y: f64,
+        /// The 24×24 merge diamond where all cases rejoin (Java's `FtileDiamond`
+        /// merge). Each case's last node routes into it; its bottom connects to
+        /// the next flow node.
+        merge_diamond_idx: Option<usize>,
+    }
+    let mut switch_stack: Vec<SwitchFrame> = Vec::new();
+    let mut deferred_switch_edges: Vec<DeferredSwitchEdges> = Vec::new();
+    // Diamond indices that are the entry of a nested `if`/`while` block inside
+    // a switch case. A node is claimed by exactly one layout machinery: when an
+    // inner if/while frame is active, it owns the node and the switch case does
+    // not. These diamonds ARE registered as the case's entry node so the switch
+    // can connect `switch-diamond → entry-diamond` with the case label.
+    let mut nested_entry_diamonds: std::collections::HashSet<usize> =
+        std::collections::HashSet::new();
     // Deferred break edges: (from_node_idx, from_y, exit_diamond_idx)
     let mut deferred_break_edges: Vec<(usize, f64, usize)> = Vec::new();
 
@@ -1081,6 +1140,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 }
                 let (w, h) = estimate_text_size(text);
                 let in_if = !if_stack.is_empty();
+                let in_switch = !switch_stack.is_empty();
                 let in_while = !while_stack.is_empty();
                 let cx = if in_if {
                     let frame = if_stack.last().unwrap();
@@ -1101,13 +1161,17 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                             frame.diamond_right_x + 10.0
                         }
                     }
+                } else if in_switch {
+                    // Inside a switch case: place at the diamond's centre for
+                    // now; the centering pass spreads case branches horizontally.
+                    switch_stack.last().unwrap().diamond_cx
                 } else {
                     swimlane_center_x(&swimlane_layouts, current_lane_idx)
                 };
                 let x = cx - w / 2.0;
                 let y = y_cursor;
                 log::debug!(
-                    "  node[{node_index}] Action \"{text}\" @ ({x:.1}, {y:.1}) {w}x{h}, in_if={in_if} in_while={in_while}"
+                    "  node[{node_index}] Action \"{text}\" @ ({x:.1}, {y:.1}) {w}x{h}, in_if={in_if}, in_switch={in_switch}, in_while={in_while}"
                 );
                 nodes.push(ActivityNodeLayout {
                     index: node_index,
@@ -1117,7 +1181,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     width: w,
                     height: h,
                     text: text.clone(),
-                    skip_in_flow: in_if || in_while,
+                    skip_in_flow: in_if || in_switch || in_while,
                 });
                 // Track node in while-body
                 if let Some(frame) = while_stack.last_mut() {
@@ -1129,6 +1193,19 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         else_branch.nodes.push(node_index);
                     } else {
                         frame.then_branch.nodes.push(node_index);
+                    }
+                }
+                // Track node in the current switch case branch — but only when
+                // no inner if/while frame is active. The innermost branch
+                // machinery owns the node; the switch case must not double-claim
+                // it (that was the root cause of nested if/while-in-case
+                // corrupting the layout: the same node was recorded by both,
+                // producing duplicate edges and a centering clobber).
+                if in_switch && !in_if && !in_while {
+                    let frame = switch_stack.last_mut().unwrap();
+                    if let Some(case) = frame.cases.last_mut() {
+                        case.nodes.push(node_index);
+                        case.ends_with_nested = false;
                     }
                 }
                 // Update repeat frame bookkeeping: record the first inner node
@@ -1180,7 +1257,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     let cond_w =
                         font_metrics::text_width(condition, "SansSerif", font_size, false, false);
                     let hex_half = HEXAGON_HALF_SIZE;
-                    let hex_w = cond_w + 2.0 * hex_half;
+                    let hex_w = cond_w.max(2.0 * hex_half) + 2.0 * hex_half;
                     let hex_h = 24.0_f64; // Java FtileDiamondInside default height
                     let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
                     let hex_x = cx - hex_w / 2.0;
@@ -1242,6 +1319,20 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         saved_y_cursor: y_cursor,
                         saved_last_flow_node_idx: last_flow_node_idx,
                     });
+
+                    // When this if opens inside a switch case, the if-diamond is
+                    // the case's entry node. Register it so the switch draws
+                    // `switch-diamond → if-diamond` with the case label, and mark
+                    // the case tail as a nested block so the switch defers the
+                    // exit edge to the if machinery.
+                    if let Some(frame) = switch_stack.last_mut() {
+                        if let Some(case) = frame.cases.last_mut() {
+                            case.nodes.push(diamond_idx);
+                            case.ends_with_nested = true;
+                            case.nested_exit_node_idx = None; // filled at EndIf
+                        }
+                        nested_entry_diamonds.insert(diamond_idx);
+                    }
 
                     // Start the then-branch
                     // Java: FtileIfWithDiamonds positions branch tiles 10px below
@@ -1450,9 +1541,20 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         then_branch: frame.then_branch,
                         else_branch: frame.else_branch,
                         merge_y,
-                        merge_diamond_idx,
                         post_merge_node_idx: None, // filled later
+                        merge_diamond_idx,
                     });
+
+                    // If this if was nested in a switch case, record its merge
+                    // diamond as the case's nested-exit node so the switch
+                    // routes the case-exit from it into the switch merge diamond.
+                    if nested_entry_diamonds.contains(&frame.diamond_idx) {
+                        if let Some(switch_frame) = switch_stack.last_mut() {
+                            if let Some(case) = switch_frame.cases.last_mut() {
+                                case.nested_exit_node_idx = merge_diamond_idx;
+                            }
+                        }
+                    }
                 } else {
                     // Fallback: simple diamond
                     let (w, h) = (DIAMOND_SIZE * 2.0, DIAMOND_SIZE * 2.0);
@@ -1475,34 +1577,223 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 }
             }
 
-            // ---- While / EndWhile → diamonds ---------------------------------
-            ActivityEvent::While { condition, label } => {
-                // Condition text lives inside the diamond; the `is (label)` is
-                // rendered on the arrow entering the loop body (see loop-back
-                // pass), so it is NOT folded into the condition text here.
-                let (w, h) = diamond_size(condition);
+            // ---- Switch / Case / EndSwitch → multi-way branch ----------------
+            ActivityEvent::Switch { condition } => {
+                if !switch_stack.is_empty() {
+                    log::warn!(
+                        "switch nested inside a case is not fully supported: the \
+                         nested switch's width is not counted in the case column \
+                         (issue #39)"
+                    );
+                }
+                if !swimlane_layouts.is_empty() {
+                    log::warn!(
+                        "switch inside a swimlane is not fully supported: case \
+                         columns are not spread and may stack (issue #39)"
+                    );
+                }
+                // NOTE: unlike If/While, a nested Switch does not register itself
+                // onto the parent case's `case.nodes`, so its tile width is not
+                // accounted for in `case_tile_geometry`. See the warn above.
+                // Hexagonal diamond with the condition text inside (same shape
+                // and sizing as the if-diamond, matching official PlantUML).
+                let font_size = HEXAGON_LABEL_FONT_SIZE;
+                let cond_w =
+                    font_metrics::text_width(condition, "SansSerif", font_size, false, false);
+                let hex_half = HEXAGON_HALF_SIZE;
+                let (w, h) = (cond_w.max(2.0 * hex_half) + 2.0 * hex_half, 24.0_f64);
                 let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
                 let x = cx - w / 2.0;
                 let y = y_cursor;
-                log::debug!("  node[{node_index}] While diamond @ ({x:.1}, {y:.1})");
+                log::debug!(
+                    "  node[{node_index}] SwitchDiamond \"{condition}\" @ ({x:.1}, {y:.1}) {w}x{h}"
+                );
                 nodes.push(ActivityNodeLayout {
                     index: node_index,
-                    kind: ActivityNodeKindLayout::Diamond,
+                    kind: ActivityNodeKindLayout::SwitchDiamond,
                     x,
                     y,
                     width: w,
                     height: h,
                     text: condition.clone(),
-                    skip_in_flow: false,
+                    skip_in_flow: true, // edges built manually in deferred pass
+                });
+                let diamond_idx = node_index;
+                node_index += 1;
+
+                switch_stack.push(SwitchFrame {
+                    diamond_idx,
+                    diamond_cx: cx,
+                    diamond_bottom_y: y + h,
+                    cases: Vec::new(),
+                    saved_last_flow_node_idx: last_flow_node_idx,
+                });
+
+                // First case starts below the diamond.  Java source:
+                //   getYdelta1a = max(10, max_case_label_height) + 10
+                //     (FtileSwitchWithManyLinks.getYdelta1a)
+                //   FtileDecorateInLabel adds label_h to the tile top
+                //   → case_start = diamond_bottom + getYdelta1a + label_h
+                //     = diamond_bottom + max(10, label_h) + 10 + label_h
+                let case_label_h =
+                    font_metrics::line_height("SansSerif", HEXAGON_LABEL_FONT_SIZE, false, false);
+                let switch_ydelta1a = case_label_h.max(10.0) + 10.0;
+                y_cursor = y + h + switch_ydelta1a + case_label_h;
+                last_flow_node_idx = Some(diamond_idx);
+            }
+
+            ActivityEvent::Case { label } => {
+                if let Some(frame) = switch_stack.last_mut() {
+                    // Finalize the previous case's bottom_y (if any).
+                    if let Some(prev) = frame.cases.last_mut() {
+                        prev.bottom_y = y_cursor;
+                        prev.last_node_idx = last_flow_node_idx;
+                    }
+                    // Start a new case branch.  All case action nodes are
+                    // initially placed at the diamond's centre x; the
+                    // centering pass spreads them horizontally.
+                    let case_label_h = font_metrics::line_height(
+                        "SansSerif",
+                        HEXAGON_LABEL_FONT_SIZE,
+                        false,
+                        false,
+                    );
+                    let switch_ydelta1a = case_label_h.max(10.0) + 10.0;
+                    let case_start_y = frame.diamond_bottom_y + switch_ydelta1a + case_label_h;
+                    frame.cases.push(CaseBranch {
+                        label: label.clone(),
+                        nodes: Vec::new(),
+                        last_node_idx: None,
+                        bottom_y: case_start_y,
+                        ends_with_nested: false,
+                        nested_exit_node_idx: None,
+                    });
+                    // Reset y_cursor to the case start so every branch begins
+                    // at the same vertical position (branches are side by side).
+                    y_cursor = case_start_y;
+                    last_flow_node_idx = Some(frame.diamond_idx);
+                    log::debug!("  Case \"{label}\" started at y={y_cursor:.1}");
+                }
+            }
+
+            ActivityEvent::EndSwitch => {
+                if let Some(mut frame) = switch_stack.pop() {
+                    // Finalize the last case.
+                    if let Some(last_case) = frame.cases.last_mut() {
+                        last_case.bottom_y = y_cursor;
+                        last_case.last_node_idx = last_flow_node_idx;
+                    }
+                    // Merge y = max of all case bottom_y values (used for the
+                    // next-flow-node lookup).
+                    let merge_y = frame
+                        .cases
+                        .iter()
+                        .map(|c| c.bottom_y)
+                        .fold(frame.diamond_bottom_y, f64::max);
+                    // The switch merge diamond sits below the lowest case
+                    // content.  Java source:
+                    //   getTranslateDiamond2: y2 = dimTotal.height - dimDiamond2.height
+                    //   dimTotal.height = dim1.h + dimNude.h + dim2.h + deltaHeight
+                    //   deltaHeight = getYdelta1a + getYdelta1b + getYdeltaForLabels
+                    //   → merge_y = dim1.bottom + dimNude.h + getYdelta1a + getYdelta1b + getYdeltaForLabels
+                    // In our y_cursor model: bottom_y = case_start + action_h + node_gap
+                    //   → merge_y = bottom_y - node_gap + getYdelta1b + getYdeltaForLabels
+                    // getYdelta1b = 10 (Java), getYdeltaForLabels ≈ 10 (measured).
+                    let md_w = HEXAGON_HALF_SIZE * 2.0; // 24
+                    let merge_diamond_y = frame
+                        .cases
+                        .iter()
+                        .map(|c| {
+                            // bottom_y = content_bottom + node_gap.
+                            // merge_y = bottom_y - node_gap + 20 (getYdelta1b(10) + getYdeltaForLabels(10))
+                            c.bottom_y - node_gap + 20.0
+                        })
+                        .fold(frame.diamond_bottom_y, f64::max);
+                    let merge_diamond_idx = node_index;
+                    nodes.push(ActivityNodeLayout {
+                        index: node_index,
+                        kind: ActivityNodeKindLayout::Diamond,
+                        x: frame.diamond_cx - md_w / 2.0,
+                        y: merge_diamond_y,
+                        width: md_w,
+                        height: md_w,
+                        text: String::new(),
+                        skip_in_flow: true, // edges built manually
+                    });
+                    node_index += 1;
+                    y_cursor = merge_diamond_y + md_w + node_gap;
+                    last_flow_node_idx = frame.saved_last_flow_node_idx;
+                    log::debug!(
+                        "  EndSwitch: merge_y={merge_y:.1}, cases={}, merge-diamond={merge_diamond_idx}",
+                        frame.cases.len()
+                    );
+                    deferred_switch_edges.push(DeferredSwitchEdges {
+                        diamond_idx: frame.diamond_idx,
+                        cases: frame.cases,
+                        merge_y,
+                        merge_diamond_idx: Some(merge_diamond_idx),
+                    });
+                }
+            }
+
+            // ---- While / EndWhile → diamonds ---------------------------------
+            ActivityEvent::While { condition, label } => {
+                // Hexagonal diamond (Java's `FtileDiamondInside`), same shape
+                // as the if/switch diamond.  The condition lives inside; the
+                // `is (label)` is rendered on the entry arrow (loop-back pass).
+                let font_size = HEXAGON_LABEL_FONT_SIZE;
+                let cond_w =
+                    font_metrics::text_width(condition, "SansSerif", font_size, false, false);
+                let hex_half = HEXAGON_HALF_SIZE;
+                let (w, h) = (cond_w.max(2.0 * hex_half) + 2.0 * hex_half, 24.0_f64);
+                let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
+                let x = cx - w / 2.0;
+                let y = y_cursor;
+                // When nested in a switch case the while-diamond is the case
+                // entry; its incoming edge is drawn by the switch (with the
+                // case label), so exclude it from build_edges (like the
+                // if-diamond). Plain while keeps skip_in_flow=false so
+                // build_edges still wires its incoming edge.
+                let while_in_switch = !switch_stack.is_empty();
+                log::debug!("  node[{node_index}] While diamond @ ({x:.1}, {y:.1}) in_switch={while_in_switch}");
+                nodes.push(ActivityNodeLayout {
+                    index: node_index,
+                    kind: ActivityNodeKindLayout::IfDiamond {
+                        left_label: String::new(),
+                        right_label: String::new(),
+                        bottom_label: String::new(),
+                    },
+                    x,
+                    y,
+                    width: w,
+                    height: h,
+                    text: condition.clone(),
+                    skip_in_flow: while_in_switch,
                 });
                 while_stack.push(WhileFrame {
                     while_idx: node_index,
                     is_label: label.clone(),
                     body_nodes: Vec::new(),
                 });
+                let while_idx = node_index;
+                // When this while opens inside a switch case, the while-diamond
+                // is the case's entry node; the while machinery owns the exit.
+                if let Some(frame) = switch_stack.last_mut() {
+                    if let Some(case) = frame.cases.last_mut() {
+                        case.nodes.push(while_idx);
+                        case.ends_with_nested = true;
+                        case.nested_exit_node_idx = None; // while wires its own exit
+                    }
+                    nested_entry_diamonds.insert(while_idx);
+                }
                 last_flow_node_idx = Some(node_index);
                 node_index += 1;
-                y_cursor += h + node_gap;
+                // The while→body gap = getYdelta1a (Java FtileIfWithDiamonds:
+                // 10 for no swimlanes) + node_gap.  Official PlantUML places
+                // the body 10px below the normal node gap to accommodate the
+                // `is` label on the entry arrow.
+                let while_ydelta1a = 10.0; // FtileIfWithDiamonds.getYdelta1a (no swimlanes)
+                y_cursor += h + node_gap + while_ydelta1a;
             }
 
             ActivityEvent::EndWhile { label } => {
@@ -1752,6 +2043,13 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
 
             // ---- Fork / ForkAgain / EndFork → horizontal bars ----------------
             ActivityEvent::Fork | ActivityEvent::ForkAgain | ActivityEvent::EndFork => {
+                if matches!(event, ActivityEvent::Fork) && !switch_stack.is_empty() {
+                    log::warn!(
+                        "fork nested inside a case is not fully supported: the \
+                         fork bar's width is not counted in the case column \
+                         (issue #39)"
+                    );
+                }
                 let w = FORK_BAR_WIDTH;
                 let h = FORK_BAR_HEIGHT;
                 let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
@@ -2143,6 +2441,223 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
     }
 
     // --- Pass 2b: centering for non-swimlane diagrams ----------------------
+    // Java FtileGeometry for a case tile.
+    // The actual factory (FtileFactoryDelegatorSwitch.createWithLinks) wraps
+    // each case body as: FtileDecorateOutLabel(FtileDecorateInLabel(ftile, dimLabelIn), dimLabelOut)
+    // NOT FtileMinWidthCentered.  The decorate labels widen the tile when the
+    // case label text is wider than rect_w/2.
+    //
+    // FtileDecorateInLabel: right = max(ftile_right, inlabel_w)
+    // FtileDecorateOutLabel: right = max(prev_right, outlabel_w)
+    // Final: width = left + max(ftile_right, inlabel_w, outlabel_w)
+    fn case_tile_geometry(
+        case: &CaseBranch,
+        nodes: &[ActivityNodeLayout],
+        nested: &std::collections::HashSet<usize>,
+        if_by_diamond: &HashMap<usize, &DeferredIfEdges>,
+        while_body_by_idx: &HashMap<usize, &Vec<usize>>,
+    ) -> (f64, f64, f64) {
+        // Compute the case body's FtileGeometry by assembling all nodes
+        // vertically (Java's FtileGeometryMerger / appendBottom):
+        //   left = max(all node lefts)
+        //   width = left + max(all node rights)
+        // where each node has (width, left=width/2, right=width/2) for plain
+        // actions, and the if/while entry node contributes its full block width.
+        //
+        // For a nested if-block, the block width comes from:
+        //   FtileIfWithDiamonds: w = max(diamond_w, then_w + 20 + else_w)
+        // and is CENTERED (left = right = w/2).
+        //
+        // For a nested while-block: w = max(dw, bw) + 36, left = max(dw/2, bw/2, 24) + 24.
+        //
+        // The case body is a vertical stack (FtileAssemblySimple), so the merged
+        // width comes from the widest element.  The merged left/right may be
+        // asymmetric when the widest element is not the first one.
+        let (_raw_w, raw_left, raw_right) = if case.nodes.is_empty() {
+            (40.0, 20.0, 20.0)
+        } else {
+            // Java FtileGeometryMerger (appendBottom) over all case nodes:
+            // Start with the first node, then merge each subsequent node.
+            let mut merged_left = 0.0_f64;
+            let mut merged_right = 0.0_f64;
+            for &idx in &case.nodes {
+                let (_nw, nl, nr) = if nested.contains(&idx) {
+                    if let Some(die) = if_by_diamond.get(&idx) {
+                        let dw = nodes[idx].width;
+                        let then_w = die
+                            .then_branch
+                            .nodes
+                            .iter()
+                            .map(|&i| nodes[i].width)
+                            .fold(0.0_f64, f64::max);
+                        let else_w = die
+                            .else_branch
+                            .as_ref()
+                            .map(|b| {
+                                b.nodes
+                                    .iter()
+                                    .map(|&i| nodes[i].width)
+                                    .fold(0.0_f64, f64::max)
+                            })
+                            .unwrap_or(0.0);
+                        let nude_w = if die.has_else {
+                            then_w + 20.0 + else_w
+                        } else {
+                            then_w
+                        };
+                        let w = dw.max(nude_w).max(HEXAGON_HALF_SIZE * 2.0);
+                        (w, w / 2.0, w / 2.0)
+                    } else if let Some(body) = while_body_by_idx.get(&idx) {
+                        let dw: f64 = nodes[idx].width;
+                        let bw: f64 = body.iter().map(|&i| nodes[i].width).fold(0.0_f64, f64::max);
+                        let geo_w: f64 = dw.max(bw);
+                        let w: f64 = geo_w + 24.0 + 12.0;
+                        let left: f64 = geo_w.max(HEXAGON_HALF_SIZE * 2.0) / 2.0 + 24.0;
+                        let right: f64 = w - left;
+                        (w, left, right)
+                    } else {
+                        let w = nodes[idx].width;
+                        (w, w / 2.0, w / 2.0)
+                    }
+                } else {
+                    let w = nodes[idx].width;
+                    (w, w / 2.0, w / 2.0)
+                };
+                // FtileGeometryMerger: left = max(merged_left, nl)
+                merged_left = merged_left.max(nl);
+                // right = max(merged_right, nr) — but we need to account for
+                // the dx shift.  In appendBottom:
+                //   dx1 = merged_left - prev_merged_left (shift of upper tile)
+                //   width = max(prev_width + dx1, nw + (merged_left - nl))
+                // Simplified: merged_right = max(merged_right, nr + (merged_left - nl))
+                //            = max(merged_right, nr + merged_left - nl)
+                // Since nl = nw/2 and nr = nw - nl for centered tiles:
+                //   nr + merged_left - nl = (nw - nl) + merged_left - nl = nw + merged_left - 2*nl
+                // For centered: nw + merged_left - nw = merged_left → doesn't help.
+                // Actually: appendBottom merges the SECOND geometry's right.
+                // right(after merge) = max(right_upper + dx_upper, right_lower + dx_lower)
+                // where dx = merged_left - tile_left
+                // For centered tiles: dx = merged_left - nw/2
+                //   right = max(prev_right + dx_prev, nr + merged_left - nl)
+                // This is complex.  For a simple vertical stack of centered tiles
+                // where each tile has left = nw/2:
+                //   merged_left = max(all nw/2) = widest_w/2
+                //   merged_right = max(all nw - nw/2) = widest_w/2 (same for centered)
+                // So width = widest_w, left = right = widest_w/2.
+                //
+                // BUT for non-centered tiles (like while-block with left != right),
+                // the merger gives asymmetric results.
+                merged_right = merged_right.max(nr + merged_left - nl);
+            }
+            let raw_w = merged_left + merged_right;
+            (raw_w, merged_left, merged_right)
+        };
+        // FtileDecorateInLabel + FtileDecorateOutLabel:
+        // right = max(raw_right, inlabel_w, outlabel_w)
+        // width = raw_left + right
+        // inlabel_w = case label text width (font 11pt)
+        // outlabel_w = end label (usually 0)
+        let inlabel_w = font_metrics::text_width(
+            &case.label,
+            "SansSerif",
+            HEXAGON_LABEL_FONT_SIZE,
+            false,
+            false,
+        );
+        let outlabel_w = 0.0; // simple switch cases have no outlabel
+        let tile_right = raw_right.max(inlabel_w).max(outlabel_w);
+        let tile_w = raw_left + tile_right;
+        let tile_left = raw_left;
+        (tile_w, tile_left, tile_right)
+    }
+
+    /// Port of FtileSwitchNude + FtileSwitchWithDiamonds case placement.
+    /// Returns each case's cx offset from the switch diamond cx, and the
+    /// group's half-span (for diagram width).
+    fn case_layout(
+        tiles: &[(f64, f64, f64)], // (width, left, right) per case
+        diamond_w: f64,
+    ) -> (Vec<f64>, f64) {
+        let n = tiles.len();
+        if n == 0 {
+            return (Vec::new(), 0.0);
+        }
+        // FtileSwitchWithDiamonds: determine BIG_DIAMOND vs SMALL_DIAMOND.
+        // w13 = diamond_w - tile[0].right - tile[n-1].left
+        // w9 = sum of middle tile widths (i=1..n-1)
+        let w13 = diamond_w - tiles[0].2 - tiles[n - 1].1;
+        let w9: f64 = (1..n.saturating_sub(1)).map(|i| tiles[i].0).sum();
+        let is_big = w13 > w9;
+
+        if is_big {
+            // BIG_DIAMOND: cases spread with w13 + 30 gap.
+            // suppx = (w13 - w9) / (n-1)
+            // case 0 at dx=0, case i at cumulative (tile[i-1].w + suppx)
+            // case n-1 at tile[0].w + w13 + 30
+            // width = tile[0].w + 15 + w13 + 15 + tile[n-1].w
+            // diamond at tile[0].left + 15 + diamond.left
+            let suppx = if n > 1 {
+                (w13 - w9) / (n as f64 - 1.0)
+            } else {
+                0.0
+            };
+            let mut rel = vec![0.0_f64; n];
+            for i in 1..n {
+                rel[i] = rel[i - 1] + tiles[i - 1].0 + suppx;
+            }
+            // Override last case position
+            if n > 1 {
+                rel[n - 1] = tiles[0].0 + w13 + 30.0;
+            }
+            let total_w = tiles[0].0 + 15.0 + w13 + 15.0 + tiles[n - 1].0;
+            let diamond_cx = tiles[0].1 + 15.0 + diamond_w / 2.0;
+            // case cx = rel[i] + tile[i].width/2
+            let offsets: Vec<f64> = (0..n)
+                .map(|i| rel[i] + tiles[i].0 / 2.0 - diamond_cx)
+                .collect();
+            let group_half = total_w / 2.0;
+            (offsets, group_half)
+        } else {
+            // SMALL_DIAMOND: FtileSwitchNude — cases side by side,
+            // xSeparation=20, group centered on switch diamond.
+            // Java: getTranslateNude places tiles at cumulative x. The
+            // FtileBox draws the rect at (0,0) within the tile, so the rect
+            // LEFT EDGE = tile left = rel[i]. The rect centre = rel[i] +
+            // tile[i].left (where left = rect_w/2 for centered tiles).
+            let x_sep = 20.0;
+            let mut rel = vec![0.0_f64; n];
+            for i in 1..n {
+                rel[i] = rel[i - 1] + tiles[i - 1].0 + x_sep;
+            }
+            let nude_w: f64 = tiles.iter().map(|t| t.0).sum::<f64>() + x_sep * (n as f64 - 1.0);
+            let nude_cx = nude_w / 2.0;
+            // rect cx = tile_left + tile[i].left (the FtileBox left, NOT
+            // tile_w/2).  This differs from tile_w/2 when FtileDecorateInLabel
+            // widens the tile (inlabel_w > rect_w/2).
+            let offsets: Vec<f64> = (0..n).map(|i| rel[i] + tiles[i].1 - nude_cx).collect();
+            let group_half = nude_w / 2.0;
+            (offsets, group_half)
+        }
+    }
+
+    // Lookups used by the nested-aware case-width helper (Pass 2b case
+    // spreading and Pass 3e empty-case stub placement).
+    let if_by_diamond: HashMap<usize, &DeferredIfEdges> = deferred_if_edges
+        .iter()
+        .map(|die| (die.diamond_idx, die))
+        .collect();
+    let while_body_by_idx: HashMap<usize, &Vec<usize>> = while_loopbacks
+        .iter()
+        .map(|(idx, body, ..)| (*idx, body))
+        .collect();
+
+    // Pass 2b: diagram centring + switch case-spreading. Gated on
+    // `swimlane_layouts.is_empty()` because swimlane placement owns the x-axis
+    // (each node sits at its lane centre). With swimlanes present this whole
+    // pass is skipped, so switch case columns are NOT spread and stack at the
+    // lane centre — the degraded swimlane+switch path (see the warn in the
+    // Switch handler). Empty-case stubs fall back to the diamond centre via
+    // `case_offsets` being empty.
     if swimlane_layouts.is_empty() && !nodes.is_empty() {
         // Collect the widest flow node (excluding branch-internal nodes).
         // For if-diamonds, consider the entire if-block width (diamond + branches).
@@ -2153,13 +2668,34 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             .fold(0.0_f64, f64::max);
         // Also consider while-loop body node widths — the body sits on the
         // centreline under the while diamond, so the widest body node's half
-        // width must be covered by the centre margin.
-        for (_, body_nodes, ..) in &while_loopbacks {
+        // width must be covered by the centre margin.  The loop-back (right)
+        // and exit (left) each extend a further HEXAGON_HALF_SIZE beyond the
+        // while/body edge, so the centre margin must cover that too (otherwise
+        // the exit clamps to the left edge).
+        for &(while_idx, ref body_nodes, _, ref end_label, _) in &while_loopbacks {
             let body_max_w = body_nodes
                 .iter()
                 .map(|&i| nodes.get(i).map(|n| n.width).unwrap_or(0.0))
                 .fold(0.0_f64, f64::max);
-            max_half_w = max_half_w.max(body_max_w / 2.0);
+            let while_w = nodes.get(while_idx).map(|n| n.width).unwrap_or(0.0);
+            let half = body_max_w.max(while_w) / 2.0;
+            // The exit's `endwhile` label extends left of the while (by its text
+            // width) and the loop-back extends right (by HEXAGON_HALF_SIZE);
+            // official PlantUML reserves room for both, so the centre margin
+            // covers half + max(end_label_w, HEXAGON_HALF_SIZE) + HEXAGON_HALF_SIZE.
+            let end_label_w = if !end_label.is_empty() {
+                font_metrics::text_width(
+                    end_label,
+                    "SansSerif",
+                    HEXAGON_LABEL_FONT_SIZE,
+                    false,
+                    false,
+                )
+            } else {
+                0.0
+            };
+            let ext = end_label_w.max(HEXAGON_HALF_SIZE);
+            max_half_w = max_half_w.max(half + ext + HEXAGON_HALF_SIZE);
         }
         // Also consider if-block total width (diamond + left branch + right branch)
         for die in &deferred_if_edges {
@@ -2201,6 +2737,31 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 max_half_w = max_half_w.max(diamond.width / 2.0);
             }
         }
+        // Also consider switch-block total width (diamond + all case branches),
+        // placed asymmetrically side by side (official PlantUML).
+        for dse in &deferred_switch_edges {
+            let diamond = &nodes[dse.diamond_idx];
+            let n = dse.cases.len();
+            if n == 0 {
+                max_half_w = max_half_w.max(diamond.width / 2.0);
+                continue;
+            }
+            let tiles: Vec<(f64, f64, f64)> = dse
+                .cases
+                .iter()
+                .map(|c| {
+                    case_tile_geometry(
+                        c,
+                        &nodes,
+                        &nested_entry_diamonds,
+                        &if_by_diamond,
+                        &while_body_by_idx,
+                    )
+                })
+                .collect();
+            let (_, group_half) = case_layout(&tiles, diamond.width);
+            max_half_w = max_half_w.max(group_half).max(diamond.width / 2.0);
+        }
         // When there are break edges, the break path extends to x=10 which
         // needs more left margin (20px instead of 10px).
         let left_margin = if !deferred_break_edges.is_empty() {
@@ -2220,10 +2781,57 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 node.x += cx;
             }
         }
-        // Second pass: position if-diamonds and their branch nodes relative to cx
+        // Second pass: position switch diamonds and spread case branches.
+        // Runs BEFORE the if pass so a nested if-diamond (which is a case's
+        // entry node) receives its case centre x here; the if pass then
+        // positions that diamond's branches relative to it.
+        for dse in &deferred_switch_edges {
+            // Read diamond info (immutable) before mutating nodes.
+            let diamond_w = nodes[dse.diamond_idx].width;
+            let n = dse.cases.len();
+            if n == 0 {
+                nodes[dse.diamond_idx].x = cx - diamond_w / 2.0;
+                continue;
+            }
+            // Compute case tile geometries (immutable borrow of nodes).
+            let tiles: Vec<(f64, f64, f64)> = dse
+                .cases
+                .iter()
+                .map(|c| {
+                    case_tile_geometry(
+                        c,
+                        &nodes,
+                        &nested_entry_diamonds,
+                        &if_by_diamond,
+                        &while_body_by_idx,
+                    )
+                })
+                .collect();
+            let (offsets, _) = case_layout(&tiles, diamond_w);
+            // Now mutate: position the switch diamond and cases.
+            let diamond_cx = cx;
+            nodes[dse.diamond_idx].x = cx - diamond_w / 2.0;
+            for (i, case) in dse.cases.iter().enumerate() {
+                let case_cx = diamond_cx + offsets[i];
+                for &node_idx in &case.nodes {
+                    nodes[node_idx].x = case_cx - nodes[node_idx].width / 2.0;
+                }
+            }
+            // The switch merge diamond sits on the switch diamond's centreline.
+            if let Some(md_idx) = dse.merge_diamond_idx {
+                nodes[md_idx].x = diamond_cx - nodes[md_idx].width / 2.0;
+            }
+        }
+        // Third pass: position if-diamonds and their branch nodes.
         for die in &deferred_if_edges {
+            let is_nested = nested_entry_diamonds.contains(&die.diamond_idx);
             let diamond_width = nodes[die.diamond_idx].width;
-            nodes[die.diamond_idx].x = cx - diamond_width / 2.0;
+            // A nested if-diamond was already placed at its case centre by the
+            // switch pass above; keep that x. Non-nested ifs centre on `cx`.
+            if !is_nested {
+                nodes[die.diamond_idx].x = cx - diamond_width / 2.0;
+            }
+            let diamond_cx = nodes[die.diamond_idx].x + nodes[die.diamond_idx].width / 2.0;
             if die.has_else {
                 // Recompute innerMargin (matches the max_half_w pass above).
                 let box_then_w = die
@@ -2245,14 +2853,18 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 let width_inner = box_then_w / 2.0 + box_else_w / 2.0 + 20.0;
                 let inner_margin = width_inner.max(diamond_width + 20.0);
                 // Java `FtileIfWithDiamonds`: branch1 centred at
-                //   getTranslateBranch1.x (=0) → cx - innerMargin/2
+                //   getTranslateBranch1.x (=0) → if-centre - innerMargin/2
                 // branch2 at getTranslateBranch2.x (=dimTotal.w - tile2.w) →
-                //   cx + innerMargin/2  (the if-block centreline is dimTotal.left).
-                let then_cx = cx - inner_margin / 2.0;
+                //   if-centre + innerMargin/2  (the if-block centreline is dimTotal.left).
+                //
+                // For an if nested in a switch case, the switch pass has already
+                // placed the if diamond at the case centre; use that centreline,
+                // not the global diagram centre.
+                let then_cx = diamond_cx - inner_margin / 2.0;
                 for &node_idx in &die.then_branch.nodes {
                     nodes[node_idx].x = then_cx - nodes[node_idx].width / 2.0;
                 }
-                let else_cx = cx + inner_margin / 2.0;
+                let else_cx = diamond_cx + inner_margin / 2.0;
                 if let Some(ref else_branch) = die.else_branch {
                     for &node_idx in &else_branch.nodes {
                         nodes[node_idx].x = else_cx - nodes[node_idx].width / 2.0;
@@ -2261,13 +2873,18 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 // Merge diamond (`FtileDiamond`) centred on the centreline:
                 // getTranslateDiamond2.x = dimTotal.left - diamond2.width/2.
                 if let Some(md_idx) = die.merge_diamond_idx {
-                    nodes[md_idx].x = cx - nodes[md_idx].width / 2.0;
+                    nodes[md_idx].x = diamond_cx - nodes[md_idx].width / 2.0;
                 }
             } else {
-                // No else: then branch at center
+                // No else: then branch at diamond centre (case centre for nested)
                 for &node_idx in &die.then_branch.nodes {
-                    nodes[node_idx].x = cx - nodes[node_idx].width / 2.0;
+                    nodes[node_idx].x = diamond_cx - nodes[node_idx].width / 2.0;
                 }
+            }
+            // The if-merge diamond sits on the if-diamond's centreline (the
+            // case centre for a nested if).
+            if let Some(md_idx) = die.merge_diamond_idx {
+                nodes[md_idx].x = diamond_cx - nodes[md_idx].width / 2.0;
             }
         }
         // Position while-loop body nodes at the while diamond's centre x.
@@ -2345,22 +2962,30 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 | ActivityEvent::Action { .. }
                 | ActivityEvent::If { .. }
                 | ActivityEvent::ElseIf { .. }
-                | ActivityEvent::Else { .. }
                 | ActivityEvent::EndIf
                 | ActivityEvent::While { .. }
-                | ActivityEvent::EndWhile { .. }
                 | ActivityEvent::Repeat
                 | ActivityEvent::RepeatWhile { .. }
                 | ActivityEvent::Fork
                 | ActivityEvent::ForkAgain
                 | ActivityEvent::EndFork
+                | ActivityEvent::Switch { .. }
+                | ActivityEvent::EndSwitch
                 | ActivityEvent::Note { .. }
                 | ActivityEvent::FloatingNote { .. }
                 | ActivityEvent::Detach
                 | ActivityEvent::SyncBar(_) => {
                     node_lane.push(cur_lane);
                 }
-                ActivityEvent::GotoSyncBar(_)
+                // Events that emit no node. Keeping node_lane 1:1 with `nodes`
+                // avoids shifting later nodes' lane assignment. `Else` only
+                // emits in the malformed else-without-if fallback; that
+                // degraded input falls back to lane 0 at the consumer bounds
+                // check.
+                ActivityEvent::Else { .. }
+                | ActivityEvent::EndWhile { .. }
+                | ActivityEvent::Case { .. }
+                | ActivityEvent::GotoSyncBar(_)
                 | ActivityEvent::ResumeFromSyncBar(_)
                 | ActivityEvent::Label { .. }
                 | ActivityEvent::Goto { .. }
@@ -2680,6 +3305,25 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         });
     }
 
+    // Remove edges that jump across a switch-block (same rationale as if-block).
+    if !deferred_switch_edges.is_empty() {
+        let switch_ranges: Vec<(usize, usize)> = deferred_switch_edges
+            .iter()
+            .map(|dse| {
+                let post_idx = nodes
+                    .iter()
+                    .find(|n| n.index > dse.diamond_idx && is_flow_node(&n.kind) && !n.skip_in_flow)
+                    .map(|n| n.index)
+                    .unwrap_or(dse.diamond_idx);
+                (dse.diamond_idx, post_idx)
+            })
+            .collect();
+        edges.retain(|edge| {
+            !switch_ranges.iter().any(|&(diamond_idx, post_idx)| {
+                edge.from_index < diamond_idx && edge.to_index >= post_idx
+            })
+        });
+    }
     // Remove the build_edges edge that jumps from a while diamond straight
     // down to the first post-while flow node — it would cut through the loop
     // body (body nodes are skip_in_flow, so build_edges skips them but still
@@ -2763,6 +3407,34 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     && n.y >= die.merge_y - 1.0
             })
             .map(|n| n.index);
+
+        // A nested if (opened inside a switch case) is claimed by the switch:
+        // the switch draws the case-entry edge (switch-diamond → if-diamond,
+        // with the case label) and the case-exit (from the if's merge diamond
+        // to the switch's merge diamond). So the if machinery suppresses its
+        // own incoming edge and its merge-diamond → next exit edge; it only
+        // routes the two branches INTO the if's merge diamond.
+        let is_nested = nested_entry_diamonds.contains(&die.diamond_idx);
+        // Merge diamond geometry (where the if-branches rejoin).
+        let md = die.merge_diamond_idx.map(|i| &nodes[i]);
+        let (md_cx, md_cy, md_top, md_bottom, _md_left, md_right) = match md {
+            Some(m) => (
+                m.x + m.width / 2.0,
+                m.y + m.height / 2.0,
+                m.y,
+                m.y + m.height,
+                m.x,
+                m.x + m.width,
+            ),
+            None => (
+                diamond_cx,
+                die.merge_y,
+                die.merge_y,
+                die.merge_y,
+                diamond_left_x,
+                diamond_right_x,
+            ),
+        };
 
         if die.has_else {
             // Java FtileIfWithLinks edge order (normal two-branch merge):
@@ -2918,33 +3590,39 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         });
                     }
                 }
-                // 5. Incoming (prev → diamond)
-                if let Some(prev) = prev_flow_idx {
-                    let prev_node = &nodes[prev];
-                    let prev_cx = prev_node.x + prev_node.width / 2.0;
-                    let prev_bottom = prev_node.y + prev_node.height;
-                    edges.push(ActivityEdgeLayout {
-                        from_index: prev,
-                        to_index: die.diamond_idx,
-                        label: String::new(),
-                        points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
-                        kind: ActivityEdgeKindLayout::Normal,
-                        label_xy: None,
-                    });
+                // 5. Incoming (prev → diamond). Suppressed for a nested if; the
+                // switch draws the case-entry edge.
+                if !is_nested {
+                    if let Some(prev) = prev_flow_idx {
+                        let prev_node = &nodes[prev];
+                        let prev_cx = prev_node.x + prev_node.width / 2.0;
+                        let prev_bottom = prev_node.y + prev_node.height;
+                        edges.push(ActivityEdgeLayout {
+                            from_index: prev,
+                            to_index: die.diamond_idx,
+                            label: String::new(),
+                            points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
+                            kind: ActivityEdgeKindLayout::Normal,
+                            label_xy: None,
+                        });
+                    }
                 }
-                // 6. Merge diamond → next flow node
-                if let Some(next) = next_flow_idx {
-                    let next_node = &nodes[next];
-                    let next_top = next_node.y;
-                    let next_cx = next_node.x + next_node.width / 2.0;
-                    edges.push(ActivityEdgeLayout {
-                        from_index: md_idx,
-                        to_index: next,
-                        label: String::new(),
-                        points: vec![(merge_cx, merge_bottom), (next_cx, next_top)],
-                        kind: ActivityEdgeKindLayout::Normal,
-                        label_xy: None,
-                    });
+                // 6. Merge diamond → next flow node. Suppressed for a nested if;
+                // the switch draws the nested exit into the switch merge diamond.
+                if !is_nested {
+                    if let Some(next) = next_flow_idx {
+                        let next_node = &nodes[next];
+                        let next_top = next_node.y;
+                        let next_cx = next_node.x + next_node.width / 2.0;
+                        edges.push(ActivityEdgeLayout {
+                            from_index: md_idx,
+                            to_index: next,
+                            label: String::new(),
+                            points: vec![(merge_cx, merge_bottom), (next_cx, next_top)],
+                            kind: ActivityEdgeKindLayout::Normal,
+                            label_xy: None,
+                        });
+                    }
                 }
             } else {
                 // No merge diamond (a branch ends in break/goto): the clean
@@ -2977,19 +3655,22 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         }
                     }
                 }
-                // Incoming (prev → diamond)
-                if let Some(prev) = prev_flow_idx {
-                    let prev_node = &nodes[prev];
-                    let prev_cx = prev_node.x + prev_node.width / 2.0;
-                    let prev_bottom = prev_node.y + prev_node.height;
-                    edges.push(ActivityEdgeLayout {
-                        from_index: prev,
-                        to_index: die.diamond_idx,
-                        label: String::new(),
-                        points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
-                        kind: ActivityEdgeKindLayout::Normal,
-                        label_xy: None,
-                    });
+                // Incoming (prev → diamond). Suppressed for a nested if; the
+                // switch draws the case-entry edge.
+                if !is_nested {
+                    if let Some(prev) = prev_flow_idx {
+                        let prev_node = &nodes[prev];
+                        let prev_cx = prev_node.x + prev_node.width / 2.0;
+                        let prev_bottom = prev_node.y + prev_node.height;
+                        edges.push(ActivityEdgeLayout {
+                            from_index: prev,
+                            to_index: die.diamond_idx,
+                            label: String::new(),
+                            points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
+                            kind: ActivityEdgeKindLayout::Normal,
+                            label_xy: None,
+                        });
+                    }
                 }
             }
         } else {
@@ -3027,43 +3708,28 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     label_xy: None,
                 });
             }
-            // Then branch end: if has_break, the break edge connects to repeat exit
-            // If normal end, merge back to center
+            // Then branch end: if has_break, the break edge connects to repeat exit.
+            // Normal end: merge straight down into the if-merge diamond's top.
             if !die.then_branch.has_goto && !die.then_branch.has_break {
-                // Normal then: connect last node to next flow node
                 if let Some(last_idx) = die.then_branch.nodes.last() {
                     let last = &nodes[*last_idx];
                     let last_cx = last.x + last.width / 2.0;
                     let last_bottom = last.y + last.height;
-                    let next_idx = nodes
-                        .iter()
-                        .find(|n| {
-                            n.index > die.diamond_idx
-                                && is_flow_node(&n.kind)
-                                && !n.skip_in_flow
-                                && n.y >= die.merge_y - 1.0
-                        })
-                        .map(|n| n.index);
-                    if let Some(next) = next_idx {
-                        let next_node = &nodes[next];
-                        let next_top = next_node.y;
-                        let next_cx = next_node.x + next_node.width / 2.0;
-                        edges.push(ActivityEdgeLayout {
-                            from_index: *last_idx,
-                            to_index: next,
-                            label: String::new(),
-                            points: vec![(last_cx, last_bottom), (next_cx, next_top)],
-                            kind: ActivityEdgeKindLayout::Normal,
-                            label_xy: None,
-                        });
-                    }
+                    edges.push(ActivityEdgeLayout {
+                        from_index: *last_idx,
+                        to_index: die.diamond_idx,
+                        label: String::new(),
+                        points: vec![(last_cx, last_bottom), (md_cx, md_top)],
+                        kind: ActivityEdgeKindLayout::IfMerge,
+                        label_xy: None,
+                    });
                 }
             }
 
-            // Implicit else branch (RIGHT): from diamond right edge to next flow node
+            // Implicit else branch (RIGHT).
             if die.then_branch.has_break || die.then_branch.has_goto {
-                // When the then-branch has break/goto, the else side connects
-                // from diamond right to the next flow node after the if-block.
+                // Legacy: then-branch breaks/gotos; the else side connects from
+                // diamond right to the next flow node after the if-block.
                 let next_idx = nodes
                     .iter()
                     .find(|n| {
@@ -3078,7 +3744,6 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     let next_top = next_node.y;
                     let next_cx = next_node.x + next_node.width / 2.0;
                     let else_x = diamond_right_x + 12.0;
-                    // Diamond right → horizontal right → down → horizontal left → into next
                     let merge_mid_y = next_top - 20.0;
                     edges.push(ActivityEdgeLayout {
                         from_index: die.diamond_idx,
@@ -3091,26 +3756,335 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                             (next_cx, merge_mid_y),
                             (next_cx, next_top),
                         ],
-                        kind: ActivityEdgeKindLayout::IfMergeEmphasize,
+                        kind: ActivityEdgeKindLayout::IfMergeEmphasize { mid_arrow_y: None },
+                        label_xy: None,
+                    });
+                }
+            } else {
+                // Normal: the implicit else path (diamond right) rejoins the
+                // merge diamond's right point, with a mid-segment DOWN arrow
+                // on the vertical (matching official PlantUML).
+                let else_x = diamond_right_x + 12.0;
+                edges.push(ActivityEdgeLayout {
+                    from_index: die.diamond_idx,
+                    to_index: die.diamond_idx,
+                    label: String::new(),
+                    points: vec![
+                        (diamond_right_x, diamond_cy),
+                        (else_x, diamond_cy),
+                        (else_x, md_cy),
+                        (md_right, md_cy),
+                    ],
+                    kind: ActivityEdgeKindLayout::IfMergeEmphasize {
+                        mid_arrow_y: Some((diamond_cy + md_cy) / 2.0),
+                    },
+                    label_xy: None,
+                });
+            }
+
+            // Merge diamond → next flow node (non-nested only). A nested if's
+            // merge diamond connects to the enclosing switch's merge diamond.
+            if !is_nested {
+                if let (Some(md_idx), Some(next)) = (die.merge_diamond_idx, next_flow_idx) {
+                    let next_node = &nodes[next];
+                    let next_top = next_node.y;
+                    let next_cx = next_node.x + next_node.width / 2.0;
+                    edges.push(ActivityEdgeLayout {
+                        from_index: md_idx,
+                        to_index: next,
+                        label: String::new(),
+                        points: vec![(md_cx, md_bottom), (next_cx, next_top)],
+                        kind: ActivityEdgeKindLayout::Normal,
                         label_xy: None,
                     });
                 }
             }
 
-            // Incoming: prev→diamond
-            if let Some(prev) = prev_flow_idx {
-                let prev_node = &nodes[prev];
-                let prev_cx = prev_node.x + prev_node.width / 2.0;
-                let prev_bottom = prev_node.y + prev_node.height;
+            // Incoming: prev→diamond. Suppressed for a nested if (switch draws
+            // the case-entry edge).
+            if !is_nested {
+                if let Some(prev) = prev_flow_idx {
+                    let prev_node = &nodes[prev];
+                    let prev_cx = prev_node.x + prev_node.width / 2.0;
+                    let prev_bottom = prev_node.y + prev_node.height;
+                    edges.push(ActivityEdgeLayout {
+                        from_index: prev,
+                        to_index: die.diamond_idx,
+                        label: String::new(),
+                        points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
+                        kind: ActivityEdgeKindLayout::Normal,
+                        label_xy: None,
+                    });
+                }
+            }
+        }
+    }
+
+    // --- Pass 3e: switch/case branch edges -------------------------------------
+    // For each switch, build:
+    //   1. prev flow node → switch diamond (incoming)
+    //   2. switch diamond → each case's first node (with case label on edge)
+    //   3. intra-case edges (between consecutive nodes in a case)
+    //   4. each case's last node → next flow node (merge)
+    for dse in &deferred_switch_edges {
+        let diamond = &nodes[dse.diamond_idx];
+        let diamond_cx = diamond.x + diamond.width / 2.0;
+        let diamond_cy = diamond.y + diamond.height / 2.0;
+        let diamond_left_x = diamond.x;
+        let diamond_right_x = diamond.x + diamond.width;
+        let diamond_bottom_y = diamond.y + diamond.height;
+
+        // Find the previous and next flow nodes for this switch-block.
+        let prev_flow_idx = if dse.diamond_idx > 0 {
+            nodes[..dse.diamond_idx]
+                .iter()
+                .rev()
+                .find(|n| is_flow_node(&n.kind) && !n.skip_in_flow)
+                .map(|n| n.index)
+        } else {
+            None
+        };
+        let next_flow_idx = nodes
+            .iter()
+            .find(|n| {
+                n.index > dse.diamond_idx
+                    && is_flow_node(&n.kind)
+                    && !n.skip_in_flow
+                    && n.y >= dse.merge_y - 1.0
+            })
+            .map(|n| n.index);
+
+        // Switch merge-diamond geometry (where all cases rejoin).
+        let md = dse.merge_diamond_idx.map(|i| &nodes[i]);
+        let (md_cx, md_cy, md_top, md_bottom) = match md {
+            Some(m) => (
+                m.x + m.width / 2.0,
+                m.y + m.height / 2.0,
+                m.y,
+                m.y + m.height,
+            ),
+            None => (diamond_cx, dse.merge_y, dse.merge_y, dse.merge_y),
+        };
+        /// Pick the merge-diamond attachment point for a case whose centre is
+        /// `case_cx`: left point, top point, or right point — matching official
+        /// PlantUML (outer cases enter the sides, the middle case the top).
+        fn md_attach(case_cx: f64, md_cx: f64, md_cy: f64, md_top: f64, md_w: f64) -> (f64, f64) {
+            if case_cx < md_cx - 1.0 {
+                (md_cx - md_w / 2.0, md_cy) // left point
+            } else if case_cx > md_cx + 1.0 {
+                (md_cx + md_w / 2.0, md_cy) // right point
+            } else {
+                (md_cx, md_top) // top point
+            }
+        }
+
+        let n = dse.cases.len();
+        // Case column offsets from Pass 2b's spread, reused for empty-case
+        // stub placement so an empty case lines up with its column even when
+        // its siblings are wide. Under swimlane, Pass 2b is skipped (cases
+        // stack at the lane centre) so offsets stay empty and empty stubs
+        // stack with the rest — the degraded swimlane+switch path.
+        let case_offsets: Vec<f64> = if swimlane_layouts.is_empty() && n > 0 {
+            let tiles: Vec<(f64, f64, f64)> = dse
+                .cases
+                .iter()
+                .map(|c| {
+                    case_tile_geometry(
+                        c,
+                        &nodes,
+                        &nested_entry_diamonds,
+                        &if_by_diamond,
+                        &while_body_by_idx,
+                    )
+                })
+                .collect();
+            let (offsets, _) = case_layout(&tiles, diamond.width);
+            offsets
+        } else {
+            Vec::new()
+        };
+        // 1. Diamond → each case's first node, with the case label as edge label.
+        //    Outer cases enter from the diamond's left/right side at mid-height
+        //    (a long downward arrow, matching official PlantUML); the middle
+        //    case (if any) enters from the diamond bottom.
+        for (i, case) in dse.cases.iter().enumerate() {
+            if let Some(&first_idx) = case.nodes.first() {
+                let first = &nodes[first_idx];
+                let case_cx = first.x + first.width / 2.0;
+                let case_top = first.y;
+                // Route by case INDEX (not x position): first case from the
+                // diamond left, last from the right, middle cases (if any) from
+                // the diamond bottom — matching official PlantUML.  Using x
+                // position fails with asymmetric spacing where the middle case
+                // isn't exactly at the switch centre.
+                let (start_x, start_y) = if i == 0 && n > 1 {
+                    (diamond_left_x, diamond_cy) // first case → diamond left point
+                } else if i == n - 1 && n > 1 {
+                    (diamond_right_x, diamond_cy) // last case → diamond right point
+                } else {
+                    (diamond_cx, diamond_bottom_y) // middle case(s) → diamond bottom
+                };
+                // Case label at a fixed offset below the case top so all case
+                // labels (left/middle/right) share the same height — matching
+                // official PlantUML.
+                let label_y = case_top - 24.0;
+                // Middle case: diamond bottom → down 12px → horizontal → down
+                // (official adds a stub before the horizontal). Side cases:
+                // horizontal at diamond_cy → down.
+                let is_middle_case = !(i == 0 && n > 1) && !(i == n - 1 && n > 1);
+                let points = if is_middle_case && n > 2 {
+                    let stub_y = start_y + HEXAGON_HALF_SIZE;
+                    vec![
+                        (start_x, start_y),
+                        (start_x, stub_y),
+                        (case_cx, stub_y),
+                        (case_cx, case_top),
+                    ]
+                } else {
+                    vec![(start_x, start_y), (case_cx, start_y), (case_cx, case_top)]
+                };
                 edges.push(ActivityEdgeLayout {
-                    from_index: prev,
-                    to_index: die.diamond_idx,
+                    from_index: dse.diamond_idx,
+                    to_index: first_idx,
+                    label: case.label.clone(),
+                    points,
+                    kind: ActivityEdgeKindLayout::IfBranch,
+                    label_xy: Some((case_cx, label_y)),
+                });
+            } else {
+                // Empty case: draw a stub from the diamond down to the merge
+                // diamond so the case label is still visible.
+                let case_cx = if n == 1 {
+                    diamond_cx
+                } else if i < case_offsets.len() {
+                    diamond_cx + case_offsets[i]
+                } else {
+                    // Swimlane (degraded): stack at the diamond centre.
+                    diamond_cx
+                };
+                let (md_x, md_y) = md_attach(case_cx, md_cx, md_cy, md_top, 24.0);
+                edges.push(ActivityEdgeLayout {
+                    from_index: dse.diamond_idx,
+                    to_index: dse.merge_diamond_idx.unwrap_or(dse.diamond_idx),
+                    label: case.label.clone(),
+                    points: vec![
+                        (diamond_cx, diamond_bottom_y),
+                        (case_cx, diamond_bottom_y),
+                        (case_cx, md_y),
+                        (md_x, md_y),
+                    ],
+                    kind: ActivityEdgeKindLayout::IfBranch,
+                    label_xy: Some((case_cx, (diamond_bottom_y + md_y) / 2.0)),
+                });
+            }
+        }
+
+        // 2. Intra-case edges (between consecutive nodes in each case).
+        for case in &dse.cases {
+            for pair in case.nodes.windows(2) {
+                let from = &nodes[pair[0]];
+                let to = &nodes[pair[1]];
+                let from_cx = from.x + from.width / 2.0;
+                let from_bottom = from.y + from.height;
+                let to_cx = to.x + to.width / 2.0;
+                let to_top = to.y;
+                edges.push(ActivityEdgeLayout {
+                    from_index: pair[0],
+                    to_index: pair[1],
                     label: String::new(),
-                    points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
+                    points: vec![(from_cx, from_bottom), (to_cx, to_top)],
                     kind: ActivityEdgeKindLayout::Normal,
                     label_xy: None,
                 });
             }
+        }
+
+        // 3. Each case's last node → switch merge diamond (no arrowhead — these
+        //    are merges into the diamond).  A case whose tail is a nested `if`
+        //    starts from the if's merge diamond; a case whose tail is a nested
+        //    `while` is skipped (the while machinery wires its own exit).  The
+        //    merge diamond → next edge is drawn once after the loop.
+        for (i, case) in dse.cases.iter().enumerate() {
+            if case.ends_with_nested && case.nested_exit_node_idx.is_none() {
+                // Nested while tail: while machinery owns the exit.
+                continue;
+            }
+            if case.nodes.is_empty() {
+                // Empty case: the case-entry stub in step 1 already drew its
+                // labelled stub into the merge diamond.
+                continue;
+            }
+            let (origin_x, origin_y) = if let Some(nested_idx) = case.nested_exit_node_idx {
+                // Nested if tail: start from the if's merge diamond bottom.
+                let n = &nodes[nested_idx];
+                (n.x + n.width / 2.0, n.y + n.height)
+            } else {
+                let last = &nodes[*case.nodes.last().expect("case has a last node")];
+                (last.x + last.width / 2.0, last.y + last.height)
+            };
+            // Use case INDEX (not x position) to pick the merge-diamond attach
+            // point: first case → left, last → right, middle → top.
+            let (md_x, md_y) = if i == 0 && n > 1 {
+                (md_cx - 12.0, md_cy) // left point
+            } else if i == n - 1 && n > 1 {
+                (md_cx + 12.0, md_cy) // right point
+            } else {
+                (md_cx, md_top) // top point (middle case)
+            };
+            // Middle case: down 5px stub → horizontal to md_cx → down to
+            // merge top (official adds a stub before the horizontal). Side
+            // cases: drop to md_cy → horizontal into left/right point.
+            let is_middle = !(i == 0 && n > 1) && !(i == n - 1 && n > 1);
+            let points = if is_middle {
+                let stub_y = origin_y + 5.0;
+                vec![
+                    (origin_x, origin_y),
+                    (origin_x, stub_y),
+                    (md_x, stub_y),
+                    (md_x, md_y),
+                ]
+            } else {
+                vec![(origin_x, origin_y), (origin_x, md_y), (md_x, md_y)]
+            };
+            edges.push(ActivityEdgeLayout {
+                from_index: dse.diamond_idx,
+                to_index: dse.merge_diamond_idx.unwrap_or(dse.diamond_idx),
+                label: String::new(),
+                points,
+                kind: ActivityEdgeKindLayout::IfMerge,
+                label_xy: None,
+            });
+        }
+
+        // 3b. Switch merge diamond → next flow node.
+        if let (Some(md_idx), Some(next)) = (dse.merge_diamond_idx, next_flow_idx) {
+            let next_node = &nodes[next];
+            let next_top = next_node.y;
+            let next_cx = next_node.x + next_node.width / 2.0;
+            edges.push(ActivityEdgeLayout {
+                from_index: md_idx,
+                to_index: next,
+                label: String::new(),
+                points: vec![(md_cx, md_bottom), (next_cx, next_top)],
+                kind: ActivityEdgeKindLayout::Normal,
+                label_xy: None,
+            });
+        }
+
+        // 4. Incoming: prev flow node → diamond (last, to match Java draw order).
+        if let Some(prev) = prev_flow_idx {
+            let prev_node = &nodes[prev];
+            let prev_cx = prev_node.x + prev_node.width / 2.0;
+            let prev_bottom = prev_node.y + prev_node.height;
+            let diamond_top_y = diamond.y;
+            edges.push(ActivityEdgeLayout {
+                from_index: prev,
+                to_index: dse.diamond_idx,
+                label: String::new(),
+                points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
+                kind: ActivityEdgeKindLayout::Normal,
+                label_xy: None,
+            });
         }
     }
 
@@ -3224,16 +4198,18 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             let first_node = &nodes[first_body];
             let first_top = first_node.y;
             let first_cx = first_node.x + first_node.width / 2.0;
-            // Place the `is` label just below the while diamond's right point,
-            // matching official PlantUML (label sits beside the entry arrow).
-            let label_xy = Some((while_cx + 4.0, while_bottom_y + 12.0));
+            // `is` label sits just right of the entry line (which drops from
+            // the while bottom at while_cx), 11pt left-anchored.  Official
+            // places its baseline ~while_bottom + 10.6; the label renderer
+            // shifts down by (ascent-descent)/2, so pass while_bottom + 6.8.
+            let label_xy = Some((while_cx + 4.0, while_bottom_y + 6.8));
             edges.push(ActivityEdgeLayout {
                 from_index: while_idx,
                 to_index: first_body,
                 label: is_label.clone(),
                 label_xy,
                 points: vec![(while_cx, while_bottom_y), (first_cx, first_top)],
-                kind: ActivityEdgeKindLayout::Normal,
+                kind: ActivityEdgeKindLayout::IfBranch,
             });
         }
 
@@ -3271,18 +4247,64 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             }
         }
 
-        // 4. Exit edge: while left → left → down → right → next, stamped with
-        //    the `endwhile` label.  Routed to the left of the while diamond,
-        //    matching official PlantUML's left-side exit path.
-        if let Some(next) = next_idx {
+        // 4. Exit edge: while left point → left → down → right → next, stamped
+        //    with the `endwhile` label.  When nested in a switch case the exit
+        //    joins the enclosing switch's merge diamond (alongside the other
+        //    cases); otherwise it drops into the next flow node.
+        if nested_entry_diamonds.contains(&while_idx) {
+            // Find the enclosing (innermost) switch's merge diamond.
+            let switch_md = deferred_switch_edges
+                .iter()
+                .filter(|dse| dse.diamond_idx < while_idx && dse.merge_diamond_idx.is_some())
+                .max_by(|a, b| a.diamond_idx.cmp(&b.diamond_idx))
+                .and_then(|dse| dse.merge_diamond_idx);
+            if let Some(md_idx) = switch_md {
+                let md_node = &nodes[md_idx];
+                let md_cy = md_node.y + md_node.height / 2.0;
+                let md_left = md_node.x;
+                let exit_left_x = (while_left_x - HEXAGON_HALF_SIZE).max(10.0);
+                // `endwhile` (no) label is right-aligned at the while diamond's
+                // left point (text ends at while_left), baseline just above the
+                // exit horizontal — matching official PlantUML.
+                let no_w = font_metrics::text_width(
+                    end_label,
+                    "SansSerif",
+                    HEXAGON_LABEL_FONT_SIZE,
+                    false,
+                    false,
+                );
+                let label_xy = Some((while_left_x - no_w, while_cy - 6.1));
+                edges.push(ActivityEdgeLayout {
+                    from_index: while_idx,
+                    to_index: md_idx,
+                    label: end_label.clone(),
+                    label_xy,
+                    points: vec![
+                        (while_left_x, while_cy),
+                        (exit_left_x, while_cy),
+                        (exit_left_x, md_cy),
+                        (md_left, md_cy),
+                    ],
+                    kind: ActivityEdgeKindLayout::IfMergeEmphasize { mid_arrow_y: None },
+                });
+            }
+        } else if let Some(next) = next_idx {
             let next_node = &nodes[next];
             let next_top = next_node.y;
             let next_cx = next_node.x + next_node.width / 2.0;
-            let exit_left_x = (while_left_x - 40.0).max(10.0);
-            // Label the exit edge on its first (top) horizontal segment, beside
-            // the while diamond's left point — matches official PlantUML, which
-            // places the `endwhile` label just left of the while shape.
-            let label_xy = Some(((while_left_x + exit_left_x) / 2.0, while_cy - 4.0));
+            // Exit routes one hex-half to the left of the while diamond's left
+            // point (matching official PlantUML's left-side exit column).
+            let exit_left_x = (while_left_x - HEXAGON_HALF_SIZE).max(10.0);
+            // `endwhile` (no) label right-aligned at while_left, baseline above
+            // the exit horizontal.
+            let no_w = font_metrics::text_width(
+                end_label,
+                "SansSerif",
+                HEXAGON_LABEL_FONT_SIZE,
+                false,
+                false,
+            );
+            let label_xy = Some((while_left_x - no_w, while_cy - 6.1));
             edges.push(ActivityEdgeLayout {
                 from_index: while_idx,
                 to_index: next,
@@ -3295,7 +4317,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     (next_cx, merge_y),
                     (next_cx, next_top),
                 ],
-                kind: ActivityEdgeKindLayout::Normal,
+                kind: ActivityEdgeKindLayout::IfMergeEmphasize { mid_arrow_y: None },
             });
         }
     }
@@ -3585,7 +4607,8 @@ fn limitfinder_x_bounds(node: &ActivityNodeLayout) -> (f64, f64) {
         ActivityNodeKindLayout::Diamond => (node.x - 10.0, node.x + node.width + 10.0),
         ActivityNodeKindLayout::Hexagon { .. }
         | ActivityNodeKindLayout::IfDiamond { .. }
-        | ActivityNodeKindLayout::GotoLines { .. } => (node.x - 1.0, node.x + node.width - 1.0),
+        | ActivityNodeKindLayout::GotoLines { .. }
+        | ActivityNodeKindLayout::SwitchDiamond => (node.x - 1.0, node.x + node.width - 1.0),
         ActivityNodeKindLayout::Start
         | ActivityNodeKindLayout::Stop
         | ActivityNodeKindLayout::End
@@ -3839,10 +4862,14 @@ fn build_while_loopback_edge(
 
     // Snake out to the right of whichever is wider (while or body), then up to
     // the while diamond's vertical centre, then back left to its right point.
+    // Official PlantUML offsets the loop-back 12px beyond the widest of
+    // while/body (mirroring the 12px exit offset on the left, so the diagram
+    // is symmetric around the while diamond).
     let max_right = while_right.max(body_max_right);
-    let loop_x = max_right + 20.0;
-    // Extra width beyond the current content right edge.
-    let extra_right = (loop_x - max_right) + 6.0;
+    let loop_x = max_right + HEXAGON_HALF_SIZE;
+    // Extra width beyond the current content right edge (loop-back column +
+    // arrow half-width + right padding).
+    let extra_right = (loop_x - max_right) + 4.0 + 11.0;
 
     let points = vec![
         (body_cx, body_bottom),
@@ -3851,13 +4878,17 @@ fn build_while_loopback_edge(
         (loop_x, while_cy),
         (while_right, while_cy),
     ];
+    // Mid-segment UP arrow sits at the midpoint of the up-vertical (the
+    // segment from body_bottom+10 up to while_cy), matching official
+    // PlantUML's two-arrowhead loop-back (mid UP + end LEFT).
+    let up_arrow_y = (body_bottom + 10.0 + while_cy) / 2.0;
     Some((
         ActivityEdgeLayout {
             from_index: body_last_idx,
             to_index: while_idx,
             label: String::new(),
             points,
-            kind: ActivityEdgeKindLayout::Normal,
+            kind: ActivityEdgeKindLayout::LoopBackSimple2 { up_arrow_y },
             label_xy: None,
         },
         extra_right,
@@ -4935,7 +5966,7 @@ mod tests {
         let action = &layout.nodes[1];
         assert!(action.y > if_node.y + if_node.height);
 
-        // Edges: diamond→action + action→(implicit next, but there's no next node here)
+        // Edges: diamond→action + action→(implicit next, but there's no next node here).
         // With deferred if-edges, there should be at least the diamond→action edge.
         assert!(!layout.edges.is_empty());
     }
@@ -4967,6 +5998,690 @@ mod tests {
 
         assert_eq!(fork.width, FORK_BAR_WIDTH);
         assert_eq!(fork.height, FORK_BAR_HEIGHT);
+    }
+
+    // 8b. Switch / Case / EndSwitch -------------------------------------------
+
+    #[test]
+    fn switch_case() {
+        let d = diagram(vec![
+            ActivityEvent::Action {
+                text: "Receive webhook".into(),
+            },
+            ActivityEvent::Switch {
+                condition: "event type?".into(),
+            },
+            ActivityEvent::Case {
+                label: "payment.succeeded".into(),
+            },
+            ActivityEvent::Action {
+                text: "Mark invoice paid".into(),
+            },
+            ActivityEvent::Case {
+                label: "invoice.failed".into(),
+            },
+            ActivityEvent::Action {
+                text: "Notify customer".into(),
+            },
+            ActivityEvent::Case {
+                label: "other".into(),
+            },
+            ActivityEvent::Action {
+                text: "Ignore event".into(),
+            },
+            ActivityEvent::EndSwitch,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+
+        // 1 action + 1 switch diamond + 3 case actions + 1 switch merge
+        // diamond = 6 nodes.
+        assert_eq!(layout.nodes.len(), 6);
+
+        // The switch diamond is node index 1 (after the leading action).
+        let switch_node = &layout.nodes[1];
+        assert!(
+            matches!(switch_node.kind, ActivityNodeKindLayout::SwitchDiamond),
+            "expected SwitchDiamond, got {:?}",
+            switch_node.kind
+        );
+        assert_eq!(switch_node.text, "event type?");
+
+        // The three case action nodes carry their action text.
+        let action_texts: Vec<&str> = layout.nodes[2..5].iter().map(|n| n.text.as_str()).collect();
+        assert_eq!(
+            action_texts,
+            vec!["Mark invoice paid", "Notify customer", "Ignore event"]
+        );
+
+        // The last node is the switch merge diamond where cases rejoin.
+        assert!(matches!(
+            layout.nodes[5].kind,
+            ActivityNodeKindLayout::Diamond
+        ));
+
+        // Edges should include the 3 diamond→case branch edges (labelled with
+        // the case labels).
+        let branch_labels: Vec<&str> = layout
+            .edges
+            .iter()
+            .filter(|e| !e.label.is_empty())
+            .map(|e| e.label.as_str())
+            .collect();
+        assert_eq!(
+            branch_labels,
+            vec!["payment.succeeded", "invoice.failed", "other"],
+            "case labels should appear on branch edges"
+        );
+    }
+
+    // 8b. switch/case with a nested if/else (regression: PR #55 / issue #39) -
+    //     an `if` inside a `case` must not double-track action nodes (which
+    //     previously collapsed the two if-branches onto the same x and
+    //     mis-wired the edges).
+    #[test]
+    fn switch_case_with_nested_if() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "test?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::If {
+                condition: "x?".into(),
+                then_label: "yes".into(),
+            },
+            ActivityEvent::Action {
+                text: "A yes".into(),
+            },
+            ActivityEvent::Else { label: "no".into() },
+            ActivityEvent::Action {
+                text: "A no".into(),
+            },
+            ActivityEvent::EndIf,
+            ActivityEvent::Case { label: "B".into() },
+            ActivityEvent::Action {
+                text: "Action B".into(),
+            },
+            ActivityEvent::EndSwitch,
+            ActivityEvent::Action {
+                text: "after".into(),
+            },
+            ActivityEvent::Stop,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+
+        // Locate the two if-branch action nodes and the switch diamond.
+        let a_yes = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "A yes")
+            .expect("A yes node");
+        let a_no = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "A no")
+            .expect("A no node");
+        let switch = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
+            .expect("switch diamond");
+        let if_diamond = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::IfDiamond { .. }) && n.text == "x?")
+            .expect("if diamond");
+
+        // The two if-branches must sit side by side at DISTINCT x centres
+        // (the bug collapsed them onto the same x).
+        let yes_cx = a_yes.x + a_yes.width / 2.0;
+        let no_cx = a_no.x + a_no.width / 2.0;
+        assert!(
+            (yes_cx - no_cx).abs() > 30.0,
+            "if-branch nodes must not overlap: yes_cx={yes_cx}, no_cx={no_cx}"
+        );
+
+        // The if-diamond sits under case A (left of the switch centre), and
+        // Action B sits under case B (right of the switch centre).
+        let switch_cx = switch.x + switch.width / 2.0;
+        let if_cx = if_diamond.x + if_diamond.width / 2.0;
+        assert!(
+            if_cx < switch_cx,
+            "if-diamond should be in case A (left of switch): if_cx={if_cx}, switch_cx={switch_cx}"
+        );
+        let action_b = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "Action B")
+            .expect("Action B node");
+        let b_cx = action_b.x + action_b.width / 2.0;
+        assert!(
+            b_cx > switch_cx,
+            "Action B should be in case B (right of switch): b_cx={b_cx}, switch_cx={switch_cx}"
+        );
+
+        // Exactly ONE labelled edge into the if-diamond (the switch's case-A
+        // entry edge). The bug drew a duplicate incoming edge from the if
+        // machinery's prev→diamond path; that is now suppressed. (Other
+        // inbound edges are unlabelled branch-merge segments ending at the
+        // diamond's merge point, not incoming connections.)
+        let labelled_inbound = layout
+            .edges
+            .iter()
+            .filter(|e| e.to_index == if_diamond.index && !e.label.is_empty())
+            .count();
+        assert_eq!(
+            labelled_inbound, 1,
+            "if-diamond should have exactly one labelled inbound edge (the case entry), got {labelled_inbound}"
+        );
+        // That edge carries the case-A label.
+        assert!(layout
+            .edges
+            .iter()
+            .any(|e| { e.to_index == if_diamond.index && e.label == "A" }));
+
+        // The case labels A and B both appear on switch branch edges.
+        let labels: Vec<&str> = layout
+            .edges
+            .iter()
+            .filter(|e| !e.label.is_empty())
+            .map(|e| e.label.as_str())
+            .collect();
+        assert!(labels.contains(&"A"), "missing case A label edge");
+        assert!(labels.contains(&"B"), "missing case B label edge");
+    }
+
+    // 8c. switch/case with a nested while loop (parallel to the nested-if case).
+    #[test]
+    fn switch_case_with_nested_while() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "test?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::While {
+                condition: "x?".into(),
+                label: "yes".into(),
+            },
+            ActivityEvent::Action {
+                text: "A body".into(),
+            },
+            ActivityEvent::EndWhile { label: "no".into() },
+            ActivityEvent::Case { label: "B".into() },
+            ActivityEvent::Action {
+                text: "Action B".into(),
+            },
+            ActivityEvent::EndSwitch,
+            ActivityEvent::Action {
+                text: "after".into(),
+            },
+            ActivityEvent::Stop,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+
+        let switch = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
+            .expect("switch diamond");
+        let while_diamond = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::IfDiamond { .. }) && n.text == "x?")
+            .expect("while diamond");
+        let body = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "A body")
+            .expect("A body node");
+        let action_b = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "Action B")
+            .expect("Action B node");
+
+        let switch_cx = switch.x + switch.width / 2.0;
+        let while_cx = while_diamond.x + while_diamond.width / 2.0;
+        let body_cx = body.x + body.width / 2.0;
+        let b_cx = action_b.x + action_b.width / 2.0;
+
+        // while-diamond and its body sit under case A (left); Action B under
+        // case B (right).
+        assert!(
+            while_cx < switch_cx && b_cx > switch_cx,
+            "while should be in case A, Action B in case B: while_cx={while_cx}, switch_cx={switch_cx}, b_cx={b_cx}"
+        );
+        // The while body shares the while-diamond's column (centred under it).
+        assert!(
+            (body_cx - while_cx).abs() < 1.0,
+            "while body should be centred under the while diamond: body_cx={body_cx}, while_cx={while_cx}"
+        );
+        // Exactly one labelled inbound edge to the while-diamond (the case-A
+        // entry). The while loop-back is also inbound but unlabelled.
+        let labelled_inbound = layout
+            .edges
+            .iter()
+            .filter(|e| e.to_index == while_diamond.index && !e.label.is_empty())
+            .count();
+        assert_eq!(
+            labelled_inbound, 1,
+            "while-diamond should have exactly one labelled inbound edge (the case entry), got {labelled_inbound}"
+        );
+    }
+
+    // 8d. switch with a single case — degenerate but must not panic.
+    #[test]
+    fn switch_single_case() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::Action {
+                text: "do A".into(),
+            },
+            ActivityEvent::EndSwitch,
+            ActivityEvent::Stop,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+        // switch diamond + 1 case action + merge diamond = 3 nodes (plus start/stop).
+        assert!(layout.nodes.len() >= 5);
+        let switch = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
+            .expect("switch diamond");
+        let action = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "do A")
+            .expect("case action");
+        // The case action should be below the switch diamond.
+        assert!(
+            action.y > switch.y,
+            "case action should be below switch diamond"
+        );
+        // Case label "A" should appear on an edge.
+        assert!(
+            layout.edges.iter().any(|e| e.label == "A"),
+            "case A label missing"
+        );
+    }
+
+    // 8e. switch with an empty case (no action) — must not panic, case label visible.
+    #[test]
+    fn switch_empty_case() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::Action {
+                text: "do A".into(),
+            },
+            ActivityEvent::Case { label: "B".into() },
+            // Empty case B — no action.
+            ActivityEvent::EndSwitch,
+            ActivityEvent::Stop,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+        // Both case labels should appear on edges.
+        let labels: Vec<&str> = layout
+            .edges
+            .iter()
+            .filter(|e| !e.label.is_empty())
+            .map(|e| e.label.as_str())
+            .collect();
+        assert!(labels.contains(&"A"), "case A label missing");
+        assert!(labels.contains(&"B"), "case B label missing (empty case)");
+    }
+
+    // 8f. switch as the last block (no following flow node) — merge diamond
+    // connects to nothing; must not panic.
+    #[test]
+    fn switch_no_following_node() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::Action {
+                text: "do A".into(),
+            },
+            ActivityEvent::Case { label: "B".into() },
+            ActivityEvent::Action {
+                text: "do B".into(),
+            },
+            ActivityEvent::EndSwitch,
+            // No action/stop after endswitch.
+        ]);
+        let layout = layout_activity(&d).unwrap();
+        // Should produce a valid layout with switch + cases + merge diamond.
+        assert!(layout.nodes.len() >= 4);
+        assert!(layout.edges.iter().any(|e| e.label == "A"));
+        assert!(layout.edges.iter().any(|e| e.label == "B"));
+        // Even with no following flow node, both cases must route into the
+        // switch's merge diamond — the terminal merge still collects them, so
+        // cases do not dangle. (Only the merge→next edge is absent, which is
+        // correct for a terminal switch.)
+        let switch = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
+            .expect("switch diamond");
+        let merge = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::Diamond))
+            .expect("merge diamond");
+        let merge_edges = layout
+            .edges
+            .iter()
+            .filter(|e| e.from_index == switch.index && e.to_index == merge.index)
+            .count();
+        assert!(
+            merge_edges >= 2,
+            "both cases should route into the merge diamond, got {merge_edges}"
+        );
+    }
+
+    // 8g. switch with 4 cases — middle cases (indices 1, 2) enter from
+    // diamond bottom, outer (0, 3) from sides.
+    #[test]
+    fn switch_four_cases() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::Action { text: "a".into() },
+            ActivityEvent::Case { label: "B".into() },
+            ActivityEvent::Action { text: "b".into() },
+            ActivityEvent::Case { label: "C".into() },
+            ActivityEvent::Action { text: "c".into() },
+            ActivityEvent::Case { label: "D".into() },
+            ActivityEvent::Action { text: "d".into() },
+            ActivityEvent::EndSwitch,
+            ActivityEvent::Stop,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+        // 4 case labels.
+        let labels: Vec<&str> = layout
+            .edges
+            .iter()
+            .filter(|e| !e.label.is_empty())
+            .map(|e| e.label.as_str())
+            .collect();
+        assert!(labels.contains(&"A") && labels.contains(&"B"));
+        assert!(labels.contains(&"C") && labels.contains(&"D"));
+        // The first case should be left of the switch, last case right.
+        let switch = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
+            .expect("switch diamond");
+        let switch_cx = switch.x + switch.width / 2.0;
+        let case_a = layout.nodes.iter().find(|n| n.text == "a").expect("case A");
+        let case_d = layout.nodes.iter().find(|n| n.text == "d").expect("case D");
+        let a_cx = case_a.x + case_a.width / 2.0;
+        let d_cx = case_d.x + case_d.width / 2.0;
+        assert!(a_cx < switch_cx, "case A should be left of switch");
+        assert!(d_cx > switch_cx, "case D should be right of switch");
+    }
+
+    // 8h. switch with multiple actions per case (intra-case edges).
+    #[test]
+    fn switch_multi_action_case() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::Action {
+                text: "step 1".into(),
+            },
+            ActivityEvent::Action {
+                text: "step 2".into(),
+            },
+            ActivityEvent::Case { label: "B".into() },
+            ActivityEvent::Action {
+                text: "step 3".into(),
+            },
+            ActivityEvent::EndSwitch,
+            ActivityEvent::Stop,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+        // Intra-case edge: step 1 → step 2 (within case A).
+        let step1 = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "step 1")
+            .expect("step 1");
+        let step2 = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "step 2")
+            .expect("step 2");
+        let intra = layout
+            .edges
+            .iter()
+            .find(|e| e.from_index == step1.index && e.to_index == step2.index);
+        assert!(intra.is_some(), "intra-case edge step1→step2 missing");
+        // step 2 should be below step 1.
+        assert!(step2.y > step1.y, "step 2 should be below step 1");
+    }
+
+    // 8i. switch with no-else if nested in case (the PR #55 regression test).
+    #[test]
+    fn switch_case_with_noelse_if() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "t?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::If {
+                condition: "x?".into(),
+                then_label: "y".into(),
+            },
+            ActivityEvent::Action {
+                text: "A yes".into(),
+            },
+            ActivityEvent::EndIf,
+            ActivityEvent::Case { label: "B".into() },
+            ActivityEvent::Action {
+                text: "Action B".into(),
+            },
+            ActivityEvent::EndSwitch,
+            ActivityEvent::Stop,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+        // if-diamond and A yes must not overlap (the original bug).
+        let a_yes = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "A yes")
+            .expect("A yes");
+        let if_diamond = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::IfDiamond { .. }) && n.text == "x?")
+            .expect("if diamond");
+        let if_cx = if_diamond.x + if_diamond.width / 2.0;
+        let yes_cx = a_yes.x + a_yes.width / 2.0;
+        // In no-else, A yes is centred under the if-diamond.
+        assert!(
+            (yes_cx - if_cx).abs() < 5.0,
+            "no-else then-branch should be centred under if-diamond: yes_cx={yes_cx}, if_cx={if_cx}"
+        );
+        // Exactly one labelled inbound edge to the if-diamond (case-A entry).
+        let labelled_inbound = layout
+            .edges
+            .iter()
+            .filter(|e| e.to_index == if_diamond.index && !e.label.is_empty())
+            .count();
+        assert_eq!(
+            labelled_inbound, 1,
+            "if-diamond should have one labelled inbound (case entry)"
+        );
+    }
+
+    // 8j. switch with has-else if nested in case (PR #55 original test).
+    #[test]
+    fn switch_case_with_has_else_if() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "test?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::If {
+                condition: "x?".into(),
+                then_label: "yes".into(),
+            },
+            ActivityEvent::Action {
+                text: "A yes".into(),
+            },
+            ActivityEvent::Else { label: "no".into() },
+            ActivityEvent::Action {
+                text: "A no".into(),
+            },
+            ActivityEvent::EndIf,
+            ActivityEvent::Case { label: "B".into() },
+            ActivityEvent::Action {
+                text: "Action B".into(),
+            },
+            ActivityEvent::EndSwitch,
+            ActivityEvent::Action {
+                text: "after".into(),
+            },
+            ActivityEvent::Stop,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+        // Branch nodes must not overlap (the original bug).
+        let a_yes = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "A yes")
+            .expect("A yes");
+        let a_no = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "A no")
+            .expect("A no");
+        let yes_cx = a_yes.x + a_yes.width / 2.0;
+        let no_cx = a_no.x + a_no.width / 2.0;
+        assert!(
+            (yes_cx - no_cx).abs() > 30.0,
+            "if-branch nodes must not overlap: yes_cx={yes_cx}, no_cx={no_cx}"
+        );
+        // if-diamond sits under case A (left of switch), Action B under case B (right).
+        let switch = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
+            .expect("switch diamond");
+        let switch_cx = switch.x + switch.width / 2.0;
+        let if_diamond = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::IfDiamond { .. }) && n.text == "x?")
+            .expect("if diamond");
+        let if_cx = if_diamond.x + if_diamond.width / 2.0;
+        assert!(
+            if_cx < switch_cx,
+            "if-diamond should be in case A (left of switch)"
+        );
+    }
+
+    // 8k. FtileSwitchNude SMALL_DIAMOND mode: 3 equal cases should be
+    // symmetrically spread around the switch diamond, with xSeparation=20.
+    #[test]
+    fn switch_small_diamond_mode_symmetric() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::Action {
+                text: "do A".into(),
+            },
+            ActivityEvent::Case { label: "B".into() },
+            ActivityEvent::Action {
+                text: "do B".into(),
+            },
+            ActivityEvent::Case { label: "C".into() },
+            ActivityEvent::Action {
+                text: "do C".into(),
+            },
+            ActivityEvent::EndSwitch,
+            ActivityEvent::Stop,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+        let switch = layout
+            .nodes
+            .iter()
+            .find(|n| matches!(n.kind, ActivityNodeKindLayout::SwitchDiamond))
+            .expect("switch diamond");
+        let switch_cx = switch.x + switch.width / 2.0;
+        let case_a = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "do A")
+            .expect("case A");
+        let case_c = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "do C")
+            .expect("case C");
+        let a_cx = case_a.x + case_a.width / 2.0;
+        let c_cx = case_c.x + case_c.width / 2.0;
+        // Cases should be roughly symmetric around the switch.
+        let a_dist = switch_cx - a_cx;
+        let c_dist = c_cx - switch_cx;
+        assert!(
+            (a_dist - c_dist).abs() < 5.0,
+            "cases should be roughly symmetric: A dist={a_dist}, C dist={c_dist}"
+        );
+    }
+
+    // 8l. case_tile_geometry via layout: action case width should match the
+    // action rect width (no inflation), verifying FtileMinWidthCentered(30)
+    // doesn't widen cases that are already > 30px.
+    #[test]
+    fn switch_action_tile_not_inflated() {
+        let d = diagram(vec![
+            ActivityEvent::Start,
+            ActivityEvent::Switch {
+                condition: "x?".into(),
+            },
+            ActivityEvent::Case { label: "A".into() },
+            ActivityEvent::Action {
+                text: "do something long enough".into(),
+            },
+            ActivityEvent::Case { label: "B".into() },
+            ActivityEvent::Action {
+                text: "also long enough action".into(),
+            },
+            ActivityEvent::EndSwitch,
+            ActivityEvent::Stop,
+        ]);
+        let layout = layout_activity(&d).unwrap();
+        // Both cases should have their action rect width as the tile width
+        // (no min-width inflation since actions are > 30px).
+        let case_a = layout
+            .nodes
+            .iter()
+            .find(|n| n.text == "do something long enough")
+            .expect("case A");
+        assert!(case_a.width > 30.0, "action should be > 30px wide");
     }
 
     // 9. Text sizing ---------------------------------------------------------
@@ -5021,7 +6736,10 @@ mod tests {
         assert_eq!(layout.nodes.len(), 2);
 
         let while_node = &layout.nodes[0];
-        assert_eq!(while_node.kind, ActivityNodeKindLayout::Diamond);
+        assert!(matches!(
+            while_node.kind,
+            ActivityNodeKindLayout::IfDiamond { .. }
+        ));
         assert!(while_node.text.contains("count < 10"));
     }
 

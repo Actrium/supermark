@@ -1,0 +1,13 @@
+@startuml
+start
+:Receive webhook;
+switch (event type?)
+case (payment.succeeded)
+  :Mark invoice paid;
+case (invoice.failed)
+  :Notify customer;
+case (other)
+  :Ignore event;
+endswitch
+stop
+@enduml

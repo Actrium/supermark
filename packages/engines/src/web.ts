@@ -67,8 +67,6 @@ interface GraphvizWebModule {
   Graphviz: { load(): Promise<GraphvizInstance> };
 }
 
-const GRAPHVIZ_WEB_SPEC = '@actrium/graphviz-anywhere-web';
-
 /** Probe a wasm-bindgen module for its optional `default`/`init` entry. */
 function pickWasmInit(mod: WasmRenderModule): WasmInitFn | null {
   if (typeof mod.default === 'function') return mod.default as WasmInitFn;
@@ -157,8 +155,11 @@ async function loadWebPlantumlRender(): Promise<DiagramRenderFn> {
   const ensureGraphvizBridge = async () => {
     if (!graphvizBridgePromise) {
       graphvizBridgePromise = (async () => {
-        const spec: string = GRAPHVIZ_WEB_SPEC;
-        const { Graphviz } = (await import(spec)) as GraphvizWebModule;
+        // Static string literal so vite/rollup can bundle the module at build
+        // time. (The `optimizeDeps.exclude` in vite.config still keeps it
+        // un-pre-bundled in dev so viz.wasm stays a sibling of viz.js.)
+        const { Graphviz } =
+          (await import('@actrium/graphviz-anywhere-web')) as GraphvizWebModule;
         const graphviz = await Graphviz.load();
 
         const g = globalThis as unknown as {
