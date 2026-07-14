@@ -5954,8 +5954,8 @@ mod tests {
             ActivityEvent::EndIf,
         ]);
         let layout = layout_activity(&d).unwrap();
-        // New-style if creates an IfDiamond + action + a merge diamond.
-        assert_eq!(layout.nodes.len(), 3);
+        // New-style if creates an IfDiamond + action (no EndIf diamond node).
+        assert_eq!(layout.nodes.len(), 2);
 
         let if_node = &layout.nodes[0];
         assert!(matches!(
@@ -5966,13 +5966,8 @@ mod tests {
         let action = &layout.nodes[1];
         assert!(action.y > if_node.y + if_node.height);
 
-        // The third node is the merge diamond where the if-branches rejoin.
-        assert!(matches!(
-            layout.nodes[2].kind,
-            ActivityNodeKindLayout::Diamond
-        ));
-
-        // Edges: diamond→action + action→merge-diamond at minimum.
+        // Edges: diamond→action + action→(implicit next, but there's no next node here).
+        // With deferred if-edges, there should be at least the diamond→action edge.
         assert!(!layout.edges.is_empty());
     }
 
