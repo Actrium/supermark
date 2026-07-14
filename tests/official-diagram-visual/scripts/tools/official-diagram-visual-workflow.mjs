@@ -936,6 +936,7 @@ function visualBand(diffRatio) {
 }
 
 function visualBandWithEscalation({ pixelBand, perceptual, severeSizeMismatch }) {
+  if (severeSizeMismatch && pixelBand === 'pass') return 'review';
   if (severeSizeMismatch) return 'fail';
   if (pixelBand === 'fail' && perceptual.distanceRatio <= perceptualSimilarThreshold) {
     return 'review';
@@ -953,7 +954,7 @@ function hasSevereSizePerceptualMismatch({ sizeDelta, perceptual }) {
 function runSelfTests() {
   const tests = [
     {
-      name: 'escalates severe size collapse with high perceptual distance',
+      name: 'downgrades severe size collapse with otherwise passing pixels to review',
       actual: visualBandWithEscalation({
         pixelBand: 'pass',
         perceptual: { distanceRatio: 0.37891 },
@@ -965,7 +966,7 @@ function runSelfTests() {
           perceptual: { distanceRatio: 0.37891 },
         }),
       }),
-      expected: 'fail',
+      expected: 'review',
     },
     {
       name: 'keeps ordinary size differences as pass when visual diff passes',
@@ -1367,7 +1368,7 @@ ${report.visual ? '' : '- 视觉对比：跳过。页面未成功渲染出有效
 - 原始尺寸直接 diff：${rawDiffRatio}
 - 感知哈希距离：${perceptualDistance}
 - 视觉分级：${visualBandText}
-- 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核；若尺寸面积差异 ≥ ${formatRatio(severeSizeDeltaThreshold)} 且感知哈希距离 > ${formatRatio(perceptualSimilarThreshold)}，升级为不通过
+- 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核；若尺寸面积差异 ≥ ${formatRatio(severeSizeDeltaThreshold)} 且感知哈希距离 > ${formatRatio(perceptualSimilarThreshold)}，标记为人工复核；若像素差异本身已达到不通过则仍为不通过
 - 严重尺寸+感知异常：${severeSizeMismatchText}
 - 差异区域 bounding box：${diffBounds}
 - Expected 原图尺寸：${formatSize(report.visual?.expectedSize)}

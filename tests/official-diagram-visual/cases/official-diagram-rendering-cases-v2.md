@@ -629,7 +629,7 @@ Worker --> Client: completed
 
 ![plantuml-v2-sequence-create-destroy](assets/official-diagram-rendering-cases-v2/plantuml-v2-sequence-create-destroy.svg)
 
-建议检查文本：`Client`, `Worker`, `Job`, `create`, `destroy`
+建议检查文本：`Client`, `Worker`, `Job`, `enqueue(job)`, `completed`
 
 #### plantuml-v2-sequence-critical: Sequence diagram with critical section and break
 
@@ -1096,7 +1096,7 @@ digraph git_basics {
 官方渲染效果：
 ![graphviz-v2-git](assets/official-diagram-rendering-cases-v2/graphviz-v2-git.svg)
 
-建议检查文本：`git`, `commit`, `checkout`, `merge`, `rebase`
+建议检查文本：`git`, `changes`, `staging area`, `HEAD`, `remote branch`
 
 #### graphviz-v2-switch: Switch network graph
 
@@ -1177,7 +1177,7 @@ digraph G {
 官方渲染效果：
 ![graphviz-v2-switch](assets/official-diagram-rendering-cases-v2/graphviz-v2-switch.svg)
 
-建议检查文本：`switch`, `eth0`, `eth1`, `port`, `hub`
+建议检查文本：
 
 #### graphviz-v2-psg: Parsing state graph
 
@@ -1230,7 +1230,7 @@ digraph g {
 官方渲染效果：
 ![graphviz-v2-psg](assets/official-diagram-rendering-cases-v2/graphviz-v2-psg.svg)
 
-建议检查文本：`state0`, `State #0`, `State #1`, `shift/reduce`, `reduce/reduce`
+建议检查文本：`State #0`, `State #1`, `State #5`, `State #9`
 
 
 ## ECharts
