@@ -2440,11 +2440,14 @@ mod tests {
             .expect("render failed");
         assert!(
             svg.contains(&format!(r#"fill="{FORK_FILL}""#)),
-            "fork bar must be black filled"
+            "fork bar must use FORK_FILL"
         );
+        // Both fill and stroke use the activityBar color (#555555), matching
+        // the official PlantUML jar's fork bar: a rounded rect with
+        // `style="stroke:#555555;stroke-width:1;"` (not stroke="none").
         assert!(
-            svg.contains(r#"stroke="none""#),
-            "fork bar must have no stroke"
+            svg.contains(&format!(r#"style="stroke:{FORK_FILL};stroke-width:1;""#)),
+            "fork bar must have a #555555 stroke (matches official jar)"
         );
     }
 

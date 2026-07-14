@@ -5640,17 +5640,27 @@ mod tests {
             ActivityEvent::EndFork,
         ]);
         let layout = layout_activity(&d).unwrap();
-        assert_eq!(layout.nodes.len(), 5);
+        // A fork renders exactly two bars: the top bar from `fork` and the
+        // bottom bar from `end fork`. `fork again` only separates branches
+        // — it does not emit a bar — matching the official PlantUML jar.
+        assert_eq!(layout.nodes.len(), 4);
 
         let fork = &layout.nodes[0];
-        let fork_again = &layout.nodes[2];
-        let end_fork = &layout.nodes[4];
+        let action1 = &layout.nodes[1];
+        let action2 = &layout.nodes[2];
+        let end_fork = &layout.nodes[3];
         assert_eq!(fork.kind, ActivityNodeKindLayout::ForkBar);
-        assert_eq!(fork_again.kind, ActivityNodeKindLayout::ForkBar);
         assert_eq!(end_fork.kind, ActivityNodeKindLayout::ForkBar);
+        assert!(matches!(action1.kind, ActivityNodeKindLayout::Action));
+        assert!(matches!(action2.kind, ActivityNodeKindLayout::Action));
 
-        assert_eq!(fork.width, FORK_BAR_WIDTH);
         assert_eq!(fork.height, FORK_BAR_HEIGHT);
+        assert_eq!(end_fork.height, FORK_BAR_HEIGHT);
+        // Both bars span the full set of branches, so they share a width.
+        assert_eq!(fork.width, end_fork.width);
+        // The bottom bar sits below both branch actions.
+        assert!(end_fork.y >= action1.y + action1.height);
+        assert!(end_fork.y >= action2.y + action2.height);
     }
 
     // 9. Text sizing ---------------------------------------------------------
