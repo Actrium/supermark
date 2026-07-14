@@ -517,7 +517,7 @@ footer
 
 ![d2-v2-container-nested-grid](assets/official-diagram-rendering-cases-v2/d2-v2-container-nested-grid.svg)
 
-建议检查文本：`header`, `body`, `content`, `sidebar`, `footer`
+建议检查文本：`header`, `content`, `sidebar`, `footer`
 
 #### d2-v2-container-ml-platform: Platform graph with explanatory near container
 
