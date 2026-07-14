@@ -60,6 +60,7 @@ const visualPassThreshold = parseRatioEnv('VISUAL_PASS_THRESHOLD', 0.16);
 const visualFailThreshold = parseRatioEnv('VISUAL_FAIL_THRESHOLD', 0.30);
 const perceptualSimilarThreshold = parseRatioEnv('PERCEPTUAL_SIMILAR_THRESHOLD', 0.08);
 const severeSizeDeltaThreshold = parseRatioEnv('SEVERE_SIZE_DELTA_THRESHOLD', 0.80);
+const geometryAspectRatioDeltaThreshold = parseRatioEnv('GEOMETRY_ASPECT_RATIO_DELTA_THRESHOLD', 0.25);
 const playwrightHeadless = parseBoolEnv('PLAYWRIGHT_HEADLESS', process.env.CI === 'true');
 const viewport = parseViewportEnv(
   'PLAYWRIGHT_VIEWPORT',
@@ -149,6 +150,7 @@ const summary = {
     fail: visualFailThreshold,
     perceptualSimilar: perceptualSimilarThreshold,
     severeSizeDelta: severeSizeDeltaThreshold,
+    geometryAspectRatioDelta: geometryAspectRatioDeltaThreshold,
   },
   total: reports.length,
   passed: reports.filter(r => r.status === 'pass').length,
@@ -167,6 +169,8 @@ const summary = {
     pixelBand: r.visual?.pixelBand ?? null,
     severeSizeMismatch: r.visual?.severeSizeMismatch ?? null,
     perceptualDistanceRatio: r.visual?.perceptual?.distanceRatio ?? null,
+    geometryAspectRatioDelta: r.geometry?.aspectRatioDelta ?? null,
+    geometryAspectRatioMismatch: r.geometry?.aspectRatioMismatch ?? null,
     expectedSize: r.visual?.expectedSize ?? null,
     actualSize: r.visual?.actualSize ?? null,
     sizeDelta: r.visual?.sizeDelta ?? null,
@@ -264,6 +268,9 @@ async function loadCases(files) {
       const language = codeMatch[1].trim();
       const code = codeMatch[2].trimEnd();
       const imagePath = resolve(dirname(file), imageMatch[1]);
+      const imageSvg = extname(imagePath).toLowerCase() === '.svg'
+        ? await readFile(imagePath, 'utf8').catch(() => '')
+        : '';
       const expectedTexts = checksMatch
         ? [...checksMatch[1].matchAll(/`([^`]+)`/g)].map(m => m[1])
         : [];
@@ -274,6 +281,7 @@ async function loadCases(files) {
         code,
         markdown: `\`\`\`${language}\n${code}\n\`\`\``,
         imagePath,
+        imageSvg,
         imageRef: imageMatch[1],
         officialSource: officialSourceMatch?.[1]?.trim() ?? '',
         officialRenderUrl: officialRenderMatch?.[1]?.trim() ?? '',
@@ -371,7 +379,7 @@ async function runCase(page, browser, testCase) {
       if (await errorLocator.count()) {
         await errorLocator.screenshot({ path: actualErrorScreenshotPath });
       }
-      const geometry = geometryCheck(probe.svg, probe.rect);
+      const geometry = geometryCheck(probe.svg, probe.rect, testCase.imageSvg);
       return {
         id: testCase.id,
         title: testCase.title,
@@ -419,7 +427,7 @@ async function runCase(page, browser, testCase) {
     const visual = existsSync(actualPngPath)
       ? await comparePng(expectedPngPath, actualPngPath, testCase.id)
       : null;
-    const geometry = geometryCheck(probe.svg, probe.rect);
+    const geometry = geometryCheck(probe.svg, probe.rect, testCase.imageSvg);
     const status = classify({ semantic, geometry, visual, errors });
 
     return {
@@ -653,7 +661,7 @@ function normalizeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function geometryCheck(svg, rect) {
+function geometryCheck(svg, rect, expectedSvg = '') {
   if (!rect || rect.width <= 1 || rect.height <= 1) {
     return { pass: false, reason: 'empty-render-rect', rect };
   }
@@ -661,6 +669,14 @@ function geometryCheck(svg, rect) {
     return { pass: true, reason: 'non-svg-output', rect };
   }
   const viewBox = parseViewBox(svg);
+  const expectedViewBox = parseViewBox(expectedSvg);
+  const aspectRatio = viewBox ? safeAspectRatio(viewBox) : null;
+  const expectedAspectRatio = expectedViewBox ? safeAspectRatio(expectedViewBox) : null;
+  const aspectRatioDelta = aspectRatio !== null && expectedAspectRatio !== null
+    ? Math.abs(aspectRatio - expectedAspectRatio) / expectedAspectRatio
+    : null;
+  const aspectRatioMismatch = aspectRatioDelta !== null &&
+    aspectRatioDelta >= geometryAspectRatioDeltaThreshold;
   const svgWidth = Number(svg.match(/\bwidth=["']([^"']+)["']/i)?.[1]);
   const svgHeight = Number(svg.match(/\bheight=["']([^"']+)["']/i)?.[1]);
   return {
@@ -669,9 +685,16 @@ function geometryCheck(svg, rect) {
       rect.height > 1 &&
       (!viewBox || (viewBox.width > 1 && viewBox.height > 1)) &&
       (!Number.isFinite(svgWidth) || svgWidth > 1) &&
-      (!Number.isFinite(svgHeight) || svgHeight > 1),
+      (!Number.isFinite(svgHeight) || svgHeight > 1) &&
+      !aspectRatioMismatch,
     rect,
     viewBox,
+    expectedViewBox,
+    aspectRatio,
+    expectedAspectRatio,
+    aspectRatioDelta,
+    aspectRatioMismatch,
+    aspectRatioThreshold: geometryAspectRatioDeltaThreshold,
     svgWidth: Number.isFinite(svgWidth) ? svgWidth : null,
     svgHeight: Number.isFinite(svgHeight) ? svgHeight : null,
   };
@@ -683,6 +706,11 @@ function parseViewBox(svg) {
   const [x, y, width, height] = raw.trim().split(/[\s,]+/).map(Number);
   if (![x, y, width, height].every(Number.isFinite)) return null;
   return { x, y, width, height };
+}
+
+function safeAspectRatio(box) {
+  if (!box || box.width <= 0 || box.height <= 0) return null;
+  return box.width / box.height;
 }
 
 async function comparePng(expectedPath, actualPath, caseId) {
@@ -992,6 +1020,15 @@ function runSelfTests() {
       }),
       expected: 'review',
     },
+    {
+      name: 'fails SVG geometry when actual viewBox aspect ratio drifts far from official reference',
+      actual: geometryCheck(
+        '<svg viewBox="0 0 289 432"></svg>',
+        { width: 289, height: 432 },
+        '<svg viewBox="0 0 206 662"></svg>'
+      ).pass,
+      expected: false,
+    },
   ];
 
   for (const test of tests) {
@@ -1240,7 +1277,7 @@ function githubHeaders(token) {
   };
 }
 
-function renderIssueTitle(report) {
+function renderIssueTitleLegacy(report) {
   const diagram = issueDiagramLabel(report);
   const errors = report.errors ?? [];
 
@@ -1254,6 +1291,9 @@ function renderIssueTitle(report) {
     return `${diagram}：缺少关键文本`;
   }
   if (!report.geometry?.pass) {
+    if (report.geometry?.aspectRatioMismatch) {
+      return `${diagram}：图形布局比例异常`;
+    }
     return `${diagram}：图形尺寸异常`;
   }
   if (typeof report.visual.diffRatio === 'number') {
@@ -1282,7 +1322,7 @@ function issueDiagramLabel(report) {
   return type ? `${language} ${type}` : language;
 }
 
-function renderIssueBody(report, repo, options = {}) {
+function renderIssueBodyLegacy(report, repo, options = {}) {
   const artifactRunUrl = process.env.GITHUB_ACTIONS === 'true'
     ? `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${process.env.GITHUB_REPOSITORY || repo}/actions/runs/${process.env.GITHUB_RUN_ID || ''}`
     : '';
@@ -1306,6 +1346,24 @@ function renderIssueBody(report, repo, options = {}) {
   const severeSizeMismatchText = report.visual?.severeSizeMismatch ? '是' : '否';
   const diffBounds = report.visual?.diffBounds
     ? `x=${report.visual.diffBounds.x}, y=${report.visual.diffBounds.y}, width=${report.visual.diffBounds.width}, height=${report.visual.diffBounds.height}`
+    : '无';
+  const aspectRatioDelta = typeof report.geometry?.aspectRatioDelta === 'number'
+    ? `${(report.geometry.aspectRatioDelta * 100).toFixed(3)}%`
+    : '无';
+  const expectedAspectRatio = typeof report.geometry?.expectedAspectRatio === 'number'
+    ? report.geometry.expectedAspectRatio.toFixed(6)
+    : '无';
+  const actualAspectRatio = typeof report.geometry?.aspectRatio === 'number'
+    ? report.geometry.aspectRatio.toFixed(6)
+    : '无';
+  const aspectRatioThreshold = typeof report.geometry?.aspectRatioThreshold === 'number'
+    ? `${(report.geometry.aspectRatioThreshold * 100).toFixed(3)}%`
+    : '无';
+  const expectedViewBox = report.geometry?.expectedViewBox
+    ? formatViewBox(report.geometry.expectedViewBox)
+    : '无';
+  const actualViewBox = report.geometry?.viewBox
+    ? formatViewBox(report.geometry.viewBox)
     : '无';
   const missingTexts = report.semantic?.missingTexts?.length
     ? report.semantic.missingTexts.map(text => `\`${text}\``).join(', ')
@@ -1375,6 +1433,9 @@ ${report.visual ? '' : '- 视觉对比：跳过。页面未成功渲染出有效
 - Actual 原图尺寸：${formatSize(report.visual?.actualSize)}
 - 原图尺寸差异：${formatSizeDelta(report.visual?.sizeDelta?.original)}
 - 内容区域尺寸差异：${formatSizeDelta(report.visual?.sizeDelta?.content)}
+- Expected SVG viewBox：${expectedViewBox}
+- Actual SVG viewBox：${actualViewBox}
+- SVG viewBox 比例差异：expected=${expectedAspectRatio}，actual=${actualAspectRatio}，delta=${aspectRatioDelta}，阈值=${aspectRatioThreshold}
 - 关键文本缺失：${missingTexts}
 - 语义检查：${report.semantic?.pass ? '通过' : '不通过'}
 - 几何检查：${report.geometry?.pass ? '通过' : '不通过'}
@@ -1421,6 +1482,193 @@ ${getCaseCodeForIssue(report.id)}
 ## 期望结果
 
 Supramark 渲染结果应与官方渲染效果在结构、文本、布局、连线/形状和可见区域上保持一致。结构性问题应修复；纯视觉差异只有达到高差异阈值时才自动判定为缺陷。
+`;
+}
+
+function renderIssueTitle(report) {
+  const diagram = issueDiagramLabel(report);
+  const errors = report.errors ?? [];
+
+  if (errors.length > 0 || report.semantic?.hasError) {
+    return `${diagram}：渲染报错`;
+  }
+  if (!report.visual) {
+    return `${diagram}：未生成可对比图像`;
+  }
+  if (report.semantic?.missingTexts?.length) {
+    return `${diagram}：缺少关键文本`;
+  }
+  if (!report.geometry?.pass) {
+    if (report.geometry?.aspectRatioMismatch) {
+      return `${diagram}：图形布局比例异常`;
+    }
+    return `${diagram}：图形尺寸异常`;
+  }
+  if (typeof report.visual.diffRatio === 'number') {
+    return `${diagram}：视觉差异 ${(report.visual.diffRatio * 100).toFixed(2)}%`;
+  }
+
+  return `${diagram}：渲染结果不一致`;
+}
+
+function renderIssueBody(report, repo, options = {}) {
+  const artifactRunUrl = process.env.GITHUB_ACTIONS === 'true'
+    ? `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${process.env.GITHUB_REPOSITORY || repo}/actions/runs/${process.env.GITHUB_RUN_ID || ''}`
+    : '';
+  const artifactBaseUrl = (process.env.ARTIFACT_BASE_URL || '').replace(/\/+$/, '');
+  const diffRatio = typeof report.visual?.diffRatio === 'number'
+    ? `${(report.visual.diffRatio * 100).toFixed(3)}%`
+    : '无，未生成视觉 diff';
+  const rawDiffRatio = typeof report.visual?.raw?.diffRatio === 'number'
+    ? `${(report.visual.raw.diffRatio * 100).toFixed(3)}%`
+    : '无';
+  const perceptualDistance = typeof report.visual?.perceptual?.distanceRatio === 'number'
+    ? `${(report.visual.perceptual.distanceRatio * 100).toFixed(3)}%`
+    : '无';
+  const passThreshold = typeof report.visual?.passThreshold === 'number'
+    ? `${(report.visual.passThreshold * 100).toFixed(3)}%`
+    : `${(visualPassThreshold * 100).toFixed(3)}%`;
+  const failThreshold = typeof report.visual?.failThreshold === 'number'
+    ? `${(report.visual.failThreshold * 100).toFixed(3)}%`
+    : `${(visualFailThreshold * 100).toFixed(3)}%`;
+  const visualBandText = report.visual?.band ?? '无';
+  const severeSizeMismatchText = report.visual?.severeSizeMismatch ? '是' : '否';
+  const diffBounds = report.visual?.diffBounds
+    ? `x=${report.visual.diffBounds.x}, y=${report.visual.diffBounds.y}, width=${report.visual.diffBounds.width}, height=${report.visual.diffBounds.height}`
+    : '无';
+  const aspectRatioDelta = typeof report.geometry?.aspectRatioDelta === 'number'
+    ? `${(report.geometry.aspectRatioDelta * 100).toFixed(3)}%`
+    : '无';
+  const expectedAspectRatio = typeof report.geometry?.expectedAspectRatio === 'number'
+    ? report.geometry.expectedAspectRatio.toFixed(6)
+    : '无';
+  const actualAspectRatio = typeof report.geometry?.aspectRatio === 'number'
+    ? report.geometry.aspectRatio.toFixed(6)
+    : '无';
+  const aspectRatioThreshold = typeof report.geometry?.aspectRatioThreshold === 'number'
+    ? `${(report.geometry.aspectRatioThreshold * 100).toFixed(3)}%`
+    : '无';
+  const expectedViewBox = report.geometry?.expectedViewBox
+    ? formatViewBox(report.geometry.expectedViewBox)
+    : '无';
+  const actualViewBox = report.geometry?.viewBox
+    ? formatViewBox(report.geometry.viewBox)
+    : '无';
+  const missingTexts = report.semantic?.missingTexts?.length
+    ? report.semantic.missingTexts.map(text => `\`${text}\``).join(', ')
+    : '无';
+  const errors = report.errors?.length ? report.errors.map(error => `- ${error}`).join('\n') : '- 无';
+  const localExpected = report.expected?.pngPath || '';
+  const localOfficialReference = options.github
+    ? report.expected?.sourceSvg || ''
+    : localExpected || report.expected?.sourceSvg || '';
+  const localActual = report.actual?.pngPath || report.actual?.screenshotPath || '';
+  const localDiff = report.visual?.diffPath || '';
+  const localRawDiff = report.visual?.raw?.diffPath || '';
+  const localNormalizedExpected = report.visual?.normalized?.expectedPath || '';
+  const localNormalizedActual = report.visual?.normalized?.actualPath || '';
+  const env = report.runEnvironment?.playwright ?? runEnvironment.playwright;
+  const envText = [
+    `Playwright 模式：${env.headless ? 'headless' : 'headed'}`,
+    `Viewport：${env.viewport?.width ?? '?'}x${env.viewport?.height ?? '?'}`,
+    `deviceScaleFactor：${env.deviceScaleFactor ?? '?'}`,
+    `Browser：${env.browserVersion ?? '未记录'}`,
+    `Chrome 路径：${env.executablePath ?? '未记录'}`,
+  ].join('\n- ');
+  const expectedImage = artifactImagePath(localExpected, { ...options, artifactBaseUrl });
+  const officialImage = officialReferenceImagePath({
+    localOfficialReference,
+    officialRenderUrl: report.expected?.officialRenderUrl || '',
+    repo: process.env.GITHUB_REPOSITORY || repo,
+    options: { ...options, artifactBaseUrl },
+  });
+  const actualImage = artifactImagePath(localActual, { ...options, artifactBaseUrl });
+  const diffImage = artifactImagePath(localDiff, { ...options, artifactBaseUrl });
+  const rawDiffImage = artifactImagePath(localRawDiff, { ...options, artifactBaseUrl });
+  const normalizedExpectedImage = artifactImagePath(localNormalizedExpected, { ...options, artifactBaseUrl });
+  const normalizedActualImage = artifactImagePath(localNormalizedActual, { ...options, artifactBaseUrl });
+  const localImageNote = options.github && !artifactBaseUrl
+    ? '\n> GitHub Issue 无法直接显示本地生成的 PNG。请打开本次 GitHub Actions artifact，或配置 `ARTIFACT_BASE_URL` 指向公开可访问的产物目录后再提交 issue。\n'
+    : '';
+  const visualSkipNote = report.visual
+    ? ''
+    : '- 视觉对比：跳过。页面未成功渲染出有效图表，继续做像素对比没有意义。\n';
+
+  return `## 缺陷摘要
+
+自动化图表渲染检查发现 \`${report.id}\`${report.visual ? ' 渲染结果与官方参考结果不一致' : ' 页面未成功渲染出有效图表'}，判定为 **不通过**。
+
+## 用例信息
+
+- 用例 ID：\`${report.id}\`
+- 图表语言：\`${report.language}\`
+- 页面 Feature 下拉框：\`${report.selectedFeature ?? '未记录'}\`
+- 类型/示例下拉框：\`${report.selectedExample ?? '未记录'}\`
+- 测试文档位置：\`${report.docPath ?? '未记录'}\`
+- Supramark 页面：${report.url ?? '未记录'}
+
+## 运行环境
+
+- ${envText}
+
+## 差异项
+
+${visualSkipNote}- 视觉差异比例：${diffRatio}
+- 原始尺寸直接 diff：${rawDiffRatio}
+- 感知哈希距离：${perceptualDistance}
+- 视觉分级：${visualBandText}
+- 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核；若尺寸面积差异 ≥ ${formatRatio(severeSizeDeltaThreshold)} 且感知哈希距离 > ${formatRatio(perceptualSimilarThreshold)}，标记为人工复核；若像素差异本身已达到不通过则仍为不通过
+- 严重尺寸+感知异常：${severeSizeMismatchText}
+- 差异区域 bounding box：${diffBounds}
+- Expected 原图尺寸：${formatSize(report.visual?.expectedSize)}
+- Actual 原图尺寸：${formatSize(report.visual?.actualSize)}
+- 原图尺寸差异：${formatSizeDelta(report.visual?.sizeDelta?.original)}
+- 内容区域尺寸差异：${formatSizeDelta(report.visual?.sizeDelta?.content)}
+- Expected SVG viewBox：${expectedViewBox}
+- Actual SVG viewBox：${actualViewBox}
+- SVG viewBox 比例差异：expected=${expectedAspectRatio}，actual=${actualAspectRatio}，delta=${aspectRatioDelta}，阈值=${aspectRatioThreshold}
+- 关键文本缺失：${missingTexts}
+- 语义检查：${report.semantic?.pass ? '通过' : '不通过'}
+- 几何检查：${report.geometry?.pass ? '通过' : '不通过'}
+
+## 错误信息
+
+${errors}
+
+## 官方原渲染效果
+
+- 官方来源：${report.expected?.officialSource || '未记录'}
+- 官方渲染 URL：${report.expected?.officialRenderUrl || '未记录'}
+- 官方参考图文件：\`${report.expected?.sourceSvg || '未记录'}\`
+
+${officialImage ? `![官方原渲染效果](${officialImage})` : ''}
+
+## 自动化产物位置
+
+> 如果 issue 是从本地脚本提交的，下面是本地路径；如果从 GitHub Actions 提交，请查看本次 workflow artifact。
+${artifactRunUrl ? `\n- GitHub Actions Run：${artifactRunUrl}` : ''}
+- Expected PNG：\`${localExpected || '未生成'}\`
+- Actual PNG/截图：\`${localActual || '未生成'}\`
+- Normalized Expected PNG：\`${localNormalizedExpected || '未生成'}\`
+- Normalized Actual PNG：\`${localNormalizedActual || '未生成'}\`
+- Normalized Diff PNG：\`${localDiff || '未生成'}\`
+- Raw Diff PNG：\`${localRawDiff || '未生成'}\`
+- HTML 总报告：\`artifacts/official-diagram-visual-workflow/report.html\`
+
+${localImageNote}
+
+${expectedImage ? `![Expected](${expectedImage})` : ''}
+${actualImage ? `![Actual](${actualImage})` : ''}
+${normalizedExpectedImage ? `![Normalized Expected](${normalizedExpectedImage})` : ''}
+${normalizedActualImage ? `![Normalized Actual](${normalizedActualImage})` : ''}
+${diffImage ? `![Diff](${diffImage})` : ''}
+${rawDiffImage ? `![Raw Diff](${rawDiffImage})` : ''}
+
+## 复现代码
+
+\`\`\`text
+${report.code ?? report.markdown ?? ''}
+\`\`\`
 `;
 }
 
@@ -1557,6 +1805,13 @@ function formatSize(value) {
     ? `, content ${value.contentBounds.width}x${value.contentBounds.height}`
     : '';
   return `${value.width}x${value.height}${content}`;
+}
+
+function formatViewBox(value) {
+  if (!value || typeof value.width !== 'number' || typeof value.height !== 'number') {
+    return 'n/a';
+  }
+  return `${value.x} ${value.y} ${value.width} ${value.height}`;
 }
 
 function formatSizeDelta(value) {
