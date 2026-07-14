@@ -20,7 +20,7 @@
 所有命令默认在本目录执行：
 
 ```bash
-npm install
+npm ci
 npm run visual:official-diagrams
 ```
 
@@ -60,6 +60,7 @@ artifacts/official-diagram-visual-workflow/
 
 ## Issue 行为
 
+- 默认不提交 GitHub issue；本地需设置 `SUBMIT_GITHUB_ISSUES=1`，GitHub Actions 需设置 `submit_github_issues=1`。
 - 只有 `status = fail` 的用例会提交 GitHub issue。
 - `pass` 和 `review` 不提交 issue。
 - 页面显示渲染失败或没有生成可渲染图形时，直接判定为 `fail`。

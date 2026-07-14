@@ -14,7 +14,7 @@ This folder contains the official diagram rendering cases and the Playwright-bas
 
 ```powershell
 cd tests/official-diagram-visual
-npm install
+npm ci
 $env:SOURCE_DOCS='cases/official-diagram-rendering-cases.md'
 $env:CASE_IDS='all'
 $env:SUBMIT_GITHUB_ISSUES='0'
@@ -45,7 +45,9 @@ Run it manually from GitHub Actions with:
 - `source_docs`: `cases/official-diagram-rendering-cases.md`
 - `supramark_url`: `https://actrium.github.io/supramark/preview/`
 - `issue_repo`: `Actrium/supramark`
+- `submit_github_issues`: `0`
 - `playwright_headless`: `1`
 - `playwright_viewport`: `1280x900`
 
-Only `fail` cases create issues. `pass` and `review` cases are not submitted.
+Issue creation is opt-in. Set `submit_github_issues` to `1` to create issues for
+failed cases. `pass` and `review` cases are not submitted.

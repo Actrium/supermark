@@ -19,6 +19,10 @@ on:
         description: "Repository to receive generated issues"
         required: false
         default: "Actrium/supramark"
+      submit_github_issues:
+        description: "Create GitHub issues for failed cases: 1 or 0"
+        required: false
+        default: "0"
       playwright_headless:
         description: "Run browser in headless mode: 1 or 0"
         required: false
@@ -47,7 +51,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: tests/official-diagram-visual
-        run: npm install
+        run: npm ci
 
       - name: Install Playwright Chromium
         working-directory: tests/official-diagram-visual
@@ -59,7 +63,7 @@ jobs:
           CASE_IDS: ${{ github.event.inputs.case_ids || 'all' }}
           SOURCE_DOCS: ${{ github.event.inputs.source_docs || 'cases/official-diagram-rendering-cases.md' }}
           SUPRAMARK_URL: ${{ github.event.inputs.supramark_url || 'https://actrium.github.io/supramark/preview/' }}
-          SUBMIT_GITHUB_ISSUES: "1"
+          SUBMIT_GITHUB_ISSUES: ${{ github.event.inputs.submit_github_issues || '0' }}
           FAIL_ON_FAILURES: "1"
           GH_TOKEN: ${{ secrets.GH_ISSUES_TOKEN || github.token }}
           ISSUE_REPO: ${{ github.event.inputs.issue_repo || 'Actrium/supramark' }}
