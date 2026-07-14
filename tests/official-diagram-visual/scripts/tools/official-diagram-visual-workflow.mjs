@@ -1048,6 +1048,41 @@ function runSelfTests() {
       }).code,
       expected: 'a -> b',
     },
+    {
+      name: 'places reproduction code and official reference immediately after case info',
+      actual: renderIssueBody({
+        id: 'sample-case',
+        language: 'd2',
+        code: 'a -> b',
+        selectedFeature: 'Diagram (D2)',
+        selectedExample: '带标签连线',
+        docPath: 'cases/sample.md',
+        url: 'https://example.test/preview/?feature=d2',
+        runEnvironment: {
+          playwright: {
+            headless: true,
+            viewport: { width: 1280, height: 900 },
+            deviceScaleFactor: 1,
+            browserVersion: 'test',
+            executablePath: 'test-chrome',
+          },
+        },
+        expected: {
+          sourceSvg: 'cases/assets/sample.svg',
+          officialSource: 'https://example.test/source',
+          officialRenderUrl: 'https://example.test/render.svg',
+        },
+        actual: {},
+        semantic: { pass: false, missingTexts: [] },
+        geometry: { pass: false },
+        visual: null,
+        errors: [],
+      }, 'owner/repo')
+        .match(/^## .+$/gm)
+        .slice(0, 5)
+        .join('>'),
+      expected: '## 缺陷摘要>## 用例信息>## 复现代码>## 官方原渲染效果>## 运行环境',
+    },
   ];
 
   for (const test of tests) {
@@ -1626,6 +1661,20 @@ function renderIssueBody(report, repo, options = {}) {
 - 测试文档位置：\`${report.docPath ?? '未记录'}\`
 - Supramark 页面：${report.url ?? '未记录'}
 
+## 复现代码
+
+\`\`\`text
+${report.code ?? report.markdown ?? ''}
+\`\`\`
+
+## 官方原渲染效果
+
+- 官方来源：${report.expected?.officialSource || '未记录'}
+- 官方渲染 URL：${report.expected?.officialRenderUrl || '未记录'}
+- 官方参考图文件：\`${report.expected?.sourceSvg || '未记录'}\`
+
+${officialImage ? `![官方原渲染效果](${officialImage})` : ''}
+
 ## 运行环境
 
 - ${envText}
@@ -1654,14 +1703,6 @@ ${visualSkipNote}- 视觉差异比例：${diffRatio}
 
 ${errors}
 
-## 官方原渲染效果
-
-- 官方来源：${report.expected?.officialSource || '未记录'}
-- 官方渲染 URL：${report.expected?.officialRenderUrl || '未记录'}
-- 官方参考图文件：\`${report.expected?.sourceSvg || '未记录'}\`
-
-${officialImage ? `![官方原渲染效果](${officialImage})` : ''}
-
 ## 自动化产物位置
 
 > 如果 issue 是从本地脚本提交的，下面是本地路径；如果从 GitHub Actions 提交，请查看本次 workflow artifact。
@@ -1682,12 +1723,6 @@ ${normalizedExpectedImage ? `![Normalized Expected](${normalizedExpectedImage})`
 ${normalizedActualImage ? `![Normalized Actual](${normalizedActualImage})` : ''}
 ${diffImage ? `![Diff](${diffImage})` : ''}
 ${rawDiffImage ? `![Raw Diff](${rawDiffImage})` : ''}
-
-## 复现代码
-
-\`\`\`text
-${report.code ?? report.markdown ?? ''}
-\`\`\`
 `;
 }
 
