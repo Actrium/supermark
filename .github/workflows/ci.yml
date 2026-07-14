@@ -395,15 +395,40 @@ jobs:
       - name: clippy (deny warnings)
         run: cargo clippy -p d2-little --all-targets -- -D warnings
 
-      # NOTE: when the elk bridge (PR #69) lands, tests/elk_bridge.rs needs Node +
-      # elkjs available or its byte-exact/parity cases skip vacuously. Add before
-      # the test step:
-      #   - uses: actions/setup-node@v4
-      #     with: { node-version: "22" }
-      #   - run: npm install elkjs@0.8.2   # or the runner d2-little expects
-      # so the "byte-exact vs upstream d2" claim is guarded, not skipped.
+      # tests/elk_bridge.rs drives the elkjs bridge end-to-end (prepare →
+      # `node tests/elk_runner.mjs` → render) and asserts byte-exact SVG
+      # parity with upstream d2 v0.7.1. The runner resolves `elkjs@0.8.2`
+      # (the exact version d2 v0.7.1 bundles) from packages/engines, so
+      # install it there. Without node+elkjs these tests skip vacuously and
+      # the "byte-exact vs upstream d2" claim is unguarded.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install elkjs@0.8.2 for elk bridge tests
+        # npm can't parse packages/engines/package.json (bun `workspace:*`
+        # protocol), so install elkjs in an isolated dir and symlink it into
+        # packages/engines/node_modules — where the elk runner resolves it
+        # via Node's upward module walk. The `cd` is wrapped in a subshell so
+        # the repo-relative `ln -s` target still resolves from the workspace root.
+        run: |
+          mkdir -p /tmp/elkjs-install
+          (cd /tmp/elkjs-install && npm init -y >/dev/null && npm install elkjs@0.8.2 --no-audit --no-fund)
+          mkdir -p packages/engines/node_modules
+          ln -s /tmp/elkjs-install/node_modules/elkjs packages/engines/node_modules/elkjs
+          node -e 'require("module").createRequire(process.cwd()+"/packages/engines/package.json")("elkjs/lib/elk.bundled.js"); console.log("elkjs resolves OK")'
+
       - name: cargo test (lib + integration)
         run: cargo test -p d2-little --lib --tests
+
+      # The 293-fixture parity sweep is `#[ignore]` (heavy; ~1 min). Run it
+      # explicitly so the `>=190` floor guards against elk-bridge regressions
+      # — without this a silent drift in parity would not fail CI.
+      - name: elk bridge parity sweep (>=190 floor)
+        env:
+          D2_ELK_DEBUG: '1'
+        run: cargo test -p d2-little --test elk_bridge -- --ignored elk_bridge_fixture_parity --nocapture
 
   # plantuml-little: the port integration tests (issue #28 frame width, issue
   # #36 create/destroy geometry) live under tests/port_sequence_*.rs and are
