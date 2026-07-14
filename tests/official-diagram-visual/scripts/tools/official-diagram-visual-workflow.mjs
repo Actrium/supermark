@@ -59,6 +59,7 @@ const chromePath = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Ap
 const visualPassThreshold = parseRatioEnv('VISUAL_PASS_THRESHOLD', 0.16);
 const visualFailThreshold = parseRatioEnv('VISUAL_FAIL_THRESHOLD', 0.30);
 const perceptualSimilarThreshold = parseRatioEnv('PERCEPTUAL_SIMILAR_THRESHOLD', 0.08);
+const severeSizeDeltaThreshold = parseRatioEnv('SEVERE_SIZE_DELTA_THRESHOLD', 0.80);
 const playwrightHeadless = parseBoolEnv('PLAYWRIGHT_HEADLESS', process.env.CI === 'true');
 const viewport = parseViewportEnv(
   'PLAYWRIGHT_VIEWPORT',
@@ -75,6 +76,11 @@ const featureByLanguage = new Map([
   ['echarts', 'diagram-echarts'],
   ['vega-lite', 'diagram-vega-lite'],
 ]);
+
+if (process.env.OFFICIAL_DIAGRAM_VISUAL_SELF_TEST === '1') {
+  runSelfTests();
+  process.exit(0);
+}
 
 await mkdir(outDir, { recursive: true });
 await mkdir(resolve(outDir, 'expected'), { recursive: true });
@@ -142,6 +148,7 @@ const summary = {
     pass: visualPassThreshold,
     fail: visualFailThreshold,
     perceptualSimilar: perceptualSimilarThreshold,
+    severeSizeDelta: severeSizeDeltaThreshold,
   },
   total: reports.length,
   passed: reports.filter(r => r.status === 'pass').length,
@@ -158,6 +165,7 @@ const summary = {
     rawDiffRatio: r.visual?.raw?.diffRatio ?? null,
     visualBand: r.visual?.band ?? null,
     pixelBand: r.visual?.pixelBand ?? null,
+    severeSizeMismatch: r.visual?.severeSizeMismatch ?? null,
     perceptualDistanceRatio: r.visual?.perceptual?.distanceRatio ?? null,
     expectedSize: r.visual?.expectedSize ?? null,
     actualSize: r.visual?.actualSize ?? null,
@@ -708,11 +716,7 @@ async function comparePng(expectedPath, actualPath, caseId) {
     height: targetHeight,
     diffPath: normalizedDiffPath,
   });
-  const pixelBand = visualBand(normalized.diffRatio);
   const perceptual = await comparePerceptualHash(normalizedExpectedPath, normalizedActualPath);
-  const band = pixelBand === 'fail' && perceptual.distanceRatio <= perceptualSimilarThreshold
-    ? 'review'
-    : pixelBand;
   const sizeDelta = {
     original: sizeDeltaRatio(
       { width: expectedImage.width, height: expectedImage.height },
@@ -720,6 +724,9 @@ async function comparePng(expectedPath, actualPath, caseId) {
     ),
     content: sizeDeltaRatio(expectedBounds, actualBounds),
   };
+  const pixelBand = visualBand(normalized.diffRatio);
+  const severeSizeMismatch = hasSevereSizePerceptualMismatch({ sizeDelta, perceptual });
+  const band = visualBandWithEscalation({ pixelBand, perceptual, severeSizeMismatch });
 
   return {
     width: targetWidth,
@@ -761,6 +768,7 @@ async function comparePng(expectedPath, actualPath, caseId) {
       contentBounds: actualBounds,
     },
     sizeDelta,
+    severeSizeMismatch,
     passThreshold: visualPassThreshold,
     failThreshold: visualFailThreshold,
   };
@@ -925,6 +933,72 @@ function visualBand(diffRatio) {
   if (diffRatio <= visualPassThreshold) return 'pass';
   if (diffRatio >= visualFailThreshold) return 'fail';
   return 'review';
+}
+
+function visualBandWithEscalation({ pixelBand, perceptual, severeSizeMismatch }) {
+  if (severeSizeMismatch) return 'fail';
+  if (pixelBand === 'fail' && perceptual.distanceRatio <= perceptualSimilarThreshold) {
+    return 'review';
+  }
+  return pixelBand;
+}
+
+function hasSevereSizePerceptualMismatch({ sizeDelta, perceptual }) {
+  const contentAreaDelta = Math.abs(sizeDelta?.content?.area ?? 0);
+  const originalAreaDelta = Math.abs(sizeDelta?.original?.area ?? 0);
+  const severeAreaDelta = Math.max(contentAreaDelta, originalAreaDelta) >= severeSizeDeltaThreshold;
+  return severeAreaDelta && (perceptual?.distanceRatio ?? 0) > perceptualSimilarThreshold;
+}
+
+function runSelfTests() {
+  const tests = [
+    {
+      name: 'escalates severe size collapse with high perceptual distance',
+      actual: visualBandWithEscalation({
+        pixelBand: 'pass',
+        perceptual: { distanceRatio: 0.37891 },
+        severeSizeMismatch: hasSevereSizePerceptualMismatch({
+          sizeDelta: {
+            original: { area: -0.9763 },
+            content: { area: -0.9765 },
+          },
+          perceptual: { distanceRatio: 0.37891 },
+        }),
+      }),
+      expected: 'fail',
+    },
+    {
+      name: 'keeps ordinary size differences as pass when visual diff passes',
+      actual: visualBandWithEscalation({
+        pixelBand: 'pass',
+        perceptual: { distanceRatio: 0.06738 },
+        severeSizeMismatch: hasSevereSizePerceptualMismatch({
+          sizeDelta: {
+            original: { area: -0.1851 },
+            content: { area: -0.1923 },
+          },
+          perceptual: { distanceRatio: 0.06738 },
+        }),
+      }),
+      expected: 'pass',
+    },
+    {
+      name: 'downgrades high pixel diff with similar perceptual hash to review',
+      actual: visualBandWithEscalation({
+        pixelBand: 'fail',
+        perceptual: { distanceRatio: 0.03 },
+        severeSizeMismatch: false,
+      }),
+      expected: 'review',
+    },
+  ];
+
+  for (const test of tests) {
+    if (test.actual !== test.expected) {
+      throw new Error(`${test.name}: expected ${test.expected}, got ${test.actual}`);
+    }
+  }
+  console.log(`visual classification self-test passed (${tests.length} checks)`);
 }
 
 function findDiffBounds(diffPng) {
@@ -1228,6 +1302,7 @@ function renderIssueBody(report, repo, options = {}) {
     ? `${(report.visual.failThreshold * 100).toFixed(3)}%`
     : `${(visualFailThreshold * 100).toFixed(3)}%`;
   const visualBandText = report.visual?.band ?? '无';
+  const severeSizeMismatchText = report.visual?.severeSizeMismatch ? '是' : '否';
   const diffBounds = report.visual?.diffBounds
     ? `x=${report.visual.diffBounds.x}, y=${report.visual.diffBounds.y}, width=${report.visual.diffBounds.width}, height=${report.visual.diffBounds.height}`
     : '无';
@@ -1292,7 +1367,8 @@ ${report.visual ? '' : '- 视觉对比：跳过。页面未成功渲染出有效
 - 原始尺寸直接 diff：${rawDiffRatio}
 - 感知哈希距离：${perceptualDistance}
 - 视觉分级：${visualBandText}
-- 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核
+- 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核；若尺寸面积差异 ≥ ${formatRatio(severeSizeDeltaThreshold)} 且感知哈希距离 > ${formatRatio(perceptualSimilarThreshold)}，升级为不通过
+- 严重尺寸+感知异常：${severeSizeMismatchText}
 - 差异区域 bounding box：${diffBounds}
 - Expected 原图尺寸：${formatSize(report.visual?.expectedSize)}
 - Actual 原图尺寸：${formatSize(report.visual?.actualSize)}
@@ -1410,7 +1486,7 @@ function renderHtmlReport(reports, summary) {
   <p><strong>${escapeHtml(report.language)}</strong> / ${escapeHtml(report.title || '')}</p>
   <p>selected: ${escapeHtml(report.selectedFeature ?? '')}${report.selectedExample ? ` / ${escapeHtml(report.selectedExample)}` : ''}</p>
   <p>environment: ${summary.runEnvironment.playwright.headless ? 'headless' : 'headed'} / viewport ${summary.runEnvironment.playwright.viewport.width}x${summary.runEnvironment.playwright.viewport.height} / dSF ${summary.runEnvironment.playwright.deviceScaleFactor}</p>
-  <p>normalized diff: ${formatRatio(report.visual?.diffRatio)} (${escapeHtml(report.visual?.band ?? 'n/a')}) | pixel band: ${escapeHtml(report.visual?.pixelBand ?? 'n/a')} | raw diff: ${formatRatio(report.visual?.raw?.diffRatio)} | perceptual: ${formatRatio(report.visual?.perceptual?.distanceRatio)} | semantic: ${report.semantic.pass ? 'pass' : 'fail'} | geometry: ${report.geometry.pass ? 'pass' : 'fail'}</p>
+  <p>normalized diff: ${formatRatio(report.visual?.diffRatio)} (${escapeHtml(report.visual?.band ?? 'n/a')}) | pixel band: ${escapeHtml(report.visual?.pixelBand ?? 'n/a')} | raw diff: ${formatRatio(report.visual?.raw?.diffRatio)} | perceptual: ${formatRatio(report.visual?.perceptual?.distanceRatio)} | severe size mismatch: ${report.visual?.severeSizeMismatch ? 'yes' : 'no'} | semantic: ${report.semantic.pass ? 'pass' : 'fail'} | geometry: ${report.geometry.pass ? 'pass' : 'fail'}</p>
   <p>size: expected ${escapeHtml(formatSize(report.visual?.expectedSize))}, actual ${escapeHtml(formatSize(report.visual?.actualSize))}, original delta ${escapeHtml(formatSizeDelta(report.visual?.sizeDelta?.original))}, content delta ${escapeHtml(formatSizeDelta(report.visual?.sizeDelta?.content))}</p>
   ${report.errors?.length ? `<pre class="errors">${escapeHtml(report.errors.join('\n'))}</pre>` : ''}
   <div class="images">
