@@ -301,6 +301,7 @@ async function runCase(page, browser, testCase) {
       id: testCase.id,
       title: testCase.title,
       language: testCase.language,
+      ...caseSourceFields(testCase),
       status: 'fail',
       errors: [`No preview feature mapping for language: ${testCase.language}`],
       semantic: { pass: false },
@@ -384,6 +385,7 @@ async function runCase(page, browser, testCase) {
         id: testCase.id,
         title: testCase.title,
         language: testCase.language,
+        ...caseSourceFields(testCase),
         feature,
         selectedFeature,
         selectedExample,
@@ -434,6 +436,7 @@ async function runCase(page, browser, testCase) {
       id: testCase.id,
       title: testCase.title,
       language: testCase.language,
+      ...caseSourceFields(testCase),
       feature,
       selectedFeature,
       selectedExample,
@@ -462,6 +465,7 @@ async function runCase(page, browser, testCase) {
       id: testCase.id,
       title: testCase.title,
       language: testCase.language,
+      ...caseSourceFields(testCase),
       feature,
       status: 'fail',
       semantic: { pass: false },
@@ -475,6 +479,13 @@ async function runCase(page, browser, testCase) {
     page.off('console', onConsole);
     page.off('pageerror', onPageError);
   }
+}
+
+function caseSourceFields(testCase) {
+  return {
+    code: testCase.code ?? '',
+    markdown: testCase.markdown ?? '',
+  };
 }
 
 async function selectFeature(page, feature) {
@@ -1028,6 +1039,14 @@ function runSelfTests() {
         '<svg viewBox="0 0 206 662"></svg>'
       ).pass,
       expected: false,
+    },
+    {
+      name: 'carries reproduction code into generated reports',
+      actual: caseSourceFields({
+        code: 'a -> b',
+        markdown: '```d2\na -> b\n```',
+      }).code,
+      expected: 'a -> b',
     },
   ];
 
