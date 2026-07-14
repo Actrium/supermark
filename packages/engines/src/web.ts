@@ -22,8 +22,38 @@ interface WasmRenderModule {
   default?: unknown;
   init?: unknown;
   convert?: unknown;
-  render?: unknown;
+  // d2's `render` export is the elk bridge (handle, layoutJson). Other
+  // wasm modules use `render` as a convert-fallback name; `pickWasmConvert`
+  // casts it to WasmConvertFn in that case.
+  render?: (handle: number, layoutJson: string) => string;
   renderSvg?: unknown;
+  // elk layout bridge exports (added alongside `convert`):
+  prepare?: (input: string) => D2PrepareResult;
+  drop_prepared?: (handle: number) => void;
+}
+
+/** Result of the wasm `prepare` export (wasm-bindgen class with getters). */
+interface D2PrepareResult {
+  handle: number;
+  request: string;
+}
+
+// --- elk layout bridge DTO (mirrors crates/d2-little/src/layout_bridge.rs) ---
+
+/** d2-little's `LayoutRequest`: the complete ELK input graph plus feature
+ * flags. The host runs `elkjs.layout(request.elk_graph)` and hands the laid-out
+ * graph back as `D2LayoutResult.elk_graph`. All d2 `d2elklayout` logic
+ * (layoutOptions, node sizing, post-processing) lives in the Rust crate —
+ * the host is a thin elkjs runner. */
+interface D2LayoutRequest {
+  multi_board: boolean;
+  has_sequence: boolean;
+  has_grid: boolean;
+  has_near: boolean;
+  elk_graph: unknown;
+}
+interface D2LayoutResult {
+  elk_graph: unknown;
 }
 
 /** A loaded `@actrium/graphviz-anywhere-web` Graphviz instance. */
@@ -47,7 +77,10 @@ function pickWasmInit(mod: WasmRenderModule): WasmInitFn | null {
 /** Probe a wasm-bindgen module for a `convert`/`render`/`renderSvg` entry. */
 function pickWasmConvert(mod: WasmRenderModule): WasmConvertFn | null {
   if (typeof mod.convert === 'function') return mod.convert as WasmConvertFn;
-  if (typeof mod.render === 'function') return mod.render as WasmConvertFn;
+  // `render` on d2's module is the elk bridge ((handle, json) => svg), not a
+  // convert entry; d2 always exposes `convert`, so this fallback is only hit
+  // for other modules that name their convert-fn `render`.
+  if (typeof mod.render === 'function') return mod.render as unknown as WasmConvertFn;
   if (typeof mod.renderSvg === 'function') return mod.renderSvg as WasmConvertFn;
   return null;
 }
@@ -253,6 +286,24 @@ async function loadWebD2Render(): Promise<DiagramRenderFn> {
   }
 
   return async (code: string): Promise<string> => {
+    // `layout-engine: elk` is routed to the elkjs bridge (host-driven
+    // layered layout) instead of d2-little's built-in dagre. The bridge
+    // falls back to dagre for inputs it can't handle yet (multi-board,
+    // sequence / grid / containers / `near:`), so users always get a
+    // rendered diagram. See `loadWebD2ElkLayout`.
+    if (requestsElkLayout(code) && typeof d2.prepare === 'function' && typeof d2.render === 'function') {
+      try {
+        const elkSvg = await renderD2ViaElk(d2, code);
+        if (elkSvg != null) {
+          return injectD2Dimensions(elkSvg);
+        }
+        // `null` ⇒ prepare flagged an unsupported feature; fall through to dagre.
+      } catch (err) {
+        // Don't leave a prepared graph pinned in wasm memory.
+        console.warn('[d2] elk layout failed, falling back to dagre:', err);
+      }
+    }
+
     // `convert` is synchronous (wasm-bindgen-generated) but `await` handles
     // both sync and async return shapes uniformly.
     const svg = await convert(code);
@@ -269,6 +320,78 @@ async function loadWebD2Render(): Promise<DiagramRenderFn> {
     return injectD2Dimensions(normalized);
   };
 }
+
+/** Does the D2 source request the elk layout engine? */
+function requestsElkLayout(code: string): boolean {
+  // Anchor to a line so a node label that happens to contain the text
+  // (e.g. `a: "layout-engine: elk"`) doesn't falsely route to elk, and
+  // accept an optionally-quoted value (`elk` / `"elk"` / `'elk'`).
+  return /^\s*layout-engine\s*:\s*["']?elk["']?\s*$/im.test(code);
+}
+
+/**
+ * Drive the elkjs layered layout through d2-little's prepare/render bridge.
+ * Returns the rendered SVG, or `null` when the input carries a feature the
+ * MVP can't lay out externally (in which case the caller falls back to the
+ * dagre `convert` path).
+ *
+ * Lazy-loads `elkjs` on first use; non-elk D2 never pays the cost.
+ */
+async function renderD2ViaElk(d2: WasmRenderModule, code: string): Promise<string | null> {
+  const prepared = d2.prepare!(code);
+  let handle = prepared.handle;
+  try {
+    const request = JSON.parse(prepared.request) as D2LayoutRequest;
+    if (request.multi_board || request.has_sequence || request.has_grid || request.has_near) {
+      return null; // fall back to dagre
+    }
+
+    const elk = await loadElkLayout();
+    const laid = await elk.layout(request.elk_graph);
+    const layoutResult: D2LayoutResult = { elk_graph: laid };
+    const svg = d2.render!(handle, JSON.stringify(layoutResult));
+    handle = -1; // render consumed the handle
+    if (!String(svg).includes('<svg')) {
+      throw new Error('D2 elk bridge did not return SVG output.');
+    }
+    return String(svg);
+  } finally {
+    if (handle !== -1 && typeof d2.drop_prepared === 'function') {
+      d2.drop_prepared(handle);
+    }
+  }
+}
+
+/** Lazy elkjs loader — mirrors the echarts/vega dynamic-import pattern.
+ * Pinned to 0.8.2, the exact version d2 v0.7.1 bundles. */
+async function loadElkLayout(): Promise<{ layout(graph: unknown): Promise<unknown> }> {
+  // Test override: lets unit tests inject a fake elk without relying on
+  // `mock.module` intercepting the dynamic `elkjs` import (which is flaky
+  // across environments). `null` restores the real lazy loader.
+  if (_elkLoaderOverride) {
+    return _elkLoaderOverride();
+  }
+  // `elkjs/lib/elk.bundled.js` is the browser-safe build (no Node deps).
+  const mod = (await import('elkjs/lib/elk.bundled.js' as string)) as {
+    default?: new () => { layout(graph: unknown): Promise<unknown> };
+  };
+  const ELK = mod.default;
+  if (!ELK) throw new Error('elkjs bundled build did not export a default ELK constructor.');
+  return new ELK();
+}
+
+// --- elk loader test override (see `loadElkLayout`) ---
+type ElkLoader = () => Promise<{ layout(graph: unknown): Promise<unknown> }>;
+let _elkLoaderOverride: ElkLoader | null = null;
+/** @internal Test-only: inject a fake elk loader. Pass `null` to restore. */
+export function _setElkLoaderForTest(loader: ElkLoader | null): void {
+  _elkLoaderOverride = loader;
+}
+
+// Re-exported for direct unit testing of the bridge orchestration without
+// the `mock.module`-intercepts-dynamic-import coupling.
+export { renderD2ViaElk };
+export type { D2LayoutRequest, D2LayoutResult, WasmRenderModule };
 
 function injectD2Dimensions(svg: string): string {
   const openTag = svg.match(/<svg\b[^>]*>/);

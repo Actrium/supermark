@@ -66,6 +66,16 @@ export function createReactNativeDiagramEngine(
       const engine = String(params.engine || '').toLowerCase();
       const adapter = getNativeEngineAdapter(engine);
 
+      // D2 `layout-engine: elk` is rendered via the elkjs bridge on web
+      // only (see `loadWebD2Render`). elkjs on Hermes is unverified, so
+      // RN keeps the native dagre path and warns so users know the elk
+      // request was honoured as dagre, not silently.
+      if (engine === 'd2' && /layout-engine\s*:\s*elk\b/i.test(String(params.code ?? ''))) {
+        console.warn(
+          '[d2] layout-engine "elk" is not supported on React Native yet; rendering with dagre.'
+        );
+      }
+
       if (adapter) {
         const id = `rn_${Date.now()}_${nextId++}`;
         try {

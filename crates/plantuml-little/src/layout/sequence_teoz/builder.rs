@@ -1420,6 +1420,11 @@ pub fn build_teoz_layout(sd: &SequenceDiagram, skin: &SkinParams) -> Result<SeqL
                     level: *level,
                 });
             }
+            SeqEvent::Create(_name) => {
+                // Teoz create handling is not yet implemented; the create
+                // directive is a no-op here (Puma2 path handles it). Avoid
+                // panicking so teoz diagrams with `create` still render.
+            }
             SeqEvent::NoteRight {
                 participant,
                 text,
@@ -2656,6 +2661,9 @@ pub fn build_teoz_layout(sd: &SequenceDiagram, skin: &SkinParams) -> Result<SeqL
             box_height: box_heights[i],
             kind: p.kind.clone(),
             color: p.color.clone(),
+            created: false,
+            create_head_y: 0.0,
+            lifeline_start_y: 0.0,
         });
     }
 
@@ -2904,6 +2912,7 @@ pub fn build_teoz_layout(sd: &SequenceDiagram, skin: &SkinParams) -> Result<SeqL
                     cross_from: *cross_from,
                     cross_to: *cross_to,
                     bidirectional: *bidirectional,
+                    is_create: false,
                     text_delta_x,
                     active_level: 0,
                     delta_x1: 0.0,
@@ -2998,6 +3007,7 @@ pub fn build_teoz_layout(sd: &SequenceDiagram, skin: &SkinParams) -> Result<SeqL
                     cross_from: *cross_from,
                     cross_to: *cross_to,
                     bidirectional: *bidirectional,
+                    is_create: false,
                     text_delta_x: 0.0,
                     active_level: *active_level,
                     delta_x1: *delta_x1,

@@ -100,4 +100,22 @@ mod tests {
             .validate_link("data:text/html;base64,PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4K")
             .is_none());
     }
+
+    #[test]
+    fn should_preserve_markdown_url_encoding_contract() {
+        let fmt = MDLinkFormatter::new();
+
+        assert_eq!(
+            fmt.normalize_link("https://example.org/a b?x=你好"),
+            "https://example.org/a%20b?x=%E4%BD%A0%E5%A5%BD"
+        );
+        assert_eq!(
+            fmt.normalize_link("https://example.org/already%20escaped"),
+            "https://example.org/already%20escaped"
+        );
+        assert_eq!(
+            fmt.normalize_link("https://example.org/broken%2g"),
+            "https://example.org/broken%252g"
+        );
+    }
 }

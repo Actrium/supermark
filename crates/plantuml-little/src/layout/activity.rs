@@ -392,7 +392,21 @@ fn estimate_text_size(text: &str) -> (f64, f64) {
             max_line_width = max_line_width.max(sprite_dim.0);
             total_content_height += sprite_dim.1;
         } else {
-            let w = font_metrics::text_width(l, "SansSerif", FONT_SIZE, false, false);
+            // Java sizes activity boxes via `SheetBlock1.calculateDimension`,
+            // which measures the *rendered* creole text — inline markup such as
+            // `__underline__`, `**bold**`, `//italic//` is stripped before
+            // measuring, so the box width matches the visible text.  Using raw
+            // `text_width` here would count the markup characters (`__` adds
+            // ~48px for the issue #30 else-branch), producing oversized boxes.
+            //
+            // `creole_text_width` runs the creole parser (stripping markup) but
+            // trims trailing whitespace, whereas Java's `SheetBlock1` preserves
+            // trailing spaces (e.g. `activity_mono_multi_line`'s `...executed:a  `
+            // label).  Add the trailing-whitespace width back so both cases
+            // match Java byte-for-byte.
+            let w = creole_text_width(l, "SansSerif", FONT_SIZE, false, false);
+            let trailing_ws = &l[l.trim_end().len()..];
+            let w = w + font_metrics::text_width(trailing_ws, "SansSerif", FONT_SIZE, false, false);
             max_line_width = max_line_width.max(w);
             total_content_height += lh;
         }
@@ -1429,15 +1443,30 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         frame.then_branch.last_node_idx = last_flow_node_idx;
                     }
 
-                    // Merge y = max of both branches' bottom_y.
-                    // When the then-branch has a break, the implicit else path
-                    // needs extra descent (break_gap + 17px for the merge path).
+                    // `merge_y` is the branch merge level used for the
+                    // no-merge-diamond path (next-node placement and the
+                    // else→next edge).  It tracks `y_cursor` (carrying the
+                    // trailing `node_gap`), which the break path below relies
+                    // on.  The merge *diamond* (when present) is positioned off
+                    // the branches' actual last-node bottoms instead — see
+                    // `md_y` below — because Java's `FtileGeometry.outY` is the
+                    // bottom of the last action with no trailing gap.
                     let then_bottom = frame.then_branch.bottom_y;
                     let else_bottom = frame
                         .else_branch
                         .as_ref()
                         .map(|b| b.bottom_y)
                         .unwrap_or(frame.diamond_bottom_y);
+                    let then_node_bottom = frame
+                        .then_branch
+                        .nodes
+                        .last()
+                        .map(|&idx| nodes[idx].y + nodes[idx].height);
+                    let else_node_bottom = frame
+                        .else_branch
+                        .as_ref()
+                        .and_then(|b| b.nodes.last())
+                        .map(|&idx| nodes[idx].y + nodes[idx].height);
                     let merge_y = if frame.then_branch.has_break && frame.else_branch.is_none() {
                         // The else merge y needs to account for break path
                         let break_y = then_bottom - node_gap + 6.5157;
@@ -1447,58 +1476,56 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         then_bottom.max(else_bottom)
                     };
 
-                    // Create the merge diamond (Java `FtileDiamond` merge) where
-                    // the if-branches rejoin. has_else sits 6px below the branch
-                    // bottoms; no-else sits 20px below (room for the implicit
-                    // else path). Both match official PlantUML.  Skipped when a
-                    // branch ends in break/goto — those keep the legacy routing
-                    // (the branch does not rejoin a merge diamond).
-                    let has_branch_exit = frame.then_branch.has_break
-                        || frame.then_branch.has_goto
-                        || frame
+                    // Java `ConditionalBuilder.createWithLinks` emits a merge
+                    // diamond (`FtileDiamond` 24x24, `getShape2`) at the branch
+                    // merge point when both branches have a normal out-point
+                    // (`hasTwoBranches`).  A branch ending in `break`/`goto`
+                    // has no out-point, so no merge diamond is drawn.
+                    let branch_clean = |b: &IfBranch| !b.has_break && !b.has_goto;
+                    let normal_merge = frame.has_else
+                        && branch_clean(&frame.then_branch)
+                        && frame
                             .else_branch
                             .as_ref()
-                            .is_some_and(|b| b.has_break || b.has_goto);
-                    let md_w = HEXAGON_HALF_SIZE * 2.0; // 24
-                    let (merge_diamond_idx, merge_diamond_y) = if has_branch_exit {
-                        (None, merge_y)
-                    } else {
-                        // Java: FtileIfWithDiamonds — getYdelta1a=10 (no swimlanes),
-                        // getYdelta1b=10, getYdeltaForLabels=0.  has_else merge sits
-                        // 6px below box bottoms (branches are close); no-else sits
-                        // 20px (room for implicit-else path).
-                        let md_top_gap = if frame.has_else { 6.0 } else { 20.0 };
-                        let md_y = merge_y - node_gap + md_top_gap;
-                        let idx = node_index;
+                            .map(branch_clean)
+                            .unwrap_or(false);
+
+                    let merge_diamond_idx = if normal_merge {
+                        // Merge diamond sits `getYdelta1b` (6px) below the
+                        // longer branch's *actual* last-node bottom (Java
+                        // `FtileGeometry.outY` — no trailing gap); its centre is
+                        // the if-block's out-point on the centreline.
+                        let longer_bottom = then_node_bottom
+                            .unwrap_or(merge_y)
+                            .max(else_node_bottom.unwrap_or(merge_y));
+                        let md_y = longer_bottom + 6.0;
+                        log::debug!(
+                            "  node[{node_index}] MergeDiamond @ (placeholder, {md_y:.1}) 24x24"
+                        );
                         nodes.push(ActivityNodeLayout {
                             index: node_index,
                             kind: ActivityNodeKindLayout::Diamond,
-                            x: frame.diamond_cx - md_w / 2.0,
+                            x: 0.0, // placeholder — repositioned to cx-12 in Pass 2b
                             y: md_y,
-                            width: md_w,
-                            height: md_w,
+                            width: 24.0,
+                            height: 24.0,
                             text: String::new(),
-                            skip_in_flow: true, // edges built manually
+                            skip_in_flow: true, // edges built manually in Pass 3a
                         });
+                        let md_idx = node_index;
                         node_index += 1;
-                        log::debug!(
-                            "  node[{idx}] if-merge diamond @ ({:.1}, {md_y:.1})",
-                            frame.diamond_cx - md_w / 2.0
-                        );
-                        (Some(idx), md_y)
-                    };
-
-                    // Restore y_cursor and last_flow_node_idx for main flow.
-                    let next_y = if has_branch_exit {
-                        merge_y + node_gap
+                        // Next flow node sits one node_gap below the merge diamond.
+                        y_cursor = md_y + 24.0 + node_gap;
+                        Some(md_idx)
                     } else {
-                        merge_diamond_y + md_w + node_gap
+                        // No merge diamond: next node sits at merge_y + node_gap.
+                        y_cursor = merge_y + node_gap;
+                        None
                     };
-                    y_cursor = next_y;
                     last_flow_node_idx = frame.saved_last_flow_node_idx;
 
                     log::debug!(
-                        "  EndIf: merge_y={merge_y:.1}, then_bottom={then_bottom:.1}, else_bottom={else_bottom:.1}"
+                        "  EndIf: merge_y={merge_y:.1}, then_bottom={then_bottom:.1}, else_bottom={else_bottom:.1}, merge_diamond={merge_diamond_idx:?}"
                     );
 
                     deferred_if_edges.push(DeferredIfEdges {
@@ -2674,14 +2701,15 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         for die in &deferred_if_edges {
             if die.has_else {
                 let diamond = &nodes[die.diamond_idx];
-                // Left branch width
-                let left_w = die
+                // Widest box in each branch (boxes are centred on the branch
+                // centreline, so the widest determines the branch's extent).
+                let box_then_w = die
                     .then_branch
                     .nodes
                     .iter()
                     .map(|&idx| nodes[idx].width)
                     .fold(0.0_f64, f64::max);
-                let right_w = die
+                let box_else_w = die
                     .else_branch
                     .as_ref()
                     .map(|b| {
@@ -2691,10 +2719,18 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                             .fold(0.0_f64, f64::max)
                     })
                     .unwrap_or(0.0);
-                // Total if-block half-width: left_branch_center_to_diamond_center + right
-                let left_half = 10.0 + left_w / 2.0 + diamond.width / 2.0;
-                let right_half = 10.0 + right_w / 2.0 + diamond.width / 2.0;
-                max_half_w = max_half_w.max(left_half).max(right_half);
+                // Java `FtileIfNude.widthInner` = tile1.w - tile1.left + tile2.left
+                //   = box_then_w/2 + box_else_w/2 + 20  (FtileMarged ±10, min-width-centre)
+                // `FtileIfWithDiamonds.widthInner` = max(widthInner, diamond1.w + 20).
+                let width_inner = box_then_w / 2.0 + box_else_w / 2.0 + 20.0;
+                let inner_margin = width_inner.max(diamond.width + 20.0);
+                // The if-block is left-aligned: the centreline sits one
+                // `left_extent` past the left margin, where
+                //   left_extent = innerMargin/2 + box_then_w/2
+                // (then-box left edge).  The right side extends freely and is
+                // accounted for by `compute_bounds` (width = max right + 10).
+                let left_extent = inner_margin / 2.0 + box_then_w / 2.0;
+                max_half_w = max_half_w.max(left_extent);
             } else {
                 // For no-else blocks, the diamond itself is the widest
                 let diamond = &nodes[die.diamond_idx];
@@ -2789,27 +2825,55 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         // Third pass: position if-diamonds and their branch nodes.
         for die in &deferred_if_edges {
             let is_nested = nested_entry_diamonds.contains(&die.diamond_idx);
-            let diamond = &mut nodes[die.diamond_idx];
+            let diamond_width = nodes[die.diamond_idx].width;
             // A nested if-diamond was already placed at its case centre by the
             // switch pass above; keep that x. Non-nested ifs centre on `cx`.
             if !is_nested {
-                diamond.x = cx - diamond.width / 2.0;
+                nodes[die.diamond_idx].x = cx - diamond_width / 2.0;
             }
-            let diamond_left_x = diamond.x;
-            let diamond_right_x = diamond.x + diamond.width;
-            let diamond_cx = diamond.x + diamond.width / 2.0;
+            let diamond_cx = nodes[die.diamond_idx].x + nodes[die.diamond_idx].width / 2.0;
             if die.has_else {
-                // Then branch center = diamond_left - 10
-                let then_cx = diamond_left_x - 10.0;
+                // Recompute innerMargin (matches the max_half_w pass above).
+                let box_then_w = die
+                    .then_branch
+                    .nodes
+                    .iter()
+                    .map(|&idx| nodes[idx].width)
+                    .fold(0.0_f64, f64::max);
+                let box_else_w = die
+                    .else_branch
+                    .as_ref()
+                    .map(|b| {
+                        b.nodes
+                            .iter()
+                            .map(|&idx| nodes[idx].width)
+                            .fold(0.0_f64, f64::max)
+                    })
+                    .unwrap_or(0.0);
+                let width_inner = box_then_w / 2.0 + box_else_w / 2.0 + 20.0;
+                let inner_margin = width_inner.max(diamond_width + 20.0);
+                // Java `FtileIfWithDiamonds`: branch1 centred at
+                //   getTranslateBranch1.x (=0) → if-centre - innerMargin/2
+                // branch2 at getTranslateBranch2.x (=dimTotal.w - tile2.w) →
+                //   if-centre + innerMargin/2  (the if-block centreline is dimTotal.left).
+                //
+                // For an if nested in a switch case, the switch pass has already
+                // placed the if diamond at the case centre; use that centreline,
+                // not the global diagram centre.
+                let then_cx = diamond_cx - inner_margin / 2.0;
                 for &node_idx in &die.then_branch.nodes {
                     nodes[node_idx].x = then_cx - nodes[node_idx].width / 2.0;
                 }
-                // Else branch center = diamond_right + 10
-                let else_cx = diamond_right_x + 10.0;
+                let else_cx = diamond_cx + inner_margin / 2.0;
                 if let Some(ref else_branch) = die.else_branch {
                     for &node_idx in &else_branch.nodes {
                         nodes[node_idx].x = else_cx - nodes[node_idx].width / 2.0;
                     }
+                }
+                // Merge diamond (`FtileDiamond`) centred on the centreline:
+                // getTranslateDiamond2.x = dimTotal.left - diamond2.width/2.
+                if let Some(md_idx) = die.merge_diamond_idx {
+                    nodes[md_idx].x = diamond_cx - nodes[md_idx].width / 2.0;
                 }
             } else {
                 // No else: then branch at diamond centre (case centre for nested)
@@ -3353,7 +3417,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         let is_nested = nested_entry_diamonds.contains(&die.diamond_idx);
         // Merge diamond geometry (where the if-branches rejoin).
         let md = die.merge_diamond_idx.map(|i| &nodes[i]);
-        let (md_cx, md_cy, md_top, md_bottom, md_left, md_right) = match md {
+        let (md_cx, md_cy, md_top, md_bottom, _md_left, md_right) = match md {
             Some(m) => (
                 m.x + m.width / 2.0,
                 m.y + m.height / 2.0,
@@ -3373,15 +3437,22 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         };
 
         if die.has_else {
-            // Java FtileIfWithLinks edge order:
-            // 1. Then-branch exit (goto arrow or merge)
-            // 2. Then-branch connection (diamond→branch)
-            // 3. Else-branch connection (diamond→branch)
-            // 4. Else merge
-            // 5. Incoming (prev→diamond)
+            // Java FtileIfWithLinks edge order (normal two-branch merge):
+            // 1. Then-branch connection (diamond left → first then-node, H-then-V
+            //    via ConnectionHorizontalThenVertical)
+            // 2. Else-branch connection (diamond right → first else-node, H-then-V)
+            // 3. Then-merge (last then-node → merge diamond left, V-then-H via
+            //    ConnectionVerticalThenHorizontal)
+            // 4. Else-merge (last else-node → merge diamond right, V-then-H)
+            // 5. Incoming (prev → diamond)
+            // 6. Merge diamond → next flow node
+            //
+            // When a branch ends in break/goto there is no merge diamond
+            // (Java `hasTwoBranches` is false, `getShape2` returns FtileEmpty);
+            // the clean branch connects straight to the next flow node instead.
 
-            // 1. Then-branch exit: goto arrow from last node down
-            if die.then_branch.has_goto {
+            // 1. Then-branch exit (goto arrow) — only when no merge diamond
+            if die.merge_diamond_idx.is_none() && die.then_branch.has_goto {
                 if let Some(last_idx) = die.then_branch.nodes.last() {
                     let last = &nodes[*last_idx];
                     let last_cx = last.x + last.width / 2.0;
@@ -3398,10 +3469,10 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 }
             }
 
-            // 2. Then branch connection (diamond left → first node)
+            // 2. Then branch connection (diamond left → first node): H-then-V
             if let Some(first_idx) = die.then_branch.nodes.first() {
-                let then_cx = diamond_left_x - 10.0;
                 let node = &nodes[*first_idx];
+                let then_cx = node.x + node.width / 2.0;
                 let node_top = node.y;
                 edges.push(ActivityEdgeLayout {
                     from_index: die.diamond_idx,
@@ -3434,11 +3505,11 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 });
             }
 
-            // 3. Else branch connection (diamond right → first node)
+            // 3. Else branch connection (diamond right → first node): H-then-V
             if let Some(ref else_branch) = die.else_branch {
                 if let Some(first_idx) = else_branch.nodes.first() {
-                    let else_cx = diamond_right_x + 10.0;
                     let node = &nodes[*first_idx];
+                    let else_cx = node.x + node.width / 2.0;
                     let node_top = node.y;
                     edges.push(ActivityEdgeLayout {
                         from_index: die.diamond_idx,
@@ -3470,50 +3541,113 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         label_xy: None,
                     });
                 }
-
-                // 4. Branch merges are routed into the if-merge diamond below
-                //    (handled after this block, once both branches are known).
             }
 
-            // 4. Branch merges → if-merge diamond (no arrowhead — these are
-            //    merges into the diamond, not connections to a target node).
-            //    then-branch → diamond left point, else-branch → diamond right.
-            //    When there is no merge diamond (a branch ends in break/goto),
-            //    fall back to the legacy else-merge → next routing.
-            if die.merge_diamond_idx.is_some() {
-                if !die.then_branch.has_goto && !die.then_branch.has_break {
-                    if let Some(last_idx) = die.then_branch.nodes.last() {
+            // 4-6. Merge + incoming
+            if let Some(md_idx) = die.merge_diamond_idx {
+                let merge_node = &nodes[md_idx];
+                let merge_cy = merge_node.y + merge_node.height / 2.0;
+                let merge_left = merge_node.x;
+                let merge_right = merge_node.x + merge_node.width;
+                let merge_bottom = merge_node.y + merge_node.height;
+                let merge_cx = merge_node.x + merge_node.width / 2.0;
+
+                // 4a. Then-merge (last then-node → merge diamond left): V-then-H
+                if let Some(last_idx) = die.then_branch.nodes.last() {
+                    let last = &nodes[*last_idx];
+                    let last_cx = last.x + last.width / 2.0;
+                    let last_bottom = last.y + last.height;
+                    edges.push(ActivityEdgeLayout {
+                        from_index: *last_idx,
+                        to_index: md_idx,
+                        label: String::new(),
+                        points: vec![
+                            (last_cx, last_bottom),
+                            (last_cx, merge_cy),
+                            (merge_left, merge_cy),
+                        ],
+                        kind: ActivityEdgeKindLayout::IfMerge,
+                        label_xy: None,
+                    });
+                }
+                // 4b. Else-merge (last else-node → merge diamond right): V-then-H
+                if let Some(ref else_branch) = die.else_branch {
+                    if let Some(last_idx) = else_branch.nodes.last() {
                         let last = &nodes[*last_idx];
                         let last_cx = last.x + last.width / 2.0;
                         let last_bottom = last.y + last.height;
                         edges.push(ActivityEdgeLayout {
                             from_index: *last_idx,
-                            to_index: die.diamond_idx,
+                            to_index: md_idx,
                             label: String::new(),
                             points: vec![
                                 (last_cx, last_bottom),
-                                (last_cx, md_cy),
-                                (md_left, md_cy),
+                                (last_cx, merge_cy),
+                                (merge_right, merge_cy),
                             ],
                             kind: ActivityEdgeKindLayout::IfMerge,
                             label_xy: None,
                         });
                     }
                 }
+                // 5. Incoming (prev → diamond). Suppressed for a nested if; the
+                // switch draws the case-entry edge.
+                if !is_nested {
+                    if let Some(prev) = prev_flow_idx {
+                        let prev_node = &nodes[prev];
+                        let prev_cx = prev_node.x + prev_node.width / 2.0;
+                        let prev_bottom = prev_node.y + prev_node.height;
+                        edges.push(ActivityEdgeLayout {
+                            from_index: prev,
+                            to_index: die.diamond_idx,
+                            label: String::new(),
+                            points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
+                            kind: ActivityEdgeKindLayout::Normal,
+                            label_xy: None,
+                        });
+                    }
+                }
+                // 6. Merge diamond → next flow node. Suppressed for a nested if;
+                // the switch draws the nested exit into the switch merge diamond.
+                if !is_nested {
+                    if let Some(next) = next_flow_idx {
+                        let next_node = &nodes[next];
+                        let next_top = next_node.y;
+                        let next_cx = next_node.x + next_node.width / 2.0;
+                        edges.push(ActivityEdgeLayout {
+                            from_index: md_idx,
+                            to_index: next,
+                            label: String::new(),
+                            points: vec![(merge_cx, merge_bottom), (next_cx, next_top)],
+                            kind: ActivityEdgeKindLayout::Normal,
+                            label_xy: None,
+                        });
+                    }
+                }
+            } else {
+                // No merge diamond (a branch ends in break/goto): the clean
+                // branch connects straight to the next flow node.
                 if let Some(ref else_branch) = die.else_branch {
                     if !else_branch.has_goto && !else_branch.has_break {
-                        if let Some(last_idx) = else_branch.nodes.last() {
+                        if let (Some(last_idx), Some(next)) =
+                            (else_branch.nodes.last(), next_flow_idx)
+                        {
                             let last = &nodes[*last_idx];
                             let last_cx = last.x + last.width / 2.0;
                             let last_bottom = last.y + last.height;
+                            let merge_mid_y = die.merge_y + 5.0;
+                            let next_node = &nodes[next];
+                            let next_top = next_node.y;
+                            let next_cx = next_node.x + next_node.width / 2.0;
                             edges.push(ActivityEdgeLayout {
                                 from_index: *last_idx,
-                                to_index: die.diamond_idx,
+                                to_index: next,
                                 label: String::new(),
                                 points: vec![
                                     (last_cx, last_bottom),
-                                    (last_cx, md_cy),
-                                    (md_right, md_cy),
+                                    (last_cx, merge_mid_y),
+                                    (next_cx, merge_mid_y),
+                                    (next_cx, next_top),
                                 ],
                                 kind: ActivityEdgeKindLayout::IfMerge,
                                 label_xy: None,
@@ -3521,70 +3655,22 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                         }
                     }
                 }
-            } else if let Some(ref else_branch) = die.else_branch {
-                // Legacy: a branch ends in break/goto (no merge diamond) —
-                // route the surviving else-branch to the next flow node.
-                if !else_branch.has_goto && !else_branch.has_break {
-                    if let (Some(last_idx), Some(next)) = (else_branch.nodes.last(), next_flow_idx)
-                    {
-                        let last = &nodes[*last_idx];
-                        let last_cx = last.x + last.width / 2.0;
-                        let last_bottom = last.y + last.height;
-                        let merge_mid_y = die.merge_y + 5.0;
-                        let next_node = &nodes[next];
-                        let next_top = next_node.y;
-                        let next_cx = next_node.x + next_node.width / 2.0;
+                // Incoming (prev → diamond). Suppressed for a nested if; the
+                // switch draws the case-entry edge.
+                if !is_nested {
+                    if let Some(prev) = prev_flow_idx {
+                        let prev_node = &nodes[prev];
+                        let prev_cx = prev_node.x + prev_node.width / 2.0;
+                        let prev_bottom = prev_node.y + prev_node.height;
                         edges.push(ActivityEdgeLayout {
-                            from_index: *last_idx,
-                            to_index: next,
+                            from_index: prev,
+                            to_index: die.diamond_idx,
                             label: String::new(),
-                            points: vec![
-                                (last_cx, last_bottom),
-                                (last_cx, merge_mid_y),
-                                (next_cx, merge_mid_y),
-                                (next_cx, next_top),
-                            ],
-                            kind: ActivityEdgeKindLayout::IfMerge,
+                            points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
+                            kind: ActivityEdgeKindLayout::Normal,
                             label_xy: None,
                         });
                     }
-                }
-            }
-
-            // 4b. Merge diamond → next flow node (non-nested only). A nested
-            //     if's merge diamond connects to the enclosing switch's merge
-            //     diamond instead (drawn by the switch pass).
-            if !is_nested {
-                if let (Some(md_idx), Some(next)) = (die.merge_diamond_idx, next_flow_idx) {
-                    let next_node = &nodes[next];
-                    let next_top = next_node.y;
-                    let next_cx = next_node.x + next_node.width / 2.0;
-                    edges.push(ActivityEdgeLayout {
-                        from_index: md_idx,
-                        to_index: next,
-                        label: String::new(),
-                        points: vec![(md_cx, md_bottom), (next_cx, next_top)],
-                        kind: ActivityEdgeKindLayout::Normal,
-                        label_xy: None,
-                    });
-                }
-            }
-
-            // 5. Incoming: prev→diamond (last among if-edges). Suppressed for a
-            //    nested if — the switch draws the case-entry edge.
-            if !is_nested {
-                if let Some(prev) = prev_flow_idx {
-                    let prev_node = &nodes[prev];
-                    let prev_cx = prev_node.x + prev_node.width / 2.0;
-                    let prev_bottom = prev_node.y + prev_node.height;
-                    edges.push(ActivityEdgeLayout {
-                        from_index: prev,
-                        to_index: die.diamond_idx,
-                        label: String::new(),
-                        points: vec![(prev_cx, prev_bottom), (diamond_cx, diamond_top_y)],
-                        kind: ActivityEdgeKindLayout::Normal,
-                        label_xy: None,
-                    });
                 }
             }
         } else {
