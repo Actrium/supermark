@@ -27,9 +27,6 @@ on:
         description: "Browser viewport, for example 1280x900"
         required: false
         default: "1280x900"
-  schedule:
-    - cron: "0 2 * * *"
-
 permissions:
   contents: read
   issues: write
