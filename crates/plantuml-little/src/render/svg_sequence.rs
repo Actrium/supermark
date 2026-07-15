@@ -928,76 +928,84 @@ fn draw_lifelines(
                 handwritten,
             );
             sg.push_raw("</g>");
-        } else if delay_breaks.is_empty() {
-            // No delays: single continuous lifeline
-            let ll_height = layout.lifeline_bottom - layout.lifeline_top;
-            let mut tmp = String::new();
-            write!(
+        } else {
+            // Created participants start their lifeline at the create position
+            // (head-box bottom) instead of the diagram lifeline_top (Java:
+            // DrawableSet.drawLineU22 adjusts `start` when getCreate() > 0).
+            let lifeline_top_for_p = if p.created {
+                p.lifeline_start_y
+            } else {
+                layout.lifeline_top
+            };
+            if delay_breaks.is_empty() {
+                // No delays: single continuous lifeline
+                let ll_height = layout.lifeline_bottom - lifeline_top_for_p;
+                let mut tmp = String::new();
+                write!(
                 tmp,
                 r#"<g class="participant-lifeline" data-entity-uid="part{idx}" data-qualified-name="{qname}" id="part{idx}-lifeline"><g><title>{dname}</title>"#,
                 idx = part_idx, qname = qualified_name, dname = title_text,
             ).unwrap();
-            sg.push_raw(&tmp);
+                sg.push_raw(&tmp);
 
-            emit_rect(
-                sg,
-                rect_x,
-                layout.lifeline_top,
-                8.0,
-                ll_height,
-                "#000000",
-                Some("0.00000"),
-                "",
-                handwritten,
-            );
+                emit_rect(
+                    sg,
+                    rect_x,
+                    lifeline_top_for_p,
+                    8.0,
+                    ll_height,
+                    "#000000",
+                    Some("0.00000"),
+                    "",
+                    handwritten,
+                );
 
-            emit_line(
-                sg,
-                lifeline_x,
-                layout.lifeline_top,
-                lifeline_x,
-                layout.lifeline_bottom,
-                &format!("stroke:{};stroke-width:0.5;stroke-dasharray:5,5;", ll_color),
-                handwritten,
-            );
-            sg.push_raw("</g></g>");
-        } else {
-            // Delays present: split lifeline into segments with delay-style breaks.
-            // Java: LivingParticipantBox splits its lifeline at delay segments.
-            // Structure:
-            //   <g class="participant-lifeline" ...>
-            //     <g><title>...</title> <rect/> <line dasharray=5,5/> </g>  -- segment 1
-            //     <line dasharray=1,4/>  -- delay break
-            //     <g><title>...</title> <rect/> <line dasharray=5,5/> </g>  -- segment 2
-            //     ...
-            //   </g>
-            let mut tmp = String::new();
-            write!(
+                emit_line(
+                    sg,
+                    lifeline_x,
+                    lifeline_top_for_p,
+                    lifeline_x,
+                    layout.lifeline_bottom,
+                    &format!("stroke:{};stroke-width:0.5;stroke-dasharray:5,5;", ll_color),
+                    handwritten,
+                );
+                sg.push_raw("</g></g>");
+            } else {
+                // Delays present: split lifeline into segments with delay-style breaks.
+                // Java: LivingParticipantBox splits its lifeline at delay segments.
+                // Structure:
+                //   <g class="participant-lifeline" ...>
+                //     <g><title>...</title> <rect/> <line dasharray=5,5/> </g>  -- segment 1
+                //     <line dasharray=1,4/>  -- delay break
+                //     <g><title>...</title> <rect/> <line dasharray=5,5/> </g>  -- segment 2
+                //     ...
+                //   </g>
+                let mut tmp = String::new();
+                write!(
                 tmp,
                 r#"<g class="participant-lifeline" data-entity-uid="part{idx}" data-qualified-name="{qname}" id="part{idx}-lifeline">"#,
                 idx = part_idx, qname = qualified_name,
             ).unwrap();
-            sg.push_raw(&tmp);
-
-            // Build segment boundaries from delays
-            let mut seg_start = layout.lifeline_top;
-            for &(break_start, break_end) in &delay_breaks {
-                // Normal segment before this delay
-                let seg_height = break_start - seg_start;
-                let mut tmp = String::new();
-                write!(tmp, "<g><title>{dname}</title>", dname = title_text).unwrap();
                 sg.push_raw(&tmp);
 
-                let mut tmp = String::new();
-                let _ = write!(
+                let mut seg_start = lifeline_top_for_p;
+                for &(break_start, break_end) in &delay_breaks {
+                    // Normal segment before this delay
+                    let seg_height = break_start - seg_start;
+                    let mut tmp = String::new();
+                    write!(tmp, "<g><title>{dname}</title>", dname = title_text).unwrap();
+                    sg.push_raw(&tmp);
+
+                    let mut tmp = String::new();
+                    let _ = write!(
                     tmp,
                     "<rect fill=\"#000000\" fill-opacity=\"0.00000\" height=\"{h}\" width=\"8\" x=\"{x}\" y=\"{y}\"/>",
                     h = fmt_coord(seg_height), x = fmt_coord(rect_x), y = fmt_coord(seg_start),
                 );
-                sg.push_raw(&tmp);
+                    sg.push_raw(&tmp);
 
-                let mut tmp = String::new();
-                write!(
+                    let mut tmp = String::new();
+                    write!(
                     tmp,
                     r#"<line style="stroke:{color};stroke-width:0.5;stroke-dasharray:5,5;" x1="{x}" x2="{x}" y1="{y1}" y2="{y2}"/>"#,
                     x = fmt_coord(lifeline_x),
@@ -1005,12 +1013,12 @@ fn draw_lifelines(
                     y2 = fmt_coord(break_start),
                     color = ll_color,
                 ).unwrap();
-                sg.push_raw(&tmp);
-                sg.push_raw("</g>");
+                    sg.push_raw(&tmp);
+                    sg.push_raw("</g>");
 
-                // Delay break line (dotted with stroke-dasharray:1,4)
-                let mut tmp = String::new();
-                write!(
+                    // Delay break line (dotted with stroke-dasharray:1,4)
+                    let mut tmp = String::new();
+                    write!(
                     tmp,
                     r#"<line style="stroke:{color};stroke-width:0.5;stroke-dasharray:1,4;" x1="{x}" x2="{x}" y1="{y1}" y2="{y2}"/>"#,
                     x = fmt_coord(lifeline_x),
@@ -1018,27 +1026,27 @@ fn draw_lifelines(
                     y2 = fmt_coord(break_end),
                     color = ll_color,
                 ).unwrap();
+                    sg.push_raw(&tmp);
+
+                    seg_start = break_end;
+                }
+
+                // Final segment after last delay
+                let seg_height = layout.lifeline_bottom - seg_start;
+                let mut tmp = String::new();
+                write!(tmp, "<g><title>{dname}</title>", dname = title_text).unwrap();
                 sg.push_raw(&tmp);
 
-                seg_start = break_end;
-            }
-
-            // Final segment after last delay
-            let seg_height = layout.lifeline_bottom - seg_start;
-            let mut tmp = String::new();
-            write!(tmp, "<g><title>{dname}</title>", dname = title_text).unwrap();
-            sg.push_raw(&tmp);
-
-            let mut tmp = String::new();
-            let _ = write!(
+                let mut tmp = String::new();
+                let _ = write!(
                 tmp,
                 "<rect fill=\"#000000\" fill-opacity=\"0.00000\" height=\"{h}\" width=\"8\" x=\"{x}\" y=\"{y}\"/>",
                 h = fmt_coord(seg_height), x = fmt_coord(rect_x), y = fmt_coord(seg_start),
             );
-            sg.push_raw(&tmp);
+                sg.push_raw(&tmp);
 
-            let mut tmp = String::new();
-            write!(
+                let mut tmp = String::new();
+                write!(
                 tmp,
                 r#"<line style="stroke:{color};stroke-width:0.5;stroke-dasharray:5,5;" x1="{x}" x2="{x}" y1="{y1}" y2="{y2}"/>"#,
                 x = fmt_coord(lifeline_x),
@@ -1046,10 +1054,11 @@ fn draw_lifelines(
                 y2 = fmt_coord(layout.lifeline_bottom),
                 color = ll_color,
             ).unwrap();
-            sg.push_raw(&tmp);
-            sg.push_raw("</g>");
+                sg.push_raw(&tmp);
+                sg.push_raw("</g>");
 
-            sg.push_raw("</g>");
+                sg.push_raw("</g>");
+            }
         }
     }
 }
@@ -4288,6 +4297,41 @@ fn render_sequence_inner(
         }
     };
 
+    // Helper closure for drawing a created participant's head box at the create
+    // level. Unlike `draw_part`, this emits a bare rect+text with no
+    // `participant-head` group wrapper or id — matching Java's
+    // ArrowAndParticipant.drawParticipantHead output.
+    let draw_create_head =
+        |sg: &mut SvgGraphic, i: usize, p: &ParticipantLayout, handwritten: bool| {
+            let dn = display_names.get(p.name.as_str()).copied();
+            let part_link_url = sd.participants.get(i).and_then(|pp| pp.link_url.as_deref());
+            let display_has_raw_link = dn.is_some_and(|d| d.contains("[["));
+            let part_link_url = if display_has_raw_link {
+                None
+            } else {
+                part_link_url
+            };
+            draw_participant_box_with_font(
+                sg,
+                p,
+                p.create_head_y,
+                dn,
+                part_bg,
+                part_border,
+                part_font,
+                &participant_font,
+                part_font_size,
+                participant_font_style.as_deref(),
+                true,
+                part_link_url,
+                &shadow_attr,
+                part_thickness,
+                part_rounded,
+                sd.delta_shadow,
+                handwritten,
+            );
+        };
+
     if sd.teoz_mode {
         // Teoz: all heads, then all tails
         // Java: headHeight = max(preferredHeight) = max_ph + 1 + deltaShadow.
@@ -4313,8 +4357,17 @@ fn render_sequence_inner(
         // Use lifeline_top as anchor (accounts for handwritten banner dy).
         // Equivalent to MARGIN + max_ph - p.box_height when lifeline_top = MARGIN + max_ph + 1.
         for (i, p) in layout.participants.iter().enumerate() {
-            let top_y = layout.lifeline_top - 1.0 - p.box_height;
-            draw_part(&mut sg, i, p, top_y, true, handwritten);
+            if p.created {
+                // Created participants have no top head box; their head is
+                // drawn at the create level (Java: DrawableSet.drawHeadTailU
+                // sets showHead=false when getCreate() > 0). The create head
+                // is emitted as a bare rect+text (no participant-head group),
+                // matching Java's ArrowAndParticipant drawParticipantHead.
+                draw_create_head(&mut sg, i, p, handwritten);
+            } else {
+                let top_y = layout.lifeline_top - 1.0 - p.box_height;
+                draw_part(&mut sg, i, p, top_y, true, handwritten);
+            }
             if !sd.hide_footbox {
                 draw_part(&mut sg, i, p, bottom_y, false, handwritten);
             }
@@ -4481,6 +4534,13 @@ fn render_sequence_inner(
                 sd.teoz_mode,
                 handwritten,
             );
+        }
+
+        // Java consumes a message counter for the create LifeEvent attached to
+        // a create message, so the following message's id skips by one
+        // (e.g. msg1, msg2, msg4, …). Mirror that here.
+        if msg.is_create {
+            msg_seq_counter += 1;
         }
 
         // Draw notes associated with this message. Use explicit message

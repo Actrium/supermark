@@ -80,6 +80,12 @@ pub enum ActivityEvent {
     PartitionStart { name: String },
     /// Internal: emitted by `flatten_events` to mark the end of a partition.
     PartitionEnd,
+    /// `switch (condition)` — multi-way branch header
+    Switch { condition: String },
+    /// `case (label)` — one branch of a switch
+    Case { label: String },
+    /// `endswitch` — close the switch
+    EndSwitch,
     /// Swimlane switch
     Swimlane { name: String },
     /// Note

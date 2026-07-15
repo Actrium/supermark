@@ -861,6 +861,9 @@ fn render_node(
             render_action(sg, node, act_bg, act_border, act_font)
         }
         ActivityNodeKindLayout::Diamond => render_diamond(sg, node, diamond_bg, diamond_border),
+        ActivityNodeKindLayout::SwitchDiamond => {
+            render_switch_diamond(sg, node, diamond_bg, diamond_border, act_font)
+        }
         ActivityNodeKindLayout::Hexagon {
             east_lines,
             south_lines,
@@ -1202,6 +1205,70 @@ fn render_diamond(sg: &mut SvgGraphic, node: &ActivityNodeLayout, bg: &str, bord
                 None,
             );
         }
+    }
+}
+
+/// Hexagonal diamond used by `switch (cond)` — same shape as the if-diamond
+/// (Java's `FtileDiamondInside`).  Draws the hexagon and centres the condition
+/// text (in `node.text`) inside, 11pt sans-serif.
+fn render_switch_diamond(
+    sg: &mut SvgGraphic,
+    node: &ActivityNodeLayout,
+    bg: &str,
+    border: &str,
+    font_color: &str,
+) {
+    let x = node.x;
+    let y = node.y;
+    let w = node.width;
+    let h = node.height;
+    let half = HEXAGON_RENDER_HALF_SIZE;
+
+    // 1. Hexagon polygon (closed: first vertex repeated at the end).
+    PolygonShape {
+        points: vec![
+            x + half,
+            y,
+            x + w - half,
+            y,
+            x + w,
+            y + h / 2.0,
+            x + w - half,
+            y + h,
+            x + half,
+            y + h,
+            x,
+            y + h / 2.0,
+            x + half,
+            y,
+        ],
+    }
+    .draw(sg, &DrawStyle::filled(bg, border, 0.5));
+
+    // 2. Condition text centred inside the hexagon.
+    if !node.text.is_empty() {
+        let font_size = HEXAGON_LABEL_FONT_SIZE_RENDER;
+        let text_w = font_metrics::text_width(&node.text, "SansSerif", font_size, false, false);
+        let line_h = font_metrics::line_height("SansSerif", font_size, false, false);
+        let ascent = font_metrics::ascent("SansSerif", font_size, false, false);
+        let text_x = x + (w - text_w) / 2.0;
+        let text_y = y + (h - line_h) / 2.0 + ascent;
+        sg.set_fill_color(font_color);
+        sg.svg_text(
+            &node.text,
+            text_x,
+            text_y,
+            Some("sans-serif"),
+            font_size,
+            None,
+            None,
+            None,
+            text_w,
+            crate::klimt::svg::LengthAdjust::Spacing,
+            None,
+            0,
+            None,
+        );
     }
 }
 
@@ -1868,13 +1935,92 @@ fn render_edge(
         ActivityEdgeKindLayout::IfBranch | ActivityEdgeKindLayout::IfMerge
     ) {
         render_polyline_with_arrow(sg, &edge.points, arrow_color);
+        // Render edge label (used by switch/case branch labels; empty for
+        // regular if/else branches so existing output is unchanged).  When
+        // `label_xy` is set (switch case labels) the label is 11pt
+        // (HEXAGON_LABEL_FONT_SIZE_RENDER, matching official), left-anchored
+        // and vertically centred on the entry line; otherwise it falls back to
+        // the polyline midpoint, centred (12pt).
+        if !edge.label.is_empty() {
+            let (mx, my, anchor, font_size) = match edge.label_xy {
+                Some((lx, ly)) => {
+                    let ascent = font_metrics::ascent(
+                        "SansSerif",
+                        HEXAGON_LABEL_FONT_SIZE_RENDER,
+                        false,
+                        false,
+                    );
+                    let descent = font_metrics::descent(
+                        "SansSerif",
+                        HEXAGON_LABEL_FONT_SIZE_RENDER,
+                        false,
+                        false,
+                    );
+                    // `ly` is the desired vertical centre; SVG `y` is the
+                    // baseline, so shift down by (ascent - descent) / 2.
+                    let baseline_y = ly + (ascent - descent) / 2.0;
+                    (lx, baseline_y, "start", HEXAGON_LABEL_FONT_SIZE_RENDER)
+                }
+                None => {
+                    let mid = edge.points.len() / 2;
+                    let (mx, my) = edge.points.get(mid).copied().unwrap_or((0.0, 0.0));
+                    (mx, my, "middle", ACTION_FONT_SIZE)
+                }
+            };
+            let tl = font_metrics::text_width(&edge.label, "SansSerif", font_size, false, false);
+            sg.set_fill_color(text_color);
+            sg.svg_text(
+                &edge.label,
+                mx,
+                my,
+                Some("sans-serif"),
+                font_size,
+                None,
+                None,
+                None,
+                tl,
+                LengthAdjust::Spacing,
+                None,
+                0,
+                Some(anchor),
+            );
+        }
         return;
     }
 
     // If-merge with emphasize-direction DOWN arrow on the first long vertical
-    // segment (implicit else when then-branch has break/goto).
-    if matches!(edge.kind, ActivityEdgeKindLayout::IfMergeEmphasize) {
-        render_if_merge_edge(sg, &edge.points, arrow_color);
+    // segment (used by the implicit else when then-branch has break/goto, and
+    // by the `while` exit edge).
+    if let ActivityEdgeKindLayout::IfMergeEmphasize { mid_arrow_y } = edge.kind {
+        render_if_merge_edge(sg, &edge.points, mid_arrow_y, arrow_color);
+        // Optional edge label (e.g. the while `endwhile`/no label), 11pt
+        // left-anchored at label_xy.
+        if !edge.label.is_empty() {
+            if let Some((lx, ly)) = edge.label_xy {
+                let font_size = HEXAGON_LABEL_FONT_SIZE_RENDER;
+                let ascent = font_metrics::ascent("SansSerif", font_size, false, false);
+                let descent = font_metrics::descent("SansSerif", font_size, false, false);
+                let baseline_y = ly + (ascent - descent) / 2.0;
+                let tl =
+                    font_metrics::text_width(&edge.label, "SansSerif", font_size, false, false);
+                sg.set_fill_color(text_color);
+                sg.svg_text(
+                    &edge.label,
+                    lx,
+                    baseline_y,
+                    Some("sans-serif"),
+                    font_size,
+                    None,
+                    None,
+                    None,
+                    tl,
+                    LengthAdjust::Spacing,
+                    None,
+                    0,
+                    Some("start"),
+                );
+            }
+        }
         return;
     }
 
@@ -1911,22 +2057,31 @@ fn render_edge(
         render_arrowhead(sg, fx, fy, tx, ty, arrow_color);
     }
 
-    // Edge label (centered on midpoint, or at label_xy if set)
+    // Edge label.  When `label_xy` is set (while is/endwhile labels) the label
+    // is 11pt (HEXAGON_LABEL_FONT_SIZE_RENDER), left-anchored and vertically
+    // centred on `label_xy`; otherwise it falls back to the polyline midpoint,
+    // 12pt centred (legacy activity edges).
     if !edge.label.is_empty() {
-        let (mx, my) = if let Some(xy) = edge.label_xy {
-            xy
+        let (mx, my, anchor, font_size) = if let Some((lx, ly)) = edge.label_xy {
+            let ascent =
+                font_metrics::ascent("SansSerif", HEXAGON_LABEL_FONT_SIZE_RENDER, false, false);
+            let descent =
+                font_metrics::descent("SansSerif", HEXAGON_LABEL_FONT_SIZE_RENDER, false, false);
+            let baseline_y = ly + (ascent - descent) / 2.0;
+            (lx, baseline_y, "start", HEXAGON_LABEL_FONT_SIZE_RENDER)
         } else {
             let mid = edge.points.len() / 2;
-            edge.points[mid]
+            let (mx, my) = edge.points[mid];
+            (mx, my, "middle", ACTION_FONT_SIZE)
         };
-        let tl = font_metrics::text_width(&edge.label, "SansSerif", ACTION_FONT_SIZE, false, false);
+        let tl = font_metrics::text_width(&edge.label, "SansSerif", font_size, false, false);
         sg.set_fill_color(text_color);
         sg.svg_text(
             &edge.label,
             mx,
             my,
             Some("sans-serif"),
-            ACTION_FONT_SIZE,
+            font_size,
             None,
             None,
             None,
@@ -1934,7 +2089,7 @@ fn render_edge(
             LengthAdjust::Spacing,
             None,
             0,
-            Some("middle"),
+            Some(anchor),
         );
     }
 }
@@ -1966,7 +2121,12 @@ fn render_polyline_with_arrow(sg: &mut SvgGraphic, points: &[(f64, f64)], arrow_
 /// Render an IfMerge edge: polyline segments with a DOWN emphasize-direction
 /// arrow on the first long vertical descending segment, plus a final arrow
 /// at the end.  Matches Java's `Snake.emphasizeDirection(Direction.DOWN)`.
-fn render_if_merge_edge(sg: &mut SvgGraphic, points: &[(f64, f64)], arrow_color: &str) {
+fn render_if_merge_edge(
+    sg: &mut SvgGraphic,
+    points: &[(f64, f64)],
+    mid_arrow_y: Option<f64>,
+    arrow_color: &str,
+) {
     if points.len() < 2 {
         return;
     }
@@ -1992,10 +2152,12 @@ fn render_if_merge_edge(sg: &mut SvgGraphic, points: &[(f64, f64)], arrow_color:
     // If the emphasize segment is the second segment (index 1), draw the
     // DOWN arrow polygon before the vertical line (matching Java's draw order).
     if let Some(seg_idx) = emphasize_seg {
-        let (sx, _sy1) = points[seg_idx];
+        let (sx, sy1) = points[seg_idx];
         let (_sx2, sy2) = points[seg_idx + 1];
-        // Place the arrow tip near the bottom of the segment, 26px from bottom
-        let arrow_tip_y = sy2 - 26.0;
+        // Place the arrow tip at `mid_arrow_y` if set (mid of the segment),
+        // otherwise near the bottom (26px from bottom).
+        let arrow_tip_y = mid_arrow_y.unwrap_or(sy2 - 26.0);
+        let _ = sy1;
         // DOWN arrow: tip at bottom, base 10px above tip
         PolygonShape {
             points: vec![
@@ -2045,9 +2207,60 @@ fn render_loopback_simple2(
     up_arrow_y: f64,
     color: &str,
 ) {
-    if points.len() != 4 {
+    if points.len() == 4 {
+        render_loopback_simple2_repeat(sg, points, up_arrow_y, color);
         return;
     }
+    if points.len() < 4 {
+        return;
+    }
+    // General path (e.g. the 5-point `while` loop-back: down-stub, right,
+    // up, left).  Draw all segments, the mid UP arrow on the up-going
+    // vertical, and the end arrow at the final point.
+    let line_style = DrawStyle::outline(color, 1.0);
+    let poly_style = DrawStyle::filled(color, color, 1.0);
+    for pair in points.windows(2) {
+        let (x1, y1) = pair[0];
+        let (x2, y2) = pair[1];
+        LineShape { x1, y1, x2, y2 }.draw(sg, &line_style);
+    }
+    // Find the up-going vertical segment (constant x, y decreasing) for the
+    // mid UP arrow.
+    let mut arrow_x = points[1].0;
+    for pair in points.windows(2) {
+        if pair[0].0 == pair[1].0 && pair[1].1 < pair[0].1 {
+            arrow_x = pair[0].0;
+            break;
+        }
+    }
+    // Mid UP arrow (Java `ArrowsRegular.asToUp()`): tip at (0,0), base (±4,10).
+    let ox = arrow_x;
+    let oy = up_arrow_y;
+    PolygonShape {
+        points: vec![
+            ox - 4.0,
+            oy + 10.0,
+            ox,
+            oy,
+            ox + 4.0,
+            oy + 10.0,
+            ox,
+            oy + 6.0,
+        ],
+    }
+    .draw(sg, &poly_style);
+    // End arrow at the final point (direction from the penultimate point).
+    let (fx, fy) = points[points.len() - 2];
+    let (tx, ty) = points[points.len() - 1];
+    render_arrowhead(sg, fx, fy, tx, ty, color);
+}
+
+fn render_loopback_simple2_repeat(
+    sg: &mut SvgGraphic,
+    points: &[(f64, f64)],
+    up_arrow_y: f64,
+    color: &str,
+) {
     let (x1, y1) = points[0];
     let (x2, y2) = points[1];
     let (x3, y3) = points[2];

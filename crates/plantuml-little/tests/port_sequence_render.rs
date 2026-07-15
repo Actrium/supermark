@@ -325,3 +325,45 @@ fn default_participant_rect_has_rounded_corners() {
         "rounded corner attributes should be on a <rect> element, found: {tag_name}",
     );
 }
+
+// ── Issue #28: alt/group frames must match official width ───────────
+//
+// When a message spans a non-adjacent participant (Alice -> Log crossing
+// Bob), the group/alt frames must keep the official width. The previous
+// layout inflated the Bob -> Log gap, which made the outer frames ~13px
+// too wide. This checks the rendered SVG, not just the layout struct, so
+// it guards the user-visible "label pressed against the border" symptom.
+// Golden width 327.9619 is from official PlantUML 1.2026.7beta3.
+#[test]
+fn issue28_frame_width_matches_official_in_svg() {
+    let svg = convert(
+        "@startuml\n\
+		 Alice -> Bob: Authentication Request\n\
+		 alt successful case\n\
+		   Bob -> Alice: Authentication Accepted\n\
+		 else some kind of failure\n\
+		   Bob -> Alice: Authentication Failure\n\
+		   group My own label\n\
+		     Alice -> Log : Log attack start\n\
+		     loop 1000 times\n\
+		       Alice -> Bob: DNS Attack\n\
+		     end\n\
+		     Alice -> Log : Log attack end\n\
+		   end\n\
+		 else Another type of failure\n\
+		   Bob -> Alice: Please repeat\n\
+		 end\n\
+		 @enduml",
+    );
+
+    // The outermost frame is the first fill="none" stroke-width:1.5 rect.
+    let frame = extract_all_attrs(&svg, "<rect", "width")
+        .into_iter()
+        .next()
+        .expect("a frame rect");
+    let w: f64 = frame.parse().expect("numeric width");
+    assert!(
+        (w - 327.9619).abs() < 0.01,
+        "outer frame width = {w}, expected 327.9619 (official PlantUML); pre-fix was 341.2046"
+    );
+}

@@ -161,6 +161,10 @@ reference_test!(
     "fixtures/activity/activity_mono_multi_line_v2.puml"
 );
 reference_test!(
+    reference_fixtures_activity_if_else_endif_puml,
+    "fixtures/activity/if_else_endif.puml"
+);
+reference_test!(
     reference_fixtures_activity_swimlane001_puml,
     "fixtures/activity/swimlane001.puml"
 );
@@ -179,6 +183,14 @@ reference_test!(
 reference_test!(
     reference_fixtures_activity_advanced_goto_label_puml,
     "fixtures/activity_advanced/goto_label.puml"
+);
+reference_test!(
+    reference_fixtures_activity_advanced_switch_nested_puml,
+    "fixtures/activity_advanced/switch_nested.puml"
+);
+reference_test!(
+    reference_fixtures_activity_advanced_switch_webhook_puml,
+    "fixtures/activity_advanced/switch_webhook.puml"
 );
 reference_test!(
     reference_fixtures_archimate_basic_puml,
@@ -818,6 +830,10 @@ reference_test!(
 reference_test!(
     reference_fixtures_sequence_a0001_puml,
     "fixtures/sequence/a0001.puml"
+);
+reference_test!(
+    reference_fixtures_sequence_issue36_create_destroy_puml,
+    "fixtures/sequence/issue36_create_destroy.puml"
 );
 reference_test!(
     reference_fixtures_sequence_a0006_puml,

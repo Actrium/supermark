@@ -17,10 +17,7 @@
 #   - Visual Studio 2022 with "MSVC v143 - VS 2022 C++ ARM64 build tools"
 #     component installed (workload: Desktop development with C++).
 #   - CMake generator platform "ARM64" (passed automatically below).
-# The arm64 build has NOT been smoke-tested locally (no ARM64 Windows host
-# available).  CI validation is required before shipping release assets.
-# TODO(verify-in-ci): run a matrix job on windows-11-arm runner once
-# GitHub Actions makes it GA, or use QEMU/cross-toolchain on windows-latest.
+# CI builds and executes the ARM64 example on a native windows-11-arm runner.
 # ────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -54,9 +51,67 @@ esac
 BUILD_DIR="${BUILD_DIR:-${PROJECT_ROOT}/build/windows-${ARCH}}"
 INSTALL_DIR="${INSTALL_DIR:-${PROJECT_ROOT}/output/windows-${ARCH}}"
 
+# Graphviz vendors x64-only Windows dependencies (GD/Cairo/Pango) in its
+# source tree. Native ARM64 builds must not auto-discover or link them. The
+# wrapper's DOT-to-SVG surface only needs Graphviz's core renderer/layout
+# targets, so disabling these optional plugins preserves the supported API.
+WINDOWS_ARCH_CMAKE_ARGS=()
+if [ "${ARCH}" = "arm64" ]; then
+    WINDOWS_ARCH_CMAKE_ARGS+=(
+        -DCMAKE_DISABLE_FIND_PACKAGE_CAIRO=TRUE
+        -DCMAKE_DISABLE_FIND_PACKAGE_PANGOCAIRO=TRUE
+        -DCMAKE_DISABLE_FIND_PACKAGE_GD=TRUE
+        -DWITH_GHOSTSCRIPT=OFF
+        -DWITH_GDK=OFF
+        -DWITH_GTK=OFF
+        -DWITH_POPPLER=OFF
+    )
+fi
+
 log_info "Building Graphviz for Windows ${ARCH} (CMake platform: ${CMAKE_PLATFORM})"
 
 check_command "cmake"
+
+# Select the generator from the Visual Studio installation that is actually
+# present. GitHub's `windows-latest` image can advance independently (for
+# example from VS 2022 to VS 2026), so hard-coding one generator makes an
+# otherwise compatible build fail before configuration begins.
+VSWHERE="C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+VS_GENERATOR="${CMAKE_GENERATOR:-}"
+if [ -z "${VS_GENERATOR}" ] && [ -f "${VSWHERE}" ]; then
+    VS_VERSION="$("${VSWHERE}" -latest -products '*' -property installationVersion 2>/dev/null | tr -d '\r')"
+    VS_MAJOR="${VS_VERSION%%.*}"
+    case "${VS_MAJOR}" in
+        18) VS_GENERATOR="Visual Studio 18 2026" ;;
+        17) VS_GENERATOR="Visual Studio 17 2022" ;;
+        16) VS_GENERATOR="Visual Studio 16 2019" ;;
+        "") ;;
+        *)
+            log_error "Unsupported Visual Studio version reported by vswhere: ${VS_VERSION}"
+            exit 1
+            ;;
+    esac
+fi
+
+# Custom installations may not ship vswhere. In that case use the newest
+# Visual Studio generator advertised by CMake itself. A caller can always set
+# CMAKE_GENERATOR explicitly to override detection.
+if [ -z "${VS_GENERATOR}" ]; then
+    for candidate in \
+        "Visual Studio 18 2026" \
+        "Visual Studio 17 2022" \
+        "Visual Studio 16 2019"; do
+        if cmake --help 2>&1 | grep -Fq "${candidate}"; then
+            VS_GENERATOR="${candidate}"
+            break
+        fi
+    done
+fi
+if [[ "${VS_GENERATOR}" != Visual\ Studio\ * ]]; then
+    log_error "Unable to select a Visual Studio CMake generator (got: ${VS_GENERATOR:-none})"
+    exit 1
+fi
+log_info "Using CMake generator: ${VS_GENERATOR}"
 
 # Prepare patched source
 mkdir -p "${BUILD_DIR}"
@@ -71,10 +126,10 @@ prepare_graphviz_source "${GV_PATCHED}"
 # htmllex.c fails with "Cannot open include file: 'expat.h'".)
 log_info "Configuring Graphviz..."
 mkdir -p "${BUILD_DIR}/graphviz"
-# TODO(verify-in-ci): ARM64 generator path untested — needs windows-arm64 runner
 cmake -S "${GV_PATCHED}" -B "${BUILD_DIR}/graphviz" \
-    -G "Visual Studio 17 2022" -A "${CMAKE_PLATFORM}" \
+    -G "${VS_GENERATOR}" -A "${CMAKE_PLATFORM}" \
     "${GV_CMAKE_COMMON_ARGS[@]}" \
+    "${WINDOWS_ARCH_CMAKE_ARGS[@]}" \
     -DCMAKE_INSTALL_PREFIX="${BUILD_DIR}/graphviz-install"
 
 log_info "Building Graphviz library targets..."
@@ -121,9 +176,8 @@ install(TARGETS graphviz_api
 )
 CMAKE_EOF
 
-# TODO(verify-in-ci): ARM64 wrapper CMake path untested — needs windows-arm64 runner
 cmake -S "${BUILD_DIR}/wrapper" -B "${BUILD_DIR}/wrapper/build" \
-    -G "Visual Studio 17 2022" -A "${CMAKE_PLATFORM}" \
+    -G "${VS_GENERATOR}" -A "${CMAKE_PLATFORM}" \
     -DSRC_DIR="${WRAPPER_SRC}" \
     -DGV_BUILD_DIR="${BUILD_DIR}/graphviz" \
     -DGV_INSTALL_DIR="${GV_INSTALL}" \
@@ -146,20 +200,25 @@ log_info "Building merged static library (graphviz_api_static.lib) via lib.exe..
 # Locate lib.exe from the MSVC toolchain.  vswhere is the canonical locator on
 # windows-latest runners; fall back to PATH lookup for custom environments.
 LIBEXE=""
-VSWHERE="C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
 if [ -f "${VSWHERE}" ]; then
-    VS_INSTALL="$("${VSWHERE}" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>/dev/null | tr -d '\r')"
+    VS_INSTALL="$("${VSWHERE}" -latest -products '*' -property installationPath 2>/dev/null | tr -d '\r')"
     if [ -n "${VS_INSTALL}" ]; then
         # VC tools version string lives in a single-line text file
         VC_VER_FILE="${VS_INSTALL}/VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt"
         if [ -f "${VC_VER_FILE}" ]; then
             VC_VER="$(cat "${VC_VER_FILE}" | tr -d '[:space:]')"
-            case "$ARCH" in
-                x86_64) HOST_SUBDIR="x64" ;;
-                arm64)  HOST_SUBDIR="x64" ;;  # cross-compile: host tools are x64
-            esac
-            CANDIDATE="${VS_INSTALL}/VC/Tools/MSVC/${VC_VER}/bin/Host${HOST_SUBDIR}/${HOST_SUBDIR}/lib.exe"
-            [ -f "${CANDIDATE}" ] && LIBEXE="${CANDIDATE}"
+            if [ "$ARCH" = "arm64" ]; then
+                HOST_TOOL_DIRS=("Hostarm64/arm64" "Hostx64/arm64" "Hostx86/arm64")
+            else
+                HOST_TOOL_DIRS=("Hostx64/x64" "Hostarm64/x64" "Hostx86/x64")
+            fi
+            for host_dir in "${HOST_TOOL_DIRS[@]}"; do
+                CANDIDATE="${VS_INSTALL}/VC/Tools/MSVC/${VC_VER}/bin/${host_dir}/lib.exe"
+                if [ -f "${CANDIDATE}" ]; then
+                    LIBEXE="${CANDIDATE}"
+                    break
+                fi
+            done
         fi
     fi
 fi

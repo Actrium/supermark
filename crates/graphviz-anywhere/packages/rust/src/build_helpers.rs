@@ -10,11 +10,9 @@
 pub fn target_triple_to_asset_name(target: &str) -> Option<&'static str> {
     match target {
         // ── Linux ──────────────────────────────────────────────────────────────
-        "x86_64-unknown-linux-gnu"
-        | "x86_64-unknown-linux-musl" => Some("graphviz-native-linux-x86_64.tar.gz"),
+        "x86_64-unknown-linux-gnu" => Some("graphviz-native-linux-x86_64.tar.gz"),
 
-        "aarch64-unknown-linux-gnu"
-        | "aarch64-unknown-linux-musl" => Some("graphviz-native-linux-aarch64.tar.gz"),
+        "aarch64-unknown-linux-gnu" => Some("graphviz-native-linux-aarch64.tar.gz"),
 
         // ── macOS ──────────────────────────────────────────────────────────────
         "x86_64-apple-darwin"
@@ -35,8 +33,7 @@ pub fn target_triple_to_asset_name(target: &str) -> Option<&'static str> {
         "x86_64-apple-ios" => Some("graphviz-native-ios-sim-x86_64.tar.gz"),
 
         // ── Windows ────────────────────────────────────────────────────────────
-        "x86_64-pc-windows-msvc"
-        | "x86_64-pc-windows-gnu" => Some("graphviz-native-windows-x86_64.tar.gz"),
+        "x86_64-pc-windows-msvc" => Some("graphviz-native-windows-x86_64.tar.gz"),
         "aarch64-pc-windows-msvc" => Some("graphviz-native-windows-arm64.tar.gz"),
 
         _ => None,
@@ -50,11 +47,13 @@ pub fn target_triple_to_asset_name(target: &str) -> Option<&'static str> {
 pub fn target_triple_to_prebuilt_subdir(target: &str) -> Option<(&'static str, &'static str)> {
     // (subdirectory under prebuilt/, lib filename)
     match target {
-        "x86_64-unknown-linux-gnu"
-        | "x86_64-unknown-linux-musl" => Some(("x86_64-unknown-linux-gnu", "libgraphviz_api.a")),
+        "x86_64-unknown-linux-gnu" => {
+            Some(("x86_64-unknown-linux-gnu", "libgraphviz_api.a"))
+        }
 
-        "aarch64-unknown-linux-gnu"
-        | "aarch64-unknown-linux-musl" => Some(("aarch64-unknown-linux-gnu", "libgraphviz_api.a")),
+        "aarch64-unknown-linux-gnu" => {
+            Some(("aarch64-unknown-linux-gnu", "libgraphviz_api.a"))
+        }
 
         "x86_64-apple-darwin" => Some(("x86_64-apple-darwin", "libgraphviz_api.a")),
         "aarch64-apple-darwin" => Some(("aarch64-apple-darwin", "libgraphviz_api.a")),
@@ -63,13 +62,9 @@ pub fn target_triple_to_prebuilt_subdir(target: &str) -> Option<(&'static str, &
         "aarch64-apple-ios-sim" => Some(("aarch64-apple-ios-sim", "libgraphviz_api.a")),
         "x86_64-apple-ios" => Some(("x86_64-apple-ios", "libgraphviz_api.a")),
 
-        "aarch64-linux-android" => Some(("aarch64-linux-android", "libgraphviz_api.a")),
-        "armv7-linux-androideabi" => Some(("armv7-linux-androideabi", "libgraphviz_api.a")),
-        "x86_64-linux-android" => Some(("x86_64-linux-android", "libgraphviz_api.a")),
-        "i686-linux-android" => Some(("i686-linux-android", "libgraphviz_api.a")),
-
-        "x86_64-pc-windows-msvc"
-        | "x86_64-pc-windows-gnu" => Some(("x86_64-pc-windows-msvc", "graphviz_api.lib")),
+        "x86_64-pc-windows-msvc" => {
+            Some(("x86_64-pc-windows-msvc", "graphviz_api.lib"))
+        }
         "aarch64-pc-windows-msvc" => Some(("aarch64-pc-windows-msvc", "graphviz_api.lib")),
 
         _ => None,
@@ -83,11 +78,9 @@ pub fn target_triple_to_prebuilt_subdir(target: &str) -> Option<(&'static str, &
 /// as "not found".
 pub fn target_triple_to_output_dirs(target: &str) -> &'static [&'static str] {
     match target {
-        "x86_64-unknown-linux-gnu"
-        | "x86_64-unknown-linux-musl" => &["output/linux-x86_64/lib", "output/linux/lib"],
+        "x86_64-unknown-linux-gnu" => &["output/linux-x86_64/lib", "output/linux/lib"],
 
-        "aarch64-unknown-linux-gnu"
-        | "aarch64-unknown-linux-musl" => &["output/linux-aarch64/lib", "output/linux/lib"],
+        "aarch64-unknown-linux-gnu" => &["output/linux-aarch64/lib", "output/linux/lib"],
 
         "x86_64-apple-darwin"
         | "aarch64-apple-darwin"
@@ -102,8 +95,7 @@ pub fn target_triple_to_output_dirs(target: &str) -> &'static [&'static str] {
         "aarch64-apple-ios-sim" => &["output/ios/iphonesimulator-arm64/lib"],
         "x86_64-apple-ios" => &["output/ios/iphonesimulator-x86_64/lib"],
 
-        "x86_64-pc-windows-msvc"
-        | "x86_64-pc-windows-gnu" => &[
+        "x86_64-pc-windows-msvc" => &[
             "output/windows-x86_64/lib",
             "output/windows-x86_64/bin",
         ],
@@ -124,10 +116,28 @@ pub fn is_ios_target(target: &str) -> bool {
     )
 }
 
-/// Returns `true` for targets where the release asset uses `.a` (static archive)
-/// rather than `.so` / `.dylib`.
+/// Returns whether the legacy per-OS prebuilt layout is safe to use.
+///
+/// Legacy directories do not encode an architecture, so they are only valid
+/// for a native build where Cargo's host and target triples match exactly.
+/// Missing host metadata must fail closed rather than risk linking a host
+/// archive into a cross-compiled binary.
+pub fn legacy_prebuilt_is_compatible(host: &str, target: &str) -> bool {
+    !host.is_empty() && host == target
+}
+
+/// Returns `true` when the default native link is static.
+///
+/// Desktop and iOS executables must be self-contained: a Cargo build-script
+/// rpath is not propagated to final downstream binaries, and a same-named
+/// system library can otherwise be selected at process launch. Android keeps
+/// the shared library because the application package owns JNI library
+/// staging and loading.
 pub fn asset_is_static(target: &str) -> bool {
-    is_ios_target(target) || target.contains("windows")
+    is_ios_target(target)
+        || target.contains("windows-msvc")
+        || target.contains("unknown-linux-gnu")
+        || target.contains("apple-darwin")
 }
 
 /// Returns the lib filename to expect inside the extracted release archive.
@@ -135,11 +145,55 @@ pub fn asset_lib_filename(target: &str) -> &'static str {
     match target {
         "x86_64-apple-darwin"
         | "aarch64-apple-darwin"
-        | "universal-apple-darwin" => "libgraphviz_api.dylib",
+        | "universal-apple-darwin" => "libgraphviz_api.a",
         t if is_ios_target(t) => "libgraphviz_api.a",
-        t if t.contains("windows") => "graphviz_api.lib",
+        t if t.contains("windows-msvc") => "graphviz_api.lib",
+        t if t.contains("unknown-linux-gnu") => "libgraphviz_api.a",
         _ => "libgraphviz_api.so",
     }
+}
+
+/// Resolve a static library from an explicit override's candidate directories.
+///
+/// Windows source builds place a DLL import library and the merged static
+/// archive beside one another. `graphviz_api_static.lib` always wins. The
+/// canonical `graphviz_api.lib` is accepted only when no adjacent DLL proves
+/// that it is an import library (the canonical name is used by release assets).
+pub fn find_static_override(
+    lib_dirs: &[std::path::PathBuf],
+    target_os: &str,
+) -> Option<(std::path::PathBuf, &'static str)> {
+    if target_os != "windows" {
+        return lib_dirs
+            .iter()
+            .map(|dir| dir.join("libgraphviz_api.a"))
+            .find(|path| path.is_file())
+            .map(|path| (path, "graphviz_api"));
+    }
+
+    if let Some(path) = lib_dirs
+        .iter()
+        .map(|dir| dir.join("graphviz_api_static.lib"))
+        .find(|path| path.is_file())
+    {
+        return Some((path, "graphviz_api_static"));
+    }
+
+    let has_dll = lib_dirs.iter().any(|lib_dir| {
+        lib_dir.join("graphviz_api.dll").is_file()
+            || lib_dir
+                .parent()
+                .map_or(false, |parent| parent.join("bin/graphviz_api.dll").is_file())
+    });
+    if has_dll {
+        return None;
+    }
+
+    lib_dirs
+        .iter()
+        .map(|dir| dir.join("graphviz_api.lib"))
+        .find(|path| path.is_file())
+        .map(|path| (path, "graphviz_api"))
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -162,10 +216,6 @@ mod tests {
     fn linux_aarch64_asset() {
         assert_eq!(
             target_triple_to_asset_name("aarch64-unknown-linux-gnu"),
-            Some("graphviz-native-linux-aarch64.tar.gz")
-        );
-        assert_eq!(
-            target_triple_to_asset_name("aarch64-unknown-linux-musl"),
             Some("graphviz-native-linux-aarch64.tar.gz")
         );
     }
@@ -269,9 +319,7 @@ mod tests {
 
     #[test]
     fn prebuilt_subdir_android_x86() {
-        let (subdir, lib) = target_triple_to_prebuilt_subdir("i686-linux-android").unwrap();
-        assert_eq!(subdir, "i686-linux-android");
-        assert_eq!(lib, "libgraphviz_api.a");
+        assert_eq!(target_triple_to_prebuilt_subdir("i686-linux-android"), None);
     }
 
     #[test]
@@ -323,13 +371,13 @@ mod tests {
     }
 
     #[test]
-    fn asset_lib_filename_macos_is_dylib() {
-        assert_eq!(asset_lib_filename("aarch64-apple-darwin"), "libgraphviz_api.dylib");
+    fn asset_lib_filename_macos_is_static() {
+        assert_eq!(asset_lib_filename("aarch64-apple-darwin"), "libgraphviz_api.a");
     }
 
     #[test]
-    fn asset_lib_filename_linux_is_so() {
-        assert_eq!(asset_lib_filename("x86_64-unknown-linux-gnu"), "libgraphviz_api.so");
+    fn asset_lib_filename_linux_is_static() {
+        assert_eq!(asset_lib_filename("x86_64-unknown-linux-gnu"), "libgraphviz_api.a");
     }
 
     #[test]
@@ -348,22 +396,106 @@ mod tests {
         assert!(!is_ios_target("aarch64-linux-android"));
     }
 
+    #[test]
+    fn legacy_prebuilt_is_native_only() {
+        assert!(legacy_prebuilt_is_compatible(
+            "aarch64-apple-darwin",
+            "aarch64-apple-darwin"
+        ));
+        assert!(!legacy_prebuilt_is_compatible(
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin"
+        ));
+        assert!(!legacy_prebuilt_is_compatible(
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu"
+        ));
+        assert!(!legacy_prebuilt_is_compatible(
+            "",
+            "x86_64-pc-windows-msvc"
+        ));
+    }
+
     // ── asset_is_static (static vs. dynamic link policy) ─────────────────────────
 
     #[test]
-    fn asset_is_static_for_ios_and_windows() {
-        // iOS and Windows release assets are linked statically.
+    fn asset_is_static_for_desktop_and_ios() {
         assert!(asset_is_static("aarch64-apple-ios"));
         assert!(asset_is_static("aarch64-apple-ios-sim"));
         assert!(asset_is_static("x86_64-apple-ios"));
         assert!(asset_is_static("x86_64-pc-windows-msvc"));
-        // The published release asset for Linux/macOS/Android is the
-        // self-contained shared library (.so/.dylib), not a static archive.
-        assert!(!asset_is_static("x86_64-unknown-linux-gnu"));
-        assert!(!asset_is_static("aarch64-unknown-linux-gnu"));
-        assert!(!asset_is_static("aarch64-apple-darwin"));
-        assert!(!asset_is_static("x86_64-apple-darwin"));
+        assert!(asset_is_static("x86_64-unknown-linux-gnu"));
+        assert!(asset_is_static("aarch64-unknown-linux-gnu"));
+        assert!(asset_is_static("aarch64-apple-darwin"));
+        assert!(asset_is_static("x86_64-apple-darwin"));
         assert!(!asset_is_static("aarch64-linux-android"));
+    }
+
+    #[test]
+    fn incompatible_abi_assets_are_not_auto_selected() {
+        assert_eq!(target_triple_to_asset_name("x86_64-unknown-linux-musl"), None);
+        assert_eq!(target_triple_to_asset_name("aarch64-unknown-linux-musl"), None);
+        assert_eq!(target_triple_to_asset_name("x86_64-pc-windows-gnu"), None);
+        assert_eq!(target_triple_to_prebuilt_subdir("x86_64-unknown-linux-musl"), None);
+        assert_eq!(target_triple_to_prebuilt_subdir("x86_64-pc-windows-gnu"), None);
+        assert!(target_triple_to_output_dirs("aarch64-unknown-linux-musl").is_empty());
+        assert!(target_triple_to_output_dirs("x86_64-pc-windows-gnu").is_empty());
+    }
+
+    #[test]
+    fn windows_override_prefers_merged_static_archive() {
+        let root = std::env::temp_dir().join(format!(
+            "graphviz-anywhere-static-override-{}",
+            std::process::id()
+        ));
+        let lib = root.join("lib");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&lib).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(lib.join("graphviz_api.lib"), b"import").unwrap();
+        std::fs::write(lib.join("graphviz_api_static.lib"), b"static").unwrap();
+        std::fs::write(bin.join("graphviz_api.dll"), b"dll").unwrap();
+
+        let resolved = find_static_override(std::slice::from_ref(&lib), "windows").unwrap();
+        assert_eq!(resolved.0, lib.join("graphviz_api_static.lib"));
+        assert_eq!(resolved.1, "graphviz_api_static");
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn windows_override_rejects_import_library_as_static() {
+        let root = std::env::temp_dir().join(format!(
+            "graphviz-anywhere-import-override-{}",
+            std::process::id()
+        ));
+        let lib = root.join("lib");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&lib).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(lib.join("graphviz_api.lib"), b"import").unwrap();
+        std::fs::write(bin.join("graphviz_api.dll"), b"dll").unwrap();
+
+        assert!(find_static_override(&[lib], "windows").is_none());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn windows_release_canonical_library_is_static_without_dll() {
+        let root = std::env::temp_dir().join(format!(
+            "graphviz-anywhere-release-override-{}",
+            std::process::id()
+        ));
+        let lib = root.join("lib");
+        std::fs::create_dir_all(&lib).unwrap();
+        std::fs::write(lib.join("graphviz_api.lib"), b"static").unwrap();
+
+        let resolved = find_static_override(std::slice::from_ref(&lib), "windows").unwrap();
+        assert_eq!(resolved.0, lib.join("graphviz_api.lib"));
+        assert_eq!(resolved.1, "graphviz_api");
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

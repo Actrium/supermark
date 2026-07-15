@@ -1,0 +1,15 @@
+@startuml
+start
+switch (test?)
+case (A)
+  if (x?) then (yes)
+    :A yes;
+  else (no)
+    :A no;
+  endif
+case (B)
+  :Action B;
+endswitch
+:after;
+stop
+@enduml

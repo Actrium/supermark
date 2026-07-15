@@ -14,7 +14,8 @@
  * ```
  */
 
-// Re-export the raw wasm-bindgen API. `convert` and `version` are the
-// two public functions; everything else (`__wbg_set_wasm` etc.) stays
-// internal to the generated JS.
-export { convert, version } from './wasm/d2_little_web.js';
+// Re-export the raw wasm-bindgen API. `convert` (dagre) and `version` are the
+// always-available entries; `prepare` / `render` / `drop_prepared` form the
+// elkjs layout bridge (the host runs `elkjs.layout` between `prepare` and
+// `render`). Everything else (`__wbg_set_wasm` etc.) stays internal.
+export { convert, version, prepare, render, drop_prepared } from './wasm/d2_little_web.js';

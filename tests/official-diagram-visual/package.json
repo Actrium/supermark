@@ -1,0 +1,15 @@
+{
+  "name": "supramark-official-diagram-visual-workflow",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "visual:official-diagrams": "node scripts/tools/official-diagram-visual-workflow.mjs"
+  },
+  "dependencies": {
+    "pixelmatch": "^7.1.0",
+    "playwright": "^1.57.0",
+    "pngjs": "^7.0.0",
+    "sharp": "^0.34.5"
+  }
+}

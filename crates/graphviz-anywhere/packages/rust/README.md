@@ -23,9 +23,19 @@ let svg = ctx.render_to_string(
 println!("{svg}");
 ```
 
-Ship native binaries via one of:
+Native linking policy:
 
-- Environment: `GRAPHVIZ_ANYWHERE_DIR=/path/with/lib+include`
+- Linux, macOS, Windows MSVC, and iOS use the shipped static archive. Final
+  executables do not need `libgraphviz_api.so`, `.dylib`, or `.dll` at runtime.
+- Android keeps the shared `.so`; the application package owns JNI library
+  staging and loading.
+- musl Linux and Windows GNU do not reuse GNU/Linux or MSVC assets. Point the
+  build at a native library compiled for the exact ABI.
+
+Supply native binaries via one of:
+
+- Environment: `GRAPHVIZ_ANYWHERE_DIR=/path/with/lib+include` (desktop
+  overrides must contain the static archive)
 - Prebuilt: drop `libgraphviz_api.a` under `packages/rust/prebuilt/<os>/`
 - Repo build: `./scripts/build-<os>.sh` populates `output/<os>*/lib/`
 

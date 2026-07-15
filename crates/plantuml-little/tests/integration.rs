@@ -570,6 +570,66 @@ fn test_convert_basic_activity() {
     assert!(svg.contains("do stuff"));
 }
 
+/// Extract the `x` attribute of the `<text>` element whose content is `label`.
+fn text_label_x(svg: &str, label: &str) -> Option<f64> {
+    let needle = format!(">{label}</text>");
+    let pos = svg.find(&needle)?;
+    // Scan backwards from the `<text` that owns this content for `x="..."`.
+    let start = svg[..pos].rfind("<text")?;
+    let segment = &svg[start..pos];
+    let x_pos = segment.find("x=\"")?;
+    let rest = &segment[x_pos + 3..];
+    let end = rest.find('"')?;
+    rest[..end].parse().ok()
+}
+
+/// Regression test for PR #55 / issue #39: an `if/else` nested inside a
+/// `switch/case` must not collapse the two if-branch action boxes onto the
+/// same x (the bug overlapped "A yes" and "A no" and mis-wired the edges).
+/// Also a smoke test that the whole parser → layout → render pipeline produces
+/// valid SVG for the nested construct.
+#[test]
+fn test_activity_switch_nested_if() {
+    let svg = convert_fixture("tests/fixtures/activity_advanced/switch_nested.puml");
+    assert_valid_svg(&svg, "switch_nested");
+    assert!(svg.contains("A yes"), "missing A yes");
+    assert!(svg.contains("A no"), "missing A no");
+    assert!(svg.contains("Action B"), "missing Action B");
+    // The two if-branches must render at distinct x positions (the bug placed
+    // them on the same x, overlapping into one garbled box).
+    let yes_x = text_label_x(&svg, "A yes").expect("A yes text x");
+    let no_x = text_label_x(&svg, "A no").expect("A no text x");
+    assert!(
+        (yes_x - no_x).abs() > 30.0,
+        "nested if-branches must not overlap: A yes x={yes_x}, A no x={no_x}"
+    );
+}
+
+/// 3-case switch with `start`/`stop` — the canonical PlantUML switch example.
+/// Smoke test for the full pipeline (parser → layout → render).
+#[test]
+fn test_activity_switch_webhook() {
+    let svg = convert_fixture("tests/fixtures/activity_advanced/switch_webhook.puml");
+    assert_valid_svg(&svg, "switch_webhook");
+    assert!(svg.contains("Receive webhook"), "missing Receive webhook");
+    assert!(svg.contains("Mark invoice paid"), "missing case A action");
+    assert!(svg.contains("Notify customer"), "missing case B action");
+    assert!(svg.contains("Ignore event"), "missing case C action");
+    // All 3 case labels must appear.
+    assert!(svg.contains("payment.succeeded"), "missing case A label");
+    assert!(svg.contains("invoice.failed"), "missing case B label");
+    assert!(svg.contains("other"), "missing case C label");
+}
+
+/// 2-case switch with `start`/`stop` — minimal switch smoke test.
+#[test]
+fn test_activity_switch_two_cases() {
+    let svg = convert_fixture("tests/fixtures/activity_advanced/switch_nested.puml");
+    assert_valid_svg(&svg, "switch_nested");
+    assert!(!svg.contains("NaN"), "SVG contains NaN");
+    assert!(!svg.contains("inf"), "SVG contains inf");
+}
+
 #[test]
 fn test_activity_fixture_a0002() {
     let svg = convert_fixture("tests/fixtures/activity/a0002.puml");
