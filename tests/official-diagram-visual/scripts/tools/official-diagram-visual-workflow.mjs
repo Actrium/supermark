@@ -1110,7 +1110,7 @@ function runSelfTests() {
         language: 'd2',
         code: 'a -> b',
         selectedFeature: 'Diagram (D2)',
-        selectedExample: '带标签连线',
+        selectedExample: 'Labeled edges',
         docPath: 'cases/sample.md',
         url: 'https://example.test/preview/?feature=d2',
         runEnvironment: {
@@ -1137,6 +1137,19 @@ function runSelfTests() {
         .slice(0, 5)
         .join('>'),
       expected: '## 缺陷摘要>## 用例信息>## 复现代码>## 官方原渲染效果>## 运行环境',
+    },
+    {
+      name: 'marks review issue titles for manual review',
+      actual: renderIssueTitle({
+        language: 'd2',
+        selectedExample: 'Labeled edges',
+        status: 'review',
+        semantic: { missingTexts: [] },
+        geometry: { pass: true },
+        visual: { diffRatio: 0.2 },
+        errors: [],
+      }).startsWith('【需 Review】'),
+      expected: true,
     },
   ];
 
@@ -1184,7 +1197,7 @@ function findDiffBounds(diffPng) {
 }
 
 async function handleIssues(reports) {
-  const failedReports = reports.filter(report => report.status === 'fail');
+  const issueReports = reports.filter(report => report.status === 'fail' || report.status === 'review');
   const results = [];
   const submit = process.env.SUBMIT_GITHUB_ISSUES === '1';
   const repo = process.env.ISSUE_REPO || process.env.GITHUB_REPOSITORY || 'Actrium/supramark';
@@ -1195,7 +1208,7 @@ async function handleIssues(reports) {
     .filter(Boolean);
 
   for (const report of reports) {
-    if (report.status === 'fail') continue;
+    if (report.status === 'fail' || report.status === 'review') continue;
     const staleIssuePath = resolve(outDir, 'issues', `${report.id}.md`);
     if (!existsSync(staleIssuePath)) continue;
     await writeFile(
@@ -1207,15 +1220,25 @@ async function handleIssues(reports) {
 
   await writeFile(
     resolve(outDir, 'issues', 'CURRENT_ISSUES.md'),
-    renderCurrentIssuesIndex(failedReports),
+    renderCurrentIssuesIndex(issueReports),
     'utf8'
   );
 
-  for (const report of failedReports) {
+  for (const report of issueReports) {
     const title = renderIssueTitle(report);
     const issuePath = resolve(outDir, 'issues', `${report.id}.md`);
     const localBody = renderIssueBody(report, repo, { issuePath });
     await writeFile(issuePath, `# ${title}\n\n${localBody}`, 'utf8');
+
+    if (report.status === 'review') {
+      results.push({
+        id: report.id,
+        submitted: false,
+        reason: 'status is review; issue body generated for manual review only.',
+        issueBodyPath: relative(workspaceRoot, issuePath),
+      });
+      continue;
+    }
 
     if (!submit) {
       results.push({
@@ -1270,22 +1293,23 @@ async function handleIssues(reports) {
   return results;
 }
 
-function renderCurrentIssuesIndex(failedReports) {
+function renderCurrentIssuesIndex(issueReports) {
   const lines = [
-    '# 当前运行缺陷列表',
+    '# 当前运行 Issue 文件列表',
     '',
-    `本文件由自动化脚本生成，只列出本轮运行 status 为 \`fail\` 的用例。`,
+    `本文件由自动化脚本生成，列出本轮运行 status 为 \`fail\` 或 \`review\` 的用例。\`review\` 仅用于人工复核，不会自动提交 GitHub issue。`,
     '',
   ];
 
-  if (failedReports.length === 0) {
-    lines.push('本轮没有自动判定失败的用例。');
+  if (issueReports.length === 0) {
+    lines.push('本轮没有自动判定失败或需要人工复核的用例。');
     return `${lines.join('\n')}\n`;
   }
 
-  for (const report of failedReports) {
+  for (const report of issueReports) {
+    const marker = report.status === 'review' ? '需 Review' : 'Fail';
     lines.push(
-      `- [${report.id}](./${report.id}.md)：${report.selectedFeature ?? '未记录'} / ${report.selectedExample ?? '未记录'}`
+      `- [${report.id}](./${report.id}.md)：${marker} / ${report.selectedFeature ?? '未记录'} / ${report.selectedExample ?? '未记录'}`
     );
   }
 
@@ -1329,7 +1353,7 @@ function renderCurrentRunArtifacts(reports, summary) {
     addArtifact(files, report.visual?.raw?.diffPath);
     addArtifact(files, report.visual?.normalized?.expectedPath);
     addArtifact(files, report.visual?.normalized?.actualPath);
-    if (report.status === 'fail') {
+    if (report.status === 'fail' || report.status === 'review') {
       addArtifact(files, `artifacts/official-diagram-visual-workflow/issues/${report.id}.md`);
     }
   }
@@ -1598,28 +1622,27 @@ Supramark 渲染结果应与官方渲染效果在结构、文本、布局、连�
 
 function renderIssueTitle(report) {
   const diagram = issueDiagramLabel(report);
+  const reviewPrefix = report.status === 'review' ? '【需 Review】' : '';
   const errors = report.errors ?? [];
+  let title;
 
   if (errors.length > 0 || report.semantic?.hasError) {
-    return `${diagram}：渲染报错`;
-  }
-  if (!report.visual) {
-    return `${diagram}：未生成可对比图像`;
-  }
-  if (report.semantic?.missingTexts?.length) {
-    return `${diagram}：缺少关键文本`;
-  }
-  if (!report.geometry?.pass) {
-    if (report.geometry?.aspectRatioMismatch) {
-      return `${diagram}：图形布局比例异常`;
-    }
-    return `${diagram}：图形尺寸异常`;
-  }
-  if (typeof report.visual.diffRatio === 'number') {
-    return `${diagram}：视觉差异 ${(report.visual.diffRatio * 100).toFixed(2)}%`;
+    title = `${diagram}：渲染报错`;
+  } else if (!report.visual) {
+    title = `${diagram}：未生成可对比图像`;
+  } else if (report.semantic?.missingTexts?.length) {
+    title = `${diagram}：缺少关键文本`;
+  } else if (!report.geometry?.pass) {
+    title = report.geometry?.aspectRatioMismatch
+      ? `${diagram}：图形布局比例异常`
+      : `${diagram}：图形尺寸异常`;
+  } else if (typeof report.visual.diffRatio === 'number') {
+    title = `${diagram}：视觉差异 ${(report.visual.diffRatio * 100).toFixed(2)}%`;
+  } else {
+    title = `${diagram}：渲染结果不一致`;
   }
 
-  return `${diagram}：渲染结果不一致`;
+  return `${reviewPrefix}${title}`;
 }
 
 function renderIssueBody(report, repo, options = {}) {
@@ -1705,10 +1728,13 @@ function renderIssueBody(report, repo, options = {}) {
   const visualSkipNote = report.visual
     ? ''
     : '- 视觉对比：跳过。页面未成功渲染出有效图表，继续做像素对比没有意义。\n';
+  const issueVerdictText = report.status === 'review'
+    ? '需人工复核'
+    : '不通过';
 
   return `## 缺陷摘要
 
-自动化图表渲染检查发现 \`${report.id}\`${report.visual ? ' 渲染结果与官方参考结果不一致' : ' 页面未成功渲染出有效图表'}，判定为 **不通过**。
+自动化图表渲染检查发现 \`${report.id}\`${report.visual ? ' 渲染结果与官方参考结果不一致' : ' 页面未成功渲染出有效图表'}，判定为 **${issueVerdictText}**。
 
 ## 用例信息
 
