@@ -105,9 +105,7 @@ fn match_container_open(lower: &str, trimmed: &str) -> Option<String> {
         let bytes = name.as_bytes();
         let first = bytes[0] as char;
         let last = bytes[name.len() - 1] as char;
-        if (first == '"' && last == '"')
-            || (first == '\u{00ab}' && last == '\u{00bb}')
-        {
+        if (first == '"' && last == '"') || (first == '\u{00ab}' && last == '\u{00bb}') {
             name = name[1..name.len() - 1].to_string();
         }
     }

@@ -15,7 +15,7 @@ use crate::model::activity::{
 use crate::render::svg_richtext::{
     creole_line_height, creole_plain_text, creole_text_width, measure_creole_display_lines,
 };
-use crate::Result;
+use crate::{Error, Result};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -711,7 +711,10 @@ fn flatten_events(events: &[ActivityEvent]) -> Vec<ActivityEvent> {
     let mut result = Vec::new();
     for event in events {
         match event {
-            ActivityEvent::Partition { name, events: inner } => {
+            ActivityEvent::Partition {
+                name,
+                events: inner,
+            } => {
                 result.push(ActivityEvent::PartitionStart { name: name.clone() });
                 result.extend(flatten_events(inner));
                 result.push(ActivityEvent::PartitionEnd);
@@ -1801,7 +1804,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             ActivityEvent::ForkAgain => {
                 let ff = fork_stack
                     .last_mut()
-                    .expect("ForkAgain without Fork");
+                    .ok_or_else(|| Error::Layout("ForkAgain without matching Fork".into()))?;
                 // Record the current branch's end.
                 let branch_idx = ff.branches.len() - 1;
                 ff.branches[branch_idx].1 = last_flow_node_idx;
@@ -1812,14 +1815,18 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 // last_flow_node_idx will be set when the new branch's
                 // first node is pushed.
                 last_flow_node_idx = Some(ff.top_bar_idx);
-                log::debug!("  ForkAgain: branch {} ended, starting branch {}", branch_idx, ff.branches.len() - 1);
+                log::debug!(
+                    "  ForkAgain: branch {} ended, starting branch {}",
+                    branch_idx,
+                    ff.branches.len() - 1
+                );
             }
 
             // ---- EndFork → bottom bar + finalize ---------------------------
             ActivityEvent::EndFork => {
                 let ff = fork_stack
                     .pop()
-                    .expect("EndFork without Fork");
+                    .ok_or_else(|| Error::Layout("EndFork without matching Fork".into()))?;
                 // Record the last branch's end.
                 let last_branch = ff.branches.len() - 1;
                 let mut branches = ff.branches;
@@ -1897,7 +1904,10 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 // The bottom bar becomes the last flow node for the
                 // next sequential edge.
                 last_flow_node_idx = Some(bottom_bar_idx);
-                log::debug!("  EndFork: bottom bar @ y={bottom_bar_y:.1}, {} branches", branches.len());
+                log::debug!(
+                    "  EndFork: bottom bar @ y={bottom_bar_y:.1}, {} branches",
+                    branches.len()
+                );
             }
 
             // ---- Swimlane switch (no node) -----------------------------------
@@ -2262,8 +2272,13 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             // ---- PartitionStart → begin partition frame ----------------------
             ActivityEvent::PartitionStart { name } => {
                 // Title metrics (font-size 14, sans-serif — Java composite style).
-                let title_w =
-                    font_metrics::text_width(name, "SansSerif", PARTITION_TITLE_FONT_SIZE, false, false);
+                let title_w = font_metrics::text_width(
+                    name,
+                    "SansSerif",
+                    PARTITION_TITLE_FONT_SIZE,
+                    false,
+                    false,
+                );
                 let title_h =
                     font_metrics::line_height("SansSerif", PARTITION_TITLE_FONT_SIZE, false, false);
                 let diff_height_title = (25.0_f64).max(title_h + 20.0);
@@ -2309,9 +2324,9 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
 
             // ---- PartitionEnd → finalize partition frame ---------------------
             ActivityEvent::PartitionEnd => {
-                let pframe = partition_stack
-                    .pop()
-                    .expect("PartitionEnd without PartitionStart");
+                let pframe = partition_stack.pop().ok_or_else(|| {
+                    Error::Layout("PartitionEnd without matching PartitionStart".into())
+                })?;
 
                 // Last inner flow node's bottom (or frame_top + diffH if empty).
                 let last_inner_bottom = if let Some(idx) = last_flow_node_idx {
@@ -2358,7 +2373,11 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 // the frame bottom, which is ignoreForCompressionOnY).
                 log::debug!(
                     "  PartitionEnd '{}' frame {}x{:.1} at y={:.1}, content_max_w={:.1}",
-                    pframe.name, frame_width, frame_height, pframe.frame_top, content_max_w
+                    pframe.name,
+                    frame_width,
+                    frame_height,
+                    pframe.frame_top,
+                    content_max_w
                 );
             }
 
@@ -3527,7 +3546,8 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             let bot = fg.bottom_bar_idx;
 
             // Identify all nodes inside this fork (across all branches).
-            let mut inner_nodes: std::collections::HashSet<usize> = std::collections::HashSet::new();
+            let mut inner_nodes: std::collections::HashSet<usize> =
+                std::collections::HashSet::new();
             for &(first, last, _) in &fg.branches {
                 let end = last.unwrap_or(first);
                 for i in first..=end {
@@ -3541,7 +3561,9 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             edges.retain(|e| {
                 let from_in = inner_nodes.contains(&e.from_index);
                 let to_in = inner_nodes.contains(&e.to_index);
-                let crosses = (from_in && !to_in) || (!from_in && to_in) || (from_in && to_in && e.from_index != e.to_index);
+                let crosses = (from_in && !to_in)
+                    || (!from_in && to_in)
+                    || (from_in && to_in && e.from_index != e.to_index);
                 if crosses {
                     remove_pairs.push((e.from_index, e.to_index));
                     false
@@ -3578,7 +3600,9 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             for &(first, last, _) in &fg.branches {
                 let end = last.unwrap_or(first);
                 // Find first actual flow node in this branch
-                if let Some(first_flow) = (first..=end).find(|&i| is_flow_node(&nodes[i].kind) && !nodes[i].skip_in_flow) {
+                if let Some(first_flow) =
+                    (first..=end).find(|&i| is_flow_node(&nodes[i].kind) && !nodes[i].skip_in_flow)
+                {
                     let bar = &nodes[top];
                     let to = &nodes[first_flow];
                     fork_edges.push(simple_edge(
@@ -3596,7 +3620,10 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
             for &(first, last, _) in &fg.branches {
                 let end = last.unwrap_or(first);
                 // Find last actual flow node in this branch
-                if let Some(last_flow) = (first..=end).rev().find(|&i| is_flow_node(&nodes[i].kind) && !nodes[i].skip_in_flow) {
+                if let Some(last_flow) = (first..=end)
+                    .rev()
+                    .find(|&i| is_flow_node(&nodes[i].kind) && !nodes[i].skip_in_flow)
+                {
                     let from = &nodes[last_flow];
                     let bar = &nodes[bot];
                     fork_edges.push(simple_edge(
@@ -3880,13 +3907,7 @@ fn compute_x_compression_slots(nodes: &[ActivityNodeLayout]) -> Vec<CompressSlot
             // normal TextBlock, contributing [frame_x + 3, frame_x + 3 +
             // title_w].
             if matches!(node.kind, ActivityNodeKindLayout::Partition) {
-                let title_w = font_metrics::text_width(
-                    &node.text,
-                    "SansSerif",
-                    14.0,
-                    false,
-                    false,
-                );
+                let title_w = font_metrics::text_width(&node.text, "SansSerif", 14.0, false, false);
                 if node.width - title_w >= 25.0 {
                     // SpecialText path: UEmpty(1,1) at text_x + title_w
                     occupied.push((node.x + 3.0 + title_w, node.x + 4.0 + title_w));
@@ -3914,7 +3935,8 @@ fn compute_x_compression_slots(nodes: &[ActivityNodeLayout]) -> Vec<CompressSlot
 
     // Step 2: merge overlapping intervals (SlotSet.addSlot).
     occupied.sort_by(|a, b| {
-        a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+        a.0.partial_cmp(&b.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
             .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
     });
     let mut merged: Vec<(f64, f64)> = Vec::new();
@@ -3976,14 +3998,7 @@ fn apply_x_compress(v: f64, slots: &[CompressSlot]) -> f64 {
 }
 
 /// Create a simple vertical edge between two nodes.
-fn simple_edge(
-    from: usize,
-    to: usize,
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
-) -> ActivityEdgeLayout {
+fn simple_edge(from: usize, to: usize, x1: f64, y1: f64, x2: f64, y2: f64) -> ActivityEdgeLayout {
     ActivityEdgeLayout {
         from_index: from,
         to_index: to,
@@ -5661,6 +5676,76 @@ mod tests {
         // The bottom bar sits below both branch actions.
         assert!(end_fork.y >= action1.y + action1.height);
         assert!(end_fork.y >= action2.y + action2.height);
+    }
+
+    // 8b. Fork + swimlane is an unsupported path --------------------------------
+    // When swimlanes are present, Pass 2c positions the fork bar from the
+    // lane-0 geometry captured at that moment and packs every branch
+    // side-by-side relative to it ("fork in swimlanes is not yet supported").
+    // A `|Lane|` switch inside a branch is therefore ignored — branch content
+    // is NOT routed into the switched lane. A byte-exact fork+swimlane
+    // implementation (Java FtileFactory + swimlane composite) is deferred; this
+    // test pins the current limited behavior so a future fix is flagged. See PR
+    // #77 review item 3 — "lane replay can shift after ForkAgain stops emitting
+    // a layout node".
+    #[test]
+    fn fork_in_swimlanes_is_unsupported() {
+        let d = ActivityDiagram {
+            events: vec![
+                ActivityEvent::Swimlane { name: "A".into() },
+                ActivityEvent::Fork,
+                // Branch 0 starts in lane A, then switches to lane B before the
+                // branch ends — the lane replay that shifts after ForkAgain.
+                ActivityEvent::Action {
+                    text: "branch 0".into(),
+                },
+                ActivityEvent::Swimlane { name: "B".into() },
+                ActivityEvent::ForkAgain,
+                // Branch 1 inherits the shifted lane (B) rather than the fork's
+                // original lane (A) — the symptom of the unsupported path.
+                ActivityEvent::Action {
+                    text: "branch 1".into(),
+                },
+                ActivityEvent::EndFork,
+            ],
+            swimlanes: vec!["A".into(), "B".into()],
+            direction: Default::default(),
+            note_max_width: None,
+            is_old_style: false,
+            old_graph: None,
+        };
+
+        // Must not panic / error on the unsupported path.
+        let layout = layout_activity(&d).unwrap();
+
+        // Exactly two fork bars (top from `fork`, bottom from `end fork`) and
+        // two branch actions.
+        let bars: Vec<_> = layout
+            .nodes
+            .iter()
+            .filter(|n| matches!(n.kind, ActivityNodeKindLayout::ForkBar))
+            .collect();
+        assert_eq!(bars.len(), 2, "fork renders exactly two bars");
+        let actions: Vec<_> = layout
+            .nodes
+            .iter()
+            .filter(|n| matches!(n.kind, ActivityNodeKindLayout::Action))
+            .collect();
+        assert_eq!(actions.len(), 2, "two branch actions");
+        // Actions are emitted in branch order: branch 0, then branch 1.
+        let branch0_cx = actions[0].x + actions[0].width / 2.0;
+        let branch1_cx = actions[1].x + actions[1].width / 2.0;
+
+        // The pin: branch 1 (preceded by a `|B|` switch) is packed beside
+        // branch 0 by the fork layout — it is NOT placed in lane B. A correct
+        // implementation would route branch 1 into lane B (distance ~0 to lane
+        // B, far from branch 0), flipping this inequality and flagging the fix.
+        let lane_b_cx = swimlane_center_x(&layout.swimlane_layouts, 1);
+        assert!(
+            (branch1_cx - branch0_cx).abs() < (branch1_cx - lane_b_cx).abs(),
+            "unsupported fork+swimlane: branch 1 ({branch1_cx:.4}) should be packed beside \
+             branch 0 ({branch0_cx:.4}), not placed in lane B ({lane_b_cx:.4})"
+        );
     }
 
     // 9. Text sizing ---------------------------------------------------------
