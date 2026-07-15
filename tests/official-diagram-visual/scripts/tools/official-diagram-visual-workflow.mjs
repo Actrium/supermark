@@ -171,6 +171,7 @@ const summary = {
     perceptualDistanceRatio: r.visual?.perceptual?.distanceRatio ?? null,
     geometryAspectRatioDelta: r.geometry?.aspectRatioDelta ?? null,
     geometryAspectRatioMismatch: r.geometry?.aspectRatioMismatch ?? null,
+    captureMethod: r.actual?.captureMethod ?? null,
     expectedSize: r.visual?.expectedSize ?? null,
     actualSize: r.visual?.actualSize ?? null,
     sizeDelta: r.visual?.sizeDelta ?? null,
@@ -344,6 +345,15 @@ async function runCase(page, browser, testCase) {
       const diagram = content?.querySelector('[data-supramark-diagram]');
       const svg = diagram?.querySelector('svg') ?? content?.querySelector('svg');
       const canvas = diagram?.querySelector('canvas') ?? content?.querySelector('canvas');
+      const canvasDataUrl = canvas
+        ? (() => {
+            try {
+              return canvas.toDataURL('image/png');
+            } catch {
+              return '';
+            }
+          })()
+        : '';
       const errors = [...document.querySelectorAll('.feature-preview-render-content, body')]
         .map(el => el.textContent || '')
         .join('\n')
@@ -352,6 +362,7 @@ async function runCase(page, browser, testCase) {
       return {
         html: diagram?.outerHTML ?? svg?.outerHTML ?? canvas?.outerHTML ?? '',
         svg: svg?.outerHTML ?? '',
+        canvasDataUrl,
         text: content?.textContent ?? '',
         rect: rect
           ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, left: rect.left }
@@ -413,16 +424,7 @@ async function runCase(page, browser, testCase) {
       };
     }
 
-    const didScreenshot = await screenshotFirstAvailable(page, [
-      '.feature-preview-render-content [data-supramark-diagram] svg',
-      '.feature-preview-render-content svg',
-      '.feature-preview-render-content [data-supramark-diagram] canvas',
-      '.feature-preview-render-content canvas',
-      '.feature-preview-render-content [data-supramark-diagram]',
-    ], actualPngPath);
-    if (!didScreenshot && probe.svg) {
-      await screenshotSvg(browser, probe.svg, actualPngPath);
-    }
+    const actualCapture = await captureRenderedOutput(page, browser, probe, actualPngPath);
 
     await rasterizeExpectedFile(browser, testCase.imagePath, expectedPngPath);
 
@@ -454,6 +456,7 @@ async function runCase(page, browser, testCase) {
         svgPath: probe.svg ? relative(workspaceRoot, actualSvgPath) : null,
         pngPath: existsSync(actualPngPath) ? relative(workspaceRoot, actualPngPath) : null,
         screenshotPath: existsSync(actualPngPath) ? relative(workspaceRoot, actualPngPath) : null,
+        captureMethod: actualCapture.method,
       },
       semantic,
       geometry,
@@ -628,6 +631,42 @@ async function screenshotSvg(browser, svg, pngPath) {
   }
 }
 
+async function captureRenderedOutput(page, browser, probe, pngPath) {
+  const method = actualCaptureMethod(probe);
+  if (method === 'svg-outerhtml') {
+    await screenshotSvg(browser, probe.svg, pngPath);
+    return { method };
+  }
+  if (method === 'canvas-data-url') {
+    await writePngDataUrl(probe.canvasDataUrl, pngPath);
+    return { method };
+  }
+
+  const didScreenshot = await screenshotFirstAvailable(page, [
+    '.feature-preview-render-content [data-supramark-diagram] svg',
+    '.feature-preview-render-content svg',
+    '.feature-preview-render-content [data-supramark-diagram] canvas',
+    '.feature-preview-render-content canvas',
+    '.feature-preview-render-content [data-supramark-diagram]',
+  ], pngPath);
+  return { method: didScreenshot ? 'dom-screenshot' : 'none' };
+}
+
+function actualCaptureMethod(probe) {
+  if (probe?.svg) return 'svg-outerhtml';
+  if (isPngDataUrl(probe?.canvasDataUrl)) return 'canvas-data-url';
+  return 'dom-screenshot';
+}
+
+function isPngDataUrl(value) {
+  return /^data:image\/png;base64,[A-Za-z0-9+/=]+$/i.test(String(value || ''));
+}
+
+async function writePngDataUrl(dataUrl, pngPath) {
+  const base64 = String(dataUrl || '').match(/^data:image\/png;base64,(.+)$/i)?.[1];
+  if (!base64) throw new Error('Canvas output is not a PNG data URL');
+  await writeFile(pngPath, Buffer.from(base64, 'base64'));
+}
 async function screenshotFirstAvailable(page, selectors, pngPath) {
   for (const selector of selectors) {
     const locator = page.locator(selector).first();
@@ -1049,6 +1088,22 @@ function runSelfTests() {
       expected: 'a -> b',
     },
     {
+      name: 'captures actual output from rendered SVG before DOM screenshots',
+      actual: actualCaptureMethod({
+        svg: '<svg viewBox="0 0 10 10"></svg>',
+        canvasDataUrl: 'data:image/png;base64,AA==',
+      }),
+      expected: 'svg-outerhtml',
+    },
+    {
+      name: 'captures actual canvas pixels before DOM screenshots',
+      actual: actualCaptureMethod({
+        svg: '',
+        canvasDataUrl: 'data:image/png;base64,AA==',
+      }),
+      expected: 'canvas-data-url',
+    },
+    {
       name: 'places reproduction code and official reference immediately after case info',
       actual: renderIssueBody({
         id: 'sample-case',
@@ -1397,6 +1452,7 @@ function renderIssueBodyLegacy(report, repo, options = {}) {
     ? `${(report.visual.failThreshold * 100).toFixed(3)}%`
     : `${(visualFailThreshold * 100).toFixed(3)}%`;
   const visualBandText = report.visual?.band ?? '无';
+  const captureMethodText = report.actual?.captureMethod ?? '无';
   const severeSizeMismatchText = report.visual?.severeSizeMismatch ? '是' : '否';
   const diffBounds = report.visual?.diffBounds
     ? `x=${report.visual.diffBounds.x}, y=${report.visual.diffBounds.y}, width=${report.visual.diffBounds.width}, height=${report.visual.diffBounds.height}`
@@ -1480,6 +1536,7 @@ ${report.visual ? '' : '- 视觉对比：跳过。页面未成功渲染出有效
 - 原始尺寸直接 diff：${rawDiffRatio}
 - 感知哈希距离：${perceptualDistance}
 - 视觉分级：${visualBandText}
+- Actual 生成方式：${captureMethodText}
 - 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核；若尺寸面积差异 ≥ ${formatRatio(severeSizeDeltaThreshold)} 且感知哈希距离 > ${formatRatio(perceptualSimilarThreshold)}，标记为人工复核；若像素差异本身已达到不通过则仍为不通过
 - 严重尺寸+感知异常：${severeSizeMismatchText}
 - 差异区域 bounding box：${diffBounds}
@@ -1586,6 +1643,7 @@ function renderIssueBody(report, repo, options = {}) {
     ? `${(report.visual.failThreshold * 100).toFixed(3)}%`
     : `${(visualFailThreshold * 100).toFixed(3)}%`;
   const visualBandText = report.visual?.band ?? '无';
+  const captureMethodText = report.actual?.captureMethod ?? '无';
   const severeSizeMismatchText = report.visual?.severeSizeMismatch ? '是' : '否';
   const diffBounds = report.visual?.diffBounds
     ? `x=${report.visual.diffBounds.x}, y=${report.visual.diffBounds.y}, width=${report.visual.diffBounds.width}, height=${report.visual.diffBounds.height}`
@@ -1685,6 +1743,7 @@ ${visualSkipNote}- 视觉差异比例：${diffRatio}
 - 原始尺寸直接 diff：${rawDiffRatio}
 - 感知哈希距离：${perceptualDistance}
 - 视觉分级：${visualBandText}
+- Actual 生成方式：${captureMethodText}
 - 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核；若尺寸面积差异 ≥ ${formatRatio(severeSizeDeltaThreshold)} 且感知哈希距离 > ${formatRatio(perceptualSimilarThreshold)}，标记为人工复核；若像素差异本身已达到不通过则仍为不通过
 - 严重尺寸+感知异常：${severeSizeMismatchText}
 - 差异区域 bounding box：${diffBounds}
