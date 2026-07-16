@@ -4562,7 +4562,11 @@ fn render_sequence_inner(
                 next_y
             };
             let note_back_threshold = if msg.is_self { 200.0 } else { 100.0 };
-            let mut has_note = false;
+            // Only *message* notes consume Java's ArrowAndNoteBox counter slot.
+            // *Participant* notes (`note right of X`) occupy their own slot via
+            // DrawableSetInitializer.prepareNote and do not wrap the arrow, so
+            // they must not advance the message-id counter.
+            let mut has_message_note = false;
             for (ni, note) in layout.notes.iter().enumerate() {
                 if drawn_notes.contains(&ni) {
                     continue;
@@ -4582,13 +4586,15 @@ fn render_sequence_inner(
                 if belongs {
                     draw_note(&mut sg, note, &shadow_attr, skin);
                     drawn_notes.insert(ni);
-                    has_note = true;
+                    if note.is_note_on_message {
+                        has_message_note = true;
+                    }
                 }
             }
-            // In Java, when a message has notes, it's wrapped in ArrowAndNoteBox
-            // which consumes an extra counter value. Advance to match Java's
-            // msg id numbering.
-            if has_note {
+            // In Java, when a message has message notes, it's wrapped in
+            // ArrowAndNoteBox which consumes an extra counter value. Advance to
+            // match Java's msg id numbering.
+            if has_message_note {
                 msg_seq_counter += 1;
             }
         }

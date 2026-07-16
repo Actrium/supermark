@@ -142,6 +142,12 @@ pub enum SeqEvent {
         parallel: bool,
         /// Optional background color (e.g. "#FF0000" from `note right #red`)
         color: Option<String>,
+        /// `true` for a *message* note (`note right:` with no explicit
+        /// participant) — attached to the last arrow and overlapping it, like
+        /// Java `Note(null)`. `false` for a *participant* note (`note right of
+        /// X`) which occupies its own vertical slot, like Java `Note(p)` advanced
+        /// by `DrawableSetInitializer.prepareNote()`.
+        on_message: bool,
     },
     NoteLeft {
         participant: String,
@@ -150,6 +156,8 @@ pub enum SeqEvent {
         parallel: bool,
         /// Optional background color
         color: Option<String>,
+        /// See [`SeqEvent::NoteRight::on_message`].
+        on_message: bool,
     },
     NoteOver {
         participants: Vec<String>,

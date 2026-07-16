@@ -1,0 +1,13 @@
+@startuml
+participant Browser
+participant API
+participant Cache
+
+Browser -> API: GET /profile
+API -> Cache: lookup user
+Cache --> API: cached profile
+note left of API
+  cache hit avoids database
+end note
+API --> Browser: 200 OK
+@enduml

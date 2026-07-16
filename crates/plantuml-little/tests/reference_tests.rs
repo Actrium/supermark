@@ -832,6 +832,30 @@ reference_test!(
     "fixtures/sequence/a0001.puml"
 );
 reference_test!(
+    reference_fixtures_sequence_issue35_note_left_of_puml,
+    "fixtures/sequence/issue35_note_left_of.puml"
+);
+reference_test!(
+    reference_fixtures_sequence_issue35_note_right_of_puml,
+    "fixtures/sequence/issue35_note_right_of.puml"
+);
+reference_test!(
+    reference_fixtures_sequence_issue35_note_right_of_after_self_puml,
+    "fixtures/sequence/issue35_note_right_of_after_self.puml"
+);
+reference_test!(
+    reference_fixtures_sequence_issue35_note_left_of_after_self_puml,
+    "fixtures/sequence/issue35_note_left_of_after_self.puml"
+);
+reference_test!(
+    reference_fixtures_sequence_note_over_after_message_puml,
+    "fixtures/sequence/note_over_after_message.puml"
+);
+reference_test!(
+    reference_fixtures_sequence_note_over_after_self_puml,
+    "fixtures/sequence/note_over_after_self.puml"
+);
+reference_test!(
     reference_fixtures_sequence_issue36_create_destroy_puml,
     "fixtures/sequence/issue36_create_destroy.puml"
 );
@@ -1218,4 +1242,4 @@ reference_test!(
     "fixtures/yaml/basic.puml"
 );
 
-// Total: 280 reference tests
+// Total: 286 reference tests

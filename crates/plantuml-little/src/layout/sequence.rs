@@ -286,8 +286,12 @@ pub struct NoteLayout {
     pub is_left: bool,
     /// Whether this note is attached to a self-message (affects width computation).
     pub(crate) is_self_msg_note: bool,
-    /// Whether this note is attached to any message (for note-on-message y-binding).
-    #[allow(dead_code)]
+    /// Whether this note is a *message* note — attached to an arrow and wrapped
+    /// in Java's `ArrowAndNoteBox`, which consumes an extra message-id counter
+    /// value. `false` for *participant* notes (`note right of X`) and `note
+    /// over`, which occupy their own slot via `DrawableSetInitializer.prepareNote`
+    /// / `Note(participants)` and do not wrap the arrow. In the teoz builder this
+    /// flag retains its prior self-message-note meaning (teoz never emits `id="msgN"`).
     pub(crate) is_note_on_message: bool,
     /// Index of the associated message (for rendering order).
     /// None for standalone notes (not following a message).
@@ -1257,9 +1261,23 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
             if msg.from == msg.to {
                 return false;
             }
+            // Only a *message* note (`note right:` / `note left:`, no explicit
+            // `of PARTICIPANT`) overlaps its arrow and needs the 3px extra
+            // initial offset. A *participant* note (`note right of X`) and a
+            // `note over` occupy their own vertical slot (Java
+            // `DrawableSetInitializer.prepareNote` advances freeY by the NoteBox
+            // preferred height) and must NOT shift earlier messages — verified
+            // against the v1.2026.2 reference: msg1 sits at the same y with or
+            // without a following participant/over note.
             if !matches!(
                 &w[1],
-                SeqEvent::NoteRight { .. } | SeqEvent::NoteLeft { .. } | SeqEvent::NoteOver { .. }
+                SeqEvent::NoteRight {
+                    on_message: true,
+                    ..
+                } | SeqEvent::NoteLeft {
+                    on_message: true,
+                    ..
+                }
             ) {
                 return false;
             }
@@ -1899,12 +1917,71 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
             }
 
             SeqEvent::NoteRight {
-                participant, text, ..
+                participant,
+                text,
+                on_message,
+                ..
             } => {
                 let px = find_participant_x(&participants, participant);
                 let note_height = estimate_note_height(text);
                 let note_preferred_h = estimate_note_preferred_height(text);
                 let note_width = estimate_note_width(text);
+
+                // Participant note (`note right of X`, `on_message == false`):
+                // Java's `DrawableSetInitializer.prepareNote()` builds a standalone
+                // NoteBox at the current freeY, then advances freeY by
+                // `noteBox.getPreferredHeight()`. freeY = y_cursor - arrow_y_point
+                // (the arrow y-point is the offset from freeY to the arrow line);
+                // the polygon origin = freeY + paddingY. This gives the note its
+                // own vertical slot — it does NOT overlap the previous arrow. This
+                // holds whether or not the preceding message was a self-message
+                // (prepareNote always advances freeY); only a *message* note
+                // (`on_message == true`) overlays the arrow below.
+                if !on_message {
+                    let note_y = (y_cursor - lp.arrow_y_point + NOTE_COMPONENT_PADDING_Y)
+                        .max(MARGIN + max_ph);
+                    // x = (int)(pos2 + rightShift(y)) + paddingX, where pos2 is
+                    // the participant's lifeline center and rightShift reflects
+                    // the activation level at the note's y (0 when inactive).
+                    let target_name = participant.as_str();
+                    let look_ahead_level = activation_stack
+                        .get(target_name)
+                        .map(|s| s.len())
+                        .unwrap_or(0);
+                    let right_shift = active_right_shift(look_ahead_level);
+                    let base = (px + right_shift) as i64 as f64;
+                    let note_x = base + NOTE_COMPONENT_PADDING_X;
+                    let note_layout_width = note_width + 2.0 * NOTE_COMPONENT_PADDING_X;
+                    notes.push(NoteLayout {
+                        x: note_x,
+                        y: note_y,
+                        width: note_width,
+                        layout_width: note_layout_width,
+                        height: note_height,
+                        text: text.clone(),
+                        is_left: false,
+                        is_self_msg_note: false,
+                        is_note_on_message: false,
+                        assoc_message_idx: last_message_idx,
+                        teoz_mode: false,
+                        color: None,
+                    });
+                    if !fragment_stack.is_empty() {
+                        let note_right_shift = NOTE_COMPONENT_PADDING_X;
+                        update_fragment_message_extent(
+                            &mut fragment_stack,
+                            note_x - NOTE_COMPONENT_PADDING_X,
+                            note_x + note_width + NOTE_COMPONENT_PADDING_X + note_right_shift,
+                        );
+                    }
+                    // Advance freeY by the NoteBox preferred height (Java
+                    // prepareNote). Subsequent messages start at this new y.
+                    y_cursor += note_preferred_h;
+                    lifeline_extend_y = lifeline_extend_y.max(note_y + note_preferred_h + 5.0);
+                    last_message_y = None;
+                    continue;
+                }
+
                 // In Java PlantUML, notes following a message are placed alongside
                 // the message (with a back-offset) rather than below it.
                 // The note doesn't advance y_cursor when it fits within the
@@ -2020,7 +2097,7 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                     text: text.clone(),
                     is_left: false,
                     is_self_msg_note: last_message_was_self,
-                    is_note_on_message: last_message_was_self,
+                    is_note_on_message: true,
                     assoc_message_idx: last_message_idx,
                     teoz_mode: false,
                     color: None,
@@ -2158,13 +2235,61 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
             }
 
             SeqEvent::NoteLeft {
-                participant, text, ..
+                participant,
+                text,
+                on_message,
+                ..
             } => {
                 let px = find_participant_x(&participants, participant);
                 let part_idx_for_note = part_name_to_idx.get(participant.as_str()).copied();
                 let note_height = estimate_note_height(text);
                 let note_preferred_h = estimate_note_preferred_height(text);
                 let note_width = estimate_note_width(text);
+
+                // Participant note (`note left of X`): standalone NoteBox in its
+                // own slot — mirror of the NoteRight participant-note branch. Like
+                // that branch, this also covers a participant note following a
+                // self-message (prepareNote always advances freeY).
+                if !on_message {
+                    let note_y = (y_cursor - lp.arrow_y_point + NOTE_COMPONENT_PADDING_Y)
+                        .max(MARGIN + max_ph);
+                    let target_name = participant.as_str();
+                    let look_ahead_level = activation_stack
+                        .get(target_name)
+                        .map(|s| s.len())
+                        .unwrap_or(0);
+                    let left_shift = active_left_shift(look_ahead_level);
+                    let note_layout_width = note_width + 2.0 * NOTE_COMPONENT_PADDING_X;
+                    // x = (int)(pos1 - notePW) + paddingX, pos1 = centerX - leftShift(y).
+                    let sx = (px - left_shift - note_layout_width) as i64 as f64;
+                    let note_x = sx + NOTE_COMPONENT_PADDING_X;
+                    notes.push(NoteLayout {
+                        x: note_x,
+                        y: note_y,
+                        width: note_width,
+                        layout_width: note_layout_width,
+                        height: note_height,
+                        text: text.clone(),
+                        is_left: true,
+                        is_self_msg_note: false,
+                        is_note_on_message: false,
+                        assoc_message_idx: last_message_idx,
+                        teoz_mode: false,
+                        color: None,
+                    });
+                    if !fragment_stack.is_empty() {
+                        update_fragment_message_extent(
+                            &mut fragment_stack,
+                            note_x - NOTE_COMPONENT_PADDING_X,
+                            note_x + note_width + NOTE_COMPONENT_PADDING_X,
+                        );
+                    }
+                    y_cursor += note_preferred_h;
+                    lifeline_extend_y = lifeline_extend_y.max(note_y + note_preferred_h + 5.0);
+                    last_message_y = None;
+                    continue;
+                }
+
                 let note_y = if let Some(msg_y) = last_message_y {
                     if last_message_was_self {
                         // Java ArrowAndNoteBox: note centered within combined tile
@@ -2228,7 +2353,7 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                     text: text.clone(),
                     is_left: true,
                     is_self_msg_note: last_message_was_self,
-                    is_note_on_message: last_message_was_self,
+                    is_note_on_message: true,
                     assoc_message_idx: last_message_idx,
                     teoz_mode: false,
                     color: None,
@@ -2327,7 +2452,13 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                 text,
                 ..
             } => {
-                // Place note centered over the listed participants
+                // `note over` is a standalone NoteBox in its own vertical slot
+                // (Java `DrawableSetInitializer.prepareNote` / `Note(participants)`) —
+                // it does NOT overlay the preceding arrow. Mirrors the NoteRight/
+                // NoteLeft participant-note branches: polygon origin = freeY +
+                // paddingY (freeY = y_cursor - arrow_y_point), then freeY advances
+                // by the NoteBox preferred height. Verified against v1.2026.2: msg1
+                // sits at the same y with or without a following `note over`.
                 if let (Some(first), Some(last)) = (parts.first(), parts.last()) {
                     let x1 = find_participant_x(&participants, first);
                     let x2 = find_participant_x(&participants, last);
@@ -2336,23 +2467,8 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                     let note_preferred_h = estimate_note_preferred_height(text);
                     let note_w = estimate_note_width(text);
                     let width = (x2 - x1).abs().max(note_w);
-                    let note_y = if let Some(msg_y) = last_message_y {
-                        if last_message_was_self {
-                            // Java ArrowAndNoteBox: note centered within combined tile
-                            let combined_h = last_self_msg_preferred_h.max(note_preferred_h);
-                            let note_push = (combined_h - note_preferred_h) / 2.0;
-                            last_self_msg_starting_y + note_push + NOTE_COMPONENT_PADDING_Y
-                        } else if last_message_sprite_extra > 0.0 {
-                            let arrow_advance = rose::ARROW_DELTA_Y + 2.0 * rose::ARROW_PADDING_Y;
-                            (msg_y + arrow_advance + NOTE_COMPONENT_PADDING_Y).max(MARGIN + max_ph)
-                        } else {
-                            let back_offset =
-                                lp.message_spacing - NOTE_FOLD + last_message_extra_height;
-                            (msg_y - back_offset).max(MARGIN + max_ph)
-                        }
-                    } else {
-                        y_cursor
-                    };
+                    let note_y = (y_cursor - lp.arrow_y_point + NOTE_COMPONENT_PADDING_Y)
+                        .max(MARGIN + max_ph);
                     let note_layout_width = width + 2.0 * NOTE_COMPONENT_PADDING_X;
                     notes.push(NoteLayout {
                         x: center - width / 2.0,
@@ -2368,13 +2484,9 @@ pub fn layout_sequence(sd: &SequenceDiagram, skin: &crate::style::SkinParams) ->
                         teoz_mode: false,
                         color: None,
                     });
-                    let note_bottom = note_y + note_height;
-                    if note_bottom > y_cursor {
-                        y_cursor = note_bottom;
-                    }
-                    if last_message_y.is_some() {
-                        pending_note_activate_y = last_message_y;
-                    }
+                    // Advance freeY by the NoteBox preferred height (Java prepareNote).
+                    y_cursor += note_preferred_h;
+                    lifeline_extend_y = lifeline_extend_y.max(note_y + note_preferred_h + 5.0);
                     last_message_y = None;
                 }
             }
@@ -3390,6 +3502,7 @@ mod tests {
                     text: "a note".to_string(),
                     parallel: false,
                     color: None,
+                    on_message: false,
                 },
                 SeqEvent::Message(make_message("A", "A", "after note")),
             ],
@@ -3420,6 +3533,123 @@ mod tests {
             "right note x ({:.1}) should be right of participant center ({:.1})",
             note.x,
             part_x
+        );
+    }
+
+    #[test]
+    fn participant_note_after_self_message_own_slot() {
+        // `note right of Alice` after a self-message must occupy its own
+        // vertical slot (Java `DrawableSetInitializer.prepareNote`), NOT overlay
+        // the arrow via the message-note (ArrowAndNoteBox) path. Regression for
+        // the `last_message_was_self` guard that wrongly routed participant notes
+        // following self-messages into the overlay path (is_note_on_message=true).
+        let sd = SequenceDiagram {
+            participants: vec![make_participant("Alice"), make_participant("Bob")],
+            events: vec![
+                SeqEvent::Message(make_message("Alice", "Alice", "self")),
+                SeqEvent::NoteRight {
+                    participant: "Alice".to_string(),
+                    text: "own slot after self".to_string(),
+                    parallel: false,
+                    color: None,
+                    on_message: false,
+                },
+                SeqEvent::Message(make_message("Bob", "Alice", "ok")),
+            ],
+            teoz_mode: false,
+            hide_footbox: false,
+            delta_shadow: 0.0,
+            inline_life_events: vec![],
+            source_seed: 0,
+        };
+        let layout = layout_sequence(&sd, &crate::style::SkinParams::default()).unwrap();
+
+        assert_eq!(layout.notes.len(), 1);
+        let note = &layout.notes[0];
+        // Standalone participant note — must NOT be marked as a message note
+        // (the overlay path sets is_note_on_message = true).
+        assert!(
+            !note.is_note_on_message,
+            "participant note after self must be is_note_on_message=false"
+        );
+        let self_msg_y = layout.messages[0].y;
+        // Own slot: the note sits below the self-message, not overlaid on it.
+        assert!(
+            note.y > self_msg_y,
+            "note y ({:.1}) should be below self-msg y ({:.1}) — own slot, not overlay",
+            note.y,
+            self_msg_y
+        );
+        // The note advanced freeY, so the following message is below the note.
+        assert!(
+            layout.messages[1].y > note.y,
+            "next message y ({:.1}) should be below note y ({:.1})",
+            layout.messages[1].y,
+            note.y
+        );
+    }
+
+    #[test]
+    fn note_over_after_message_no_initial_offset() {
+        // `note over` is a standalone NoteBox in its own slot — it must NOT
+        // trigger the ~3px initial overlay-offset that message notes do, and must
+        // NOT overlay the preceding arrow. Verified against PlantUML v1.2026.2:
+        // msg1 sits at the same y with or without a following `note over`.
+        let with_note = SequenceDiagram {
+            participants: vec![make_participant("Alice"), make_participant("Bob")],
+            events: vec![
+                SeqEvent::Message(make_message("Alice", "Bob", "hello")),
+                SeqEvent::NoteOver {
+                    participants: vec!["Bob".to_string()],
+                    text: "an over note".to_string(),
+                    parallel: false,
+                },
+                SeqEvent::Message(make_message("Bob", "Alice", "bye")),
+            ],
+            teoz_mode: false,
+            hide_footbox: false,
+            delta_shadow: 0.0,
+            inline_life_events: vec![],
+            source_seed: 0,
+        };
+        let without_note = SequenceDiagram {
+            participants: vec![make_participant("Alice"), make_participant("Bob")],
+            events: vec![
+                SeqEvent::Message(make_message("Alice", "Bob", "hello")),
+                SeqEvent::Message(make_message("Bob", "Alice", "bye")),
+            ],
+            teoz_mode: false,
+            hide_footbox: false,
+            delta_shadow: 0.0,
+            inline_life_events: vec![],
+            source_seed: 0,
+        };
+        let skin = crate::style::SkinParams::default();
+        let with_layout = layout_sequence(&with_note, &skin).unwrap();
+        let without_layout = layout_sequence(&without_note, &skin).unwrap();
+
+        // No 3px initial offset: msg1 y is identical with vs. without the note.
+        assert!(
+            (with_layout.messages[0].y - without_layout.messages[0].y).abs() < 0.01,
+            "note over must not shift msg1: with={:.3}, without={:.3}",
+            with_layout.messages[0].y,
+            without_layout.messages[0].y
+        );
+        assert_eq!(with_layout.notes.len(), 1);
+        let note = &with_layout.notes[0];
+        assert!(!note.is_note_on_message);
+        // Own slot: note is below msg1 (not overlaid) and advanced freeY past it.
+        assert!(
+            note.y > with_layout.messages[0].y,
+            "note over y ({:.1}) should be below msg1 y ({:.1}) — own slot",
+            note.y,
+            with_layout.messages[0].y
+        );
+        assert!(
+            with_layout.messages[1].y > note.y,
+            "msg2 y ({:.1}) should be below note y ({:.1})",
+            with_layout.messages[1].y,
+            note.y
         );
     }
 
@@ -3873,6 +4103,7 @@ mod tests {
                 text: "a note".to_string(),
                 parallel: false,
                 color: None,
+                on_message: false,
             }],
             teoz_mode: false,
             hide_footbox: false,
@@ -3936,6 +4167,7 @@ mod tests {
                     text: "Note".to_string(),
                     parallel: false,
                     color: None,
+                    on_message: true,
                 },
                 SeqEvent::Activate("B".to_string(), None),
                 SeqEvent::Message(Message {
