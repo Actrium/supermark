@@ -219,16 +219,13 @@ function buildRenderOptions(
 }
 
 const styles = StyleSheet.create({
-  diagram: {
-    marginBottom: 8,
-  },
+  diagram: {},
   placeholder: {
     width: '100%',
     padding: 8,
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#ccc',
-    marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

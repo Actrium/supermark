@@ -87,9 +87,7 @@ export const MathBlock: React.FC<MathBlockProps> = ({ node }) => {
 };
 
 const styles = StyleSheet.create({
-  mathContainer: {
-    marginVertical: 8,
-  },
+  mathContainer: {},
   placeholderText: {
     fontSize: 14,
     color: '#666',
@@ -100,7 +98,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#ccc',
-    marginVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -108,7 +105,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
     padding: 8,
     borderRadius: 4,
-    marginVertical: 8,
   },
   codeText: {
     fontFamily: 'Menlo',

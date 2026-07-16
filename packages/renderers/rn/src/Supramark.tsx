@@ -368,7 +368,7 @@ function renderNode(
       ) {
         const title = container.params || (container.data?.title as string | undefined);
         const kind = containerName;
-        const admonitionContainerStyle = { flexDirection: 'column' as const, marginBottom: 4 };
+        const admonitionContainerStyle = { flexDirection: 'column' as const, gap: 4 };
 
         const renderAdmonitionContent = () =>
           container.children.map((child, index) =>
@@ -437,7 +437,7 @@ function renderNode(
       const isCompact = defOptions.compact !== false; // 默认紧凑
       // Column 布局：term 一行，description 缩进一行。
       // 避免 row 布局下 description 被 term 挤压导致 Text 不换行。
-      const defItemStyle = { flexDirection: 'column' as const, marginBottom: 4 };
+      const defItemStyle = { flexDirection: 'column' as const };
       const defDescriptionStyle = { paddingLeft: 16 };
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-definition-list'])) {
         // 禁用时，将定义列表退化为普通列表样式
