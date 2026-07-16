@@ -67,6 +67,7 @@ const viewport = parseViewportEnv(
   process.env.CI === 'true' ? { width: 1280, height: 900 } : { width: 2048, height: 1096 }
 );
 const deviceScaleFactor = parseNumberEnv('PLAYWRIGHT_DEVICE_SCALE_FACTOR', 1);
+const previewWidth = parseNumberEnv('SUPRAMARK_PREVIEW_WIDTH', 540);
 
 const featureByLanguage = new Map([
   ['mermaid', 'mermaid'],
@@ -101,8 +102,8 @@ if (runnableCases.length === 0) {
 }
 
 const launchOptions = existsSync(chromePath)
-  ? { executablePath: chromePath, headless: playwrightHeadless }
-  : { headless: playwrightHeadless };
+  ? { executablePath: chromePath, headless: playwrightHeadless, args: ['--start-maximized'] }
+  : { headless: playwrightHeadless, args: ['--start-maximized'] };
 const browser = await chromium.launch(launchOptions);
 const runEnvironment = {
   playwright: {
@@ -113,6 +114,7 @@ const runEnvironment = {
     browserVersion: browser.version(),
   },
   targetBaseUrl,
+  previewWidth,
 };
 
 const reports = [];
@@ -121,9 +123,7 @@ try {
   const initialFeature = runnableCases
     .map(testCase => featureByLanguage.get(testCase.language))
     .find(Boolean);
-  const initialUrl = initialFeature
-    ? `${targetBaseUrl}?feature=${encodeURIComponent(initialFeature)}`
-    : targetBaseUrl;
+  const initialUrl = buildInitialUrl(initialFeature);
   await page.goto(initialUrl, { waitUntil: 'networkidle', timeout: 90000 });
   for (const testCase of runnableCases) {
     console.log(`Running ${testCase.id}`);
@@ -230,6 +230,10 @@ function parseNumberEnv(name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function parseViewportEnv(name, fallback) {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -319,28 +323,25 @@ async function runCase(page, browser, testCase) {
   page.on('pageerror', onPageError);
 
   try {
-    const url = `${targetBaseUrl}?feature=${encodeURIComponent(feature)}`;
-    let selectedFeature;
-    try {
-      selectedFeature = await selectFeature(page, feature);
-    } catch (error) {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
-      selectedFeature = await selectFeature(page, feature);
-    }
-    await page.waitForTimeout(200);
-    const selectedExample = await selectExampleType(page, testCase.caseType);
-    const beforeRenderHtml = await page
+    const url = buildPreviewUrl(feature);
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
+    const preview = page;
+    const selectedFeature = await selectFeature(preview, feature);
+    await delay(200);
+    const selectedExample = await selectExampleType(preview, testCase.caseType);
+    const selectedPreviewWidth = await setPreviewWidth(preview, previewWidth);
+    const beforeRenderHtml = await preview
       .locator('.feature-preview-render-content')
       .first()
       .evaluate(element => element.innerHTML)
       .catch(() => '');
-    const editor = page.locator('textarea').first();
+    const editor = preview.locator('textarea').first();
     await editor.waitFor({ timeout: 30000 });
     await editor.fill(testCase.markdown);
-    await waitForRenderRefresh(page, beforeRenderHtml);
-    await waitForRender(page);
+    await waitForRenderRefresh(preview, beforeRenderHtml);
+    await waitForRender(preview);
 
-    const probe = await page.evaluate(() => {
+    const probe = await preview.evaluate(() => {
       const content = document.querySelector('.feature-preview-render-content');
       const diagram = content?.querySelector('[data-supramark-diagram]');
       const svg = diagram?.querySelector('svg') ?? content?.querySelector('svg');
@@ -375,6 +376,7 @@ async function runCase(page, browser, testCase) {
 
     const actualSvgPath = resolve(outDir, 'actual', `${testCase.id}.svg`);
     const actualPngPath = resolve(outDir, 'actual', `${testCase.id}.png`);
+    const actualPreviewPath = resolve(outDir, 'actual', `${testCase.id}.preview.png`);
     const actualErrorScreenshotPath = resolve(outDir, 'actual', `${testCase.id}.error.png`);
     const expectedPngPath = resolve(outDir, 'expected', `${testCase.id}.png`);
 
@@ -387,7 +389,7 @@ async function runCase(page, browser, testCase) {
     const hasRenderableOutput = Boolean(probe.hasSvg || probe.hasCanvas);
 
     if (errors.length > 0 || !hasRenderableOutput) {
-      const errorLocator = page.locator('.feature-preview-render-content').first();
+      const errorLocator = preview.locator('.feature-preview-render-content').first();
       if (await errorLocator.count()) {
         await errorLocator.screenshot({ path: actualErrorScreenshotPath });
       }
@@ -400,6 +402,7 @@ async function runCase(page, browser, testCase) {
         feature,
         selectedFeature,
         selectedExample,
+        selectedPreviewWidth,
         url,
         runEnvironment,
         status: 'fail',
@@ -424,7 +427,8 @@ async function runCase(page, browser, testCase) {
       };
     }
 
-    const actualCapture = await captureRenderedOutput(page, browser, probe, actualPngPath);
+    const actualCapture = await captureRenderedOutput(preview, browser, probe, actualPngPath);
+    await captureVisiblePreview(preview, actualPreviewPath);
 
     await rasterizeExpectedFile(browser, testCase.imagePath, expectedPngPath);
 
@@ -442,6 +446,7 @@ async function runCase(page, browser, testCase) {
       feature,
       selectedFeature,
       selectedExample,
+      selectedPreviewWidth,
       url,
       runEnvironment,
       status,
@@ -456,6 +461,7 @@ async function runCase(page, browser, testCase) {
         svgPath: probe.svg ? relative(workspaceRoot, actualSvgPath) : null,
         pngPath: existsSync(actualPngPath) ? relative(workspaceRoot, actualPngPath) : null,
         screenshotPath: existsSync(actualPngPath) ? relative(workspaceRoot, actualPngPath) : null,
+        previewPath: existsSync(actualPreviewPath) ? relative(workspaceRoot, actualPreviewPath) : null,
         captureMethod: actualCapture.method,
       },
       semantic,
@@ -482,6 +488,16 @@ async function runCase(page, browser, testCase) {
     page.off('console', onConsole);
     page.off('pageerror', onPageError);
   }
+}
+
+function buildInitialUrl(feature) {
+  return feature ? buildPreviewUrl(feature) : targetBaseUrl;
+}
+
+function buildPreviewUrl(feature) {
+  const url = new URL(targetBaseUrl);
+  url.searchParams.set('feature', feature);
+  return url.toString();
 }
 
 function caseSourceFields(testCase) {
@@ -515,6 +531,25 @@ async function selectFeature(page, feature) {
     { timeout: 30000 }
   );
   return featureSelect.locator('option:checked').textContent();
+}
+
+async function setPreviewWidth(page, width) {
+  const range = page.locator('input[type="range"]').first();
+  if (!(await range.count())) return null;
+  const target = String(Math.round(width));
+  await range.evaluate((input, value) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, target);
+  await page.waitForFunction(
+    expected => document.querySelector('input[type="range"]')?.value === String(expected),
+    target,
+    { timeout: 30000 }
+  ).catch(() => {});
+  await page.waitForTimeout(200);
+  return Number(await range.inputValue());
 }
 
 async function selectExampleType(page, caseType) {
@@ -631,31 +666,41 @@ async function screenshotSvg(browser, svg, pngPath) {
   }
 }
 
-async function captureRenderedOutput(page, browser, probe, pngPath) {
-  const method = actualCaptureMethod(probe);
-  if (method === 'svg-outerhtml') {
-    await screenshotSvg(browser, probe.svg, pngPath);
-    return { method };
-  }
-  if (method === 'canvas-data-url') {
-    await writePngDataUrl(probe.canvasDataUrl, pngPath);
-    return { method };
-  }
+async function captureVisiblePreview(page, pngPath) {
+  await screenshotFirstAvailable(page, [
+    '.feature-preview-render',
+    '.feature-preview-render-shell',
+    '.feature-preview-render-content',
+  ], pngPath);
+}
 
+async function captureRenderedOutput(page, browser, probe, pngPath) {
   const didScreenshot = await screenshotFirstAvailable(page, [
+    '.feature-preview-render-content [data-supramark-diagram]',
     '.feature-preview-render-content [data-supramark-diagram] svg',
     '.feature-preview-render-content svg',
     '.feature-preview-render-content [data-supramark-diagram] canvas',
     '.feature-preview-render-content canvas',
-    '.feature-preview-render-content [data-supramark-diagram]',
   ], pngPath);
-  return { method: didScreenshot ? 'dom-screenshot' : 'none' };
+  if (didScreenshot) return { method: 'dom-screenshot' };
+
+  if (isPngDataUrl(probe?.canvasDataUrl)) {
+    await writePngDataUrl(probe.canvasDataUrl, pngPath);
+    return { method: 'canvas-data-url' };
+  }
+
+  if (probe?.svg) {
+    await screenshotSvg(browser, probe.svg, pngPath);
+    return { method: 'svg-outerhtml' };
+  }
+
+  return { method: 'none' };
 }
 
 function actualCaptureMethod(probe) {
-  if (probe?.svg) return 'svg-outerhtml';
+  if (probe?.hasSvg || probe?.hasCanvas || probe?.svg) return 'dom-screenshot';
   if (isPngDataUrl(probe?.canvasDataUrl)) return 'canvas-data-url';
-  return 'dom-screenshot';
+  return 'none';
 }
 
 function isPngDataUrl(value) {
@@ -671,6 +716,10 @@ async function screenshotFirstAvailable(page, selectors, pngPath) {
   for (const selector of selectors) {
     const locator = page.locator(selector).first();
     if (await locator.count()) {
+      await locator.evaluate(async element => {
+        element.scrollIntoView({ block: 'center', inline: 'center' });
+        if (document.fonts?.ready) await document.fonts.ready;
+      });
       await locator.screenshot({ path: pngPath });
       return true;
     }
@@ -803,7 +852,7 @@ async function comparePng(expectedPath, actualPath, caseId) {
     content: sizeDeltaRatio(expectedBounds, actualBounds),
   };
   const pixelBand = visualBand(normalized.diffRatio);
-  const severeSizeMismatch = hasSevereSizePerceptualMismatch({ sizeDelta, perceptual });
+  const severeSizeMismatch = hasSevereSizePerceptualMismatch({ sizeDelta, perceptual, pixelBand });
   const band = visualBandWithEscalation({ pixelBand, perceptual, severeSizeMismatch });
 
   return {
@@ -1022,26 +1071,53 @@ function visualBandWithEscalation({ pixelBand, perceptual, severeSizeMismatch })
   return pixelBand;
 }
 
-function hasSevereSizePerceptualMismatch({ sizeDelta, perceptual }) {
+function hasSevereSizePerceptualMismatch({ sizeDelta, perceptual, pixelBand }) {
   const contentAreaDelta = Math.abs(sizeDelta?.content?.area ?? 0);
   const originalAreaDelta = Math.abs(sizeDelta?.original?.area ?? 0);
   const severeAreaDelta = Math.max(contentAreaDelta, originalAreaDelta) >= severeSizeDeltaThreshold;
-  return severeAreaDelta && (perceptual?.distanceRatio ?? 0) > perceptualSimilarThreshold;
+  const scaleOnlySizeDelta = pixelBand === 'pass' && hasScaleOnlySizeDelta(sizeDelta);
+  return severeAreaDelta && !scaleOnlySizeDelta && (perceptual?.distanceRatio ?? 0) > perceptualSimilarThreshold;
+}
+
+function hasScaleOnlySizeDelta(sizeDelta) {
+  const content = sizeDelta?.content;
+  if (!content) return false;
+  const widthDelta = content.width ?? 0;
+  const heightDelta = content.height ?? 0;
+  const sameDirection = Math.sign(widthDelta) === Math.sign(heightDelta);
+  return sameDirection && Math.abs(widthDelta - heightDelta) <= 0.08;
 }
 
 function runSelfTests() {
   const tests = [
     {
-      name: 'downgrades severe size collapse with otherwise passing pixels to review',
+      name: 'keeps scale-only size collapse as pass when visual diff passes',
+      actual: visualBandWithEscalation({
+        pixelBand: 'pass',
+        perceptual: { distanceRatio: 0.16113 },
+        severeSizeMismatch: hasSevereSizePerceptualMismatch({
+          sizeDelta: {
+            original: { width: -0.7925, height: -0.7982, area: -0.9581 },
+            content: { width: -0.7925, height: -0.7975, area: -0.9580 },
+          },
+          perceptual: { distanceRatio: 0.16113 },
+          pixelBand: 'pass',
+        }),
+      }),
+      expected: 'pass',
+    },
+    {
+      name: 'downgrades severe non-proportional size collapse with otherwise passing pixels to review',
       actual: visualBandWithEscalation({
         pixelBand: 'pass',
         perceptual: { distanceRatio: 0.37891 },
         severeSizeMismatch: hasSevereSizePerceptualMismatch({
           sizeDelta: {
-            original: { area: -0.9763 },
-            content: { area: -0.9765 },
+            original: { width: -0.95, height: -0.20, area: -0.96 },
+            content: { width: -0.96, height: -0.18, area: -0.97 },
           },
           perceptual: { distanceRatio: 0.37891 },
+          pixelBand: 'pass',
         }),
       }),
       expected: 'review',
@@ -1057,6 +1133,7 @@ function runSelfTests() {
             content: { area: -0.1923 },
           },
           perceptual: { distanceRatio: 0.06738 },
+          pixelBand: 'pass',
         }),
       }),
       expected: 'pass',
@@ -1088,12 +1165,12 @@ function runSelfTests() {
       expected: 'a -> b',
     },
     {
-      name: 'captures actual output from rendered SVG before DOM screenshots',
+      name: 'captures rendered SVG from the visible DOM first',
       actual: actualCaptureMethod({
         svg: '<svg viewBox="0 0 10 10"></svg>',
         canvasDataUrl: 'data:image/png;base64,AA==',
       }),
-      expected: 'svg-outerhtml',
+      expected: 'dom-screenshot',
     },
     {
       name: 'captures actual canvas pixels before DOM screenshots',
@@ -1151,6 +1228,19 @@ function runSelfTests() {
       }).startsWith('【需 Review】'),
       expected: true,
     },
+    {
+      name: 'describes missing text and layout mismatch in issue titles',
+      actual: renderIssueTitle({
+        language: 'plantuml',
+        selectedExample: '活动图示例',
+        status: 'fail',
+        semantic: { missingTexts: ['Client', 'Server'] },
+        geometry: { pass: false, aspectRatioMismatch: true },
+        visual: { diffRatio: 0.208 },
+        errors: [],
+      }),
+      expected: 'PlantUML 活动图：缺少 Client、Server 且布局比例异常',
+    },
   ];
 
   for (const test of tests) {
@@ -1200,6 +1290,7 @@ async function handleIssues(reports) {
   const issueReports = reports.filter(report => report.status === 'fail' || report.status === 'review');
   const results = [];
   const submit = process.env.SUBMIT_GITHUB_ISSUES === '1';
+  const submitReviewIssues = process.env.SUBMIT_REVIEW_ISSUES === '1';
   const repo = process.env.ISSUE_REPO || process.env.GITHUB_REPOSITORY || 'Actrium/supramark';
   const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
   const labels = (process.env.ISSUE_LABELS || 'bug,automated-visual-regression')
@@ -1230,11 +1321,11 @@ async function handleIssues(reports) {
     const localBody = renderIssueBody(report, repo, { issuePath });
     await writeFile(issuePath, `# ${title}\n\n${localBody}`, 'utf8');
 
-    if (report.status === 'review') {
+    if (report.status === 'review' && !submitReviewIssues) {
       results.push({
         id: report.id,
         submitted: false,
-        reason: 'status is review; issue body generated for manual review only.',
+        reason: 'status is review and SUBMIT_REVIEW_ISSUES is not 1; issue body generated for manual review only.',
         issueBodyPath: relative(workspaceRoot, issuePath),
       });
       continue;
@@ -1297,7 +1388,7 @@ function renderCurrentIssuesIndex(issueReports) {
   const lines = [
     '# 当前运行 Issue 文件列表',
     '',
-    `本文件由自动化脚本生成，列出本轮运行 status 为 \`fail\` 或 \`review\` 的用例。\`review\` 仅用于人工复核，不会自动提交 GitHub issue。`,
+    '本文件由自动化脚本生成，列出本轮运行 status 为 `fail` 或 `review` 的用例。`review` 默认仅用于人工复核；只有同时设置 `SUBMIT_GITHUB_ISSUES=1` 和 `SUBMIT_REVIEW_ISSUES=1` 才会自动提交 GitHub issue。',
     '',
   ];
 
@@ -1315,7 +1406,6 @@ function renderCurrentIssuesIndex(issueReports) {
 
   return `${lines.join('\n')}\n`;
 }
-
 function renderNonCurrentIssueNote(report) {
   return `# 非当前缺陷：${report.id}
 
@@ -1349,6 +1439,7 @@ function renderCurrentRunArtifacts(reports, summary) {
     addArtifact(files, report.actual?.svgPath);
     addArtifact(files, report.actual?.pngPath);
     addArtifact(files, report.actual?.screenshotPath);
+    addArtifact(files, report.actual?.previewPath);
     addArtifact(files, report.visual?.diffPath);
     addArtifact(files, report.visual?.raw?.diffPath);
     addArtifact(files, report.visual?.normalized?.expectedPath);
@@ -1507,7 +1598,7 @@ function renderIssueBodyLegacy(report, repo, options = {}) {
   const localOfficialReference = options.github
     ? report.expected?.sourceSvg || ''
     : localExpected || report.expected?.sourceSvg || '';
-  const localActual = report.actual?.pngPath || report.actual?.screenshotPath || '';
+  const localActual = report.actual?.previewPath || report.actual?.pngPath || report.actual?.screenshotPath || '';
   const localDiff = report.visual?.diffPath || '';
   const localRawDiff = report.visual?.raw?.diffPath || '';
   const localNormalizedExpected = report.visual?.normalized?.expectedPath || '';
@@ -1624,14 +1715,18 @@ function renderIssueTitle(report) {
   const diagram = issueDiagramLabel(report);
   const reviewPrefix = report.status === 'review' ? '【需 Review】' : '';
   const errors = report.errors ?? [];
+  const missingTexts = report.semantic?.missingTexts ?? [];
+  const missingTextTitle = formatIssueTitleTextList(missingTexts);
   let title;
 
   if (errors.length > 0 || report.semantic?.hasError) {
     title = `${diagram}：渲染报错`;
   } else if (!report.visual) {
     title = `${diagram}：未生成可对比图像`;
-  } else if (report.semantic?.missingTexts?.length) {
-    title = `${diagram}：缺少关键文本`;
+  } else if (missingTexts.length && report.geometry?.aspectRatioMismatch) {
+    title = `${diagram}：缺少 ${missingTextTitle} 且布局比例异常`;
+  } else if (missingTexts.length) {
+    title = `${diagram}：缺少 ${missingTextTitle}`;
   } else if (!report.geometry?.pass) {
     title = report.geometry?.aspectRatioMismatch
       ? `${diagram}：图形布局比例异常`
@@ -1643,6 +1738,12 @@ function renderIssueTitle(report) {
   }
 
   return `${reviewPrefix}${title}`;
+}
+
+function formatIssueTitleTextList(texts) {
+  const visibleTexts = texts.filter(Boolean).slice(0, 3);
+  const suffix = texts.length > visibleTexts.length ? ` 等 ${texts.length} 项文本` : '';
+  return `${visibleTexts.join('、')}${suffix}`;
 }
 
 function renderIssueBody(report, repo, options = {}) {
@@ -1697,7 +1798,7 @@ function renderIssueBody(report, repo, options = {}) {
   const localOfficialReference = options.github
     ? report.expected?.sourceSvg || ''
     : localExpected || report.expected?.sourceSvg || '';
-  const localActual = report.actual?.pngPath || report.actual?.screenshotPath || '';
+  const localActual = report.actual?.previewPath || report.actual?.pngPath || report.actual?.screenshotPath || '';
   const localDiff = report.visual?.diffPath || '';
   const localRawDiff = report.visual?.raw?.diffPath || '';
   const localNormalizedExpected = report.visual?.normalized?.expectedPath || '';
@@ -1864,7 +1965,7 @@ function classify({ semantic, geometry, visual, errors }) {
 function renderHtmlReport(reports, summary) {
   const rows = reports.map(report => {
     const expected = toWebPath(report.expected?.pngPath);
-    const actual = toWebPath(report.actual?.pngPath || report.actual?.screenshotPath);
+    const actual = toWebPath(report.actual?.previewPath || report.actual?.pngPath || report.actual?.screenshotPath);
     const diff = toWebPath(report.visual?.diffPath);
     const rawDiff = toWebPath(report.visual?.raw?.diffPath);
     const normalizedExpected = toWebPath(report.visual?.normalized?.expectedPath);
