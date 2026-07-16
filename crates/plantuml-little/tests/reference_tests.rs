@@ -1218,4 +1218,4 @@ reference_test!(
     "fixtures/yaml/basic.puml"
 );
 
-// Total: 271 reference tests
+// Total: 280 reference tests

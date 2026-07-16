@@ -1116,11 +1116,8 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
     struct PartitionFrame {
         name: String,
         frame_top: f64,
-        diff_height_title: f64,
         title_w: f64,
         first_node_idx: usize,
-        saved_y_cursor: f64,
-        saved_last_flow: Option<usize>,
     }
     let mut partition_stack: Vec<PartitionFrame> = Vec::new();
     /// (first_inner_idx, partition_node_idx) for each finalized partition.
@@ -1135,8 +1132,6 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         top_bar_idx: usize,
         /// Y position where the first branch starts (top bar bottom + gap).
         branch_start_y: f64,
-        /// Y cursor saved at Fork time (for restoring after all branches).
-        saved_y_cursor: f64,
         /// (first_node_idx, saved_last_flow_idx) for each branch.
         /// Pushed on Fork (branch 0) and ForkAgain (subsequent branches).
         branches: Vec<(usize, Option<usize>)>,
@@ -2164,7 +2159,6 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 fork_stack.push(ForkFrame {
                     top_bar_idx,
                     branch_start_y,
-                    saved_y_cursor: bar_y,
                     branches: vec![(node_index, last_flow_node_idx)],
                 });
                 // The fork bar is the last flow node for edge purposes
@@ -2681,11 +2675,8 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 partition_stack.push(PartitionFrame {
                     name: name.clone(),
                     frame_top,
-                    diff_height_title,
                     title_w,
                     first_node_idx: node_index,
-                    saved_y_cursor: y_cursor,
-                    saved_last_flow: last_flow_node_idx,
                 });
 
                 // Inner events start below the title.
