@@ -173,14 +173,35 @@ All still pure TypeScript except the typecheck-only React wiring; 100 unit tests
   `useDocumentSelection`, `SelectionContext`) — components typecheck-only, all
   logic in pure tested modules.
 
+### Overlay + native event wiring (implemented, simulator-verified)
+
+- **Per-block event sinks** — `createBlockSink(nodeId)` closes the "native
+  events carry no nodeId" gap: each `SelectableBlock` wires the vendored
+  `onTextLongPress`/`onMenuAction` into its own sink, which maps events through
+  the pure helpers into store actions; menu actions serialize the selection and
+  deliver `{ id, format, payload, text, range }` through a host `onCopy`
+  callback (the package stays clipboard-free).
+- **Block-level overlay** — `computeOverlayRects` (covered blocks, vertical
+  merge) + `SelectionOverlay` translucent views, subscribed to both the store
+  and the registry version so re-layout repaints.
+- **`SelectableBlock`** — plumbs the vendored `SelectableRichText` (layout
+  registration, handle, sink). Children are always wrapped in `<Text>`: the
+  Fabric reconciler validates raw strings against the host component type, so
+  bare strings under a custom native component would throw at runtime.
+- **Simulator-verified on iOS** (iPhone 17 Pro sim, RN 0.81 New Arch, Debug):
+  the vendored pod autolinks and builds; programmatic cross-block selection
+  paints a merged block-level highlight (uncovered blocks excluded); Markdown
+  copy reconstructs heading prefix / bold / emoji losslessly; clear removes the
+  overlay and returns the store to idle. The example app's `SelectionDemo`
+  screen drives all of this with on-screen status for screenshot verification.
+
 ### Known limitations (deferred)
 
-- **Device-bound work is intentionally unwired**: overlay highlights, drag
-  handles, auto-scroll, and the native event → store pipeline (`SelectionRoot`
-  registers an inert event sink; `longPressToRange` / `menuActionToRange` are
-  implemented and tested but not yet driven by real native events). These need a
-  device/simulator to verify and are the next round's scope, together with
-  on-device milestone-2 command wiring.
+- **Still needing human/manual verification on device**: real long-press
+  gesture → native event pipeline (wired end-to-end but only exercised by unit
+  tests and programmatic selection so far), native selection-menu copy flow,
+  drag handles, and auto-scroll. Text-precision overlay rects await a native
+  selection-rects command.
 - SVG / PNG payloads and the `@supramark/engines` dependency are deferred to
   milestone 4; the package currently depends only on `@supramark/core`. HTML
   serialization is implemented for table scaffolding; inline HTML for emphasis
