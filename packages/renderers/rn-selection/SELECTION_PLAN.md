@@ -147,15 +147,48 @@ clean, 32 unit tests):
   sliced text rather than leaking the surrounding syntax).
 - `serialize.ts` — plain-text / Markdown / source serialization.
 
+### Milestones 2–3 (logic layers) + table & grapheme support (implemented)
+
+All still pure TypeScript except the typecheck-only React wiring; 100 unit tests:
+
+- **Tables** — `table`/`table_row`/`table_cell` linearize compositionally:
+  per-cell inline text units plus structural units (tab cell separators,
+  pipe/HTML-tag payloads, a Markdown alignment row from `table.align`). Full-table
+  selection reconstructs a GFM table / TSV / `<table>` HTML through the ordinary
+  serializer; structural units share a `structuralGroup` id so a *partial*
+  selection strips the scaffolding and degrades to clean tab/newline plain text.
+- **Blockquote** — per-line `> ` prefixing (a prefix after every interior break),
+  so multi-paragraph quotes serialize to valid Markdown.
+- **Grapheme safety** (milestone-5 item pulled forward) — `text.ts`
+  `snapToGraphemeBoundary` (Intl.Segmenter, surrogate-pair fallback for older
+  Hermes); `splitTextUnit` widens partial slices to whole grapheme clusters so
+  emoji / ZWJ sequences / combining marks are never split.
+- **Milestone 2, TS side** — `nativePrimitive.ts` rewritten to the real vendored
+  command+event contract (`TextSegmentHandle`); `native/segmentAdapter.ts` maps
+  `SelectableRichTextRef` to it, with pure segment-local ⇄ document offset mapping.
+- **Milestone 3, logic core** — `coordinator/`: `registry.ts` (document-ordered
+  block registry), `hitTest.ts` (root-coord point → `SelectionPoint` geometry),
+  `state.ts` (idle → selecting → selected external store deriving covered units
+  via `resolveSelectionRange`), plus thin React wiring (`SelectionRoot`,
+  `useDocumentSelection`, `SelectionContext`) — components typecheck-only, all
+  logic in pure tested modules.
+
 ### Known limitations (deferred)
 
-- Tables linearize as a single `boundary`; cell text is not yet selectable or
-  copyable (milestone 3/4).
-- Blockquotes use one `> ` prefix, not per-line prefixing.
-- Offsets are UTF-16 code units; grapheme / emoji / CJK boundary handling is
-  milestone 5.
-- SVG / PNG / HTML payloads and the `@supramark/engines` dependency are deferred to
-  milestone 4; the package currently depends only on `@supramark/core`.
+- **Device-bound work is intentionally unwired**: overlay highlights, drag
+  handles, auto-scroll, and the native event → store pipeline (`SelectionRoot`
+  registers an inert event sink; `longPressToRange` / `menuActionToRange` are
+  implemented and tested but not yet driven by real native events). These need a
+  device/simulator to verify and are the next round's scope, together with
+  on-device milestone-2 command wiring.
+- SVG / PNG payloads and the `@supramark/engines` dependency are deferred to
+  milestone 4; the package currently depends only on `@supramark/core`. HTML
+  serialization is implemented for table scaffolding; inline HTML for emphasis
+  etc. still falls back to plain text.
+- `Intl.Segmenter` is constructed per snap call (documented test-observability
+  trade-off); acceptable until drag-time hit testing lands, then worth caching.
+- Offsets remain UTF-16 code units at the API surface; only *slicing* is
+  grapheme-safe.
 
 ## Initial Scope
 

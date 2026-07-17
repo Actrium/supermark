@@ -150,6 +150,44 @@ describe('resolveSelectionRange', () => {
   });
 });
 
+describe('resolveSelectionRange widens grapheme-unsafe offsets (regression)', () => {
+  test('an offset splitting an astral emoji surrogate pair is widened to include it whole', () => {
+    const units: SelectionUnit[] = [tUnit('u#0', 'u', 'a\u{1F600}b')]; // 'a', surrogate pair [1,3), 'b'; length 4
+    // anchor/focus both land inside the surrogate pair (offset 2): a collapsed
+    // selection there still resolves to nothing, so pick a range that starts
+    // inside the pair and ends after it, forcing the start to widen backward.
+    const resolved = resolveSelectionRange(units, {
+      anchor: { nodeId: 'u', unitId: 'u#0', offset: 2 },
+      focus: { nodeId: 'u', unitId: 'u#0', offset: 4 },
+    });
+    expect(resolved).toHaveLength(1);
+    expect((resolved[0] as SelectionTextUnit).text).toBe('\u{1F600}b');
+  });
+
+  test('an offset splitting a combining-mark cluster is widened forward at the tail', () => {
+    // 'c','a','f' each length 1, then a decomposed 2-unit 'e' + U+0301 (combining
+    // acute) cluster; length 5. Focus at offset 4 lands between the base 'e' and
+    // its combining mark, so the tail must widen forward to include the mark.
+    const units: SelectionUnit[] = [tUnit('u#0', 'u', `caf${'é'}`)];
+    const resolved = resolveSelectionRange(units, {
+      anchor: { nodeId: 'u', unitId: 'u#0', offset: 0 },
+      focus: { nodeId: 'u', unitId: 'u#0', offset: 4 },
+    });
+    expect(resolved).toHaveLength(1);
+    expect((resolved[0] as SelectionTextUnit).text).toBe(`caf${'é'}`);
+  });
+
+  test('an offset already on a grapheme boundary is unaffected (no-op)', () => {
+    const units: SelectionUnit[] = [tUnit('u#0', 'u', 'HelloWorld')];
+    const resolved = resolveSelectionRange(units, {
+      anchor: { nodeId: 'u', unitId: 'u#0', offset: 2 },
+      focus: { nodeId: 'u', unitId: 'u#0', offset: 7 },
+    });
+    expect(resolved).toHaveLength(1);
+    expect((resolved[0] as SelectionTextUnit).text).toBe('lloWo');
+  });
+});
+
 describe('splitTextUnit payload preservation (regression)', () => {
   const codeUnit: SelectionTextUnit = {
     kind: 'text',

@@ -4,3 +4,6 @@ export * from './nativePrimitive';
 export * from './providers';
 export * from './resolve';
 export * from './serialize';
+export * from './text';
+export * from './native/segmentAdapter';
+export * from './coordinator';

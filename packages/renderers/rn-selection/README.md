@@ -22,8 +22,9 @@ execution plan.
 
 ## Status
 
-Milestone 1 (core model) is implemented as pure TypeScript — no native/RN runtime
-dependency yet. The exported API turns an AST into a copyable selection:
+The core model (milestone 1), table & grapheme-safe selection, the native segment
+contract (milestone 2, TS side), and the coordinator logic core (milestone 3) are
+implemented and unit-tested. The pipeline from AST to copyable selection:
 
 ```ts
 import {
@@ -34,12 +35,19 @@ import {
 
 const units = linearizeForSelection(ast); // AST v2 -> flat selection-unit stream
 const selected = resolveSelectionRange(units, range); // range -> covered units
-const markdown = serializeSelectionUnits(selected, 'markdown'); // 'plainText' | 'markdown' | 'source'
+const markdown = serializeSelectionUnits(selected, 'markdown'); // 'plainText' | 'markdown' | 'source' | 'html'
 ```
 
 `unit.text` holds plain text only; Markdown syntax is reconstructed on
-serialization, so plain-text and Markdown copies are both lossless. Tables,
-SVG/PNG payloads, and native cross-block selection are deferred — see the plan.
+serialization, so plain-text and Markdown copies are both lossless. Full-table
+selections copy as GFM table / TSV / HTML; partial table selections degrade to
+clean tab-separated plain text. Partial slices never split emoji or combining
+marks.
+
+The coordinator layer (`SelectionRoot`, `useDocumentSelection`, registry /
+hit-testing / selection state) and the `SelectableRichText` segment adapter are in
+place as pure tested modules; overlay drawing and live native event wiring need a
+device and are the next round — see the plan's Status section.
 
 ## Native Primitive Boundary
 

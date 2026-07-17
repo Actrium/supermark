@@ -26,7 +26,9 @@ import type {
   SupramarkRawNode,
   SupramarkRootNode,
   SupramarkStrongNode,
+  SupramarkTableCellNode,
   SupramarkTableNode,
+  SupramarkTableRowNode,
   SupramarkTextNode,
   SupramarkThematicBreakNode,
 } from '@supramark/core';
@@ -37,6 +39,7 @@ import type {
   SelectionContext,
   SelectionNodeId,
   SelectionPathSegment,
+  SelectionPayload,
   SelectionSourceRange,
   SelectionTextUnit,
   SelectionUnit,
@@ -135,11 +138,14 @@ function linearizeNode(
     }
     case 'blockquote': {
       const blockquote = node as SupramarkBlockquoteNode;
-      // Simplification: a single leading `> ` is emitted for the whole quote.
-      // Per-line `> ` prefixing is deferred to a later milestone.
+      // Per-line prefixing: a leading `> `, then another `> ` after every
+      // interior break so each line is quoted without a dangling prefix on the
+      // final line. The prefixes are text:'' syntax units (invisible to
+      // plainText), so the quoted text itself stays clean.
+      const inner = linearizeChildren(blockquote, path, options, listCtx);
       return [
         syntaxUnit(makeUnitId(nodeId, 0), nodeId, blockquote, '> '),
-        ...linearizeChildren(blockquote, path, options, listCtx),
+        ...prefixBlockquoteInterior(inner, nodeId, blockquote),
         breakUnit(makeUnitId(nodeId, 1), nodeId, 'block', blockquote),
       ];
     }
@@ -226,14 +232,16 @@ function linearizeNode(
         diagramAtom(node as SupramarkDiagramNode, nodeId),
         breakUnit(makeUnitId(nodeId, 1), nodeId, 'block', node),
       ];
-    // Table unit-level recursion (cells/rows) is deferred to milestone 3/4; for
-    // now the table is a single boundary followed by a break so it never sticks
-    // to neighbouring blocks.
+    // Tables linearize into a fully compositional unit stream: per-cell inline
+    // text units plus structural text units carrying the per-format separators
+    // (markdown pipes / HTML tags). Every format reconstructs by concatenation.
     case 'table':
-      return [
-        tableBoundary(node as SupramarkTableNode, nodeId),
-        breakUnit(makeUnitId(nodeId, 1), nodeId, 'block', node),
-      ];
+      return linearizeTable(node as SupramarkTableNode, nodeId, path, options);
+    // Stray rows/cells (outside a table) recurse into their children so they
+    // never fall through to the 'unsupported' boundary.
+    case 'table_row':
+    case 'table_cell':
+      return linearizeChildren(node as SupramarkParentNode, path, options, listCtx);
     // Container payloads are owned by milestone 4 providers; keep a boundary
     // plus trailing break as the placeholder.
     case 'container':
@@ -393,14 +401,110 @@ function diagramAtom(node: SupramarkDiagramNode, nodeId: SelectionNodeId): Selec
   };
 }
 
-function tableBoundary(node: SupramarkTableNode, nodeId: SelectionNodeId): SelectionBoundaryUnit {
-  return {
-    kind: 'boundary',
-    unitId: makeUnitId(nodeId, 0),
-    nodeId,
-    node,
-    reason: 'table',
-  };
+function linearizeTable(
+  table: SupramarkTableNode,
+  nodeId: SelectionNodeId,
+  path: readonly SelectionPathSegment[],
+  options: LinearizeSelectionOptions
+): SelectionUnit[] {
+  const units: SelectionUnit[] = [];
+  const rows: Array<[SupramarkTableRowNode, number]> = [];
+  table.children.forEach((child, i) => {
+    if (child.type === 'table_row') rows.push([child as SupramarkTableRowNode, i]);
+  });
+  // Leading 0 arg keeps an empty table at columnCount 0 (avoids -Infinity).
+  const columnCount = Math.max(table.align?.length ?? 0, ...rows.map(([r]) => r.children.length));
+  let tseq = 0;
+  const tuid = (): SelectionNodeId => makeUnitId(nodeId, tseq++);
+  // Every structural unit of this table shares `nodeId` as its group id so a
+  // partial selection degrades all of them together (see `richTextUnit`).
+  const group = nodeId;
+  units.push(richTextUnit(tuid(), nodeId, table, '', { html: '<table>\n' }, group));
+  rows.forEach(([row, rowChildIdx], rowIndex) => {
+    const rowPath = [...path, 'children', rowChildIdx];
+    const rowNodeId = resolveNodeId(row, rowPath, options);
+    const isHeader =
+      rowIndex === 0 ||
+      (row.children.length > 0 &&
+        row.children.every(c => (c as SupramarkTableCellNode).header === true));
+    const tag = isHeader ? 'th' : 'td';
+    let rseq = 0;
+    const ruid = (): SelectionNodeId => makeUnitId(rowNodeId, rseq++);
+    units.push(
+      richTextUnit(
+        ruid(),
+        rowNodeId,
+        row,
+        '',
+        {
+          markdown: '| ',
+          source: '| ',
+          html: `<tr><${tag}>`,
+        },
+        group
+      )
+    );
+    let cellCount = 0;
+    row.children.forEach((cell, cellIndex) => {
+      if (cell.type !== 'table_cell') return;
+      if (cellCount > 0) {
+        units.push(
+          richTextUnit(
+            ruid(),
+            rowNodeId,
+            row,
+            '\t',
+            {
+              markdown: ' | ',
+              source: ' | ',
+              html: `</${tag}><${tag}>`,
+            },
+            group
+          )
+        );
+      }
+      cellCount++;
+      const cellPath = [...rowPath, 'children', cellIndex];
+      units.push(...linearizeChildren(cell as SupramarkParentNode, cellPath, options));
+    });
+    units.push(
+      richTextUnit(
+        ruid(),
+        rowNodeId,
+        row,
+        '',
+        {
+          markdown: ' |',
+          source: ' |',
+          html: `</${tag}></tr>`,
+        },
+        group
+      )
+    );
+    units.push(breakUnit(ruid(), rowNodeId, 'table-row', row));
+    // GFM has exactly one header row and one alignment row directly under it, so
+    // emit the delimiter after the first row only. `isHeader` still drives the
+    // `th`/`td` tag; using it here too would emit a second delimiter row for any
+    // AST that marks more than one row all-header.
+    if (rowIndex === 0) {
+      const alignMd = buildAlignmentRow(table.align, columnCount) + '\n';
+      units.push(
+        richTextUnit(tuid(), nodeId, table, '', { markdown: alignMd, source: alignMd }, group)
+      );
+    }
+  });
+  units.push(richTextUnit(tuid(), nodeId, table, '', { html: '</table>' }, group));
+  units.push(breakUnit(tuid(), nodeId, 'block', table));
+  return units;
+}
+
+function buildAlignmentRow(align: SupramarkTableNode['align'], columns: number): string {
+  const cells: string[] = [];
+  for (let i = 0; i < columns; i++) {
+    const a = align?.[i] ?? null;
+    cells.push(a === 'left' ? ':---' : a === 'right' ? '---:' : a === 'center' ? ':---:' : '---');
+  }
+  return `| ${cells.join(' | ')} |`;
 }
 
 function containerBoundary(
@@ -434,6 +538,59 @@ function syntaxUnit(
     node,
     payload: { markdown, source: markdown },
   };
+}
+
+/**
+ * Rich text unit: carries both visible `text` and a per-format `payload`.
+ * Used for table structural units where `text` is the plain-text separator
+ * (e.g. `\t`/`''`) while the payload supplies the markdown pipes / HTML tags.
+ *
+ * `structuralGroup` ties every scaffolding unit of one table together so
+ * `resolve.ts` can strip the syntax payload (leaving the plain `text`, already
+ * valid TSV) when a selection covers only part of the table — otherwise a
+ * partial slice would leak unbalanced pipes / tags into markdown / HTML.
+ */
+function richTextUnit(
+  unitId: SelectionNodeId,
+  nodeId: SelectionNodeId,
+  node: SupramarkNode,
+  text: string,
+  payload: SelectionPayload,
+  structuralGroup: SelectionNodeId
+): SelectionTextUnit {
+  return { kind: 'text', unitId, nodeId, text, node, payload, structuralGroup };
+}
+
+/**
+ * Blockquote per-line prefixing: emit each inner unit verbatim, and after every
+ * interior break that still has quoted content ahead of it insert a `> ` syntax
+ * unit so the following line is quoted too. A `> ` only makes sense as the
+ * prefix of a following line, so trailing breaks (a nested quote's own block
+ * break, or any run of breaks after the last content unit) get none — otherwise
+ * a pure-nested quote emits a dangling empty `> ` line. unitIds 0/1 are reserved
+ * for the leading prefix and trailing block break, so inserted prefixes start at 2.
+ */
+function prefixBlockquoteInterior(
+  inner: SelectionUnit[],
+  nodeId: SelectionNodeId,
+  node: SupramarkBlockquoteNode
+): SelectionUnit[] {
+  let lastContentIndex = -1;
+  for (let j = inner.length - 1; j >= 0; j--) {
+    if (inner[j].kind !== 'break') {
+      lastContentIndex = j;
+      break;
+    }
+  }
+  const out: SelectionUnit[] = [];
+  let seq = 2;
+  inner.forEach((unit, i) => {
+    out.push(unit);
+    if (unit.kind === 'break' && i < lastContentIndex) {
+      out.push(syntaxUnit(makeUnitId(nodeId, seq++), nodeId, node, '> '));
+    }
+  });
+  return out;
 }
 
 /**

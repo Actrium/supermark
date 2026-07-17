@@ -71,6 +71,16 @@ export interface SelectionTextUnit {
   node: SupramarkNode;
   payload?: SelectionPayload;
   sourceRange?: SelectionSourceRange;
+  /**
+   * Marks a unit whose non-`plainText` `payload` (markdown pipes, HTML `td`/`th`
+   * tags, the alignment row, ...) only reconstructs a well-formed structure when
+   * the ENTIRE group is present — e.g. a table's structural scaffolding. All
+   * units carrying the same id form one group. `resolve.ts` drops the payload
+   * (falling back to the plain `text`, which is already valid TSV) whenever a
+   * selection covers only part of the group, mirroring `splitTextUnit`'s
+   * "no-syntax-leak on a partial slice" rule.
+   */
+  structuralGroup?: SelectionNodeId;
 }
 
 export interface SelectionBreakUnit {
@@ -80,6 +90,10 @@ export interface SelectionBreakUnit {
   /** Owning AST node id; may be shared by several units. */
   nodeId: SelectionNodeId;
   text: '\n';
+  // `table-row` separates TSV/markdown table rows. Table structure itself is
+  // carried by plain text units (cell separators `\t`, structural units with
+  // empty `text` plus markdown/html/source payloads) rather than a table-level
+  // payload, so no dedicated table unit kind is needed.
   reason: 'block' | 'line' | 'list-item' | 'table-row' | 'custom';
   node?: SupramarkNode;
 }

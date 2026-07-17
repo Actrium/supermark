@@ -13,7 +13,7 @@ import type {
   SupramarkNode,
   SupramarkParagraphNode,
   SupramarkRawNode,
-  SupramarkTableNode,
+  SupramarkStrongNode,
   SupramarkTextNode,
   SupramarkThematicBreakNode,
 } from '@supramark/core';
@@ -69,6 +69,14 @@ const thematicBreak = (): SupramarkThematicBreakNode =>
   ({ type: 'thematic_break' }) as SupramarkThematicBreakNode;
 const codeBlock = (value: string, lang?: string): SupramarkCodeNode =>
   ({ type: 'code', value, lang }) as SupramarkCodeNode;
+const strong = (...children: N[]): SupramarkStrongNode =>
+  ({ type: 'strong', children }) as SupramarkStrongNode;
+const cell = (...children: N[]): N => ({ type: 'table_cell', children }) as unknown as N;
+const row = (...cells: N[]): N => ({ type: 'table_row', children: cells }) as unknown as N;
+const table = (
+  align: ('left' | 'right' | 'center' | null)[] | undefined,
+  ...rows: N[]
+): N => ({ type: 'table', align, children: rows }) as unknown as N;
 
 const textUnits = (units: SelectionUnit[]): SelectionTextUnit[] =>
   units.filter(u => u.kind === 'text') as SelectionTextUnit[];
@@ -140,18 +148,47 @@ describe('linearize node coverage', () => {
     expect(atom?.payload.metadata).toEqual({ url: 'u.png', alt: 'alt', title: 'cap' });
   });
 
-  test('table and container stay boundaries, each followed by a block break', () => {
-    const tableUnits = linearizeForSelection([{ type: 'table', children: [] } as unknown as SupramarkTableNode]);
-    expect(tableUnits.map(u => u.kind)).toEqual(['boundary', 'break']);
-    expect((tableUnits[0] as { reason: string }).reason).toBe('table');
-    expect((tableUnits[1] as { reason: string }).reason).toBe('block');
-    expect(tableUnits[0].unitId).not.toBe(tableUnits[1].unitId);
+  test('empty table linearizes to structural text units + break; container stays a boundary', () => {
+    const tableUnits = linearizeForSelection([table(undefined)]);
+    expect(tableUnits.every(u => u.kind !== 'boundary')).toBe(true);
+    expect(tableUnits[tableUnits.length - 1].kind).toBe('break');
+    expect(noUnsupported(tableUnits)).toBe(true);
 
     const containerUnits = linearizeForSelection([
       { type: 'container', name: 'note', children: [] } as unknown as SupramarkContainerNode,
     ]);
     expect(containerUnits.map(u => u.kind)).toEqual(['boundary', 'break']);
     expect((containerUnits[0] as { reason: string }).reason).toBe('container');
+  });
+});
+
+describe('table linearization', () => {
+  test('cells linearize to selectable text units', () => {
+    const units = linearizeForSelection([
+      table(undefined, row(cell(text('h1')), cell(text('h2'))), row(cell(text('a')), cell(text('b')))),
+    ]);
+    const texts = textUnits(units).map(u => u.text);
+    expect(texts).toContain('h1');
+    expect(texts).toContain('h2');
+    expect(texts).toContain('a');
+    expect(texts).toContain('b');
+    expect(units.some(u => u.kind === 'break' && u.reason === 'table-row')).toBe(true);
+    expect(textUnits(units).some(u => u.text === '\t')).toBe(true);
+    expect(noUnsupported(units)).toBe(true);
+  });
+
+  test('nested inline formatting inside a cell is preserved', () => {
+    const units = linearizeForSelection([table(undefined, row(cell(strong(text('b')))))]);
+    expect(textUnits(units).some(u => u.text === 'b')).toBe(true);
+    expect(textUnits(units).some(u => u.payload?.markdown === '**')).toBe(true);
+  });
+
+  test('unitIds stay globally unique across a table', () => {
+    const units = linearizeForSelection([
+      table(undefined, row(cell(text('h1')), cell(text('h2'))), row(cell(text('a')), cell(text('b')))),
+    ]);
+    const ids = units.map(u => u.unitId);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
 

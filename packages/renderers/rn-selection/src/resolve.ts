@@ -5,6 +5,7 @@ import type {
   SelectionTextUnit,
   SelectionUnit,
 } from './model';
+import { snapToGraphemeBoundary } from './text';
 
 export interface UnitIndexEntry {
   unit: SelectionUnit;
@@ -112,22 +113,35 @@ export function locateSelectionPoint(
 /**
  * Slice a text unit to `[from, to)` while preserving identity.
  *
+ * `from`/`to` are first widened outward to the nearest grapheme-cluster
+ * boundary (`from` snapped backward, `to` snapped forward) so a partial slice
+ * never lands inside a multi-code-unit cluster — an astral emoji, a ZWJ
+ * sequence, or a base character plus combining marks. This only ever grows
+ * the covered range, so it can turn a would-be-partial slice into full
+ * coverage but never drops text the caller asked for. See `text.ts` for the
+ * snapping rules (and its `Intl.Segmenter`-less fallback).
+ *
  * `sourceRange` is shifted so both endpoints are measured from the original
- * `startUtf16` (`startUtf16 + from` / `startUtf16 + to`); if that anchor is
- * missing both stay undefined. Byte offsets are copied verbatim (they cannot be
- * shifted by UTF-16 units) and are only approximate on a partial slice.
+ * `startUtf16` (`startUtf16 + from` / `startUtf16 + to`, post-widening); if
+ * that anchor is missing both stay undefined. Byte offsets are copied
+ * verbatim (they cannot be shifted by UTF-16 units) and are only approximate
+ * on a partial slice.
  */
 export function splitTextUnit(
   unit: SelectionTextUnit,
   from: number,
   to: number
 ): SelectionTextUnit {
-  // Full coverage: return the unit verbatim so its `payload` (whole-unit
-  // markdown/source, e.g. an inline-code span or fenced block) survives. A
-  // partial slice below deliberately drops the payload — a fence/backtick
-  // representation cannot be re-derived for half a unit, so we fall back to the
-  // sliced plain text instead of leaking the full syntax into a partial copy.
-  if (from <= 0 && to >= unit.text.length) return unit;
+  const snappedFrom = snapToGraphemeBoundary(unit.text, from, 'backward');
+  const snappedTo = snapToGraphemeBoundary(unit.text, to, 'forward');
+
+  // Full coverage (checked post-widening): return the unit verbatim so its
+  // `payload` (whole-unit markdown/source, e.g. an inline-code span or fenced
+  // block) survives. A partial slice below deliberately drops the payload — a
+  // fence/backtick representation cannot be re-derived for half a unit, so we
+  // fall back to the sliced plain text instead of leaking the full syntax
+  // into a partial copy.
+  if (snappedFrom <= 0 && snappedTo >= unit.text.length) return unit;
 
   const base = unit.sourceRange;
   const sourceRange: SelectionSourceRange | undefined =
@@ -135,17 +149,70 @@ export function splitTextUnit(
       ? undefined
       : {
           ...base,
-          startUtf16: base.startUtf16 === undefined ? undefined : base.startUtf16 + from,
-          endUtf16: base.startUtf16 === undefined ? undefined : base.startUtf16 + to,
+          startUtf16: base.startUtf16 === undefined ? undefined : base.startUtf16 + snappedFrom,
+          endUtf16: base.startUtf16 === undefined ? undefined : base.startUtf16 + snappedTo,
         };
   return {
     kind: 'text',
     unitId: unit.unitId,
     nodeId: unit.nodeId,
-    text: unit.text.slice(from, to),
+    text: unit.text.slice(snappedFrom, snappedTo),
     node: unit.node,
     sourceRange,
   };
+}
+
+/**
+ * Strip the syntax `payload` from a structural unit (leaving its plain `text`,
+ * already valid TSV) when the selection covers only part of its group. A
+ * partial table slice would otherwise leak unbalanced pipes / tags into the
+ * markdown / HTML flavor; this mirrors `splitTextUnit`'s no-leak rule for the
+ * scaffolding units that `splitTextUnit` never reaches (they are pushed
+ * verbatim as interior units).
+ */
+function degradePartialStructural(
+  unit: SelectionUnit,
+  partialGroups: ReadonlySet<string>
+): SelectionUnit {
+  if (
+    unit.kind === 'text' &&
+    unit.structuralGroup !== undefined &&
+    partialGroups.has(unit.structuralGroup)
+  ) {
+    return { ...unit, payload: undefined, structuralGroup: undefined };
+  }
+  return unit;
+}
+
+/**
+ * Find the structural groups the `[start, end]` selection does NOT fully
+ * enclose. A group spans from the first to the last unit index carrying its id;
+ * it is fully covered only when the selection begins at or before the group's
+ * first unit and ends at or after its last. Any group not fully covered is
+ * "partial" and its units degrade to plain text (see `degradePartialStructural`).
+ */
+function findPartialStructuralGroups(
+  index: SelectionUnitIndex,
+  startUnitIndex: number,
+  endUnitIndex: number
+): Set<string> {
+  const bounds = new Map<string, { min: number; max: number }>();
+  for (const entry of index.entries) {
+    const group = entry.unit.kind === 'text' ? entry.unit.structuralGroup : undefined;
+    if (group === undefined) continue;
+    const existing = bounds.get(group);
+    if (existing) {
+      if (entry.unitIndex < existing.min) existing.min = entry.unitIndex;
+      if (entry.unitIndex > existing.max) existing.max = entry.unitIndex;
+    } else {
+      bounds.set(group, { min: entry.unitIndex, max: entry.unitIndex });
+    }
+  }
+  const partial = new Set<string>();
+  for (const [group, { min, max }] of bounds) {
+    if (startUnitIndex > min || endUnitIndex < max) partial.add(group);
+  }
+  return partial;
 }
 
 /**
@@ -175,6 +242,8 @@ export function resolveSelectionRange(
     return [];
   }
 
+  const partialGroups = findPartialStructuralGroups(index, start.unitIndex, end.unitIndex);
+
   const startEntry = index.entries[start.unitIndex];
   const endEntry = index.entries[end.unitIndex];
 
@@ -182,7 +251,10 @@ export function resolveSelectionRange(
   if (start.unitIndex === end.unitIndex) {
     const unit = startEntry.unit;
     if (unit.kind === 'text') {
-      return [splitTextUnit(unit, start.intraOffset, end.intraOffset)];
+      // A single structural unit alone never spans its whole group, so its
+      // payload is dropped by `partialGroups` — `splitTextUnit` also drops it on
+      // a partial slice, and returns it verbatim only on full coverage.
+      return [degradePartialStructural(splitTextUnit(unit, start.intraOffset, end.intraOffset), partialGroups)];
     }
     // A fully covered non-text unit (0 -> 1).
     return [unit];
@@ -194,25 +266,29 @@ export function resolveSelectionRange(
   const startUnit = startEntry.unit;
   if (startUnit.kind === 'text') {
     result.push(
-      start.intraOffset === 0
-        ? startUnit
-        : splitTextUnit(startUnit, start.intraOffset, startUnit.text.length)
+      degradePartialStructural(
+        start.intraOffset === 0
+          ? startUnit
+          : splitTextUnit(startUnit, start.intraOffset, startUnit.text.length),
+        partialGroups
+      )
     );
   } else if (start.intraOffset === 0) {
     // Non-text head unit only enters when fully covered (selection begins before it).
     result.push(startUnit);
   }
 
-  // Interior units, verbatim.
+  // Interior units, verbatim (structural scaffolding degrades when its group is
+  // only partially selected).
   for (let i = start.unitIndex + 1; i < end.unitIndex; i++) {
-    result.push(index.entries[i].unit);
+    result.push(degradePartialStructural(index.entries[i].unit, partialGroups));
   }
 
   // Last unit.
   const endUnit = endEntry.unit;
   if (endUnit.kind === 'text') {
     if (end.intraOffset > 0) {
-      result.push(splitTextUnit(endUnit, 0, end.intraOffset));
+      result.push(degradePartialStructural(splitTextUnit(endUnit, 0, end.intraOffset), partialGroups));
     }
   } else if (end.intraOffset >= 1) {
     // Non-text tail unit only enters when its trailing edge is covered.

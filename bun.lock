@@ -570,6 +570,21 @@
         "react-native-svg",
       ],
     },
+    "packages/renderers/rn-selection": {
+      "name": "@supramark/rn-selection",
+      "version": "0.1.0",
+      "dependencies": {
+        "@supramark/core": "workspace:*",
+      },
+      "peerDependencies": {
+        "react": ">=18.0.0",
+        "react-native": ">=0.72.0",
+      },
+      "optionalPeers": [
+        "react",
+        "react-native",
+      ],
+    },
     "packages/renderers/web": {
       "name": "@supramark/web",
       "version": "0.1.0",
@@ -1374,6 +1389,8 @@
     "@supramark/markdown-web": ["@supramark/markdown-web@workspace:crates/supramark-markdown/packages/web"],
 
     "@supramark/rn": ["@supramark/rn@workspace:packages/renderers/rn"],
+
+    "@supramark/rn-selection": ["@supramark/rn-selection@workspace:packages/renderers/rn-selection"],
 
     "@supramark/web": ["@supramark/web@workspace:packages/renderers/web"],
 

@@ -66,17 +66,17 @@ export function inferDefaultBehavior(node: SupramarkNode): SelectionBehavior {
     case 'footnote_definition':
     case 'raw':
     case 'thematic_break':
+    // Tables now linearize into selectable per-cell text units plus structural
+    // text units, so the whole table family classifies as 'text' to match.
+    case 'table':
+    case 'table_row':
+    case 'table_cell':
       return 'text';
     case 'image':
     case 'math_inline':
     case 'math_block':
     case 'diagram':
       return 'atom';
-    // Tables linearize to a boundary today (cell-level recursion is deferred to
-    // milestone 3/4), so classify the whole table family as boundary to match.
-    case 'table':
-    case 'table_row':
-    case 'table_cell':
     case 'container':
     case 'input':
       return 'boundary';
