@@ -134,10 +134,6 @@ export default function App() {
   );
   const activeDemo = activeId ? DEMOS.find((d) => d.id === activeId) ?? null : null;
 
-  if (showSelection) {
-    return <SelectionDemo onBack={() => setShowSelection(false)} />;
-  }
-
   const isDark = theme === 'dark';
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
 
@@ -176,6 +172,11 @@ export default function App() {
     runNativeSmokeTest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // After all hooks: conditional screens must not skip hook calls.
+  if (showSelection) {
+    return <SelectionDemo onBack={() => setShowSelection(false)} />;
+  }
 
   const containerStyle = [styles.container, isDark && { backgroundColor: themeBackground.dark }];
   const headerStyle = [styles.header, isDark && { borderBottomColor: '#30363d' }];

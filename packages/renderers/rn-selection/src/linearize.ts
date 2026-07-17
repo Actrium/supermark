@@ -1,21 +1,10 @@
 import type {
   SupramarkBlockquoteNode,
-  SupramarkBreakNode,
   SupramarkCodeNode,
   SupramarkContainerNode,
-  SupramarkDefinitionDescriptionNode,
-  SupramarkDefinitionItemNode,
-  SupramarkDefinitionListNode,
-  SupramarkDefinitionTermNode,
   SupramarkDeleteNode,
   SupramarkDiagramNode,
   SupramarkEmphasisNode,
-  SupramarkFootnoteDefinitionNode,
-  SupramarkFootnoteReferenceNode,
-  SupramarkHeadingNode,
-  SupramarkImageNode,
-  SupramarkInlineCodeNode,
-  SupramarkInputNode,
   SupramarkLinkNode,
   SupramarkListItemNode,
   SupramarkListNode,
@@ -23,14 +12,11 @@ import type {
   SupramarkMathInlineNode,
   SupramarkNode,
   SupramarkParentNode,
-  SupramarkRawNode,
   SupramarkRootNode,
   SupramarkStrongNode,
   SupramarkTableCellNode,
   SupramarkTableNode,
   SupramarkTableRowNode,
-  SupramarkTextNode,
-  SupramarkThematicBreakNode,
 } from '@supramark/core';
 import type {
   SelectionAtomUnit,
@@ -83,7 +69,7 @@ function linearizeNode(
 
   switch (node.type) {
     case 'text': {
-      const text = node as SupramarkTextNode;
+      const text = node;
       return [textUnit(makeUnitId(nodeId, 0), nodeId, text, text.value, getSourceRange(node))];
     }
     case 'paragraph':
@@ -92,7 +78,7 @@ function linearizeNode(
         breakUnit(makeUnitId(nodeId, 0), nodeId, 'block', node),
       ];
     case 'heading': {
-      const heading = node as SupramarkHeadingNode;
+      const heading = node;
       const prefix = '#'.repeat(heading.depth) + ' ';
       return [
         syntaxUnit(makeUnitId(nodeId, 0), nodeId, heading, prefix),
@@ -101,24 +87,24 @@ function linearizeNode(
       ];
     }
     case 'strong': {
-      const strong = node as SupramarkStrongNode;
+      const strong = node;
       return wrapInline(strong, nodeId, path, options, listCtx, '**', '**');
     }
     case 'emphasis': {
-      const emphasis = node as SupramarkEmphasisNode;
+      const emphasis = node;
       return wrapInline(emphasis, nodeId, path, options, listCtx, '_', '_');
     }
     case 'delete': {
-      const del = node as SupramarkDeleteNode;
+      const del = node;
       return wrapInline(del, nodeId, path, options, listCtx, '~~', '~~');
     }
     case 'link': {
-      const link = node as SupramarkLinkNode;
+      const link = node;
       const title = link.title ? ` "${link.title}"` : '';
       return wrapInline(link, nodeId, path, options, listCtx, '[', `](${link.url}${title})`);
     }
     case 'inline_code': {
-      const code = node as SupramarkInlineCodeNode;
+      const code = node;
       const markdown = '`' + code.value + '`';
       return [
         {
@@ -133,11 +119,11 @@ function linearizeNode(
       ];
     }
     case 'break': {
-      const lineBreak = node as SupramarkBreakNode;
+      const lineBreak = node;
       return [breakUnit(makeUnitId(nodeId, 0), nodeId, 'line', lineBreak)];
     }
     case 'blockquote': {
-      const blockquote = node as SupramarkBlockquoteNode;
+      const blockquote = node;
       // Per-line prefixing: a leading `> `, then another `> ` after every
       // interior break so each line is quoted without a dangling prefix on the
       // final line. The prefixes are text:'' syntax units (invisible to
@@ -150,13 +136,13 @@ function linearizeNode(
       ];
     }
     case 'list':
-      return linearizeList(node as SupramarkListNode, path, options, listCtx);
+      return linearizeList(node, path, options, listCtx);
     case 'list_item':
-      return linearizeListItem(node as SupramarkListItemNode, path, options, listCtx);
+      return linearizeListItem(node, path, options, listCtx);
     case 'code':
-      return linearizeCodeBlock(node as SupramarkCodeNode, nodeId);
+      return linearizeCodeBlock(node, nodeId);
     case 'image': {
-      const image = node as SupramarkImageNode;
+      const image = node;
       const alt = image.alt ?? '';
       const markdown = `![${alt}](${image.url})`;
       // Image is an inline atom with no trailing break so it can sit mid-paragraph.
@@ -177,18 +163,18 @@ function linearizeNode(
       ];
     }
     case 'definition_list':
-      return linearizeChildren(node as SupramarkDefinitionListNode, path, options, listCtx);
+      return linearizeChildren(node, path, options, listCtx);
     case 'definition_item':
-      return linearizeChildren(node as SupramarkDefinitionItemNode, path, options, listCtx);
+      return linearizeChildren(node, path, options, listCtx);
     case 'definition_term': {
-      const term = node as SupramarkDefinitionTermNode;
+      const term = node;
       return [
         ...linearizeChildren(term, path, options, listCtx),
         breakUnit(makeUnitId(nodeId, 0), nodeId, 'block', term),
       ];
     }
     case 'definition_description': {
-      const description = node as SupramarkDefinitionDescriptionNode;
+      const description = node;
       return [
         syntaxUnit(makeUnitId(nodeId, 0), nodeId, description, ': '),
         ...linearizeChildren(description, path, options, listCtx),
@@ -196,11 +182,11 @@ function linearizeNode(
       ];
     }
     case 'footnote_reference': {
-      const ref = node as SupramarkFootnoteReferenceNode;
+      const ref = node;
       return [textUnit(makeUnitId(nodeId, 0), nodeId, ref, `[^${ref.label ?? ref.index}]`)];
     }
     case 'footnote_definition': {
-      const def = node as SupramarkFootnoteDefinitionNode;
+      const def = node;
       const marker = `[^${def.label ?? def.index}]: `;
       return [
         syntaxUnit(makeUnitId(nodeId, 0), nodeId, def, marker),
@@ -209,34 +195,34 @@ function linearizeNode(
       ];
     }
     case 'raw': {
-      const raw = node as SupramarkRawNode;
+      const raw = node;
       // `raw` reuses its literal value for every format.
       return [textUnit(makeUnitId(nodeId, 0), nodeId, raw, raw.value, getSourceRange(raw))];
     }
     case 'thematic_break': {
-      const rule = node as SupramarkThematicBreakNode;
+      const rule = node;
       return [
         syntaxUnit(makeUnitId(nodeId, 0), nodeId, rule, '---'),
         breakUnit(makeUnitId(nodeId, 1), nodeId, 'block', rule),
       ];
     }
     case 'math_inline':
-      return [mathAtom(node as SupramarkMathInlineNode, nodeId, false)];
+      return [mathAtom(node, nodeId, false)];
     case 'math_block':
       return [
-        mathAtom(node as SupramarkMathBlockNode, nodeId, true),
+        mathAtom(node, nodeId, true),
         breakUnit(makeUnitId(nodeId, 1), nodeId, 'block', node),
       ];
     case 'diagram':
       return [
-        diagramAtom(node as SupramarkDiagramNode, nodeId),
+        diagramAtom(node, nodeId),
         breakUnit(makeUnitId(nodeId, 1), nodeId, 'block', node),
       ];
     // Tables linearize into a fully compositional unit stream: per-cell inline
     // text units plus structural text units carrying the per-format separators
     // (markdown pipes / HTML tags). Every format reconstructs by concatenation.
     case 'table':
-      return linearizeTable(node as SupramarkTableNode, nodeId, path, options);
+      return linearizeTable(node, nodeId, path, options);
     // Stray rows/cells (outside a table) recurse into their children so they
     // never fall through to the 'unsupported' boundary.
     case 'table_row':
@@ -246,12 +232,12 @@ function linearizeNode(
     // plus trailing break as the placeholder.
     case 'container':
       return [
-        containerBoundary(node as SupramarkContainerNode, nodeId),
+        containerBoundary(node, nodeId),
         breakUnit(makeUnitId(nodeId, 1), nodeId, 'block', node),
       ];
     case 'input':
       return [
-        { kind: 'boundary', unitId: makeUnitId(nodeId, 0), nodeId, node: node as SupramarkInputNode, reason: 'input' },
+        { kind: 'boundary', unitId: makeUnitId(nodeId, 0), nodeId, node: node, reason: 'input' },
         breakUnit(makeUnitId(nodeId, 1), nodeId, 'block', node),
       ];
     default:
@@ -410,7 +396,7 @@ function linearizeTable(
   const units: SelectionUnit[] = [];
   const rows: Array<[SupramarkTableRowNode, number]> = [];
   table.children.forEach((child, i) => {
-    if (child.type === 'table_row') rows.push([child as SupramarkTableRowNode, i]);
+    if (child.type === 'table_row') rows.push([child, i]);
   });
   // Leading 0 arg keeps an empty table at columnCount 0 (avoids -Infinity).
   const columnCount = Math.max(table.align?.length ?? 0, ...rows.map(([r]) => r.children.length));

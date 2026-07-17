@@ -66,11 +66,11 @@ export function inferDefaultBehavior(node: SupramarkNode): SelectionBehavior {
     case 'footnote_definition':
     case 'raw':
     case 'thematic_break':
-    // Tables now linearize into selectable per-cell text units plus structural
-    // text units, so the whole table family classifies as 'text' to match.
     case 'table':
     case 'table_row':
     case 'table_cell':
+      // Tables linearize into selectable per-cell text units plus structural
+      // text units, so the whole table family classifies as 'text' to match.
       return 'text';
     case 'image':
     case 'math_inline':

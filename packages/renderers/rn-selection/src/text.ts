@@ -25,6 +25,7 @@ export type GraphemeDirection = 'backward' | 'forward';
 // entirely) — see `getGraphemeSegmenter` below for the matching runtime
 // guard and `snapSurrogatePairOnly` for the fallback used when it is absent.
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace -- ambient Intl declaration merging requires a namespace
   namespace Intl {
     interface SegmentDataLike {
       segment: string;

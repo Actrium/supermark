@@ -15,12 +15,14 @@ export interface SelectionSnapshot {
 }
 
 export interface SelectionStore {
-  getSnapshot(): SelectionSnapshot;
-  subscribe(l: () => void): () => void;
-  beginAt(point: SelectionPoint): void;
-  extendTo(point: SelectionPoint): void;
-  commit(): void;
-  clear(): void;
+  // Property-style signatures: every member is a closure with no `this`, safe
+  // to pass unbound (e.g. straight into `useSyncExternalStore`).
+  getSnapshot: () => SelectionSnapshot;
+  subscribe: (l: () => void) => () => void;
+  beginAt: (point: SelectionPoint) => void;
+  extendTo: (point: SelectionPoint) => void;
+  commit: () => void;
+  clear: () => void;
 }
 
 const EMPTY_IDLE: SelectionSnapshot = { phase: 'idle', range: null, units: [] };

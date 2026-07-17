@@ -48,7 +48,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   const unitsRef = useRef(units);
   unitsRef.current = units;
 
-  const registry = useMemo(() => new SelectionRegistry(units), []);
+  const registry = useMemo(() => new SelectionRegistry(unitsRef.current), []);
   const store = useMemo(() => createSelectionStore(() => unitsRef.current), []);
 
   // Host callbacks are read through refs so `ctx` stays reference-stable even
