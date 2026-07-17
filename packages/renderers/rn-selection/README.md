@@ -1,4 +1,4 @@
-# @kookyleo/rn-selection
+# @supramark/rn-selection
 
 Document-level selection system for Supramark on React Native.
 
@@ -19,6 +19,27 @@ and license remain visible while Supramark can evolve it in the same PR branch.
 
 See [SELECTION_PLAN.md](./SELECTION_PLAN.md) for the full target architecture and
 execution plan.
+
+## Status
+
+Milestone 1 (core model) is implemented as pure TypeScript — no native/RN runtime
+dependency yet. The exported API turns an AST into a copyable selection:
+
+```ts
+import {
+  linearizeForSelection,
+  resolveSelectionRange,
+  serializeSelectionUnits,
+} from '@supramark/rn-selection';
+
+const units = linearizeForSelection(ast); // AST v2 -> flat selection-unit stream
+const selected = resolveSelectionRange(units, range); // range -> covered units
+const markdown = serializeSelectionUnits(selected, 'markdown'); // 'plainText' | 'markdown' | 'source'
+```
+
+`unit.text` holds plain text only; Markdown syntax is reconstructed on
+serialization, so plain-text and Markdown copies are both lossless. Tables,
+SVG/PNG payloads, and native cross-block selection are deferred — see the plan.
 
 ## Native Primitive Boundary
 

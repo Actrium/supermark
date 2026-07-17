@@ -89,9 +89,12 @@ The future RN runtime should provide:
 
 - Define `SelectionRange`, `SelectionPoint`, `SelectionUnit`, and
   `SelectionPayload`.
-- Implement AST linearization for core Markdown nodes.
-- Implement selection serialization for plain text, Markdown, source, SVG, PNG,
-  and HTML payloads.
+- Implement AST linearization for core Markdown nodes, including blockquote,
+  image, definition list, and footnote nodes.
+- Implement `resolveSelectionRange` to resolve a `SelectionRange` into the
+  selection units it covers.
+- Implement selection serialization for plain text, Markdown, and source
+  payloads.
 
 ### 2. Native Primitive Integration
 
@@ -110,6 +113,7 @@ The future RN runtime should provide:
 
 - Add providers for code, math, diagrams, tables, and containers.
 - Reuse `@supramark/engines` outputs for SVG/PNG-capable payloads.
+- Extend selection serialization to SVG, PNG, and HTML payloads.
 - Expose menu actions based on available payload formats.
 
 ### 5. Production Hardening
@@ -119,13 +123,48 @@ The future RN runtime should provide:
 - Add RN interaction tests around hit testing, dragging, and copy payloads.
 - Document feature provider authoring rules.
 
+## Status
+
+### Milestone 1 — Core Model (implemented)
+
+Delivered as pure TypeScript, with no native/RN runtime dependency (`tsc --noEmit`
+clean, 32 unit tests):
+
+- `model.ts` — `SelectionRange` / `SelectionPoint` / `SelectionUnit` /
+  `SelectionPayload`. Every unit carries a globally unique `unitId`; several units
+  may share one `nodeId` (e.g. a heading's syntax prefix + its text). Offset
+  semantics: offsets count UTF-16 code units inside a unit's plain text; a
+  zero-text unit (atom/boundary) encodes *before* (offset 0) / *after* (offset > 0).
+- `linearize.ts` — linearizes core Markdown while keeping `unit.text` **plain**.
+  Markdown affixes (heading prefix, list markers, blockquote `>`, code fences,
+  inline `**`/`_`/`[..](url)`) live in per-format payloads or empty-text syntax
+  units, so plain-text and Markdown serialization are both lossless. Covers
+  paragraph, heading, list, blockquote, code, inline code, image, math, diagram,
+  definition list, footnote, raw, and thematic break.
+- `resolve.ts` — `resolveSelectionRange(units, range)` maps a range to the units it
+  covers, splitting partial text units at offsets and preserving a unit's
+  whole-unit payload only on full coverage (a partial slice falls back to plain
+  sliced text rather than leaking the surrounding syntax).
+- `serialize.ts` — plain-text / Markdown / source serialization.
+
+### Known limitations (deferred)
+
+- Tables linearize as a single `boundary`; cell text is not yet selectable or
+  copyable (milestone 3/4).
+- Blockquotes use one `> ` prefix, not per-line prefixing.
+- Offsets are UTF-16 code units; grapheme / emoji / CJK boundary handling is
+  milestone 5.
+- SVG / PNG / HTML payloads and the `@supramark/engines` dependency are deferred to
+  milestone 4; the package currently depends only on `@supramark/core`.
+
 ## Initial Scope
 
-The first branch seeds the package and model only:
+The seed package provides, ahead of the RN coordinator:
 
-- `@kookyleo/rn-selection` workspace package;
-- vendored native text primitive with upstream credit preserved;
-- selection model, AST linearizer, provider contract, and serializer.
+- the `@supramark/rn-selection` workspace package;
+- the vendored native text primitive with upstream credit preserved;
+- the selection model, AST linearizer, range resolver, provider contract, and
+  serializer (milestone 1 above).
 
 The default RN renderer behavior is intentionally unchanged until the coordinator
 is ready.

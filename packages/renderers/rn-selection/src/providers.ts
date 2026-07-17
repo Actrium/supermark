@@ -40,6 +40,9 @@ export function describeSelectionNode<TNode extends SupramarkNode>(
   };
 }
 
+// NOTE: this classification must stay aligned with `linearize.ts`. The two are
+// intentionally kept as one behaviour table today; a single source of truth is
+// slated for milestone 4 when feature providers take over payload mapping.
 export function inferDefaultBehavior(node: SupramarkNode): SelectionBehavior {
   switch (node.type) {
     case 'text':
@@ -54,15 +57,26 @@ export function inferDefaultBehavior(node: SupramarkNode): SelectionBehavior {
     case 'delete':
     case 'break':
     case 'code':
+    case 'blockquote':
+    case 'definition_list':
+    case 'definition_item':
+    case 'definition_term':
+    case 'definition_description':
+    case 'footnote_reference':
+    case 'footnote_definition':
+    case 'raw':
+    case 'thematic_break':
       return 'text';
+    case 'image':
     case 'math_inline':
     case 'math_block':
     case 'diagram':
       return 'atom';
+    // Tables linearize to a boundary today (cell-level recursion is deferred to
+    // milestone 3/4), so classify the whole table family as boundary to match.
     case 'table':
     case 'table_row':
     case 'table_cell':
-      return 'custom';
     case 'container':
     case 'input':
       return 'boundary';
