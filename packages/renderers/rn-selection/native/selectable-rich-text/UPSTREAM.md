@@ -6,6 +6,10 @@ This vendored native text primitive is based on:
 - Commit: `1a2f65c0b966304a407131cd49bd296647064bfe`
 - License: MIT, preserved in `LICENSE`
 
+Credit to the original `boomsi/selectable-library` project and its upstream
+author metadata. The original package metadata, README, TODO, and MIT license are
+kept in this directory so the provenance remains visible in the Supramark tree.
+
 The source is vendored instead of referenced as a git submodule so Supramark can
 review and evolve the native selection primitive in the same pull request as the
 document-level selection model.

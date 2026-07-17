@@ -17,6 +17,9 @@ and license remain visible while Supramark can evolve it in the same PR branch.
 - Use a Supramark-owned coordinator for cross-block selection, overlay, handles,
   copy menus, and payload serialization.
 
+See [SELECTION_PLAN.md](./SELECTION_PLAN.md) for the full target architecture and
+execution plan.
+
 ## Native Primitive Boundary
 
 `native/selectable-rich-text` is the starting native text segment implementation.
