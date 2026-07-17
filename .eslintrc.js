@@ -75,6 +75,8 @@ module.exports = {
     '**/*.tsbuildinfo',
 
     // vendored/generated runtime bundles
+    'packages/renderers/rn-selection/native/selectable-rich-text/',
+    'packages/renderers/rn-selection/native/selectable-rich-text/**',
     'crates/d2-little/mathjax.js',
     'crates/d2-little/setup.js',
     'crates/mermaid-little/src/katex/vendor/**',
