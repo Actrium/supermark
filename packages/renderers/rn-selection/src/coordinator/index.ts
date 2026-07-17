@@ -7,4 +7,8 @@ export * from './state';
 // directly — `useSelectionContext()` is the intended consumer entrypoint.
 export { SelectionContext as SelectionUIContext, type SelectionContextValue } from './SelectionContext';
 export * from './useDocumentSelection';
+export * from './overlay';
+export * from './blockSink';
 export { SelectionRoot, pointToSelectionForRoot, type SelectionRootProps } from './SelectionRoot';
+export { SelectionOverlay, type SelectionOverlayProps } from './SelectionOverlay';
+export { SelectableBlock, type SelectableBlockProps } from './SelectableBlock';

@@ -34,7 +34,7 @@ export interface RegisteredBlock {
   measure?: SegmentMeasure;
 }
 
-export type RegistryChange = 'register' | 'unregister' | 'layout';
+export type RegistryChange = 'register' | 'unregister' | 'layout' | 'units';
 
 /** Blocks whose units are absent from the index sort after every indexed one. */
 const ORDER_LAST = Number.MAX_SAFE_INTEGER;
@@ -64,6 +64,7 @@ export class SelectionRegistry {
   private listeners = new Set<(change: RegistryChange, nodeId: SelectionNodeId) => void>();
   private orderCache: RegisteredBlock[] | null = null;
   private unitToNode: Map<SelectionNodeId, SelectionNodeId> | null = null;
+  private _version = 0;
 
   constructor(units: readonly SelectionUnit[]) {
     this._index = buildUnitIndex(units);
@@ -73,6 +74,15 @@ export class SelectionRegistry {
   get index(): SelectionUnitIndex {
     return this._index;
   }
+
+  /**
+   * Monotonic revision bumped on every mutation notification. A React overlay
+   * subscribes to `subscribe` and reads this as its `useSyncExternalStore`
+   * snapshot so that layout/unit changes (which do NOT change the `getBlocks`
+   * array reference) still trigger a repaint. Arrow property so it can be passed
+   * as a bare `getSnapshot` without losing `this`.
+   */
+  getVersion = (): number => this._version;
 
   /**
    * Rebuild the index for a new unit stream (streaming markdown). Registered
@@ -86,10 +96,34 @@ export class SelectionRegistry {
   }
 
   register(block: RegisteredBlock): void {
-    this.blocks.set(block.nodeId, block);
+    // Preserve a previously measured rect when a re-registration carries none.
+    // A React block re-registers (effect cleanup + re-run) with no rect while
+    // its `onLayout` does not re-fire on an unchanged layout; without this the
+    // measured box would be lost and the overlay/hit-test would go blank.
+    const existing = this.blocks.get(block.nodeId);
+    const next =
+      existing?.rect !== undefined && block.rect === undefined
+        ? { ...block, rect: existing.rect }
+        : block;
+    this.blocks.set(block.nodeId, next);
     this.orderCache = null;
     this.unitToNode = null;
     this.notify('register', block.nodeId);
+  }
+
+  /**
+   * Replace a registered block's `unitIds` in place, preserving its measured
+   * `rect` and native `handle`. Used when a block keeps its `nodeId` but its
+   * unit stream grows (streaming markdown); re-registering instead would drop
+   * the rect between unregister and register.
+   */
+  updateUnits(nodeId: SelectionNodeId, unitIds: readonly SelectionNodeId[]): void {
+    const block = this.blocks.get(nodeId);
+    if (!block) return;
+    block.unitIds = unitIds;
+    this.orderCache = null;
+    this.unitToNode = null;
+    this.notify('units', nodeId);
   }
 
   unregister(nodeId: SelectionNodeId): void {
@@ -142,6 +176,7 @@ export class SelectionRegistry {
   }
 
   private notify(change: RegistryChange, nodeId: SelectionNodeId): void {
+    this._version++;
     for (const listener of this.listeners) listener(change, nodeId);
   }
 }

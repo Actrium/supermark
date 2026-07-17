@@ -91,6 +91,68 @@ describe('SelectionRegistry', () => {
     expect(reg.getBlock('a')?.rect).toEqual({ x: 5, y: 5, w: 5, h: 5 });
   });
 
+  test('register without a rect preserves the previously measured rect', () => {
+    // Mirrors a React re-registration: a block re-registers (effect cleanup +
+    // re-run) carrying no rect while onLayout does not re-fire. The measured box
+    // must survive so the overlay/hit-test keep working.
+    const reg = new SelectionRegistry(baseUnits());
+    reg.register({ ...blockA });
+    reg.updateLayout('a', { x: 1, y: 2, w: 3, h: 4 });
+    reg.register({ nodeId: 'a', unitIds: ['a#0', 'a#1'], kind: 'text' });
+    expect(reg.getBlock('a')?.rect).toEqual({ x: 1, y: 2, w: 3, h: 4 });
+  });
+
+  test('register with a rect overrides the previous rect', () => {
+    const reg = new SelectionRegistry(baseUnits());
+    reg.register({ ...blockA });
+    reg.updateLayout('a', { x: 1, y: 2, w: 3, h: 4 });
+    reg.register({ nodeId: 'a', unitIds: ['a#0'], kind: 'text', rect: { x: 9, y: 9, w: 9, h: 9 } });
+    expect(reg.getBlock('a')?.rect).toEqual({ x: 9, y: 9, w: 9, h: 9 });
+  });
+
+  test('updateUnits replaces unitIds in place, preserving rect and reordering', () => {
+    const reg = new SelectionRegistry(baseUnits());
+    const handle = { nodeId: 'a', selectRange() {}, clearSelection() {}, copyRange() {} };
+    reg.register({ nodeId: 'a', unitIds: ['a#0', 'a#1'], kind: 'text', handle });
+    reg.register({ ...blockB });
+    reg.updateLayout('a', { x: 1, y: 2, w: 3, h: 4 });
+    const events: Array<[string, string]> = [];
+    reg.subscribe((change, nodeId) => events.push([change, nodeId]));
+    reg.updateUnits('a', ['a#0']);
+    expect(reg.getBlock('a')?.unitIds).toEqual(['a#0']);
+    expect(reg.getBlock('a')?.rect).toEqual({ x: 1, y: 2, w: 3, h: 4 });
+    expect(reg.getBlock('a')?.handle).toBe(handle);
+    // The unitId -> block map is invalidated so a dropped unit no longer resolves.
+    expect(reg.getBlockForUnit('a#1')).toBeUndefined();
+    expect(events).toContainEqual(['units', 'a']);
+  });
+
+  test('updateUnits on an unknown block is a no-op', () => {
+    const reg = new SelectionRegistry(baseUnits());
+    reg.updateUnits('missing', ['x#0']);
+    expect(reg.getBlock('missing')).toBeUndefined();
+  });
+
+  test('getVersion bumps on every mutation notification', () => {
+    const reg = new SelectionRegistry(baseUnits());
+    const v0 = reg.getVersion();
+    reg.register({ ...blockA });
+    const v1 = reg.getVersion();
+    reg.updateLayout('a', { x: 0, y: 0, w: 1, h: 1 });
+    const v2 = reg.getVersion();
+    reg.updateUnits('a', ['a#0']);
+    const v3 = reg.getVersion();
+    reg.unregister('a');
+    const v4 = reg.getVersion();
+    // Each notifying mutation strictly increments; a no-op does not.
+    expect(v1).toBeGreaterThan(v0);
+    expect(v2).toBeGreaterThan(v1);
+    expect(v3).toBeGreaterThan(v2);
+    expect(v4).toBeGreaterThan(v3);
+    reg.updateLayout('missing', { x: 0, y: 0, w: 1, h: 1 });
+    expect(reg.getVersion()).toBe(v4);
+  });
+
   test('getBlockForUnit maps unitId to its block', () => {
     const reg = new SelectionRegistry(baseUnits());
     reg.register({ ...blockA });

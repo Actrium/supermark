@@ -6,7 +6,11 @@ import type {
   TextSegmentHandle,
 } from '../nativePrimitive';
 import type { RegisteredBlock } from '../coordinator/registry';
-import type { SelectableRichTextRef } from '../../native/selectable-rich-text/src/types';
+import type {
+  SelectableRichTextLongPressEvent,
+  SelectableRichTextMenuActionEvent,
+  SelectableRichTextRef,
+} from '../../native/selectable-rich-text/src/types';
 
 /**
  * Pure mapping helpers between a native text segment's local UTF-16 offsets
@@ -128,6 +132,44 @@ export function rangeToSegmentSelection(
   const a = pointToSegmentOffset(spans, range.anchor);
   const f = pointToSegmentOffset(spans, range.focus);
   return a <= f ? { startUtf16: a, endUtf16: f } : { startUtf16: f, endUtf16: a };
+}
+
+/**
+ * Normalize the vendored `onTextLongPress` payload into a document-agnostic
+ * `SegmentLongPressEvent`. Offsets are preserved verbatim — order-normalization
+ * happens downstream in `segmentOffsetToPoint` / `resolveSelectionRange`, not
+ * here — while `selectedText` is derived by slicing `paragraphText` with
+ * `min`/`max` so it stays stable even if native ever sends reversed offsets.
+ */
+export function normalizeLongPress(
+  e: SelectableRichTextLongPressEvent
+): SegmentLongPressEvent {
+  const start = Math.min(e.selectionStart, e.selectionEnd);
+  const end = Math.max(e.selectionStart, e.selectionEnd);
+  return {
+    startUtf16: e.selectionStart,
+    endUtf16: e.selectionEnd,
+    selectedText: e.paragraphText.slice(start, end),
+    local: { x: e.locationX, y: e.locationY },
+    page: { x: e.pageX, y: e.pageY },
+  };
+}
+
+/**
+ * Normalize the vendored `onMenuAction` payload into a document-agnostic
+ * `SegmentMenuActionEvent`. Offsets are preserved verbatim (see
+ * `normalizeLongPress`); `selectedText` is passed through as reported by native.
+ */
+export function normalizeMenuAction(
+  e: SelectableRichTextMenuActionEvent
+): SegmentMenuActionEvent {
+  return {
+    id: e.id,
+    title: e.title,
+    startUtf16: e.selectionStart,
+    endUtf16: e.selectionEnd,
+    selectedText: e.selectedText,
+  };
 }
 
 /**

@@ -31,3 +31,12 @@ Excluded:
 - upstream repository-local lint, CI, yarn, and editor configuration
 
 When pulling upstream changes, preserve this file and the MIT license notice.
+
+## In-tree Adaptations
+
+- `package.json`: upstream `devDependencies` (standalone dev/release tooling and
+  its own react-native 0.83 copy) and release/lint/jest config blocks are removed
+  — as a vendored workspace member they would install a second react-native and
+  ~900 unused packages. `peerDependencies.react-native` relaxed to `>=0.81.0` to
+  match the workspace's RN version. Codegen still runs via the host app build
+  (`codegenConfig` is preserved).

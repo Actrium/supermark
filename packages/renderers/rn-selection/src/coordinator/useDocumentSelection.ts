@@ -36,3 +36,11 @@ export function useSelectionContext(): SelectionContextValue {
   }
   return value;
 }
+
+/**
+ * Read the `SelectionStore` off the context so the overlay and host controls
+ * under the root can subscribe without prop-drilling.
+ */
+export function useSelectionStore(): SelectionStore {
+  return useSelectionContext().store;
+}

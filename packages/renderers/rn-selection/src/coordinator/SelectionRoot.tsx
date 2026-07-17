@@ -1,16 +1,22 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { View, type LayoutChangeEvent } from 'react-native';
+import { View } from 'react-native';
 import type { SelectionRange, SelectionUnit } from '../model';
-import type { SegmentEventSink } from '../nativePrimitive';
+import { buildSegmentSpans } from '../native/segmentAdapter';
+import type { SelectionSerializeFormat } from '../serialize';
 import { SelectionContext, type SelectionContextValue } from './SelectionContext';
+import { createBlockSink, type SelectionCopyRequest } from './blockSink';
 import { resolvePointToSelection, type Point } from './hitTest';
 import { SelectionRegistry } from './registry';
+import { SelectionOverlay } from './SelectionOverlay';
 import { createSelectionStore } from './state';
 
 export interface SelectionRootProps {
   units: readonly SelectionUnit[];
   children?: React.ReactNode;
   onSelectionChange?(range: SelectionRange | null): void;
+  onCopy?(request: SelectionCopyRequest): void;
+  formatForAction?(id: string): SelectionSerializeFormat;
+  overlay?: boolean;
 }
 
 /**
@@ -34,6 +40,9 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   units,
   children,
   onSelectionChange,
+  onCopy,
+  formatForAction,
+  overlay,
 }) => {
   // Latest units are read lazily by the store so streaming updates are visible.
   const unitsRef = useRef(units);
@@ -41,8 +50,16 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
 
   const registry = useMemo(() => new SelectionRegistry(units), []);
   const store = useMemo(() => createSelectionStore(() => unitsRef.current), []);
-  // Root origin in window coords; child measures subtract it to reach root space.
-  const rootOrigin = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Host callbacks are read through refs so `ctx` stays reference-stable even
+  // when the host passes fresh inline `onCopy` / `formatForAction` identities on
+  // every render. A churning `ctx` would re-run every block's registration
+  // effect (unregister + re-register), which previously wiped measured rects and
+  // blanked the overlay/hit-test.
+  const onCopyRef = useRef(onCopy);
+  onCopyRef.current = onCopy;
+  const formatForActionRef = useRef(formatForAction);
+  formatForActionRef.current = formatForAction;
 
   // Re-index when the unit stream changes (streaming markdown).
   useEffect(() => {
@@ -55,28 +72,42 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
     return store.subscribe(() => onSelectionChange(store.getSnapshot().range));
   }, [store, onSelectionChange]);
 
-  const ctx = useMemo<SelectionContextValue>(() => {
-    // Native events are routed per block at their gesture boundary (where the
-    // nodeId is known) via segmentAdapter helpers; that wiring is device-deferred.
-    const sink: SegmentEventSink = {};
-    return {
+  // Reference-stable: depends only on the memoized registry + store. The overlay
+  // subscribes to both the store (selection changes) and the registry version
+  // (layout / unit changes), so it repaints on either.
+  const ctx = useMemo<SelectionContextValue>(
+    () => ({
+      registry,
+      store,
       registerBlock: block => {
         registry.register(block);
         return () => registry.unregister(block.nodeId);
       },
       updateLayout: (nodeId, rect) => registry.updateLayout(nodeId, rect),
-      sink,
-    };
-  }, [registry]);
-
-  const onLayout = (event: LayoutChangeEvent) => {
-    const { x, y } = event.nativeEvent.layout;
-    rootOrigin.current = { x, y };
-  };
+      updateUnits: (nodeId, unitIds) => registry.updateUnits(nodeId, unitIds),
+      // Per-block routing: each sink is bound to one block's nodeId via closures
+      // over its spans/units, closing the "events carry no nodeId" gap.
+      createBlockSink: nodeId =>
+        createBlockSink({
+          getSpans: () => {
+            const b = registry.getBlock(nodeId);
+            return b ? buildSegmentSpans(b, registry.index) : [];
+          },
+          getUnits: () => unitsRef.current,
+          store,
+          onCopy: req => onCopyRef.current?.(req),
+          formatForAction: id => formatForActionRef.current?.(id) ?? 'plainText',
+        }),
+    }),
+    [registry, store]
+  );
 
   return (
-    <View onLayout={onLayout}>
-      <SelectionContext.Provider value={ctx}>{children}</SelectionContext.Provider>
+    <View>
+      <SelectionContext.Provider value={ctx}>
+        {children}
+        {overlay !== false && <SelectionOverlay />}
+      </SelectionContext.Provider>
     </View>
   );
 };

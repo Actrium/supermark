@@ -6,6 +6,8 @@ import {
   buildSegmentSpans,
   longPressToRange,
   menuActionToRange,
+  normalizeLongPress,
+  normalizeMenuAction,
   pointToSegmentOffset,
   rangeToSegmentSelection,
   segmentOffsetToPoint,
@@ -131,5 +133,60 @@ describe('event translation', () => {
     );
     expect(forward).toEqual({ startUtf16: 2, endUtf16: 7 });
     expect(reversed).toEqual({ startUtf16: 2, endUtf16: 7 });
+  });
+});
+
+describe('normalizeLongPress / normalizeMenuAction', () => {
+  test('long-press maps a raw event into the segment-local form', () => {
+    expect(
+      normalizeLongPress({
+        paragraphText: 'Hello world',
+        selectionStart: 0,
+        selectionEnd: 5,
+        locationX: 1,
+        locationY: 2,
+        pageX: 3,
+        pageY: 4,
+      })
+    ).toEqual({
+      startUtf16: 0,
+      endUtf16: 5,
+      selectedText: 'Hello',
+      local: { x: 1, y: 2 },
+      page: { x: 3, y: 4 },
+    });
+  });
+
+  test('long-press with reversed offsets slices with min/max but preserves offsets', () => {
+    const out = normalizeLongPress({
+      paragraphText: 'Hello world',
+      selectionStart: 5,
+      selectionEnd: 0,
+      locationX: 0,
+      locationY: 0,
+      pageX: 0,
+      pageY: 0,
+    });
+    expect(out.selectedText).toBe('Hello');
+    expect(out.startUtf16).toBe(5);
+    expect(out.endUtf16).toBe(0);
+  });
+
+  test('menu-action maps a raw event verbatim', () => {
+    expect(
+      normalizeMenuAction({
+        id: 'copy',
+        title: 'Copy',
+        selectedText: 'world',
+        selectionStart: 6,
+        selectionEnd: 11,
+      })
+    ).toEqual({
+      id: 'copy',
+      title: 'Copy',
+      selectedText: 'world',
+      startUtf16: 6,
+      endUtf16: 11,
+    });
   });
 });

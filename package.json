@@ -9,6 +9,7 @@
     "packages/cli",
     "packages/engines",
     "packages/renderers/*",
+    "packages/renderers/rn-selection/native/selectable-rich-text",
     "packages/features/core-markdown",
     "packages/features/main/*",
     "packages/features/containers/*",
