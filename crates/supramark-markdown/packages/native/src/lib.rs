@@ -218,6 +218,36 @@ mod tests {
         unsafe { supramark_markdown_free(out_buf, out_len) };
     }
 
+    /// Native consumers receive the same explicit-vs-EOF fence state as Web consumers.
+    #[test]
+    fn parse_preserves_diagram_fence_state() {
+        for (source, expected_closed) in [
+            ("```mermaid\ngraph TD; A-->B;\n```", true),
+            ("```mermaid\ngraph TD; A-->B;", false),
+        ] {
+            let src = CString::new(source).unwrap();
+            let mut out_buf: *mut c_char = ptr::null_mut();
+            let mut out_len: usize = 0;
+
+            let rc = unsafe {
+                supramark_markdown_parse_json(
+                    src.as_ptr(),
+                    SUPRAMARK_MARKDOWN_LEN_CSTRING,
+                    &mut out_buf,
+                    &mut out_len,
+                )
+            };
+            assert_eq!(rc, SUPRAMARK_MARKDOWN_OK);
+
+            let json = unsafe { slice::from_raw_parts(out_buf as *const u8, out_len) };
+            let value: serde_json::Value =
+                serde_json::from_slice(json).expect("must be valid JSON");
+            assert_eq!(value["children"][0]["fence_closed"], expected_closed);
+
+            unsafe { supramark_markdown_free(out_buf, out_len) };
+        }
+    }
+
     /// 显式长度路径（input 不需要 NUL 结尾）。
     #[test]
     fn parse_with_explicit_length() {

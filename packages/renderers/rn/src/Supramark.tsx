@@ -14,6 +14,7 @@ import type {
   SupramarkConfig,
   SupramarkCodeHighlightResult,
   SupramarkCodeHighlighter,
+  SupramarkSourceState,
 } from '@supramark/core';
 import {
   parse,
@@ -33,8 +34,15 @@ import {
   lightThemeStyles,
 } from './styles';
 import { ErrorBoundary, type ErrorInfo, ErrorDisplay } from './ErrorBoundary';
+import { SourceStateContext } from './SourceStateContext';
 
 type RenderedNode = React.ComponentProps<typeof Text>['children'];
+
+interface ParsedDocument {
+  root: SupramarkRootNode;
+  highlighted: Map<string, SupramarkCodeHighlightResult>;
+  sourceState: SupramarkSourceState;
+}
 
 // Minimal shape of the optional `react-native-maps` module. Only the members
 // used here are declared; the package itself is an optional peer dependency.
@@ -81,6 +89,8 @@ export interface SupramarkProps {
   theme?: 'light' | 'dark' | SupramarkStyles;
   /** Feature 配置（用于按需启用/禁用图表等扩展能力） */
   config?: SupramarkConfig;
+  /** Whether the Markdown source may still receive appended streaming content. */
+  sourceState?: SupramarkSourceState;
   /** 错误回调（可选） */
   onError?: (error: Error, errorInfo?: React.ErrorInfo) => void;
   /** 自定义错误展示组件（可选） */
@@ -108,6 +118,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
   styles: customStyles,
   theme,
   config,
+  sourceState = 'complete',
   onError,
   errorFallback,
   onOpenHtmlPage,
@@ -115,9 +126,16 @@ export const Supramark: React.FC<SupramarkProps> = ({
   codeHighlighter,
   codeHighlightTheme,
 }) => {
-  const [root, setRoot] = useState<SupramarkRootNode | null>(ast ?? null);
-  const [highlighted, setHighlighted] = useState<Map<string, SupramarkCodeHighlightResult>>(
-    new Map()
+  // The AST and its source state must advance together so a stale open fence
+  // is never marked complete.
+  const [parsedDocument, setParsedDocument] = useState<ParsedDocument | null>(
+    ast
+      ? {
+          root: ast,
+          highlighted: new Map(),
+          sourceState,
+        }
+      : null
   );
   const [parseError, setParseError] = useState<ErrorInfo | null>(null);
 
@@ -156,8 +174,11 @@ export const Supramark: React.FC<SupramarkProps> = ({
           codeHighlighter
         );
         if (!cancelled) {
-          setRoot(parsed);
-          setHighlighted(highlightedMap);
+          setParsedDocument({
+            root: parsed,
+            highlighted: highlightedMap,
+            sourceState,
+          });
           setParseError(null);
         }
       } catch (error) {
@@ -170,8 +191,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
             stack: err.stack,
           };
           setParseError(errorInfo);
-          setHighlighted(new Map());
-          setRoot(null);
+          setParsedDocument(null);
 
           // 调用错误回调
           if (onError) {
@@ -184,7 +204,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [markdown, ast, config, onError, codeHighlighter, codeHighlightTheme]);
+  }, [markdown, ast, config, onError, codeHighlighter, codeHighlightTheme, sourceState]);
 
   const mergedContainerRenderers = useMemo(() => {
     // FeatureConfig 只描述启用状态与 options，不再携带 renderer 定义。
@@ -207,26 +227,28 @@ export const Supramark: React.FC<SupramarkProps> = ({
     );
   }
 
-  if (!root) {
+  if (!parsedDocument) {
     // 解析中时的简单回退：直接显示原始 markdown 文本。
     return <Text>{markdown}</Text>;
   }
 
   return (
     <ErrorBoundary onError={onError} fallback={errorFallback}>
-      <View style={mergedStyles.root}>
-        {root.children.map((node, index) =>
-          renderNode(
-            node,
-            index,
-            mergedStyles,
-            highlighted,
-            config,
-            onOpenHtmlPage,
-            mergedContainerRenderers
-          )
-        )}
-      </View>
+      <SourceStateContext.Provider value={parsedDocument.sourceState}>
+        <View style={mergedStyles.root}>
+          {parsedDocument.root.children.map((node, index) =>
+            renderNode(
+              node,
+              index,
+              mergedStyles,
+              parsedDocument.highlighted,
+              config,
+              onOpenHtmlPage,
+              mergedContainerRenderers
+            )
+          )}
+        </View>
+      </SourceStateContext.Provider>
     </ErrorBoundary>
   );
 };

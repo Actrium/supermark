@@ -15,6 +15,8 @@ pub struct CodeFence {
     pub marker_len: usize,
     pub content: String,
     pub lang_prefix: &'static str,
+    /// Records whether the source contains a real closing fence instead of relying on EOF auto-close.
+    pub closed: bool,
 }
 
 impl NodeValue for CodeFence {
@@ -185,6 +187,7 @@ impl BlockRule for FenceScanner {
             marker_len: len,
             content,
             lang_prefix,
+            closed: have_end_marker,
         });
         Some((
             node,

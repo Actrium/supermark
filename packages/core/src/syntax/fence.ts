@@ -38,6 +38,8 @@ export function mapFenceTokenToBlockNode(
       type: 'diagram',
       engine: lang!.toLowerCase(),
       code: content,
+      // Legacy token mapping only receives completed fence tokens.
+      fence_closed: true,
       meta: meta ? { raw: meta } : undefined,
     };
     parent.children.push(diagram);

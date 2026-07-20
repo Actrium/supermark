@@ -190,7 +190,7 @@ export function defineDiagramFeature(
         type: 'diagram',
         selector,
         interface: {
-          required: ['type', 'engine', 'code'],
+          required: ['type', 'engine', 'code', 'fence_closed'],
           optional: ['meta'],
           fields: {
             type: {
@@ -205,6 +205,10 @@ export function defineDiagramFeature(
               type: 'string',
               description: codeFieldDesc,
             },
+            fence_closed: {
+              type: 'boolean',
+              description: 'Whether the Markdown source contains an explicit closing fence.',
+            },
             meta: {
               type: 'object',
               description: metaFieldDesc,
@@ -216,6 +220,7 @@ export function defineDiagramFeature(
             type: 'diagram',
             engine: engineId,
             code: exampleCode,
+            fence_closed: true,
           } as SupramarkDiagramNode,
         ],
       },
@@ -245,6 +250,7 @@ export function defineDiagramFeature(
             expected: {
               type: 'diagram',
               engine: engineId,
+              fence_closed: true,
             } as unknown as SupramarkDiagramNode,
             options: {
               typeOnly: true,
@@ -260,6 +266,7 @@ export function defineDiagramFeature(
               type: 'diagram',
               engine: engineId,
               code: exampleCode,
+              fence_closed: true,
             } as SupramarkDiagramNode,
             expected: (output: unknown) => output !== null && output !== undefined,
             snapshot: false,
@@ -274,6 +281,7 @@ export function defineDiagramFeature(
                     type: 'diagram',
                     engine: engineId,
                     code: exampleCode,
+                    fence_closed: true,
                   } as SupramarkDiagramNode,
                   expected: (output: unknown) => output !== null && output !== undefined,
                   snapshot: false,

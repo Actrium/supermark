@@ -12,6 +12,7 @@ import type {
   SupramarkConfig,
   SupramarkCodeHighlightResult,
   SupramarkCodeHighlighter,
+  SupramarkSourceState,
 } from '@supramark/core';
 import { type DiagramRenderResult, type DiagramRenderService } from '@supramark/engines';
 import { createWebDiagramEngine } from '@supramark/engines/web';
@@ -22,6 +23,7 @@ import {
   isDiagramFeatureEnabled,
   getFeatureOptionsAs,
   SUPRAMARK_ADMONITION_KINDS,
+  shouldDeferDiagramRender,
 } from '@supramark/core';
 import {
   type SupramarkClassNames,
@@ -33,6 +35,7 @@ import { DiagramBlock } from './DiagramBlock.js';
 import { DiagramEngineContext } from './DiagramEngineProvider.js';
 import { ErrorBoundary, type ErrorInfo, ErrorDisplay } from './ErrorBoundary.js';
 import { MathBlockWeb, MathInlineWeb } from './MathBlockWeb.js';
+import { SourceStateContext } from './SourceStateContext.js';
 
 export interface ContainerRendererWeb {
   (args: {
@@ -51,6 +54,8 @@ export interface SupramarkWebProps {
   classNames?: SupramarkClassNames;
   theme?: 'tailwind' | 'minimal' | SupramarkClassNames;
   config?: SupramarkConfig;
+  /** Whether the Markdown source may still receive appended streaming content. */
+  sourceState?: SupramarkSourceState;
   onError?: (error: Error, errorInfo?: React.ErrorInfo) => void;
   errorFallback?: (error: ErrorInfo) => ReactNode;
   errorClassNamePrefix?: string;
@@ -82,6 +87,13 @@ type CodeHighlightTask = {
   theme?: string;
 };
 
+interface ParsedDocument {
+  root: SupramarkRootNode;
+  rendered: Map<string, DiagramRenderResult>;
+  highlighted: Map<string, SupramarkCodeHighlightResult>;
+  sourceState: SupramarkSourceState;
+}
+
 function getDefinitionTerms(item: SupramarkDefinitionItemNode): SupramarkDefinitionTermNode[] {
   return item.children.filter(
     (child): child is SupramarkDefinitionTermNode => child.type === 'definition_term'
@@ -97,6 +109,50 @@ function getDefinitionDescriptions(
 }
 
 const defaultDiagramEngine = createWebDiagramEngine();
+
+interface WebDiagramNodeProps {
+  node: SupramarkDiagramNode;
+  classNames: SupramarkClassNames;
+  rendered: Map<string, DiagramRenderResult>;
+}
+
+// Keeps receiving and engine-rendering states distinct for streamed diagram fences.
+const WebDiagramNode: React.FC<WebDiagramNodeProps> = ({ node, classNames, rendered }) => {
+  const sourceState = useContext(SourceStateContext);
+
+  if (shouldDeferDiagramRender(node, sourceState)) {
+    return (
+      <div
+        data-supramark-diagram={node.engine}
+        data-supramark-diagram-state="receiving"
+        className={classNames.diagram}
+      >
+        <pre className={classNames.diagramPre}>
+          <code className={classNames.diagramCode}>Receiving diagram ({node.engine})…</code>
+        </pre>
+      </div>
+    );
+  }
+
+  if (isPreRenderedDiagramEngine(node.engine)) {
+    return (
+      <DiagramBlock
+        classNames={classNames}
+        code={node.code}
+        engine={node.engine}
+        result={rendered.get(buildRenderKey(node.engine, node.code, node.meta))}
+      />
+    );
+  }
+
+  return (
+    <div data-supramark-diagram={node.engine} className={classNames.diagram}>
+      <pre className={classNames.diagramPre}>
+        <code className={classNames.diagramCode}>{node.code}</code>
+      </pre>
+    </div>
+  );
+};
 
 // Admonition 默认主题（仅在未给出自定义 className 时生效）。
 // key 对应 SUPRAMARK_ADMONITION_KINDS：note / tip / info / warning / danger。
@@ -114,6 +170,7 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
   classNames: customClassNames,
   theme,
   config,
+  sourceState = 'complete',
   onError,
   errorFallback,
   errorClassNamePrefix = 'sm-error',
@@ -123,10 +180,16 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
   onRenderStateChange,
 }) => {
   const diagramEngine = useContext(DiagramEngineContext) ?? defaultDiagramEngine;
-  const [root, setRoot] = useState<SupramarkRootNode | null>(ast ?? null);
-  const [rendered, setRendered] = useState<Map<string, DiagramRenderResult>>(new Map());
-  const [highlighted, setHighlighted] = useState<Map<string, SupramarkCodeHighlightResult>>(
-    new Map()
+  // Parsing, engine output, highlighting, and source state form one renderable source version.
+  const [parsedDocument, setParsedDocument] = useState<ParsedDocument | null>(
+    ast
+      ? {
+          root: ast,
+          rendered: new Map(),
+          highlighted: new Map(),
+          sourceState,
+        }
+      : null
   );
   const [parseError, setParseError] = useState<ErrorInfo | null>(null);
 
@@ -164,7 +227,7 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
         // 把所有 :::xxx 当 opaque 处理。这里在主组件异步上下文里把 value 解析成
         // AST 子树填回 children，renderNode 就能正常渲染。
         await expandOpaqueContainers(parsed);
-        const renderTasks = collectRenderTasks(parsed.children, config);
+        const renderTasks = collectRenderTasks(parsed.children, config, sourceState);
         const highlightTasks = collectCodeHighlightTasks(
           parsed.children,
           config,
@@ -185,9 +248,12 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
         const highlightedMap = await preHighlightAll(highlightTasks, codeHighlighter);
 
         if (!cancelled) {
-          setRoot(parsed);
-          setRendered(renderedMap);
-          setHighlighted(highlightedMap);
+          setParsedDocument({
+            root: parsed,
+            rendered: renderedMap,
+            highlighted: highlightedMap,
+            sourceState,
+          });
           setParseError(null);
           onRenderStateChange?.({
             pending: false,
@@ -205,9 +271,7 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
             details: err.toString(),
             stack: err.stack,
           });
-          setRendered(new Map());
-          setHighlighted(new Map());
-          setRoot(null);
+          setParsedDocument(null);
           onRenderStateChange?.({
             pending: false,
             renderTasks: 0,
@@ -233,6 +297,7 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
     codeHighlighter,
     codeHighlightTheme,
     onRenderStateChange,
+    sourceState,
   ]);
 
   const mergedContainerRenderers = useMemo(() => {
@@ -253,7 +318,7 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
     );
   }
 
-  if (!root) {
+  if (!parsedDocument) {
     return null;
   }
 
@@ -263,19 +328,21 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
       fallback={errorFallback}
       classNamePrefix={errorClassNamePrefix}
     >
-      <div className={mergedClassNames.root}>
-        {root.children.map((node, index) =>
-          renderNode(
-            node,
-            index,
-            mergedClassNames,
-            rendered,
-            highlighted,
-            config,
-            mergedContainerRenderers
-          )
-        )}
-      </div>
+      <SourceStateContext.Provider value={parsedDocument.sourceState}>
+        <div className={mergedClassNames.root}>
+          {parsedDocument.root.children.map((node, index) =>
+            renderNode(
+              node,
+              index,
+              mergedClassNames,
+              parsedDocument.rendered,
+              parsedDocument.highlighted,
+              config,
+              mergedContainerRenderers
+            )
+          )}
+        </div>
+      </SourceStateContext.Provider>
     </ErrorBoundary>
   );
 };
@@ -430,24 +497,13 @@ function renderNode(
         return renderDisabledDiagram(diagram, key, classNames);
       }
 
-      if (isPreRenderedDiagramEngine(diagram.engine)) {
-        return (
-          <DiagramBlock
-            key={key}
-            classNames={classNames}
-            code={diagram.code}
-            engine={diagram.engine}
-            result={rendered.get(buildRenderKey(diagram.engine, diagram.code, diagram.meta))}
-          />
-        );
-      }
-
       return (
-        <div key={key} data-supramark-diagram={diagram.engine} className={classNames.diagram}>
-          <pre className={classNames.diagramPre}>
-            <code className={classNames.diagramCode}>{diagram.code}</code>
-          </pre>
-        </div>
+        <WebDiagramNode
+          key={key}
+          node={diagram}
+          classNames={classNames}
+          rendered={rendered}
+        />
       );
     }
     case 'container': {
@@ -984,7 +1040,11 @@ function renderInlineNode(
   }
 }
 
-function collectRenderTasks(nodes: SupramarkNode[], config?: SupramarkConfig): RenderTask[] {
+function collectRenderTasks(
+  nodes: SupramarkNode[],
+  config: SupramarkConfig | undefined,
+  sourceState: SupramarkSourceState
+): RenderTask[] {
   const tasks: RenderTask[] = [];
 
   function walk(list: SupramarkNode[]) {
@@ -993,7 +1053,8 @@ function collectRenderTasks(nodes: SupramarkNode[], config?: SupramarkConfig): R
         const diagram = node;
         if (
           isPreRenderedDiagramEngine(diagram.engine) &&
-          isDiagramFeatureEnabled(config, diagram.engine, 'web:diagram-feature')
+          isDiagramFeatureEnabled(config, diagram.engine, 'web:diagram-feature') &&
+          !shouldDeferDiagramRender(diagram, sourceState)
         ) {
           tasks.push({
             key: buildRenderKey(diagram.engine, diagram.code, diagram.meta),

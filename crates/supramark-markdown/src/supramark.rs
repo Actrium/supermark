@@ -139,6 +139,8 @@ pub enum SupramarkNode {
     Diagram {
         engine: String,
         code: String,
+        /// True only when the Markdown source contains an explicit closing fence.
+        fence_closed: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         meta: Option<serde_json::Value>,
         /// Semantic AST envelope { engine, kind, data }. None = not parsed or unsupported
@@ -911,6 +913,7 @@ fn map_fence(fence: &CodeFence, position: Option<SourcePosition>) -> SupramarkNo
         SupramarkNode::Diagram {
             engine: engine.to_owned(),
             code: fence.content.clone(),
+            fence_closed: fence.closed,
             meta: meta_raw.as_deref().and_then(parse_diagram_meta),
             semantic: None,
             position,
@@ -1564,13 +1567,34 @@ mod tests {
                 panic!("expected root");
             };
 
-            let SupramarkNode::Diagram { engine, code, .. } = &children[0] else {
+            let SupramarkNode::Diagram {
+                engine,
+                code,
+                fence_closed,
+                ..
+            } = &children[0]
+            else {
                 panic!("expected diagram for {lang}");
             };
 
             assert_eq!(engine, expected_engine);
             assert_eq!(code.trim(), "graph TD; A-->B;");
+            assert!(fence_closed);
         }
+    }
+
+    #[test]
+    fn marks_unclosed_diagram_fence_as_open() {
+        let ast = parse("```mermaid\ngraph TD; A-->B;");
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root");
+        };
+
+        let SupramarkNode::Diagram { fence_closed, .. } = &children[0] else {
+            panic!("expected diagram");
+        };
+
+        assert!(!fence_closed);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -9,9 +9,11 @@ import {
 } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 import type { SupramarkDiagramNode, SupramarkDiagramConfig } from '@supramark/core';
+import { shouldDeferDiagramRender } from '@supramark/core';
 import { type DiagramRenderResult } from '@supramark/engines';
 import { createReactNativeDiagramEngine } from '@supramark/engines/rn';
 import { normalizeSvg, normalizeSvgLight, stripRootSvgSize } from './svgUtils';
+import { SourceStateContext } from './SourceStateContext';
 
 export interface DiagramNodeProps {
   node: SupramarkDiagramNode;
@@ -28,9 +30,11 @@ export interface DiagramNodeProps {
 const defaultDiagramEngine = createReactNativeDiagramEngine();
 
 export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig }) => {
+  const sourceState = useContext(SourceStateContext);
+  // Open fences remain in a receiving state while their source can still grow.
+  const deferRender = shouldDeferDiagramRender(node, sourceState);
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
   // 容器实际宽度：图表应跟随父容器（如聊天气泡等窄容器）渲染，而非直接
   // 按屏宽，否则会右偏 / 溢出。0 表示尚未测量，渲染时回退屏宽。
   const [measuredWidth, setMeasuredWidth] = useState<number>(0);
@@ -41,8 +45,13 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
   };
 
   useEffect(() => {
+    if (deferRender) {
+      setError(null);
+      setSvg(null);
+      return;
+    }
+
     let cancelled = false;
-    setLoading(true);
     setError(null);
     setSvg(null);
 
@@ -63,7 +72,6 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
             ? `${result.error.message}: ${result.error.details || result.payload}`
             : result.payload || 'Unknown error';
           setError(errorMsg);
-          setLoading(false);
           return;
         }
 
@@ -72,24 +80,30 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
             ? normalizeSvg(result.payload)
             : normalizeSvgLight(result.payload);
           setSvg(normalized);
-          setLoading(false);
         } catch (err) {
           setError(`SVG normalization failed: ${String(err)}`);
-          setLoading(false);
         }
       })
       .catch(err => {
         if (cancelled) return;
         setError(String(err));
-        setLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [node.engine, node.code, node.meta, diagramConfig]);
+  }, [deferRender, node.engine, node.code, node.meta, diagramConfig]);
 
-  if (loading && !svg && !error) {
+  if (deferRender) {
+    return (
+      <View style={styles.placeholder} onLayout={handleLayout}>
+        <ActivityIndicator size="small" />
+        <Text style={styles.placeholderText}>Receiving diagram ({node.engine})…</Text>
+      </View>
+    );
+  }
+
+  if (!svg && !error) {
     return (
       <View style={styles.placeholder} onLayout={handleLayout}>
         <ActivityIndicator size="small" />
@@ -167,11 +181,6 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
     );
   }
 
-  return (
-    <View style={styles.placeholder} onLayout={handleLayout}>
-      <Text style={styles.placeholderText}>[diagram: {node.engine}]</Text>
-    </View>
-  );
 };
 
 /**

@@ -580,6 +580,7 @@
         "@types/node": "^24.0.0",
         "@types/react": "^18.2.79",
         "@types/react-dom": "^18.2.25",
+        "happy-dom": "^20.8.4",
         "react": "19.1.0",
         "react-dom": "19.1.0",
         "typescript": "^5.5.0",
