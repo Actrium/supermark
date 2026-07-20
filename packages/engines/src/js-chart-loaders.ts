@@ -39,18 +39,21 @@ type VegaModule = Record<string, unknown>;
  * the same output contract: source in, SVG string out.
  */
 export async function loadEchartsSvgRender(): Promise<DiagramRenderFn> {
-  // `spec: string` keeps these as unresolved specifiers so TS does not require
-  // the optional `echarts` peer dependency to be installed at type-check time.
-  const coreSpec: string = 'echarts/core';
-  const renderersSpec: string = 'echarts/renderers';
-  const chartsSpec: string = 'echarts/charts';
-  const componentsSpec: string = 'echarts/components';
-
+  // `as string` keeps the specifier unresolved so TS does not require the
+  // optional `echarts` peer dependency to be installed at type-check time.
+  //
+  // The specifier MUST stay a string literal — never hoist it into a variable.
+  // Vite/Rollup can only statically analyze `import('echarts/core')`: they
+  // split it into a dynamic chunk and rewrite the runtime import to a relative
+  // URL. A `import(variable)` form cannot be analyzed, survives the build as a
+  // bare specifier, and the browser throws
+  // `Failed to resolve module specifier "echarts/core"` on the deployed static
+  // preview site (issues #80 / #79).
   const [core, renderers, charts, components] = await Promise.all([
-    import(coreSpec) as Promise<EchartsCoreModule>,
-    import(renderersSpec) as Promise<EchartsRenderersModule>,
-    import(chartsSpec) as Promise<EchartsChartsModule>,
-    import(componentsSpec) as Promise<EchartsComponentsModule>,
+    import('echarts/core' as string) as Promise<EchartsCoreModule>,
+    import('echarts/renderers' as string) as Promise<EchartsRenderersModule>,
+    import('echarts/charts' as string) as Promise<EchartsChartsModule>,
+    import('echarts/components' as string) as Promise<EchartsComponentsModule>,
   ]);
 
   return echartsFactory([
@@ -68,12 +71,12 @@ export async function loadEchartsSvgRender(): Promise<DiagramRenderFn> {
 }
 
 export async function loadVegaLiteSvgRender(): Promise<DiagramRenderFn> {
-  const vegaSpec: string = 'vega';
-  const vegaLiteSpec: string = 'vega-lite';
-
+  // See loadEchartsSvgRender: the specifier must stay a string literal so
+  // Vite/Rollup can split it into a chunk; a `import(variable)` form regresses
+  // to a bare specifier on the deployed static site (issue #79).
   const [Vega, VegaLite] = await Promise.all([
-    import(vegaSpec) as Promise<VegaModule>,
-    import(vegaLiteSpec) as Promise<VegaModule>,
+    import('vega' as string) as Promise<VegaModule>,
+    import('vega-lite' as string) as Promise<VegaModule>,
   ]);
 
   return vegaLiteFactory([Vega, VegaLite]) as DiagramRenderFn;
