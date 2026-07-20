@@ -146,6 +146,17 @@ jobs:
         if: matrix.node-version == '20.x'
         run: bun run quality
 
+      # Build the CSR preview bundle and assert no diagram dynamic-import
+      # specifier leaked as a bare module specifier — the runtime form of
+      # upstream issues #80 / #79 (browser throws "Failed to resolve module
+      # specifier" on the deployed static site). The source-level guard lives
+      # in the engines contract test; this is the build-artifact check.
+      - name: Build CSR preview & verify diagram specifiers
+        if: matrix.node-version == '20.x'
+        run: |
+          cd examples/react-web-csr && bun run build
+          cd ../.. && bun run check:diagram-specifiers
+
   # Host-side native bridge tests (JNI string/handle marshalling) — run on a
   # host JVM with no Android NDK, emulator or gradle. Only d2 and mermaid run
   # here: their cargo crates are self-contained. graphviz-anywhere and plantuml

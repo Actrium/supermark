@@ -8,6 +8,7 @@ on:
       - 'packages/core/**'
       - 'scripts/feature-lint.ts'
       - 'scripts/features-lint.ts'
+      - '.github/workflows/feature-quality.yml'
   pull_request:
     branches: [main, develop]
     paths:
@@ -15,6 +16,7 @@ on:
       - 'packages/core/**'
       - 'scripts/feature-lint.ts'
       - 'scripts/features-lint.ts'
+      - '.github/workflows/feature-quality.yml'
 
 jobs:
   lint-features:
@@ -128,6 +130,17 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: wasm-pack
+
+      # Pre-build the in-tree wasm packages serially before the concurrent
+      # workspace build. `rust-toolchain.toml` pins an exact stable that differs
+      # from the `@stable` installed above, so the first `cargo`/`wasm-pack`
+      # invocation triggers a rustup install. Running that install once here
+      # (single process) avoids the rustup download race where parallel `bun run
+      # --filter '*' build` entries each trigger rustup and clobber each other's
+      # `.partial` download for the same component (clippy), which left
+      # `@actrium/d2-little-web` without a dist entry and broke the Vite build.
+      - name: Build in-tree wasm packages
+        run: bun run build:wasm
 
       - name: TypeScript workspace build
         run: bun run build
