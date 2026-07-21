@@ -49,6 +49,73 @@ enum ParseState {
         start_line: usize,
         start_column: usize,
     },
+    /// Inside a `partition NAME { … }` (or package/rectangle/card/group) block.
+    /// Accumulates the raw body lines until the brace balance closes, then
+    /// recursively parses them into a nested event list. Mirrors Java
+    /// PlantUML's `startGroup` / brace-block / `endGroup` mechanism.
+    Partition {
+        name: String,
+        depth: i32,
+        body_lines: Vec<String>,
+    },
+}
+
+/// Net brace balance of a line: `count('{') - count('}')`.  Used by the
+/// `Partition` state to find the matching closing brace, matching PlantUML's
+/// own brace-block accumulation (which is likewise a raw character count).
+fn net_brace_delta(line: &str) -> i32 {
+    line.chars().fold(0i32, |acc, c| match c {
+        '{' => acc + 1,
+        '}' => acc - 1,
+        _ => acc,
+    })
+}
+
+/// If `line` contains the brace that closes a partition, return the content
+/// before that brace (trimmed of trailing whitespace) when non-empty, so it
+/// can still be parsed as a final body statement.  Returns `None` when the
+/// line is only the closing brace (nothing to keep).
+fn strip_closing_brace(line: &str) -> Option<String> {
+    let idx = line.find('}')?;
+    let before = line[..idx].trim_end();
+    if before.is_empty() {
+        None
+    } else {
+        Some(before.to_string())
+    }
+}
+
+/// If `trimmed` opens a `partition NAME {` block, return the extracted name.
+/// Only the `partition` keyword is recognised here (Java's
+/// `CommandPartition3` also accepts `package`/`rectangle`/`card`/`group`, but
+/// each maps to a distinct `USymbol` with different frame geometry; this crate
+/// models `partition` → `USymbolFrame` only for now).
+fn match_container_open(lower: &str, trimmed: &str) -> Option<String> {
+    let keyword = "partition ";
+    let lower_rest = lower.strip_prefix(keyword)?;
+    let rest = &trimmed[keyword.len()..];
+    let name_part = match rest.find('{') {
+        Some(idx) => &rest[..idx],
+        None => rest,
+    };
+    let mut name = name_part.trim().to_string();
+    // Strip surrounding quotes (double or guillemets), matching Java's
+    // `StringUtils.eventuallyRemoveStartingAndEndingDoubleQuote`.
+    if name.len() >= 2 {
+        let bytes = name.as_bytes();
+        let first = bytes[0] as char;
+        let last = bytes[name.len() - 1] as char;
+        if (first == '"' && last == '"') || (first == '\u{00ab}' && last == '\u{00bb}') {
+            name = name[1..name.len() - 1].to_string();
+        }
+    }
+    name = name.trim().trim_end_matches(';').trim().to_string();
+    let _ = lower_rest; // only used to confirm prefix
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 /// Parse activity diagram source text into an ActivityDiagram IR
@@ -173,6 +240,39 @@ pub fn parse_activity_diagram(source: &str) -> Result<ActivityDiagram> {
                     }
                     text.push_str(line);
                     trace!("line {line_num}: accumulating action line");
+                }
+                continue;
+            }
+            ParseState::Partition {
+                ref name,
+                ref mut depth,
+                ref mut body_lines,
+            } => {
+                let delta = net_brace_delta(line);
+                *depth += delta;
+                if *depth <= 0 {
+                    // This line closes the partition. Keep any content before
+                    // the balancing `}` as a final body statement; drop the
+                    // `}` and anything after it.
+                    if let Some(stripped) = strip_closing_brace(line) {
+                        body_lines.push(stripped);
+                    }
+                    let body_src = body_lines.join("\n");
+                    let sub = match parse_activity_diagram(&body_src) {
+                        Ok(d) => d.events,
+                        Err(_) => Vec::new(),
+                    };
+                    debug!(
+                        "line {line_num}: closing partition '{name}' with {} nested events",
+                        sub.len()
+                    );
+                    events.push(ActivityEvent::Partition {
+                        name: name.clone(),
+                        events: sub,
+                    });
+                    state = ParseState::Normal;
+                } else {
+                    body_lines.push(line.to_string());
                 }
                 continue;
             }
@@ -562,6 +662,31 @@ pub fn parse_activity_diagram(source: &str) -> Result<ActivityDiagram> {
             continue;
         }
 
+        // --- partition NAME { … } (and package/rectangle/card/group aliases) ---
+        // Matches Java `CommandPartition3`'s opening line; the body is
+        // accumulated by the `Partition` state until braces balance.
+        if let Some(name) = match_container_open(&lower, trimmed) {
+            let delta = net_brace_delta(line);
+            if delta <= 0 {
+                // `partition NAME {}` — empty partition, closed on the same
+                // line (delta == 0) or no bracket at all (delta == 0, PlantUML
+                // just warns).  Emit an empty partition.
+                debug!("line {line_num}: empty partition '{name}'");
+                events.push(ActivityEvent::Partition {
+                    name,
+                    events: Vec::new(),
+                });
+            } else {
+                debug!("line {line_num}: entering partition '{name}' (depth {delta})");
+                state = ParseState::Partition {
+                    name,
+                    depth: delta,
+                    body_lines: Vec::new(),
+                };
+            }
+            continue;
+        }
+
         // --- switch (condition) / case (label) / endswitch ---
         // Require a delimiter after the keyword (mirrors the `if `/`if(` rule)
         // so that words like `switchboard` / `caseload` are not mis-tokenized.
@@ -766,6 +891,13 @@ pub fn parse_activity_diagram(source: &str) -> Result<ActivityDiagram> {
                 line: start_line,
                 column: Some(start_column),
                 message: "unterminated header block (missing `end header`)".to_string(),
+            });
+        }
+        ParseState::Partition { name, .. } => {
+            return Err(crate::Error::Parse {
+                line: 0,
+                column: None,
+                message: format!("unterminated partition '{name}' (missing closing `}}`)"),
             });
         }
     }

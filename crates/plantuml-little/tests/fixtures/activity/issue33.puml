@@ -1,0 +1,18 @@
+@startuml
+start
+partition Client {
+  :Submit request;
+}
+partition Server {
+  :Validate request;
+  fork
+    :Persist result;
+  fork again
+    :Send audit event;
+  end fork
+}
+partition Client {
+  :Render response;
+}
+stop
+@enduml
