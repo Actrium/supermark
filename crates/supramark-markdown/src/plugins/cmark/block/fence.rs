@@ -115,6 +115,13 @@ impl BlockRule for FenceScanner {
         let params = params.to_owned();
 
         let mut next_line = state.line;
+        // `closed` is true only when a real closing fence is found. EOF and
+        // container boundaries (blockquote/list ending, negative-indent lines)
+        // leave it false: the scanner cannot distinguish document EOF from a
+        // container edge here, and a streaming source may still append more
+        // content, so the conservative choice is to keep treating the fence as
+        // potentially growable. Renderers that consume `fence_closed` defer
+        // engine work until `sourceState` becomes `complete`, which is safe.
         let mut have_end_marker = false;
 
         // search end of block

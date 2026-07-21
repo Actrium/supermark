@@ -96,26 +96,26 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
 
   if (deferRender) {
     return (
-      <View style={styles.placeholder} onLayout={handleLayout}>
+      <View style={styles.placeholder} onLayout={handleLayout} testID="supramark-diagram-receiving">
         <ActivityIndicator size="small" />
-        <Text style={styles.placeholderText}>Receiving diagram ({node.engine})…</Text>
+        <Text style={styles.placeholderText}>正在接收图表（{node.engine}）…</Text>
       </View>
     );
   }
 
   if (!svg && !error) {
     return (
-      <View style={styles.placeholder} onLayout={handleLayout}>
+      <View style={styles.placeholder} onLayout={handleLayout} testID="supramark-diagram-rendering">
         <ActivityIndicator size="small" />
-        <Text style={styles.placeholderText}>Rendering diagram ({node.engine})…</Text>
+        <Text style={styles.placeholderText}>正在渲染图表（{node.engine}）…</Text>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.placeholder} onLayout={handleLayout}>
-        <Text style={styles.errorText}>Diagram error: {error}</Text>
+      <View style={styles.placeholder} onLayout={handleLayout} testID="supramark-diagram-error">
+        <Text style={styles.errorText}>图表渲染错误：{error}</Text>
       </View>
     );
   }
@@ -170,7 +170,11 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
     scalableSvg = stripRootSvgSize(scalableSvg);
 
     return (
-      <View style={[styles.diagram, { width: chartWidth, height }]} onLayout={handleLayout}>
+      <View
+        style={[styles.diagram, { width: chartWidth, height }]}
+        onLayout={handleLayout}
+        testID="supramark-diagram-svg"
+      >
         <SvgXml
           xml={scalableSvg}
           width={chartWidth}

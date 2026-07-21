@@ -18,7 +18,11 @@ export const DiagramBlock: React.FC<DiagramBlockProps> = ({ classNames, code, en
         className={classNames.diagram}
       >
         <pre className={classNames.diagramPre}>
-          <code className={classNames.diagramCode}>Rendering diagram ({engine})…</code>
+          <code className={classNames.diagramCode}>正在渲染图表（{engine}）…</code>
+        </pre>
+        {/* 代码回退：引擎结果到达前展示原始源码，避免占位符永久卡死且无内容可读。 */}
+        <pre className={classNames.diagramPre}>
+          <code className={classNames.diagramCode}>{code}</code>
         </pre>
       </div>
     );

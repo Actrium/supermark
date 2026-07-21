@@ -128,7 +128,7 @@ const WebDiagramNode: React.FC<WebDiagramNodeProps> = ({ node, classNames, rende
         className={classNames.diagram}
       >
         <pre className={classNames.diagramPre}>
-          <code className={classNames.diagramCode}>Receiving diagram ({node.engine})…</code>
+          <code className={classNames.diagramCode}>正在接收图表（{node.engine}）…</code>
         </pre>
       </div>
     );
