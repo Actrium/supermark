@@ -29,7 +29,7 @@ import {
   NativeModules,
 } from 'react-native';
 
-import { Supramark } from '@supramark/rn';
+import { Supramark, themeBackground } from '@supramark/rn';
 import type { SupramarkConfig } from '@supramark/core';
 
 // Feature metadata — id/version is read off these for the FeatureConfig list.
@@ -167,7 +167,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const containerStyle = [styles.container, isDark && { backgroundColor: '#0d1117' }];
+  const containerStyle = [styles.container, isDark && { backgroundColor: themeBackground.dark }];
   const headerStyle = [styles.header, isDark && { borderBottomColor: '#30363d' }];
   const titleStyle = [styles.title, isDark && { color: '#ffffff' }];
   const subtitleStyle = [styles.subtitle, isDark && { color: '#8b949e' }];
@@ -225,7 +225,10 @@ export default function App() {
     );
   }
 
-  const detailContentStyle = [styles.detailContent, isDark && { backgroundColor: '#0d1117' }];
+  const detailContentStyle = [
+    styles.detailContent,
+    { backgroundColor: themeBackground[isDark ? 'dark' : 'light'] },
+  ];
   const demoTitleStyle = [styles.demoTitle, isDark && { color: '#ffffff' }];
   const demoDescriptionStyle = [styles.demoDescription, isDark && { color: '#8b949e' }];
   const demoSectionTitleStyle = [styles.demoSectionTitle, isDark && { color: '#ffffff' }];
