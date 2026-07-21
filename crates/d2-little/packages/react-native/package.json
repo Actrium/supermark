@@ -29,8 +29,8 @@
   "scripts": {
     "typescript": "tsc --noEmit",
     "test": "bun test",
-    "build": "if command -v bob >/dev/null 2>&1; then BROWSERSLIST_IGNORE_OLD_DATA=1 bob build; else echo 'react-native-builder-bob not installed; skipping build'; fi",
-    "prepack": "if command -v bob >/dev/null 2>&1; then BROWSERSLIST_IGNORE_OLD_DATA=1 bob build; fi",
+    "build": "if command -v bob >/dev/null 2>&1 && node -e \"process.exit(require('./package.json')['react-native-builder-bob']?0:1)\"; then BROWSERSLIST_IGNORE_OLD_DATA=1 bob build; else echo 'react-native-builder-bob not configured; skipping build'; fi",
+    "prepack": "if command -v bob >/dev/null 2>&1 && node -e \"process.exit(require('./package.json')['react-native-builder-bob']?0:1)\"; then BROWSERSLIST_IGNORE_OLD_DATA=1 bob build; fi",
     "prepare-native": "node scripts/prepare-native.js"
   },
   "keywords": [
