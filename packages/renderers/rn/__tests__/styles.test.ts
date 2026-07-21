@@ -1,12 +1,6 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 
-// styles.ts import react-native 的 StyleSheet;react-native 的 JS 入口含 Flow
-// 语法 (import typeof),bun 无法加载。用 identity mock 替代 —— 测试只关心样式对象的
-// 纯逻辑 (mergeStyles / themeBackground / darkThemeStyles 结构),不依赖 StyleSheet.create
-// 的运行时语义。动态 import 确保 mock 先注册、再加载 styles。
-mock.module('react-native', () => ({
-  StyleSheet: { create: (styles: unknown) => styles },
-}));
+import './support/mock-react-native';
 
 const stylesModule = await import('../src/styles');
 const { defaultStyles, darkThemeStyles, mergeStyles, themeBackground } = stylesModule;

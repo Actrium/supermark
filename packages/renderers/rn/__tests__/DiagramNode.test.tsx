@@ -4,6 +4,8 @@ import { create, act, type ReactTestRenderer } from 'react-test-renderer';
 import type { DiagramRenderResult } from '@supramark/engines';
 import type { SupramarkDiagramNode, SupramarkSourceState } from '@supramark/core';
 
+import './support/mock-react-native';
+
 // react-test-renderer 需要显式开启 act 环境，否则 effect 不会同步 flush。
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -14,16 +16,6 @@ const engineState = {
   renderCalls: 0,
   pendingResolve: null as null | ((result: DiagramRenderResult) => void),
 };
-
-// 用字符串 host 组件 mock react-native 表面，react-test-renderer 会把它们当作
-// host 节点渲染，便于按 testID 断言状态。
-mock.module('react-native', () => ({
-  View: 'View',
-  Text: 'Text',
-  ActivityIndicator: 'ActivityIndicator',
-  Dimensions: { get: () => ({ width: 375, height: 812 }) },
-  StyleSheet: { create: (s: unknown) => s },
-}));
 
 mock.module('react-native-svg', () => ({
   SvgXml: 'SvgXml',
