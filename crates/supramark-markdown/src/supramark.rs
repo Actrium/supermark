@@ -139,6 +139,14 @@ pub enum SupramarkNode {
     Diagram {
         engine: String,
         code: String,
+        /// True only when the Markdown source contains an explicit closing fence.
+        ///
+        /// Defaults to `false` when absent so previously persisted ASTs (which
+        /// predate this field) still deserialize instead of failing. Consumers
+        /// treat a missing value as "potentially open" and defer engine work,
+        /// which is the safe direction.
+        #[serde(default)]
+        fence_closed: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         meta: Option<serde_json::Value>,
         /// Semantic AST envelope { engine, kind, data }. None = not parsed or unsupported
@@ -911,6 +919,7 @@ fn map_fence(fence: &CodeFence, position: Option<SourcePosition>) -> SupramarkNo
         SupramarkNode::Diagram {
             engine: engine.to_owned(),
             code: fence.content.clone(),
+            fence_closed: fence.closed,
             meta: meta_raw.as_deref().and_then(parse_diagram_meta),
             semantic: None,
             position,
@@ -1564,12 +1573,47 @@ mod tests {
                 panic!("expected root");
             };
 
-            let SupramarkNode::Diagram { engine, code, .. } = &children[0] else {
+            let SupramarkNode::Diagram {
+                engine,
+                code,
+                fence_closed,
+                ..
+            } = &children[0]
+            else {
                 panic!("expected diagram for {lang}");
             };
 
             assert_eq!(engine, expected_engine);
             assert_eq!(code.trim(), "graph TD; A-->B;");
+            assert!(fence_closed);
+        }
+    }
+
+    #[test]
+    fn marks_unclosed_diagram_fence_as_open() {
+        let ast = parse("```mermaid\ngraph TD; A-->B;");
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root");
+        };
+
+        let SupramarkNode::Diagram { fence_closed, .. } = &children[0] else {
+            panic!("expected diagram");
+        };
+
+        assert!(!fence_closed);
+    }
+
+    #[test]
+    fn deserializes_legacy_diagram_without_fence_closed() {
+        // Previously persisted ASTs predate the `fence_closed` field; the serde
+        // default keeps them deserializable instead of failing, defaulting to
+        // the safe "potentially open" value.
+        let json = r#"{"type":"diagram","engine":"mermaid","code":"graph TD; A-->B;"}"#;
+        let node: SupramarkNode =
+            serde_json::from_str(json).expect("legacy AST should deserialize");
+        match node {
+            SupramarkNode::Diagram { fence_closed, .. } => assert!(!fence_closed),
+            _ => panic!("expected diagram"),
         }
     }
 

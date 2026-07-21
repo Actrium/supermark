@@ -1,6 +1,9 @@
 // AST 类型定义
 export * from './ast.js';
 
+// Shared diagram streaming state used by Web and React Native renderers.
+export * from './diagram-render-state.js';
+
 // 插件系统类型
 export type {
   SupramarkParseContext,
