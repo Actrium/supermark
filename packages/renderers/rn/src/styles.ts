@@ -80,56 +80,51 @@ export interface SupramarkStyles {
  */
 export const defaultStyles = StyleSheet.create({
   paragraph: {
-    marginBottom: 8,
     lineHeight: 20,
   },
   h1: {
     fontSize: 24,
     fontWeight: '700',
-    marginBottom: 12,
+    marginTop: 8,
   },
   h2: {
     fontSize: 20,
     fontWeight: '600',
-    marginBottom: 10,
+    marginTop: 6,
   },
   h3: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 8,
+    marginTop: 4,
   },
   h4: {
     fontSize: 16,
     fontWeight: '500',
-    marginBottom: 6,
+    marginTop: 2,
   },
   h5: {
     fontSize: 14,
     fontWeight: '500',
-    marginBottom: 4,
   },
   h6: {
     fontSize: 12,
     fontWeight: '500',
-    marginBottom: 4,
   },
   codeBlock: {
     backgroundColor: '#f5f5f5',
     padding: 8,
     borderRadius: 4,
-    marginBottom: 8,
   },
   code: {
     fontFamily: 'Menlo',
     fontSize: 12,
   },
   list: {
-    marginBottom: 8,
+    gap: 4,
   },
   listItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 4,
   },
   bullet: {
     marginRight: 6,
@@ -144,7 +139,6 @@ export const defaultStyles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#ccc',
-    marginBottom: 8,
   },
   diagramPlaceholderText: {
     fontSize: 12,
@@ -156,7 +150,6 @@ export const defaultStyles = StyleSheet.create({
     borderColor: '#dee2e6',
     borderRadius: 8,
     padding: 16,
-    marginBottom: 12,
   },
   mapCardHeader: {
     marginBottom: 12,
@@ -276,7 +269,6 @@ export const defaultStyles = StyleSheet.create({
     maxWidth: '100%',
     borderWidth: 1,
     borderColor: '#ddd',
-    marginBottom: 12,
   },
   tableRow: {
     flexDirection: 'row',
@@ -306,7 +298,8 @@ export const defaultStyles = StyleSheet.create({
     textAlign: 'right',
   },
   root: {
-    // 默认无样式，用户可自定义
+    flexDirection: 'column',
+    gap: 8,
   },
 });
 
