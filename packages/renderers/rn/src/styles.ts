@@ -412,17 +412,20 @@ export const darkThemeStyles: SupramarkStyles = {
   mapCardInfo: {
     color: '#e6edf3',
   },
-  root: {
-    backgroundColor: '#0d1117',
-  },
 };
 
 /**
- * Light 主题样式（默认主题的别名）
+ * 与内置主题前景色配套的推荐画布背景色。
+ *
+ * 组件自身不在 root 上绘制背景 —— 画布由宿主提供。为保证前景文字可读，
+ * 宿主渲染容器应使用与所选 theme 明暗配套的背景色（可用此常量）：
+ *
+ * - theme="dark"  → themeBackground.dark  (#0d1117)
+ * - theme="light" → themeBackground.light (#ffffff)
+ *
+ * 宿主也可使用自有画布颜色，只要明暗与 theme 一致即可。
  */
-export const lightThemeStyles: SupramarkStyles = {
-  // Light 主题使用默认样式，这里可以做一些微调
-  root: {
-    backgroundColor: '#ffffff',
-  },
-};
+export const themeBackground = {
+  light: '#ffffff',
+  dark: '#0d1117',
+} as const;

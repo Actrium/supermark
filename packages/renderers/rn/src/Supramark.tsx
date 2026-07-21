@@ -31,7 +31,6 @@ import {
   type SupramarkStyles,
   mergeStyles,
   darkThemeStyles,
-  lightThemeStyles,
 } from './styles';
 import { ErrorBoundary, type ErrorInfo, ErrorDisplay } from './ErrorBoundary';
 import { SourceStateContext } from './SourceStateContext';
@@ -92,7 +91,18 @@ export interface SupramarkProps {
    * 请同时设置 root: { gap: 0 }。
    */
   styles?: SupramarkStyles;
-  /** 主题：'light' | 'dark' | 自定义样式对象 */
+  /**
+   * 主题：调整内容元素的前景色与元素装饰色（文字、代码块底、边框等），
+   * 使其在对应明暗的画布上可读。
+   *
+   * - 'dark'：应用 darkThemeStyles（深色友好的前景/元素色）。
+   * - 'light'：使用默认（浅色）前景，等同于不传 theme。
+   * - 也可直接传入自定义 SupramarkStyles 作为主题。
+   *
+   * 重要：组件不在 root 上绘制画布背景。宿主必须为渲染容器提供与 theme
+   * 明暗配套的画布颜色（可用导出的 {@link themeBackground} 作为推荐值），
+   * 否则前景文字可能不可读 —— 例如 theme="dark" 时宿主容器应使用深色背景。
+   */
   theme?: 'light' | 'dark' | SupramarkStyles;
   /** Feature 配置（用于按需启用/禁用图表等扩展能力） */
   config?: SupramarkConfig;
@@ -151,7 +161,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
     let themeStyles: SupramarkStyles | undefined;
 
     if (typeof theme === 'string') {
-      themeStyles = theme === 'dark' ? darkThemeStyles : lightThemeStyles;
+      themeStyles = theme === 'dark' ? darkThemeStyles : undefined;
     } else if (theme) {
       themeStyles = theme;
     }
