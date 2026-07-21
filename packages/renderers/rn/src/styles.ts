@@ -85,18 +85,22 @@ export const defaultStyles = StyleSheet.create({
   h1: {
     fontSize: 24,
     fontWeight: '700',
+    marginTop: 8,
   },
   h2: {
     fontSize: 20,
     fontWeight: '600',
+    marginTop: 6,
   },
   h3: {
     fontSize: 18,
     fontWeight: '600',
+    marginTop: 4,
   },
   h4: {
     fontSize: 16,
     fontWeight: '500',
+    marginTop: 2,
   },
   h5: {
     fontSize: 14,

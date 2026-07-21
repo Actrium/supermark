@@ -75,7 +75,14 @@ export interface SupramarkProps {
   markdown: string;
   /** 预解析的 AST（优先级高于 markdown） */
   ast?: SupramarkRootNode;
-  /** 自定义样式（覆盖默认样式） */
+  /**
+   * 自定义样式（覆盖默认样式）。
+   *
+   * 间距模型：块间距由 root.gap（默认 8）统一管理，不再使用每块的
+   * marginBottom。若自定义某块的 marginBottom（如 paragraph:12），
+   * 会与 root.gap 叠加 → 实际间距 20。如需完全自定义间距，
+   * 请同时设置 root: { gap: 0 }。
+   */
   styles?: SupramarkStyles;
   /** 主题：'light' | 'dark' | 自定义样式对象 */
   theme?: 'light' | 'dark' | SupramarkStyles;
@@ -303,6 +310,10 @@ function renderNode(
       const container = node;
       const containerName = container.name;
 
+      // 纵向 block 容器：html 卡片（标题+提示）、未识别 container 的 block children。
+      // 不复用 styles.listItem —— 它是 row 布局，会把 block children 横向排列且无间距。
+      const blockContainerStyle = { flexDirection: 'column' as const, gap: 8 };
+
       // 检查是否有注册的自定义渲染器
       if (containerRenderers && containerRenderers[containerName]) {
         return containerRenderers[containerName]({
@@ -338,9 +349,9 @@ function renderNode(
         const data = container.data || {};
         const title = (data.title as string) || container.params || '[HTML 页面]';
         const content = (
-          <View style={styles.listItem}>
-            <Text style={[styles.listItemText, { fontWeight: '600' }]}>{title}</Text>
-            <Text style={styles.listItemText}>
+          <View style={blockContainerStyle}>
+            <Text style={{ fontWeight: '600', lineHeight: 20 }}>{title}</Text>
+            <Text style={{ lineHeight: 20 }}>
               点击卡片以在独立容器中打开 HTML 页面（需要宿主实现 onOpenHtmlPage 回调）。
             </Text>
           </View>
@@ -409,9 +420,9 @@ function renderNode(
 
       // 默认：渲染为通用容器块
       return (
-        <View key={key} style={styles.listItem}>
+        <View key={key} style={blockContainerStyle}>
           {container.params && (
-            <Text style={[styles.listItemText, { fontWeight: '600' }]}>
+            <Text style={{ fontWeight: '600', lineHeight: 20 }}>
               {container.name}: {container.params}
             </Text>
           )}
@@ -438,7 +449,7 @@ function renderNode(
       // Column 布局：term 一行，description 缩进一行。
       // 避免 row 布局下 description 被 term 挤压导致 Text 不换行。
       const defItemStyle = { flexDirection: 'column' as const };
-      const defDescriptionStyle = { paddingLeft: 16 };
+      const defDescriptionStyle = { paddingLeft: 16, gap: 8 };
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-definition-list'])) {
         // 禁用时，将定义列表退化为普通列表样式
         return (
@@ -530,7 +541,7 @@ function renderNode(
       return (
         <View key={key} style={styles.listItem}>
           <Text style={styles.bullet}>[{def.index}]</Text>
-          <View style={styles.listItemText}>{renderFootnoteContent()}</View>
+          <View style={[styles.listItemText, { gap: 8 }]}>{renderFootnoteContent()}</View>
         </View>
       );
     }
