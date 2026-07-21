@@ -409,7 +409,7 @@ export const darkThemeStyles: SupramarkStyles = {
     color: '#e6edf3',
   },
   root: {
-    // backgroundColor: '#0d1117',
+    backgroundColor: '#0d1117',
   },
 };
 
@@ -419,6 +419,6 @@ export const darkThemeStyles: SupramarkStyles = {
 export const lightThemeStyles: SupramarkStyles = {
   // Light 主题使用默认样式，这里可以做一些微调
   root: {
-    // backgroundColor: '#ffffff',
+    backgroundColor: '#ffffff',
   },
 };
