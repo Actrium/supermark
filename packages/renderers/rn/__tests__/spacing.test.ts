@@ -1,10 +1,6 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 
-// styles.ts import react-native 的 StyleSheet;其 JS 入口含 Flow 语法,bun 无法加载。
-// 用 identity mock —— 测试只关心样式对象的 gap 模型,不依赖 StyleSheet.create 运行时。
-mock.module('react-native', () => ({
-  StyleSheet: { create: (styles: unknown) => styles },
-}));
+import './support/mock-react-native';
 
 const { defaultStyles } = await import('../src/styles');
 
