@@ -49,6 +49,21 @@ hit-testing / selection state) and the `SelectableRichText` segment adapter are 
 place as pure tested modules; overlay drawing and live native event wiring need a
 device and are the next round — see the plan's Status section.
 
+## Platform Requirements
+
+- **New Architecture (Fabric) only.** The vendored primitive has no Paper/legacy
+  path.
+- **Android: React Native >= 0.85** (hard floor — the vendored component needs
+  `ReactTextViewManager` / `TextLayoutManager` opened up in RN 0.85; earlier
+  versions declare them `final`/`internal`).
+- **iOS: upstream targets React Native >= 0.83;** this repo's example builds and
+  runs it on 0.81.5 (New Arch, simulator-verified), so 0.81 works in practice but
+  is not an upstream-supported floor.
+- The package `peerDependencies` currently say `react-native >= 0.72.0` — that is
+  inherited from the RN renderer and looser than the real floors above; treat this
+  section as authoritative until the interaction bridge lands and the peer range
+  is tightened.
+
 ## Native Primitive Boundary
 
 `native/selectable-rich-text` is the starting native text segment implementation.

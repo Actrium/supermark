@@ -211,6 +211,32 @@ All still pure TypeScript except the typecheck-only React wiring; 100 unit tests
 - Offsets remain UTF-16 code units at the API surface; only *slicing* is
   grapheme-safe.
 
+### Interaction direction (decided)
+
+The coordinator draws its own overlay today while the vendored component's
+command surface (`selectRange` / `selectParagraphAt` / `copyRange` — native
+handles, edit menu, selection events) goes uncalled, leaving two parallel
+selection representations with no bridge. Of the two candidate directions —
+complete the vendored command bridge vs. go fully self-drawn (which would
+require a new native `getSelectionRects` command) — **the vendored command
+bridge is the chosen direction**: the native side already implements the hard
+parts, and native handles/menu bring platform-correct interaction (magnifier,
+haptics, accessibility) that an overlay would have to re-implement.
+
+Workstreams, in order:
+
+1. **Downlink** — `commit()` pushes the covered range to the owning block's
+   `TextSegmentHandle.selectRange` through `segmentAdapter`'s offset mapping;
+   `clear()` propagates deselection to the native side.
+2. **Uplink** — native selection-change events feed the store through the
+   per-block sinks; the store remains the single source of truth.
+3. **Cross-block selection** stays on the coordinator overlay (native handles
+   are per-block by nature); within-block refinement uses the native
+   handles/menu.
+4. **Version reconciliation** — align the package's platform claims with the
+   vendored component's floors (see README "Platform requirements") and keep
+   them in sync as the bridge lands.
+
 ## Initial Scope
 
 The seed package provides, ahead of the RN coordinator:
