@@ -160,6 +160,16 @@ describe('parse', () => {
       expect(ast.children).toHaveLength(1);
       expect(ast.children[0].type).toBe('diagram');
       expect((ast.children[0] as SupramarkDiagramNode).engine).toBe('mermaid');
+      expect((ast.children[0] as SupramarkDiagramNode).fence_closed).toBe(true);
+    });
+
+    it('应该标记尚未闭合的流式图表围栏', async () => {
+      const markdown = '```mermaid\ngraph TD;\n  A-->B;';
+      const ast = await parse(markdown);
+
+      expect(ast.children).toHaveLength(1);
+      expect(ast.children[0].type).toBe('diagram');
+      expect((ast.children[0] as SupramarkDiagramNode).fence_closed).toBe(false);
     });
 
     it('应该解析 plantuml 代码块为 diagram 节点', async () => {

@@ -104,6 +104,8 @@ export interface SupramarkDiagramNode extends SupramarkBaseNode {
   type: 'diagram';
   engine: SupramarkDiagramEngineId;
   code: string;
+  /** True only when the Markdown source contains an explicit closing fence. */
+  fence_closed: boolean;
   meta?: Record<string, unknown>;
 }
 

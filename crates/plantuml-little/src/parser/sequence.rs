@@ -42,6 +42,11 @@ pub fn parse_sequence_diagram_with_original(
     let mut note_lines: Vec<String> = Vec::new();
     let mut note_is_parallel = false;
     let mut note_color: Option<String> = None;
+    // Multiline note: `true` when the note has no explicit `of PARTICIPANT`
+    // clause (a *message* note attached to the last arrow, like Java
+    // `Note(null)`). `false` when `of X` was written (a *participant* note
+    // that occupies its own slot, like Java `Note(p)`).
+    let mut note_on_message = false;
     // Track fragment nesting depth so "end" emits FragmentEnd when inside fragments
     let mut fragment_depth: usize = 0;
     // Whether `!pragma teoz true` was encountered
@@ -157,12 +162,14 @@ pub fn parse_sequence_diagram_with_original(
                         text,
                         parallel: note_is_parallel,
                         color: note_color.take(),
+                        on_message: note_on_message,
                     },
                     Some("left") => SeqEvent::NoteLeft {
                         participant: note_participant.take().unwrap_or_default(),
                         text,
                         parallel: note_is_parallel,
                         color: note_color.take(),
+                        on_message: note_on_message,
                     },
                     _ => SeqEvent::NoteOver {
                         participants: std::mem::take(&mut note_participants),
@@ -176,6 +183,7 @@ pub fn parse_sequence_diagram_with_original(
                 note_kind = None;
                 note_lines.clear();
                 note_is_parallel = false;
+                note_on_message = false;
             } else {
                 // Java BodyEnhanced2 preserves trailing whitespace inside
                 // multi-line notes (a sprite atom followed by " text  " has
@@ -405,6 +413,7 @@ pub fn parse_sequence_diagram_with_original(
                             let (after, nc) = extract_note_color(after);
                             note_color = nc;
                             let (_remainder, explicit_p) = strip_of_participant(after);
+                            note_on_message = explicit_p.is_none();
                             note_participant = explicit_p.or_else(|| last_to_participant.clone());
                             note_lines.clear();
                             debug!("starting multiline note right");
@@ -417,6 +426,7 @@ pub fn parse_sequence_diagram_with_original(
                             let (after, nc) = extract_note_color(after);
                             note_color = nc;
                             let (_remainder, explicit_p) = strip_of_participant(after);
+                            note_on_message = explicit_p.is_none();
                             note_participant = explicit_p.or_else(|| last_from_participant.clone());
                             note_lines.clear();
                             debug!("starting multiline note left");
@@ -1476,6 +1486,7 @@ fn parse_note(
         let (after, explicit_participant) = strip_of_participant(after);
         if let Some(text) = after.strip_prefix(':') {
             let text = text.trim().to_string();
+            let on_message = explicit_participant.is_none();
             let participant = explicit_participant
                 .or_else(|| last_to.clone())
                 .unwrap_or_default();
@@ -1484,6 +1495,7 @@ fn parse_note(
                 text,
                 parallel: false,
                 color: note_color,
+                on_message,
             })
         } else {
             // No inline text — will be handled as multiline note
@@ -1495,6 +1507,7 @@ fn parse_note(
         let (after, explicit_participant) = strip_of_participant(after);
         if let Some(text) = after.strip_prefix(':') {
             let text = text.trim().to_string();
+            let on_message = explicit_participant.is_none();
             let participant = explicit_participant
                 .or_else(|| last_from.clone())
                 .unwrap_or_default();
@@ -1503,6 +1516,7 @@ fn parse_note(
                 text,
                 parallel: false,
                 color: note_color,
+                on_message,
             })
         } else {
             None
@@ -1813,20 +1827,30 @@ mod tests {
 
         assert!(matches!(&diagram.events[0], SeqEvent::Message(_)));
         if let SeqEvent::NoteRight {
-            participant, text, ..
+            participant,
+            text,
+            on_message,
+            ..
         } = &diagram.events[1]
         {
             assert_eq!(participant, "Test");
             assert_eq!(text, "comment");
+            // `note right:` with no explicit `of PARTICIPANT` is a *message* note
+            // (Java `Note(null)`) — attached to the last arrow, not a standalone slot.
+            assert!(*on_message, "note right: should be on_message=true");
         } else {
             panic!("expected NoteRight");
         }
         if let SeqEvent::NoteLeft {
-            participant, text, ..
+            participant,
+            text,
+            on_message,
+            ..
         } = &diagram.events[2]
         {
             assert_eq!(participant, "Test");
             assert_eq!(text, "other");
+            assert!(*on_message, "note left: should be on_message=true");
         } else {
             panic!("expected NoteLeft");
         }
@@ -2349,11 +2373,20 @@ Sally --> Bob
 
         assert!(matches!(&diagram.events[0], SeqEvent::Message(_)));
         if let SeqEvent::NoteRight {
-            participant, text, ..
+            participant,
+            text,
+            on_message,
+            ..
         } = &diagram.events[1]
         {
             assert_eq!(participant, "Alice");
             assert_eq!(text, "standalone");
+            // `note right of Alice` is a *participant* note (Java `Note(p)`) —
+            // occupies its own vertical slot via DrawableSetInitializer.prepareNote.
+            assert!(
+                !*on_message,
+                "note right of Alice should be on_message=false"
+            );
         } else {
             panic!("expected NoteRight, got {:?}", &diagram.events[1]);
         }
@@ -2367,11 +2400,15 @@ Sally --> Bob
 
         assert!(matches!(&diagram.events[0], SeqEvent::Message(_)));
         if let SeqEvent::NoteLeft {
-            participant, text, ..
+            participant,
+            text,
+            on_message,
+            ..
         } = &diagram.events[1]
         {
             assert_eq!(participant, "Bob");
             assert_eq!(text, "remark");
+            assert!(!*on_message, "note left of Bob should be on_message=false");
         } else {
             panic!("expected NoteLeft, got {:?}", &diagram.events[1]);
         }
@@ -2386,11 +2423,48 @@ Sally --> Bob
 
         assert!(matches!(&diagram.events[0], SeqEvent::Message(_)));
         if let SeqEvent::NoteRight {
-            participant, text, ..
+            participant,
+            text,
+            on_message,
+            ..
         } = &diagram.events[1]
         {
             assert_eq!(participant, "Alice");
             assert_eq!(text, "line1\nline2");
+            assert!(
+                !*on_message,
+                "multiline `note right of Alice` should be on_message=false"
+            );
+        } else {
+            panic!("expected NoteRight, got {:?}", &diagram.events[1]);
+        }
+    }
+
+    /// A multiline `note right` with NO `of PARTICIPANT` clause is a *message*
+    /// note (`on_message = true`), attached to the last arrow — the multiline
+    /// counterpart of `note right: text`. This is the parser-level distinction
+    /// that drives the layout slot assignment (issue #35).
+    #[test]
+    fn parse_multiline_note_right_without_of_is_message_note() {
+        let src = "@startuml\nBob -> Alice : hello\nnote right\nline1\nline2\nend note\n@enduml";
+        let diagram = parse_sequence_diagram(src).unwrap();
+
+        assert!(matches!(&diagram.events[0], SeqEvent::Message(_)));
+        if let SeqEvent::NoteRight {
+            participant,
+            text,
+            on_message,
+            ..
+        } = &diagram.events[1]
+        {
+            // No explicit `of`, so the participant falls back to the last
+            // message's target (Alice) — but the note is still a *message* note.
+            assert_eq!(participant, "Alice");
+            assert_eq!(text, "line1\nline2");
+            assert!(
+                *on_message,
+                "multiline `note right` (no `of`) should be on_message=true"
+            );
         } else {
             panic!("expected NoteRight, got {:?}", &diagram.events[1]);
         }

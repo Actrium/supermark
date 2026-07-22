@@ -15,6 +15,8 @@ pub struct CodeFence {
     pub marker_len: usize,
     pub content: String,
     pub lang_prefix: &'static str,
+    /// Records whether the source contains a real closing fence instead of relying on EOF auto-close.
+    pub closed: bool,
 }
 
 impl NodeValue for CodeFence {
@@ -113,6 +115,13 @@ impl BlockRule for FenceScanner {
         let params = params.to_owned();
 
         let mut next_line = state.line;
+        // `closed` is true only when a real closing fence is found. EOF and
+        // container boundaries (blockquote/list ending, negative-indent lines)
+        // leave it false: the scanner cannot distinguish document EOF from a
+        // container edge here, and a streaming source may still append more
+        // content, so the conservative choice is to keep treating the fence as
+        // potentially growable. Renderers that consume `fence_closed` defer
+        // engine work until `sourceState` becomes `complete`, which is safe.
         let mut have_end_marker = false;
 
         // search end of block
@@ -185,6 +194,7 @@ impl BlockRule for FenceScanner {
             marker_len: len,
             content,
             lang_prefix,
+            closed: have_end_marker,
         });
         Some((
             node,

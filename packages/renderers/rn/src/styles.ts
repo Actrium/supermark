@@ -80,56 +80,51 @@ export interface SupramarkStyles {
  */
 export const defaultStyles = StyleSheet.create({
   paragraph: {
-    marginBottom: 8,
     lineHeight: 20,
   },
   h1: {
     fontSize: 24,
     fontWeight: '700',
-    marginBottom: 12,
+    marginTop: 8,
   },
   h2: {
     fontSize: 20,
     fontWeight: '600',
-    marginBottom: 10,
+    marginTop: 6,
   },
   h3: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 8,
+    marginTop: 4,
   },
   h4: {
     fontSize: 16,
     fontWeight: '500',
-    marginBottom: 6,
+    marginTop: 2,
   },
   h5: {
     fontSize: 14,
     fontWeight: '500',
-    marginBottom: 4,
   },
   h6: {
     fontSize: 12,
     fontWeight: '500',
-    marginBottom: 4,
   },
   codeBlock: {
     backgroundColor: '#f5f5f5',
     padding: 8,
     borderRadius: 4,
-    marginBottom: 8,
   },
   code: {
     fontFamily: 'Menlo',
     fontSize: 12,
   },
   list: {
-    marginBottom: 8,
+    gap: 4,
   },
   listItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 4,
   },
   bullet: {
     marginRight: 6,
@@ -144,7 +139,6 @@ export const defaultStyles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#ccc',
-    marginBottom: 8,
   },
   diagramPlaceholderText: {
     fontSize: 12,
@@ -156,7 +150,6 @@ export const defaultStyles = StyleSheet.create({
     borderColor: '#dee2e6',
     borderRadius: 8,
     padding: 16,
-    marginBottom: 12,
   },
   mapCardHeader: {
     marginBottom: 12,
@@ -276,7 +269,6 @@ export const defaultStyles = StyleSheet.create({
     maxWidth: '100%',
     borderWidth: 1,
     borderColor: '#ddd',
-    marginBottom: 12,
   },
   tableRow: {
     flexDirection: 'row',
@@ -306,7 +298,8 @@ export const defaultStyles = StyleSheet.create({
     textAlign: 'right',
   },
   root: {
-    // 默认无样式，用户可自定义
+    flexDirection: 'column',
+    gap: 8,
   },
 });
 
@@ -419,17 +412,20 @@ export const darkThemeStyles: SupramarkStyles = {
   mapCardInfo: {
     color: '#e6edf3',
   },
-  root: {
-    backgroundColor: '#0d1117',
-  },
 };
 
 /**
- * Light 主题样式（默认主题的别名）
+ * 与内置主题前景色配套的推荐画布背景色。
+ *
+ * 组件自身不在 root 上绘制背景 —— 画布由宿主提供。为保证前景文字可读，
+ * 宿主渲染容器应使用与所选 theme 明暗配套的背景色（可用此常量）：
+ *
+ * - theme="dark"  → themeBackground.dark  (#0d1117)
+ * - theme="light" → themeBackground.light (#ffffff)
+ *
+ * 宿主也可使用自有画布颜色，只要明暗与 theme 一致即可。
  */
-export const lightThemeStyles: SupramarkStyles = {
-  // Light 主题使用默认样式，这里可以做一些微调
-  root: {
-    backgroundColor: '#ffffff',
-  },
-};
+export const themeBackground = {
+  light: '#ffffff',
+  dark: '#0d1117',
+} as const;

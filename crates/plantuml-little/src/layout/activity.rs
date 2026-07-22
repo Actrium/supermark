@@ -15,7 +15,7 @@ use crate::model::activity::{
 use crate::render::svg_richtext::{
     creole_line_height, creole_plain_text, creole_text_width, measure_creole_display_lines,
 };
-use crate::Result;
+use crate::{Error, Result};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -111,6 +111,13 @@ pub enum ActivityNodeKindLayout {
     GotoLines {
         segments: Vec<(f64, f64, f64, f64)>,
     },
+    /// Partition frame (Java `FtileGroup` + `USymbolFrame`).  Drawn as a
+    /// rectangle with a folded-corner tab and a title.  The node's `x/y`
+    /// is the frame's top-left corner; `width/height` is the full frame size.
+    /// `text` holds the partition name.  The inner content nodes are laid out
+    /// as normal flow nodes between PartitionStart and PartitionEnd; the frame
+    /// is `skip_in_flow = true` so it does not participate in edges.
+    Partition,
     /// Square diamond used by `switch (cond)` — the condition text lives in
     /// `node.text` and is centred inside the diamond.  Case labels are rendered
     /// as edge labels on the branch connections from the diamond's sides.
@@ -260,6 +267,9 @@ const FORK_BAR_HEIGHT: f64 = 6.0;
 const FORK_BAR_WIDTH: f64 = 80.0;
 /// Java sync bar height (old-style activity `===NAME===`).
 const SYNC_BAR_HEIGHT: f64 = 8.0;
+/// Font size for the partition frame title (Java `activityDiagram.composite`
+/// style → FontSize 14, sans-serif).
+const PARTITION_TITLE_FONT_SIZE: f64 = 14.0;
 const NOTE_FONT_SIZE: f64 = 13.0;
 const NOTE_MARGIN_X1: f64 = 6.0;
 const NOTE_MARGIN_X2: f64 = 15.0;
@@ -712,6 +722,29 @@ fn resolve_swimlane_index(swimlanes: &[String], name: &str) -> usize {
     swimlanes.iter().position(|n| n == name).unwrap_or(0)
 }
 
+/// Flatten the event tree so that `Partition { name, events }` becomes
+/// `PartitionStart { name }` + inner events (recursively flattened) +
+/// `PartitionEnd`.  This lets the single-pass layout loop handle nested
+/// partitions without recursion.  The returned `Vec` owns cloned events so
+/// that all pre-passes and the main loop share the same index space.
+fn flatten_events(events: &[ActivityEvent]) -> Vec<ActivityEvent> {
+    let mut result = Vec::new();
+    for event in events {
+        match event {
+            ActivityEvent::Partition {
+                name,
+                events: inner,
+            } => {
+                result.push(ActivityEvent::PartitionStart { name: name.clone() });
+                result.extend(flatten_events(inner));
+                result.push(ActivityEvent::PartitionEnd);
+            }
+            _ => result.push(event.clone()),
+        }
+    }
+    result
+}
+
 // ---------------------------------------------------------------------------
 // Layout entry point
 // ---------------------------------------------------------------------------
@@ -725,9 +758,14 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         return layout_old_style_activity_graph(diagram, old_graph);
     }
 
+    // Flatten partition events into PartitionStart/PartitionEnd markers so
+    // the single-pass loop can handle nested groups without recursion.
+    let events = flatten_events(&diagram.events);
+
     log::debug!(
-        "layout_activity: {} events, {} swimlanes",
+        "layout_activity: {} events ({} after flatten), {} swimlanes",
         diagram.events.len(),
+        events.len(),
         diagram.swimlanes.len()
     );
 
@@ -762,7 +800,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
     // Java ImageBuilder.calculateMargin = 10 for all diagrams.
     // FtileBox (Action) adds an internal 1px top padding → first rect at y=11.
     // FtileDiamond/FtileCircleStart have no extra padding → first shape at y=10.
-    let first_flow_event = diagram.events.iter().find(|e| {
+    let first_flow_event = events.iter().find(|e| {
         matches!(
             e,
             ActivityEvent::Start
@@ -969,7 +1007,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
     let if_has_else: HashMap<usize, bool> = {
         let mut map = HashMap::new();
         let mut if_stack_indices: Vec<usize> = Vec::new();
-        for (ev_idx, ev) in diagram.events.iter().enumerate() {
+        for (ev_idx, ev) in events.iter().enumerate() {
             match ev {
                 ActivityEvent::If { .. } => {
                     if_stack_indices.push(ev_idx);
@@ -998,7 +1036,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
     let mut sync_bar_goto_count: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
     if diagram.is_old_style {
-        for (ev_idx, ev) in diagram.events.iter().enumerate() {
+        for (ev_idx, ev) in events.iter().enumerate() {
             match ev {
                 ActivityEvent::GotoSyncBar(name) => {
                     *sync_bar_goto_count.entry(name.clone()).or_insert(0) += 1;
@@ -1018,8 +1056,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
     // For old-style diagrams, find the LAST Stop event index so intermediate
     // stops can be skipped (Java shares a single final stop node in DOT layout).
     let last_stop_idx: Option<usize> = if diagram.is_old_style {
-        diagram
-            .events
+        events
             .iter()
             .enumerate()
             .filter(|(_, e)| matches!(e, ActivityEvent::Stop))
@@ -1035,7 +1072,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
     let mut repeat_backward_heights: HashMap<usize, f64> = HashMap::new();
     {
         let mut repeat_starts: Vec<usize> = Vec::new();
-        for (ev_idx, ev) in diagram.events.iter().enumerate() {
+        for (ev_idx, ev) in events.iter().enumerate() {
             match ev {
                 ActivityEvent::Repeat => {
                     repeat_starts.push(ev_idx);
@@ -1061,7 +1098,57 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
     let mut placed_sync_bars: std::collections::HashMap<String, f64> =
         std::collections::HashMap::new();
 
-    for (event_idx, event) in diagram.events.iter().enumerate() {
+    // --- Partition frame tracking -------------------------------------------
+    // Stack of open `partition` blocks.  Each entry records the frame top,
+    // diffHeightTitle, title width, and the node_index at entry (so we can
+    // scan inner nodes for the max content width on PartitionEnd).
+    // Mirrors Java `FtileGroup` geometry: the frame rect is drawn at
+    // (frame_top, frame_left) with size = (frame_width, frame_height).
+    //   diffHeightTitle = max(25, titleH + 20)
+    //   suppWidth = max(innerW, titleW + 20) - innerW   (innerW = contentW + 20)
+    //   frame_width = innerW + suppWidth = max(contentW + 20, titleW + 20)
+    //   frame_height = innerH + diffHeightTitle + diffYY2(20)
+    //   innerH (post-Y-compression) = sum of inner tiles + gaps
+    //   frame_bottom = last_inner_bottom + 12  (diffYY2=20, Y-compressed by 8)
+    //   gap before frame = 10  (wide-open: the incoming arrow targets the
+    //     first inner node deep inside the frame, so the Y-compression
+    //     removes 25 of the 35px assembly gap, leaving 10)
+    struct PartitionFrame {
+        name: String,
+        frame_top: f64,
+        title_w: f64,
+        first_node_idx: usize,
+    }
+    let mut partition_stack: Vec<PartitionFrame> = Vec::new();
+    /// (first_inner_idx, partition_node_idx) for each finalized partition.
+    /// Used to build a render_order that draws each frame before its content.
+    let mut partition_ranges: Vec<(usize, usize)> = Vec::new();
+
+    // ---- Fork parallel-branch state ----------------------------------------
+    /// One entry per active `fork` block.  Pushed on `Fork`, popped on
+    /// `EndFork`.
+    struct ForkFrame {
+        /// Index into `nodes` of the top fork bar.
+        top_bar_idx: usize,
+        /// Y position where the first branch starts (top bar bottom + gap).
+        branch_start_y: f64,
+        /// (first_node_idx, saved_last_flow_idx) for each branch.
+        /// Pushed on Fork (branch 0) and ForkAgain (subsequent branches).
+        branches: Vec<(usize, Option<usize>)>,
+    }
+    let mut fork_stack: Vec<ForkFrame> = Vec::new();
+    /// Finalized fork groups: (top_bar_idx, bottom_bar_idx, branch_ranges).
+    /// `branch_ranges` is a Vec of (first_node_idx, last_node_idx, max_width).
+    /// Used for post-layout x-positioning and edge creation.
+    struct ForkGroup {
+        top_bar_idx: usize,
+        bottom_bar_idx: usize,
+        /// (first_node_idx, last_flow_idx, branch_max_width) per branch
+        branches: Vec<(usize, Option<usize>, f64)>,
+    }
+    let mut fork_groups: Vec<ForkGroup> = Vec::new();
+
+    for (event_idx, event) in events.iter().enumerate() {
         match event {
             // ---- Start circle ------------------------------------------------
             ActivityEvent::Start => {
@@ -1087,11 +1174,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
 
             // ---- Stop circle (Java FtileCircleStop: SIZE=22) ------------------
             ActivityEvent::Stop => {
-                let ev_idx = diagram
-                    .events
-                    .iter()
-                    .position(|e| std::ptr::eq(e, event))
-                    .unwrap_or(0);
+                let ev_idx = event_idx;
                 let is_intermediate = last_stop_idx.is_some_and(|last| ev_idx < last);
                 if diagram.is_old_style && is_intermediate {
                     // Old-style: intermediate stops share the final stop node.
@@ -2041,34 +2124,157 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 }
             }
 
-            // ---- Fork / ForkAgain / EndFork → horizontal bars ----------------
-            ActivityEvent::Fork | ActivityEvent::ForkAgain | ActivityEvent::EndFork => {
-                if matches!(event, ActivityEvent::Fork) && !switch_stack.is_empty() {
+            // ---- Fork → top bar + start branch 0 ---------------------------
+            // Issue #39: a fork nested inside a switch case is not fully
+            // supported — the fork bar's width is not counted in the case column.
+            ActivityEvent::Fork => {
+                if !switch_stack.is_empty() {
                     log::warn!(
                         "fork nested inside a case is not fully supported: the \
                          fork bar's width is not counted in the case column \
                          (issue #39)"
                     );
                 }
-                let w = FORK_BAR_WIDTH;
-                let h = FORK_BAR_HEIGHT;
                 let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
-                let x = cx - w / 2.0;
-                let y = y_cursor;
-                log::debug!("  node[{node_index}] ForkBar @ ({x:.1}, {y:.1})");
+                let bar_y = y_cursor;
+
+                // Top fork bar (FtileBlackBlock: fill #555555, rounded 5).
+                // Width is provisional — set by the post-layout fork pass.
+                let top_bar_idx = nodes.len();
                 nodes.push(ActivityNodeLayout {
                     index: node_index,
                     kind: ActivityNodeKindLayout::ForkBar,
-                    x,
-                    y,
-                    width: w,
-                    height: h,
+                    x: cx, // provisional center; will be set by fork pass
+                    y: bar_y,
+                    width: FORK_BAR_WIDTH, // provisional; overwritten later
+                    height: FORK_BAR_HEIGHT,
                     text: String::new(),
-                    skip_in_flow: false,
+                    skip_in_flow: true,
                 });
-                last_flow_node_idx = Some(node_index);
                 node_index += 1;
-                y_cursor += h + node_gap;
+
+                let branch_start_y = bar_y + FORK_BAR_HEIGHT + node_gap;
+                y_cursor = branch_start_y;
+
+                fork_stack.push(ForkFrame {
+                    top_bar_idx,
+                    branch_start_y,
+                    branches: vec![(node_index, last_flow_node_idx)],
+                });
+                // The fork bar is the last flow node for edge purposes
+                // (entry edge connects to it).
+                last_flow_node_idx = Some(top_bar_idx);
+                log::debug!("  Fork: top bar @ y={bar_y:.1}, branch_start_y={branch_start_y:.1}");
+            }
+
+            // ---- ForkAgain → end branch, start new branch -------------------
+            ActivityEvent::ForkAgain => {
+                let ff = fork_stack
+                    .last_mut()
+                    .ok_or_else(|| Error::Layout("ForkAgain without matching Fork".into()))?;
+                // Record the current branch's end.
+                let branch_idx = ff.branches.len() - 1;
+                ff.branches[branch_idx].1 = last_flow_node_idx;
+                // Reset y_cursor to branch start for the next branch.
+                y_cursor = ff.branch_start_y;
+                // Start a new branch.
+                ff.branches.push((node_index, last_flow_node_idx));
+                // last_flow_node_idx will be set when the new branch's
+                // first node is pushed.
+                last_flow_node_idx = Some(ff.top_bar_idx);
+                log::debug!(
+                    "  ForkAgain: branch {} ended, starting branch {}",
+                    branch_idx,
+                    ff.branches.len() - 1
+                );
+            }
+
+            // ---- EndFork → bottom bar + finalize ---------------------------
+            ActivityEvent::EndFork => {
+                let ff = fork_stack
+                    .pop()
+                    .ok_or_else(|| Error::Layout("EndFork without matching Fork".into()))?;
+                // Record the last branch's end.
+                let last_branch = ff.branches.len() - 1;
+                let mut branches = ff.branches;
+                branches[last_branch].1 = last_flow_node_idx;
+
+                // Find max branch bottom.
+                // Partition frame nodes extend below the last flow node
+                // (by the bottom margin), so we must include them.
+                let bottom_bar_idx_placeholder = nodes.len();
+                let mut max_bottom = ff.branch_start_y;
+                for (i, &(_start, end)) in branches.iter().enumerate() {
+                    let range_end = if i + 1 < branches.len() {
+                        branches[i + 1].0
+                    } else {
+                        bottom_bar_idx_placeholder
+                    };
+                    let lower = end.unwrap_or(_start);
+                    for n in &nodes[lower..range_end.min(nodes.len())] {
+                        let bottom = n.y + n.height;
+                        if bottom > max_bottom {
+                            max_bottom = bottom;
+                        }
+                    }
+                }
+
+                // Compute branch max widths.
+                // Each branch's range extends to the next branch's start (or
+                // to the bottom fork bar) so that partition frame nodes —
+                // which sit between the last flow node and the next branch —
+                // are included in the width computation.
+                let bottom_bar_idx_placeholder = nodes.len();
+                let mut branch_info: Vec<(usize, Option<usize>, f64)> = Vec::new();
+                for (i, &(start, end)) in branches.iter().enumerate() {
+                    let mut max_w = 0.0_f64;
+                    let end_idx = if i + 1 < branches.len() {
+                        branches[i + 1].0
+                    } else {
+                        bottom_bar_idx_placeholder
+                    };
+                    for n in &nodes[start..end_idx.min(nodes.len())] {
+                        if (is_flow_node(&n.kind) && !n.skip_in_flow)
+                            || matches!(n.kind, ActivityNodeKindLayout::Partition)
+                        {
+                            if n.width > max_w {
+                                max_w = n.width;
+                            }
+                        }
+                    }
+                    branch_info.push((start, end, max_w));
+                }
+
+                // Bottom fork bar.
+                let bottom_bar_y = max_bottom + node_gap;
+                let cx = swimlane_center_x(&swimlane_layouts, current_lane_idx);
+                let bottom_bar_idx = nodes.len();
+                nodes.push(ActivityNodeLayout {
+                    index: node_index,
+                    kind: ActivityNodeKindLayout::ForkBar,
+                    x: cx, // provisional
+                    y: bottom_bar_y,
+                    width: FORK_BAR_WIDTH, // provisional
+                    height: FORK_BAR_HEIGHT,
+                    text: String::new(),
+                    skip_in_flow: true,
+                });
+                node_index += 1;
+
+                fork_groups.push(ForkGroup {
+                    top_bar_idx: ff.top_bar_idx,
+                    bottom_bar_idx,
+                    branches: branch_info,
+                });
+
+                y_cursor = bottom_bar_y + FORK_BAR_HEIGHT + node_gap;
+                // The bottom bar becomes the last flow node for the
+                // next sequential edge.
+                last_flow_node_idx = Some(bottom_bar_idx);
+                log::debug!(
+                    "  EndFork: bottom bar @ y={bottom_bar_y:.1}, {} branches",
+                    branches.len()
+                );
             }
 
             // ---- Swimlane switch (no node) -----------------------------------
@@ -2231,11 +2437,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
 
             // ---- Sync bar (old-style ===NAME===) ----------------------------
             ActivityEvent::SyncBar(name) => {
-                let ev_idx = diagram
-                    .events
-                    .iter()
-                    .position(|e| std::ptr::eq(e, event))
-                    .unwrap_or(0);
+                let ev_idx = event_idx;
                 let has_gotos = sync_bar_goto_count.get(name).copied().unwrap_or(0) > 0;
                 let is_last_ref = sync_bar_last_ref.get(name).copied() == Some(ev_idx);
                 if diagram.is_old_style && has_gotos && !is_last_ref {
@@ -2277,11 +2479,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
 
             // ---- Goto sync bar (old-style convergence) ----------------------
             ActivityEvent::GotoSyncBar(name) => {
-                let ev_idx = diagram
-                    .events
-                    .iter()
-                    .position(|e| std::ptr::eq(e, event))
-                    .unwrap_or(0);
+                let ev_idx = event_idx;
                 let is_last_ref = sync_bar_last_ref.get(name).copied() == Some(ev_idx);
                 // Update the deferred max-y for this bar
                 let entry = deferred_sync_bars.entry(name.clone()).or_insert(0.0_f64);
@@ -2435,6 +2633,156 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                     } else {
                         frame.then_branch.has_break = true;
                     }
+                }
+            }
+
+            // ---- PartitionStart → begin partition frame ----------------------
+            ActivityEvent::PartitionStart { name } => {
+                // Title metrics (font-size 14, sans-serif — Java composite style).
+                let title_w = font_metrics::text_width(
+                    name,
+                    "SansSerif",
+                    PARTITION_TITLE_FONT_SIZE,
+                    false,
+                    false,
+                );
+                let title_h =
+                    font_metrics::line_height("SansSerif", PARTITION_TITLE_FONT_SIZE, false, false);
+                let diff_height_title = (25.0_f64).max(title_h + 20.0);
+
+                // The incoming arrow targets the first inner node (at
+                // frame_top + diffHeightTitle), NOT the frame top.  The
+                // Y-compression therefore sees a wide-open gap between the
+                // previous node and the frame tab, removing 25 of the 35px
+                // assembly gap and leaving 10px.
+                let (frame_top, _gap_before) = if let Some(prev_idx) = last_flow_node_idx {
+                    let prev_bottom = nodes[prev_idx].y + nodes[prev_idx].height;
+                    // When the previous flow node sits inside one or more closed
+                    // partitions, the partition frame(s) extend below the inner
+                    // node by the bottom margin.  The next partition's frame
+                    // must sit below the *frame* bottom — using the inner node
+                    // bottom would make consecutive partitions overlap.
+                    let effective_bottom = partition_ranges
+                        .iter()
+                        .filter(|&&(first, p_idx)| prev_idx >= first && prev_idx < p_idx)
+                        .map(|&(_, p_idx)| nodes[p_idx].y + nodes[p_idx].height)
+                        .fold(prev_bottom, f64::max);
+                    (effective_bottom + 10.0, 10.0)
+                } else {
+                    (y_cursor, 0.0)
+                };
+
+                partition_stack.push(PartitionFrame {
+                    name: name.clone(),
+                    frame_top,
+                    title_w,
+                    first_node_idx: node_index,
+                });
+
+                // Inner events start below the title.
+                y_cursor = frame_top + diff_height_title;
+                log::debug!(
+                    "  PartitionStart '{name}' frame_top={frame_top:.1} diffH={diff_height_title:.1} title_w={title_w:.1}"
+                );
+            }
+
+            // ---- PartitionEnd → finalize partition frame ---------------------
+            ActivityEvent::PartitionEnd => {
+                let pframe = partition_stack.pop().ok_or_else(|| {
+                    Error::Layout("PartitionEnd without matching PartitionStart".into())
+                })?;
+
+                // Last inner flow node's bottom (or frame_top + diffH if empty).
+                let last_inner_bottom = if let Some(idx) = last_flow_node_idx {
+                    nodes[idx].y + nodes[idx].height
+                } else {
+                    y_cursor
+                };
+
+                // diffYY2 = 20.  The empty region between the last inner node
+                // and the frame's bottom edge (20 - 2 = 18px gap) is
+                // Y-compressed: smaller(5) removes 8, leaving 12px.
+                let frame_bottom = last_inner_bottom + 12.0;
+                let frame_height = frame_bottom - pframe.frame_top;
+
+                // Frame width = max(content_width + 20, titleW + 20).
+                let mut content_max_w = 0.0_f64;
+                for n in &nodes[pframe.first_node_idx..] {
+                    if !matches!(n.kind, ActivityNodeKindLayout::Partition) {
+                        content_max_w = content_max_w.max(n.width);
+                    }
+                }
+                let inner_w = content_max_w + 20.0; // addHorizontalMargin(content, 10)
+                let frame_width = inner_w.max(pframe.title_w + 20.0);
+
+                // Create the partition frame node (non-flow, skip_in_flow).
+                let partition_node_idx = nodes.len();
+                nodes.push(ActivityNodeLayout {
+                    index: node_index,
+                    kind: ActivityNodeKindLayout::Partition,
+                    x: 0.0, // set by centering pass
+                    y: pframe.frame_top,
+                    width: frame_width,
+                    height: frame_height,
+                    text: pframe.name.clone(),
+                    skip_in_flow: true,
+                });
+                node_index += 1;
+                partition_ranges.push((pframe.first_node_idx, partition_node_idx));
+
+                // Next node goes below the frame with a normal node_gap.
+                y_cursor = frame_bottom + node_gap;
+                // last_flow_node_idx stays as the last inner flow node so the
+                // next node's edge connects to it (the arrow passes through
+                // the frame bottom, which is ignoreForCompressionOnY).
+                log::debug!(
+                    "  PartitionEnd '{}' frame {}x{:.1} at y={:.1}, content_max_w={:.1}",
+                    pframe.name,
+                    frame_width,
+                    frame_height,
+                    pframe.frame_top,
+                    content_max_w
+                );
+            }
+
+            // ---- Partition (unreachable after flatten) -----------------------
+            ActivityEvent::Partition { .. } => {
+                // Events are flattened in layout_activity; this arm is unreachable.
+            }
+        }
+    }
+
+    // --- Pre-centering: compute fork bar widths ----------------------------
+    // Each branch gets addHorizontalMargin(14, 14+supp) where supp =
+    // getSuppForIncomingArrow(ftile) — the extra space needed for arrow
+    // labels that extend beyond the ftile's right edge.  For diagrams without
+    // arrow labels (the common case), supp = 0, so each branch's total width
+    // = branch_width + 28.  Fork bar width = sum of all branch widths.
+    for fg in &fork_groups {
+        let bar_w: f64 = fg.branches.iter().map(|&(_, _, w)| w + 28.0).sum();
+        nodes[fg.top_bar_idx].width = bar_w;
+        nodes[fg.bottom_bar_idx].width = bar_w;
+    }
+
+    // --- Update partition frame widths for enclosed fork bars ---------------
+    // Partition frame widths were computed at PartitionEnd time, when fork
+    // bar widths were still provisional. Now that fork bar widths are final,
+    // widen any partition frame that contains a fork bar to
+    // fork_bar_width + 20 (10px margin each side).
+    if !partition_ranges.is_empty() && !fork_groups.is_empty() {
+        for &(p_start, p_end) in &partition_ranges {
+            // Check if any fork bar is inside this partition range.
+            let mut max_fork_w = 0.0_f64;
+            for fg in &fork_groups {
+                if fg.top_bar_idx >= p_start && fg.top_bar_idx < p_end {
+                    max_fork_w = max_fork_w.max(nodes[fg.top_bar_idx].width);
+                }
+            }
+            if max_fork_w > 0.0 {
+                let pnode = &nodes[p_end];
+                let needed_w = max_fork_w + 20.0;
+                if needed_w > pnode.width {
+                    nodes[p_end].width = needed_w;
                 }
             }
         }
@@ -2663,7 +3011,10 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         // For if-diamonds, consider the entire if-block width (diamond + branches).
         let mut max_half_w = nodes
             .iter()
-            .filter(|n| is_flow_node(&n.kind) && !n.skip_in_flow)
+            .filter(|n| {
+                (is_flow_node(&n.kind) && !n.skip_in_flow)
+                    || matches!(n.kind, ActivityNodeKindLayout::Partition)
+            })
             .map(|n| n.width / 2.0)
             .fold(0.0_f64, f64::max);
         // Also consider while-loop body node widths — the body sits on the
@@ -2737,6 +3088,11 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 max_half_w = max_half_w.max(diamond.width / 2.0);
             }
         }
+        // Fork bars contribute their half-width to the centering calculation.
+        for fg in &fork_groups {
+            let bar_half = nodes[fg.top_bar_idx].width / 2.0;
+            max_half_w = max_half_w.max(bar_half);
+        }
         // Also consider switch-block total width (diamond + all case branches),
         // placed asymmetrically side by side (official PlantUML).
         for dse in &deferred_switch_edges {
@@ -2775,7 +3131,9 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         );
         // First pass: center non-if-branch nodes
         for node in &mut nodes {
-            if is_flow_node(&node.kind) && !node.skip_in_flow {
+            if (is_flow_node(&node.kind) && !node.skip_in_flow)
+                || matches!(node.kind, ActivityNodeKindLayout::Partition)
+            {
                 node.x = cx - node.width / 2.0;
             } else if !is_flow_node(&node.kind) && !node.skip_in_flow {
                 node.x += cx;
@@ -2899,6 +3257,62 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         }
     }
 
+    // --- Pass 2c: fork bar + branch x-positioning ---------------------------
+    // After centering, set fork bars to span the parallel-branch width and
+    // position branch nodes horizontally.  Each branch gets
+    // addHorizontalMargin(14, 14+supp) so every branch has total width =
+    // max_branch_width + 28.
+    if !fork_groups.is_empty() {
+        // Recompute cx from the first centered flow node (or use 0 for
+        // swimlane diagrams — fork in swimlanes is not yet supported).
+        let cx = if swimlane_layouts.is_empty() {
+            nodes
+                .iter()
+                .find(|n| is_flow_node(&n.kind) && !n.skip_in_flow)
+                .map(|n| n.x + n.width / 2.0)
+                .unwrap_or(0.0)
+        } else {
+            swimlane_center_x(&swimlane_layouts, 0)
+        };
+
+        for fg in &fork_groups {
+            let bar_w = nodes[fg.top_bar_idx].width;
+            let bar_x = cx - bar_w / 2.0;
+            nodes[fg.top_bar_idx].x = bar_x;
+            nodes[fg.bottom_bar_idx].x = bar_x;
+
+            // Each branch has width = branch_content_width + 28 (14px margin
+            // on each side, with supp=0 when no arrow labels).  Branch i is
+            // positioned at bar_x + offset_i, where offset_i accumulates the
+            // widths of preceding branches.
+            let mut offset = 0.0_f64;
+            for (i, &(_first, _last, bw)) in fg.branches.iter().enumerate() {
+                let branch_total = bw + 28.0;
+                let branch_content_cx = bar_x + offset + 14.0 + bw / 2.0;
+                // Center all flow nodes AND partition frames in this branch
+                // on branch_content_cx.  The range extends to the start of
+                // the next branch (or the bottom fork bar) so that partition
+                // frame nodes — which sit between the last flow node and the
+                // next branch — are included.
+                let first = _first;
+                let end_idx = if i + 1 < fg.branches.len() {
+                    fg.branches[i + 1].0
+                } else {
+                    fg.bottom_bar_idx
+                };
+                let nlen = nodes.len();
+                for n in &mut nodes[first..end_idx.min(nlen)] {
+                    if (is_flow_node(&n.kind) && !n.skip_in_flow)
+                        || matches!(n.kind, ActivityNodeKindLayout::Partition)
+                    {
+                        n.x = branch_content_cx - n.width / 2.0;
+                    }
+                }
+                offset += branch_total;
+            }
+        }
+    }
+
     assign_note_modes(&mut nodes);
 
     // --- Pass 2b2: resolve GotoLines segments --------------------------------
@@ -2951,7 +3365,7 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         // 1) Build node→lane mapping by replaying event order
         let mut node_lane: Vec<usize> = Vec::with_capacity(nodes.len());
         let mut cur_lane: usize = 0;
-        for event in &diagram.events {
+        for event in &events {
             match event {
                 ActivityEvent::Swimlane { name } => {
                     cur_lane = resolve_swimlane_index(&diagram.swimlanes, name);
@@ -2990,7 +3404,10 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
                 | ActivityEvent::Label { .. }
                 | ActivityEvent::Goto { .. }
                 | ActivityEvent::Backward { .. }
-                | ActivityEvent::Break => {}
+                | ActivityEvent::Break
+                | ActivityEvent::Partition { .. }
+                | ActivityEvent::PartitionStart { .. }
+                | ActivityEvent::PartitionEnd => {}
             }
         }
 
@@ -4322,6 +4739,138 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         }
     }
 
+    // --- Fork edges: replace build_edges connections that cross fork -------
+    // build_edges connects consecutive non-skip flow nodes, producing wrong
+    // edges across fork boundaries (e.g. start→A instead of start→top_bar→A).
+    // Remove those and add proper fork edges.
+    if !fork_groups.is_empty() {
+        // Build a set of (from, to) pairs that cross fork boundaries.
+        let mut remove_pairs: Vec<(usize, usize)> = Vec::new();
+        // Fork-specific edges to add (appended after removal).
+        let mut fork_edges: Vec<ActivityEdgeLayout> = Vec::new();
+
+        for fg in &fork_groups {
+            let top = fg.top_bar_idx;
+            let bot = fg.bottom_bar_idx;
+
+            // Identify all nodes inside this fork (across all branches).
+            let mut inner_nodes: std::collections::HashSet<usize> =
+                std::collections::HashSet::new();
+            for &(first, last, _) in &fg.branches {
+                let end = last.unwrap_or(first);
+                for i in first..=end {
+                    inner_nodes.insert(i);
+                }
+            }
+
+            // Remove edges where from or to is inside the fork but the
+            // other endpoint is the fork bar (or outside).
+            // Also remove edges between different branches.
+            edges.retain(|e| {
+                let from_in = inner_nodes.contains(&e.from_index);
+                let to_in = inner_nodes.contains(&e.to_index);
+                let crosses = (from_in && !to_in)
+                    || (!from_in && to_in)
+                    || (from_in && to_in && e.from_index != e.to_index);
+                if crosses {
+                    remove_pairs.push((e.from_index, e.to_index));
+                    false
+                } else {
+                    true
+                }
+            });
+
+            // Find the node before the fork (connects to top bar).
+            // It's the last non-skip flow node before top_bar_idx.
+            let pre_fork = (0..top)
+                .rev()
+                .find(|&i| is_flow_node(&nodes[i].kind) && !nodes[i].skip_in_flow);
+
+            // Find the node after the fork (bottom bar connects to it).
+            let post_fork = (bot + 1..nodes.len())
+                .find(|&i| is_flow_node(&nodes[i].kind) && !nodes[i].skip_in_flow);
+
+            // Entry edge: pre_fork → top_bar
+            if let Some(pre) = pre_fork {
+                let from = &nodes[pre];
+                let to = &nodes[top];
+                fork_edges.push(simple_edge(
+                    pre,
+                    top,
+                    from.x + from.width / 2.0,
+                    from.y + from.height,
+                    to.x + to.width / 2.0,
+                    to.y,
+                ));
+            }
+
+            // Branch down edges: top_bar → each branch first flow node
+            for &(first, last, _) in &fg.branches {
+                let end = last.unwrap_or(first);
+                // Find first actual flow node in this branch
+                if let Some(first_flow) =
+                    (first..=end).find(|&i| is_flow_node(&nodes[i].kind) && !nodes[i].skip_in_flow)
+                {
+                    let bar = &nodes[top];
+                    let to = &nodes[first_flow];
+                    fork_edges.push(simple_edge(
+                        top,
+                        first_flow,
+                        to.x + to.width / 2.0, // line at branch center
+                        bar.y + bar.height,
+                        to.x + to.width / 2.0,
+                        to.y,
+                    ));
+                }
+            }
+
+            // Branch up edges: each branch last flow node → bottom_bar
+            for &(first, last, _) in &fg.branches {
+                let end = last.unwrap_or(first);
+                // Find last actual flow node in this branch
+                if let Some(last_flow) = (first..=end)
+                    .rev()
+                    .find(|&i| is_flow_node(&nodes[i].kind) && !nodes[i].skip_in_flow)
+                {
+                    let from = &nodes[last_flow];
+                    let bar = &nodes[bot];
+                    fork_edges.push(simple_edge(
+                        last_flow,
+                        bot,
+                        from.x + from.width / 2.0,
+                        from.y + from.height,
+                        from.x + from.width / 2.0,
+                        bar.y,
+                    ));
+                }
+            }
+
+            // Exit edge: bottom_bar → post_fork
+            if let Some(post) = post_fork {
+                let from = &nodes[bot];
+                let to = &nodes[post];
+                fork_edges.push(simple_edge(
+                    bot,
+                    post,
+                    from.x + from.width / 2.0,
+                    from.y + from.height,
+                    to.x + to.width / 2.0,
+                    to.y,
+                ));
+            }
+        }
+
+        // Reorder to match Java's draw order: branch edges first
+        // (down then up), then entry, then exit.
+        if fork_edges.len() >= 2 {
+            let entry = fork_edges.remove(0);
+            let exit = fork_edges.pop().unwrap();
+            fork_edges.push(entry);
+            fork_edges.push(exit);
+        }
+        edges.extend(fork_edges);
+    }
+
     // Reorder edges to match Java's `FtileRepeat` + assembly draw order.
     //
     // Java builds the repeat body bottom-up: inner `ConnectionVerticalDown`s
@@ -4354,6 +4903,86 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         None
     };
 
+    // --- Merge partition render-order --------------------------------------
+    // Partition frames must be drawn BEFORE their inner content, but in the
+    // flat `nodes` array the Partition node is pushed after its children.
+    // Build a render_order that moves each partition node to just before its
+    // first inner child.  If a repeat render_order already exists, compose
+    // the partition reordering on top of it.
+    let render_order = if partition_ranges.is_empty() {
+        render_order
+    } else {
+        let base: Vec<usize> = render_order.unwrap_or_else(|| (0..nodes.len()).collect());
+        Some(apply_partition_render_order(base, &partition_ranges))
+    };
+
+    // --- X-compression (Java CompressionXorYBuilder ON_X) ------------------
+    // Java scans all drawn shapes via SlotFinder to find occupied X-intervals,
+    // reverses them to get empty gaps, filters with smaller(5.0) (removes gaps
+    // ≤ 10px, shrinks survivors by 5px each side), then applies a
+    // CompressionTransform that subtracts the gap sizes from X coordinates.
+    // Shapes with `ignoreForCompressionOnX` (fork bars, partition frames,
+    // sync bars) contribute only 2px at each edge instead of their full width.
+    //
+    // We only compute X-compression when fork groups are present, because
+    // fork bars (ignoreForCompressionOnX) create real horizontal gaps between
+    // branches. For other diagrams (if-else, notes, etc.), Java's SlotFinder
+    // records many shapes we don't track (arrowhead polygons, note rects at
+    // various x positions), and those fill the gaps. Applying our partial
+    // interval set to those diagrams would over-compress.
+    let x_compress_slots = if !fork_groups.is_empty() {
+        compute_x_compression_slots(&nodes)
+    } else {
+        Vec::new()
+    };
+    if !x_compress_slots.is_empty() {
+        log::debug!("  X-compression: {} slots", x_compress_slots.len());
+        // Capture original right edges for `ignoreForCompressionOnX` shapes
+        // (fork bars, partition frames) BEFORE transforming x.  These shapes
+        // span one or more compression slots, so the right edge must be
+        // transformed from the *original* right edge — not from the already-
+        // transformed left + original width, which would double-apply the slot
+        // sitting between the left and right edges and shrink the shape.
+        let bar_orig_right: Vec<f64> = fork_groups
+            .iter()
+            .map(|fg| nodes[fg.top_bar_idx].x + nodes[fg.top_bar_idx].width)
+            .collect();
+        let part_orig_right: Vec<f64> = partition_ranges
+            .iter()
+            .map(|&(_, p_idx)| nodes[p_idx].x + nodes[p_idx].width)
+            .collect();
+        for node in &mut nodes {
+            node.x = apply_x_compress(node.x, &x_compress_slots);
+            // Width is NOT transformed — it's the difference between
+            // transformed right and left edges.
+        }
+        // Recompute fork/partition bar widths from transformed edges.
+        for (fg, orig_right) in fork_groups.iter().zip(bar_orig_right.iter()) {
+            let left = nodes[fg.top_bar_idx].x;
+            let right = apply_x_compress(*orig_right, &x_compress_slots);
+            nodes[fg.top_bar_idx].width = right - left;
+            nodes[fg.bottom_bar_idx].width = right - left;
+            nodes[fg.bottom_bar_idx].x = left;
+        }
+        // Transform partition frame widths too.
+        // partition_ranges stores (first_inner_idx, partition_node_idx).
+        // The partition frame node is at the second index.
+        for ((_, p_idx), orig_right) in partition_ranges.iter().zip(part_orig_right.iter()) {
+            let left = nodes[*p_idx].x;
+            let right = apply_x_compress(*orig_right, &x_compress_slots);
+            nodes[*p_idx].width = right - left;
+        }
+        // Transform edge x-coordinates.
+        for edge in &mut edges {
+            for (x, _) in &mut edge.points {
+                *x = apply_x_compress(*x, &x_compress_slots);
+            }
+            if let Some((lx, _)) = &mut edge.label_xy {
+                *lx = apply_x_compress(*lx, &x_compress_slots);
+            }
+        }
+    }
+
     // --- Compute total bounding box -----------------------------------------
     let (mut total_width, total_height) = compute_bounds(&nodes, &swimlane_layouts, y_cursor);
     if loopback_extra_right > 0.0 {
@@ -4383,6 +5012,24 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
         }
     }
 
+    // Reorder edges to match Java's `FtileWithConnection.drawU` emission
+    // order.  Java draws the delegated subtree first, then its own
+    // connection — a post-order traversal where an inter-tile connection is
+    // emitted AFTER the right tile's internal edges.  For the flat node
+    // array this means: edge sort key = (top_level_tile_rep(to_index),
+    // subgroup) where subgroup=0 for edges internal to a tile (from & to in
+    // the same outermost tile) and subgroup=1 for inter-tile connections.
+    // `top_level_tile_rep` is the start of the outermost partition/fork
+    // containing the node (or the node itself for singletons).
+    if !partition_ranges.is_empty() {
+        let mut tiles: Vec<(usize, usize)> =
+            partition_ranges.iter().map(|&(f, p)| (f, p)).collect();
+        for fg in &fork_groups {
+            tiles.push((fg.top_bar_idx, fg.bottom_bar_idx));
+        }
+        edges = reorder_edges_for_partitions(edges, &tiles);
+    }
+
     log::debug!(
         "layout_activity: placed {} nodes, {} edges, total {}x{}",
         nodes.len(),
@@ -4410,6 +5057,165 @@ pub fn layout_activity(diagram: &ActivityDiagram) -> Result<ActivityLayout> {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// X-compression (Java CompressionXorYBuilder ON_X)
+// ---------------------------------------------------------------------------
+
+/// A compression slot: an empty X-interval [start, end] that will be
+/// removed from the coordinate space.
+struct CompressSlot {
+    start: f64,
+    end: f64,
+}
+
+/// Determine which node kinds have `ignoreForCompressionOnX` in Java.
+/// Fork bars (FtileBlackBlock), sync bars (FtileBlackBlock), and partition
+/// frames (BigFrame) all set this flag.
+fn has_ignore_for_compression_on_x(kind: &ActivityNodeKindLayout) -> bool {
+    matches!(
+        kind,
+        ActivityNodeKindLayout::ForkBar
+            | ActivityNodeKindLayout::SyncBar
+            | ActivityNodeKindLayout::Partition
+    )
+}
+
+/// Compute the X-compression slots from the layout nodes.
+///
+/// Mirrors Java's `CompressionXorYBuilder`:
+/// 1. Collect occupied X-intervals from all shapes.
+///    - For `ignoreForCompressionOnX` shapes (fork bars, partition frames,
+///      sync bars): only 2px at each edge (via `drawWhenCompressed`).
+///    - For all other shapes: full [x, x+width].
+/// 2. Merge overlapping intervals (SlotSet.addSlot).
+/// 3. Reverse to get empty gaps (SlotSet.reverse).
+/// 4. Filter with smaller(5.0): drop gaps ≤ 10px, shrink survivors by 5px
+///    each side.
+fn compute_x_compression_slots(nodes: &[ActivityNodeLayout]) -> Vec<CompressSlot> {
+    // Step 1: collect occupied intervals.
+    let mut occupied: Vec<(f64, f64)> = Vec::new();
+    for node in nodes {
+        if has_ignore_for_compression_on_x(&node.kind) {
+            // Only 2px at each edge (drawWhenCompressed → UEmpty(2, h)).
+            occupied.push((node.x, node.x + 2.0));
+            occupied.push((node.x + node.width - 2.0, node.x + node.width));
+            // Partition frames have a UPath (label tab) with
+            // ignoreForCompressionOnX, but its drawWhenCompressed is EMPTY —
+            // it contributes nothing.
+            //
+            // The partition title is wrapped in a SpecialText (when
+            // frame_width - title_width >= 25), which implements
+            // UShapeIgnorableForCompression.  Its drawWhenCompressed draws a
+            // UEmpty(1,1) at (text_x + title_width, text_y) — contributing a
+            // 1px occupied interval at [frame_x + 3 + title_w,
+            // frame_x + 3 + title_w + 1].
+            //
+            // When frame_width - title_width < 25, the title is drawn as a
+            // normal TextBlock, contributing [frame_x + 3, frame_x + 3 +
+            // title_w].
+            if matches!(node.kind, ActivityNodeKindLayout::Partition) {
+                let title_w = font_metrics::text_width(&node.text, "SansSerif", 14.0, false, false);
+                if node.width - title_w >= 25.0 {
+                    // SpecialText path: UEmpty(1,1) at text_x + title_w
+                    occupied.push((node.x + 3.0 + title_w, node.x + 4.0 + title_w));
+                } else {
+                    // Normal TextBlock path: full text width
+                    occupied.push((node.x + 3.0, node.x + 3.0 + title_w));
+                }
+            }
+        } else {
+            match &node.kind {
+                ActivityNodeKindLayout::GotoLines { .. } => {
+                    // GotoLines are drawn as ULine segments — SlotFinder
+                    // doesn't handle ULine, so they don't contribute.
+                }
+                _ => {
+                    occupied.push((node.x, node.x + node.width));
+                }
+            }
+        }
+    }
+
+    if occupied.is_empty() {
+        return Vec::new();
+    }
+
+    // Step 2: merge overlapping intervals (SlotSet.addSlot).
+    occupied.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+    });
+    let mut merged: Vec<(f64, f64)> = Vec::new();
+    for (start, end) in &occupied {
+        if let Some(last) = merged.last_mut() {
+            if start <= &last.1 {
+                // Overlapping — merge.
+                if end > &last.1 {
+                    last.1 = *end;
+                }
+                continue;
+            }
+        }
+        merged.push((*start, *end));
+    }
+
+    // Step 3: reverse to get empty gaps.
+    let mut gaps: Vec<(f64, f64)> = Vec::new();
+    let mut prev_end = merged[0].1;
+    for &(start, end) in &merged[1..] {
+        gaps.push((prev_end, start));
+        prev_end = end;
+    }
+
+    // Step 4: smaller(5.0) — filter and shrink.
+    let margin = 5.0_f64;
+    let mut slots = Vec::new();
+    for (start, end) in &gaps {
+        let size = end - start;
+        if size <= 2.0 * margin {
+            continue;
+        }
+        slots.push(CompressSlot {
+            start: start + margin,
+            end: end - margin,
+        });
+    }
+
+    slots
+}
+
+/// Apply the compression transform to an X coordinate.
+/// Mirrors Java's `CompressionTransform.transform(v)`:
+/// For each slot, if v is past the slot, subtract the full slot size;
+/// if v is inside the slot, subtract (v - slot.start).
+fn apply_x_compress(v: f64, slots: &[CompressSlot]) -> f64 {
+    let mut delta = 0.0_f64;
+    for s in slots {
+        if s.start > v {
+            continue;
+        }
+        if v > s.end {
+            delta += s.end - s.start;
+        } else {
+            delta += v - s.start;
+        }
+    }
+    v - delta
+}
+
+/// Create a simple vertical edge between two nodes.
+fn simple_edge(from: usize, to: usize, x1: f64, y1: f64, x2: f64, y2: f64) -> ActivityEdgeLayout {
+    ActivityEdgeLayout {
+        from_index: from,
+        to_index: to,
+        label: String::new(),
+        points: vec![(x1, y1), (x2, y2)],
+        kind: ActivityEdgeKindLayout::Normal,
+        label_xy: None,
+    }
+}
 
 /// Compute the diamond bounding box for a labelled condition.
 fn diamond_size(label: &str) -> (f64, f64) {
@@ -4507,6 +5313,7 @@ fn is_flow_node(kind: &ActivityNodeKindLayout) -> bool {
             | ActivityNodeKindLayout::FloatingNote { .. }
             | ActivityNodeKindLayout::BackwardAction
             | ActivityNodeKindLayout::GotoLines { .. }
+            | ActivityNodeKindLayout::Partition
     )
 }
 
@@ -4623,6 +5430,7 @@ fn limitfinder_x_bounds(node: &ActivityNodeLayout) -> (f64, f64) {
             }
             _ => (node.x, node.x + node.width),
         },
+        ActivityNodeKindLayout::Partition => (node.x, node.x + node.width),
     }
 }
 
@@ -4893,6 +5701,83 @@ fn build_while_loopback_edge(
         },
         extra_right,
     ))
+}
+
+/// Move each partition node to just before its first inner child in the
+/// render order, so frames are drawn behind their content.
+fn apply_partition_render_order(
+    base: Vec<usize>,
+    partition_ranges: &[(usize, usize)],
+) -> Vec<usize> {
+    // partition node indices that should be relocated
+    let partition_nodes: std::collections::HashSet<usize> =
+        partition_ranges.iter().map(|&(_, p)| p).collect();
+    // map: first_inner_idx -> partition_node_idx
+    let mut first_to_part: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::new();
+    for &(first, part) in partition_ranges {
+        first_to_part.insert(first, part);
+    }
+
+    let mut result: Vec<usize> = Vec::with_capacity(base.len());
+    for &idx in &base {
+        // If this index is a partition's first inner child, emit the
+        // partition frame first.
+        if let Some(&part_idx) = first_to_part.get(&idx) {
+            result.push(part_idx);
+        }
+        // Skip partition nodes in their original position — they've been
+        // relocated above.
+        if !partition_nodes.contains(&idx) {
+            result.push(idx);
+        }
+    }
+    result
+}
+
+/// Reorder edges to match Java's `FtileWithConnection.drawU` emission
+/// order.  `FtileWithConnection.drawU` draws its delegated subtree first,
+/// then its own connection — a post-order traversal where an inter-tile
+/// connection `[A→B]` is emitted AFTER both A's and B's internal edges.
+/// For the flat node array this collapses to: emit `tile[0]`'s internal
+/// edges, then for each subsequent tile `tile[k]` emit its internal edges
+/// followed by the inter-tile connection `c[k-1,k]` leading into it.
+///
+/// We reproduce that order by stable-sorting edges by
+/// `(top_level_tile_rep(to_index), subgroup)` where `subgroup=0` for edges
+/// internal to a tile (from & to in the same outermost tile) and
+/// `subgroup=1` for inter-tile connections.  `tiles` is the union of all
+/// partition spans and fork spans; `top_level_tile_rep(idx)` is the start
+/// of the outermost such tile containing `idx`, or `idx` itself when `idx`
+/// is a singleton (start/stop/action outside any tile).
+fn reorder_edges_for_partitions(
+    edges: Vec<ActivityEdgeLayout>,
+    tiles: &[(usize, usize)],
+) -> Vec<ActivityEdgeLayout> {
+    /// Start of the outermost tile containing `idx`, or `idx` itself when
+    /// `idx` is not inside any tile.  Among nested containing tiles the
+    /// outermost has the smallest start index.
+    fn top_level_rep(tiles: &[(usize, usize)], idx: usize) -> usize {
+        let mut best: Option<usize> = None;
+        for &(s, e) in tiles {
+            if idx >= s && idx <= e && best.map_or(true, |b| s < b) {
+                best = Some(s);
+            }
+        }
+        best.unwrap_or(idx)
+    }
+
+    let mut indexed: Vec<(usize, ActivityEdgeLayout)> = edges.into_iter().enumerate().collect();
+    indexed.sort_by(|(i, a), (j, b)| {
+        let a_to = top_level_rep(tiles, a.to_index);
+        let a_from = top_level_rep(tiles, a.from_index);
+        let b_to = top_level_rep(tiles, b.to_index);
+        let b_from = top_level_rep(tiles, b.from_index);
+        let a_sub = if a_from == a_to { 0u8 } else { 1u8 };
+        let b_sub = if b_from == b_to { 0u8 } else { 1u8 };
+        (a_to, a_sub, *i).cmp(&(b_to, b_sub, *j))
+    });
+    indexed.into_iter().map(|(_, e)| e).collect()
 }
 
 /// Compute a render-order permutation so the inner repeat body (the interior
@@ -5987,17 +6872,97 @@ mod tests {
             ActivityEvent::EndFork,
         ]);
         let layout = layout_activity(&d).unwrap();
-        assert_eq!(layout.nodes.len(), 5);
+        // A fork renders exactly two bars: the top bar from `fork` and the
+        // bottom bar from `end fork`. `fork again` only separates branches
+        // — it does not emit a bar — matching the official PlantUML jar.
+        assert_eq!(layout.nodes.len(), 4);
 
         let fork = &layout.nodes[0];
-        let fork_again = &layout.nodes[2];
-        let end_fork = &layout.nodes[4];
+        let action1 = &layout.nodes[1];
+        let action2 = &layout.nodes[2];
+        let end_fork = &layout.nodes[3];
         assert_eq!(fork.kind, ActivityNodeKindLayout::ForkBar);
-        assert_eq!(fork_again.kind, ActivityNodeKindLayout::ForkBar);
         assert_eq!(end_fork.kind, ActivityNodeKindLayout::ForkBar);
+        assert!(matches!(action1.kind, ActivityNodeKindLayout::Action));
+        assert!(matches!(action2.kind, ActivityNodeKindLayout::Action));
 
-        assert_eq!(fork.width, FORK_BAR_WIDTH);
         assert_eq!(fork.height, FORK_BAR_HEIGHT);
+        assert_eq!(end_fork.height, FORK_BAR_HEIGHT);
+        // Both bars span the full set of branches, so they share a width.
+        assert_eq!(fork.width, end_fork.width);
+        // The bottom bar sits below both branch actions.
+        assert!(end_fork.y >= action1.y + action1.height);
+        assert!(end_fork.y >= action2.y + action2.height);
+    }
+
+    // 8b. Fork + swimlane is an unsupported path --------------------------------
+    // When swimlanes are present, Pass 2c positions the fork bar from the
+    // lane-0 geometry captured at that moment and packs every branch
+    // side-by-side relative to it ("fork in swimlanes is not yet supported").
+    // A `|Lane|` switch inside a branch is therefore ignored — branch content
+    // is NOT routed into the switched lane. A byte-exact fork+swimlane
+    // implementation (Java FtileFactory + swimlane composite) is deferred; this
+    // test pins the current limited behavior so a future fix is flagged. See PR
+    // #77 review item 3 — "lane replay can shift after ForkAgain stops emitting
+    // a layout node".
+    #[test]
+    fn fork_in_swimlanes_is_unsupported() {
+        let d = ActivityDiagram {
+            events: vec![
+                ActivityEvent::Swimlane { name: "A".into() },
+                ActivityEvent::Fork,
+                // Branch 0 starts in lane A, then switches to lane B before the
+                // branch ends — the lane replay that shifts after ForkAgain.
+                ActivityEvent::Action {
+                    text: "branch 0".into(),
+                },
+                ActivityEvent::Swimlane { name: "B".into() },
+                ActivityEvent::ForkAgain,
+                // Branch 1 inherits the shifted lane (B) rather than the fork's
+                // original lane (A) — the symptom of the unsupported path.
+                ActivityEvent::Action {
+                    text: "branch 1".into(),
+                },
+                ActivityEvent::EndFork,
+            ],
+            swimlanes: vec!["A".into(), "B".into()],
+            direction: Default::default(),
+            note_max_width: None,
+            is_old_style: false,
+            old_graph: None,
+        };
+
+        // Must not panic / error on the unsupported path.
+        let layout = layout_activity(&d).unwrap();
+
+        // Exactly two fork bars (top from `fork`, bottom from `end fork`) and
+        // two branch actions.
+        let bars: Vec<_> = layout
+            .nodes
+            .iter()
+            .filter(|n| matches!(n.kind, ActivityNodeKindLayout::ForkBar))
+            .collect();
+        assert_eq!(bars.len(), 2, "fork renders exactly two bars");
+        let actions: Vec<_> = layout
+            .nodes
+            .iter()
+            .filter(|n| matches!(n.kind, ActivityNodeKindLayout::Action))
+            .collect();
+        assert_eq!(actions.len(), 2, "two branch actions");
+        // Actions are emitted in branch order: branch 0, then branch 1.
+        let branch0_cx = actions[0].x + actions[0].width / 2.0;
+        let branch1_cx = actions[1].x + actions[1].width / 2.0;
+
+        // The pin: branch 1 (preceded by a `|B|` switch) is packed beside
+        // branch 0 by the fork layout — it is NOT placed in lane B. A correct
+        // implementation would route branch 1 into lane B (distance ~0 to lane
+        // B, far from branch 0), flipping this inequality and flagging the fix.
+        let lane_b_cx = swimlane_center_x(&layout.swimlane_layouts, 1);
+        assert!(
+            (branch1_cx - branch0_cx).abs() < (branch1_cx - lane_b_cx).abs(),
+            "unsupported fork+swimlane: branch 1 ({branch1_cx:.4}) should be packed beside \
+             branch 0 ({branch0_cx:.4}), not placed in lane B ({lane_b_cx:.4})"
+        );
     }
 
     // 8b. Switch / Case / EndSwitch -------------------------------------------

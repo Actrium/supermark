@@ -10,11 +10,26 @@ interface DiagramBlockProps {
 }
 
 export const DiagramBlock: React.FC<DiagramBlockProps> = ({ classNames, code, engine, result }) => {
-  if (!result || !result.success || result.format !== 'svg') {
-    const errorHeader =
-      result && !result.success
-        ? `[diagram engine="${engine}" 渲染失败]\n${result.error?.details || result.payload}\n\n`
-        : '';
+  if (!result) {
+    return (
+      <div
+        data-supramark-diagram={engine}
+        data-supramark-diagram-state="rendering"
+        className={classNames.diagram}
+      >
+        <pre className={classNames.diagramPre}>
+          <code className={classNames.diagramCode}>正在渲染图表（{engine}）…</code>
+        </pre>
+        {/* 代码回退：引擎结果到达前展示原始源码，避免占位符永久卡死且无内容可读。 */}
+        <pre className={classNames.diagramPre}>
+          <code className={classNames.diagramCode}>{code}</code>
+        </pre>
+      </div>
+    );
+  }
+
+  if (!result.success || result.format !== 'svg') {
+    const errorHeader = `[diagram engine="${engine}" 渲染失败]\n${result.error?.details || result.payload}\n\n`;
 
     return (
       <div data-supramark-diagram={engine} className={classNames.diagram}>

@@ -14,6 +14,7 @@ import type {
   SupramarkConfig,
   SupramarkCodeHighlightResult,
   SupramarkCodeHighlighter,
+  SupramarkSourceState,
 } from '@supramark/core';
 import {
   parse,
@@ -30,11 +31,17 @@ import {
   type SupramarkStyles,
   mergeStyles,
   darkThemeStyles,
-  lightThemeStyles,
 } from './styles';
 import { ErrorBoundary, type ErrorInfo, ErrorDisplay } from './ErrorBoundary';
+import { SourceStateContext } from './SourceStateContext';
 
 type RenderedNode = React.ComponentProps<typeof Text>['children'];
+
+interface ParsedDocument {
+  root: SupramarkRootNode;
+  highlighted: Map<string, SupramarkCodeHighlightResult>;
+  sourceState: SupramarkSourceState;
+}
 
 // Minimal shape of the optional `react-native-maps` module. Only the members
 // used here are declared; the package itself is an optional peer dependency.
@@ -75,12 +82,32 @@ export interface SupramarkProps {
   markdown: string;
   /** 预解析的 AST（优先级高于 markdown） */
   ast?: SupramarkRootNode;
-  /** 自定义样式（覆盖默认样式） */
+  /**
+   * 自定义样式（覆盖默认样式）。
+   *
+   * 间距模型：块间距由 root.gap（默认 8）统一管理，不再使用每块的
+   * marginBottom。若自定义某块的 marginBottom（如 paragraph:12），
+   * 会与 root.gap 叠加 → 实际间距 20。如需完全自定义间距，
+   * 请同时设置 root: { gap: 0 }。
+   */
   styles?: SupramarkStyles;
-  /** 主题：'light' | 'dark' | 自定义样式对象 */
+  /**
+   * 主题：调整内容元素的前景色与元素装饰色（文字、代码块底、边框等），
+   * 使其在对应明暗的画布上可读。
+   *
+   * - 'dark'：应用 darkThemeStyles（深色友好的前景/元素色）。
+   * - 'light'：使用默认（浅色）前景，等同于不传 theme。
+   * - 也可直接传入自定义 SupramarkStyles 作为主题。
+   *
+   * 重要：组件不在 root 上绘制画布背景。宿主必须为渲染容器提供与 theme
+   * 明暗配套的画布颜色（可用导出的 {@link themeBackground} 作为推荐值），
+   * 否则前景文字可能不可读 —— 例如 theme="dark" 时宿主容器应使用深色背景。
+   */
   theme?: 'light' | 'dark' | SupramarkStyles;
   /** Feature 配置（用于按需启用/禁用图表等扩展能力） */
   config?: SupramarkConfig;
+  /** Whether the Markdown source may still receive appended streaming content. */
+  sourceState?: SupramarkSourceState;
   /** 错误回调（可选） */
   onError?: (error: Error, errorInfo?: React.ErrorInfo) => void;
   /** 自定义错误展示组件（可选） */
@@ -108,6 +135,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
   styles: customStyles,
   theme,
   config,
+  sourceState = 'complete',
   onError,
   errorFallback,
   onOpenHtmlPage,
@@ -115,9 +143,16 @@ export const Supramark: React.FC<SupramarkProps> = ({
   codeHighlighter,
   codeHighlightTheme,
 }) => {
-  const [root, setRoot] = useState<SupramarkRootNode | null>(ast ?? null);
-  const [highlighted, setHighlighted] = useState<Map<string, SupramarkCodeHighlightResult>>(
-    new Map()
+  // The AST and its source state must advance together so a stale open fence
+  // is never marked complete.
+  const [parsedDocument, setParsedDocument] = useState<ParsedDocument | null>(
+    ast
+      ? {
+          root: ast,
+          highlighted: new Map(),
+          sourceState,
+        }
+      : null
   );
   const [parseError, setParseError] = useState<ErrorInfo | null>(null);
 
@@ -126,7 +161,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
     let themeStyles: SupramarkStyles | undefined;
 
     if (typeof theme === 'string') {
-      themeStyles = theme === 'dark' ? darkThemeStyles : lightThemeStyles;
+      themeStyles = theme === 'dark' ? darkThemeStyles : undefined;
     } else if (theme) {
       themeStyles = theme;
     }
@@ -156,8 +191,11 @@ export const Supramark: React.FC<SupramarkProps> = ({
           codeHighlighter
         );
         if (!cancelled) {
-          setRoot(parsed);
-          setHighlighted(highlightedMap);
+          setParsedDocument({
+            root: parsed,
+            highlighted: highlightedMap,
+            sourceState,
+          });
           setParseError(null);
         }
       } catch (error) {
@@ -170,8 +208,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
             stack: err.stack,
           };
           setParseError(errorInfo);
-          setHighlighted(new Map());
-          setRoot(null);
+          setParsedDocument(null);
 
           // 调用错误回调
           if (onError) {
@@ -184,7 +221,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [markdown, ast, config, onError, codeHighlighter, codeHighlightTheme]);
+  }, [markdown, ast, config, onError, codeHighlighter, codeHighlightTheme, sourceState]);
 
   const mergedContainerRenderers = useMemo(() => {
     // FeatureConfig 只描述启用状态与 options，不再携带 renderer 定义。
@@ -207,26 +244,28 @@ export const Supramark: React.FC<SupramarkProps> = ({
     );
   }
 
-  if (!root) {
+  if (!parsedDocument) {
     // 解析中时的简单回退：直接显示原始 markdown 文本。
     return <Text>{markdown}</Text>;
   }
 
   return (
     <ErrorBoundary onError={onError} fallback={errorFallback}>
-      <View style={mergedStyles.root}>
-        {root.children.map((node, index) =>
-          renderNode(
-            node,
-            index,
-            mergedStyles,
-            highlighted,
-            config,
-            onOpenHtmlPage,
-            mergedContainerRenderers
-          )
-        )}
-      </View>
+      <SourceStateContext.Provider value={parsedDocument.sourceState}>
+        <View style={mergedStyles.root}>
+          {parsedDocument.root.children.map((node, index) =>
+            renderNode(
+              node,
+              index,
+              mergedStyles,
+              parsedDocument.highlighted,
+              config,
+              onOpenHtmlPage,
+              mergedContainerRenderers
+            )
+          )}
+        </View>
+      </SourceStateContext.Provider>
     </ErrorBoundary>
   );
 };
@@ -303,6 +342,10 @@ function renderNode(
       const container = node;
       const containerName = container.name;
 
+      // 纵向 block 容器：html 卡片（标题+提示）、未识别 container 的 block children。
+      // 不复用 styles.listItem —— 它是 row 布局，会把 block children 横向排列且无间距。
+      const blockContainerStyle = { flexDirection: 'column' as const, gap: 8 };
+
       // 检查是否有注册的自定义渲染器
       if (containerRenderers && containerRenderers[containerName]) {
         return containerRenderers[containerName]({
@@ -338,9 +381,9 @@ function renderNode(
         const data = container.data || {};
         const title = (data.title as string) || container.params || '[HTML 页面]';
         const content = (
-          <View style={styles.listItem}>
-            <Text style={[styles.listItemText, { fontWeight: '600' }]}>{title}</Text>
-            <Text style={styles.listItemText}>
+          <View style={blockContainerStyle}>
+            <Text style={{ fontWeight: '600', lineHeight: 20 }}>{title}</Text>
+            <Text style={{ lineHeight: 20 }}>
               点击卡片以在独立容器中打开 HTML 页面（需要宿主实现 onOpenHtmlPage 回调）。
             </Text>
           </View>
@@ -368,7 +411,7 @@ function renderNode(
       ) {
         const title = container.params || (container.data?.title as string | undefined);
         const kind = containerName;
-        const admonitionContainerStyle = { flexDirection: 'column' as const, marginBottom: 4 };
+        const admonitionContainerStyle = { flexDirection: 'column' as const, gap: 4 };
 
         const renderAdmonitionContent = () =>
           container.children.map((child, index) =>
@@ -409,9 +452,9 @@ function renderNode(
 
       // 默认：渲染为通用容器块
       return (
-        <View key={key} style={styles.listItem}>
+        <View key={key} style={blockContainerStyle}>
           {container.params && (
-            <Text style={[styles.listItemText, { fontWeight: '600' }]}>
+            <Text style={{ fontWeight: '600', lineHeight: 20 }}>
               {container.name}: {container.params}
             </Text>
           )}
@@ -437,8 +480,8 @@ function renderNode(
       const isCompact = defOptions.compact !== false; // 默认紧凑
       // Column 布局：term 一行，description 缩进一行。
       // 避免 row 布局下 description 被 term 挤压导致 Text 不换行。
-      const defItemStyle = { flexDirection: 'column' as const, marginBottom: 4 };
-      const defDescriptionStyle = { paddingLeft: 16 };
+      const defItemStyle = { flexDirection: 'column' as const };
+      const defDescriptionStyle = { paddingLeft: 16, gap: 8 };
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-definition-list'])) {
         // 禁用时，将定义列表退化为普通列表样式
         return (
@@ -530,7 +573,7 @@ function renderNode(
       return (
         <View key={key} style={styles.listItem}>
           <Text style={styles.bullet}>[{def.index}]</Text>
-          <View style={styles.listItemText}>{renderFootnoteContent()}</View>
+          <View style={[styles.listItemText, { gap: 8 }]}>{renderFootnoteContent()}</View>
         </View>
       );
     }
