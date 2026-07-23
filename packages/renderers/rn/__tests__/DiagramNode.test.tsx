@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import React from 'react';
 import { create, act, type ReactTestRenderer } from 'react-test-renderer';
 import type { DiagramRenderResult, DiagramRenderService } from '@supramark/engines';
@@ -16,10 +16,6 @@ const engineState = {
   renderCalls: 0,
   pendingResolve: null as null | ((result: DiagramRenderResult) => void),
 };
-
-mock.module('react-native-svg', () => ({
-  SvgXml: 'SvgXml',
-}));
 
 // Inject a controlled engine through DiagramNode's renderer boundary instead of
 // replacing the engines package globally, keeping this test isolated from peers.

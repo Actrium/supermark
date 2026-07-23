@@ -3,6 +3,8 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { SupramarkRootNode } from '@supramark/core';
 
+import './support/mock-react-native';
+
 // react-test-renderer requires the act environment flag to flush effects predictably.
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -43,21 +45,9 @@ const markdownParserModule = {
 mock.module('@supramark/markdown-web', () => markdownParserModule);
 mock.module('@supramark/markdown-web/node', () => markdownParserModule);
 
-// Host component mocks keep this test focused on renderer state transitions.
-mock.module('react-native', () => ({
-  View: 'View',
-  Text: 'Text',
-  ScrollView: 'ScrollView',
-  TouchableOpacity: 'TouchableOpacity',
-  ActivityIndicator: 'ActivityIndicator',
-  Dimensions: { get: () => ({ width: 375, height: 812 }) },
-  Linking: { openURL: async () => undefined },
-  StyleSheet: { create: (styles: unknown) => styles },
-}));
-
-mock.module('react-native-svg', () => ({
-  SvgXml: 'SvgXml',
-}));
+// react-native / react-native-svg host mocks are registered once, process-wide,
+// via './support/mock-react-native' (imported above). Per-file mocks here would
+// clobber that shared surface — see the clobbering bug fixed in #90.
 
 const { Supramark } = await import('../src/Supramark');
 const { clearReactNativeRendererCaches } = await import('../src/renderCache');

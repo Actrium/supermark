@@ -29,6 +29,12 @@ export class AsyncRendererCache<T> {
     this.values = new LRUCache<T>({
       maxSize: policy.maxSize,
       ttl: policy.ttl,
+      // Eviction is entry-count based (LRUCache compares cache.size to maxSize),
+      // so each entry contributes a fixed unit. Override the default
+      // sizeCalculator — which JSON.stringifies the whole value on every set()
+      // (entire AST / SVG string) to feed a totalSize stat that never affects
+      // eviction — to avoid that O(payload) work in the render path.
+      sizeCalculator: () => 1,
     });
   }
 
@@ -129,8 +135,36 @@ export function getRendererCache<T>(
   return cache as AsyncRendererCache<T>;
 }
 
-/** Deterministically serializes JSON-like render options for cache keys. */
-export function stableSerialize(value: unknown): string {
+/**
+ * Deterministically serializes JSON-like render options for cache keys.
+ *
+ * Plain objects/arrays are serialized structurally; non-plain values
+ * (Date / Map / Set / RegExp / class instances / functions) cannot be compared
+ * by content cheaply or safely, so each distinct instance gets a stable
+ * process-local identity id via a WeakMap. This keeps two options objects that
+ * differ only by Date/Map/Set value from colliding on the same cache key (which
+ * would serve a wrong cached SVG), and a cyclic config object from overflowing
+ * the stack (the seen-set short-circuits re-entrant cycles to the identity id).
+ */
+const nonPlainIdentities = new WeakMap<object, number>();
+let nextNonPlainId = 1;
+
+function isPlainObject(value: object): boolean {
+  const proto = Object.getPrototypeOf(value);
+  return proto === null || proto === Object.prototype;
+}
+
+function nonPlainIdentity(value: object): string {
+  const existing = nonPlainIdentities.get(value);
+  if (existing !== undefined) {
+    return `obj:${existing}`;
+  }
+  const next = nextNonPlainId++;
+  nonPlainIdentities.set(value, next);
+  return `obj:${next}`;
+}
+
+export function stableSerialize(value: unknown, seen = new Set<object>()): string {
   if (value === null) {
     return 'null';
   }
@@ -138,12 +172,26 @@ export function stableSerialize(value: unknown): string {
     return 'undefined';
   }
   if (Array.isArray(value)) {
-    return `[${value.map(stableSerialize).join(',')}]`;
+    if (seen.has(value)) {
+      return nonPlainIdentity(value);
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(value);
+    return `[${value.map(item => stableSerialize(item, nextSeen)).join(',')}]`;
   }
   if (typeof value === 'object') {
+    if (seen.has(value)) {
+      return nonPlainIdentity(value);
+    }
+    if (!isPlainObject(value)) {
+      // Date / Map / Set / RegExp / class instances: identity, not content.
+      return nonPlainIdentity(value);
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(value);
     return `{${Object.entries(value as Record<string, unknown>)
       .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableSerialize(entryValue)}`)
+      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableSerialize(entryValue, nextSeen)}`)
       .join(',')}}`;
   }
   if (typeof value === 'string') {
