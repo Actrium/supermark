@@ -573,3 +573,120 @@ fn dump_fixture_168_clusters() {
         eprintln!("\nEdge path fragment:\n{}", &got[start..end]);
     }
 }
+
+/// Extract every non-empty edge-label box `(cx, cy, w, h)` from a rendered
+/// flowchart SVG. The label centre is its `<g class="edgeLabel"
+/// transform="translate(cx, cy)">`, and its size is the `foreignObject`
+/// width/height (which already include the renderer's horizontal padding).
+fn extract_edge_label_boxes(svg: &str) -> Vec<(f64, f64, f64, f64)> {
+    let mut out = Vec::new();
+    for chunk in svg.split(r#"<g class="edgeLabel""#).skip(1) {
+        // Empty edge labels carry no `transform`; skip them. `split_once`
+        // returns (prefix, suffix) — we want the suffix after the needle.
+        let Some((_, after_translate)) = chunk.split_once(r#"transform="translate("#) else {
+            continue;
+        };
+        let Some((xy, _)) = after_translate.split_once(')') else {
+            continue;
+        };
+        let (cx_s, cy_s) = xy.split_once(',').unwrap_or(("", ""));
+        // First foreignObject in the chunk is the label box.
+        let Some((_, after_w)) = chunk.split_once(r#"foreignObject width=""#) else {
+            continue;
+        };
+        let Some((w_s, after_w_quote)) = after_w.split_once('"') else {
+            continue;
+        };
+        let Some((_, after_h)) = after_w_quote.split_once(r#"height=""#) else {
+            continue;
+        };
+        let Some((h_s, _)) = after_h.split_once('"') else {
+            continue;
+        };
+        let (Ok(cx), Ok(cy), Ok(w), Ok(h)) = (
+            cx_s.trim().parse::<f64>(),
+            cy_s.trim().parse::<f64>(),
+            w_s.parse::<f64>(),
+            h_s.parse::<f64>(),
+        ) else {
+            continue;
+        };
+        out.push((cx, cy, w, h));
+    }
+    out
+}
+
+/// Parse the root `<svg ... viewBox="x y w h">` rect.
+fn extract_viewbox(svg: &str) -> (f64, f64, f64, f64) {
+    let (_, rest) = svg.split_once(r#"viewBox=""#).expect("svg has viewBox");
+    let (nums, _) = rest.split_once('"').expect("viewBox closes");
+    let mut it = nums.split_whitespace();
+    let x = it.next().unwrap().parse().unwrap();
+    let y = it.next().unwrap().parse().unwrap();
+    let w = it.next().unwrap().parse().unwrap();
+    let h = it.next().unwrap().parse().unwrap();
+    (x, y, w, h)
+}
+
+/// Issue #93 — complex `flowchart LR` where mermaid's `positionEdgeLabel`
+/// recompute collapses several bidi / fan-in edge labels onto one another.
+/// Regression test for the deterministic AABB collision-avoidance pass:
+/// after rendering, no two edge-label bounding boxes overlap, and every
+/// label stays inside the SVG viewBox.
+#[test]
+fn issue93_edge_labels_do_not_collide() {
+    let svg = render_one("fixtures/flowchart/issue93")
+        .unwrap_or_else(|e| panic!("render issue93 failed: {e}"));
+
+    let boxes = extract_edge_label_boxes(&svg);
+    // The issue93 graph has 9 labelled edges (the two `-->` mail-relay edges
+    // carry no label). Assert we actually parsed them before checking the
+    // invariant, so a parser regression doesn't silently pass the test.
+    assert!(
+        boxes.len() >= 9,
+        "expected at least 9 labelled edges in issue93, got {}: {boxes:?}",
+        boxes.len()
+    );
+
+    // Assert the issue #93 invariant: no two edge-label bounding boxes
+    // overlap (gap = 0 — boxes must not intersect at all). The renderer's
+    // collision pass separates labels by the label padding (4 px), so a
+    // resolved pair sits ~4 px apart; the test checks the strict no-overlap
+    // invariant with zero tolerance, and the 4 px margin absorbs the
+    // sub-pixel float / round-to-5 residual so the assertion needs no
+    // epsilon fudge.
+    let mut worst: f64 = 0.0;
+    for i in 0..boxes.len() {
+        for j in (i + 1)..boxes.len() {
+            let (cx1, cy1, w1, h1) = boxes[i];
+            let (cx2, cy2, w2, h2) = boxes[j];
+            // Penetration depth on each axis (positive => overlap), gap = 0.
+            let pen_x = (w1 + w2) / 2.0 - (cx1 - cx2).abs();
+            let pen_y = (h1 + h2) / 2.0 - (cy1 - cy2).abs();
+            // Separated on at least one axis => no collision.
+            let overlap = pen_x.min(pen_y);
+            worst = worst.max(overlap);
+            assert!(
+                pen_x <= 0.0 || pen_y <= 0.0,
+                "issue93 edge labels overlap: box{i}={:?} box{j}={:?} pen_x={pen_x:.2} pen_y={pen_y:.2}",
+                boxes[i],
+                boxes[j]
+            );
+        }
+    }
+    // The worst-case penetration is non-positive (all pairs separated). A
+    // strongly-negative value means labels are well-clear of each other.
+    assert!(worst <= 0.0, "expected separated labels, worst overlap={worst:.2}");
+
+    // Every label box must stay inside the final SVG bounds (issue #93
+    // expected result: "移动后的标签仍应包含在最终 SVG bounds 中").
+    let (vx, vy, vw, vh) = extract_viewbox(&svg);
+    for (i, &(cx, cy, w, h)) in boxes.iter().enumerate() {
+        let (min_x, max_x) = (cx - w / 2.0, cx + w / 2.0);
+        let (min_y, max_y) = (cy - h / 2.0, cy + h / 2.0);
+        assert!(
+            min_x >= vx - 0.5 && max_x <= vx + vw + 0.5 && min_y >= vy - 0.5 && max_y <= vy + vh + 0.5,
+            "issue93 label {i} ({cx:.1},{cy:.1} {w:.1}x{h:.1}) outside viewBox ({vx:.1},{vy:.1} {vw:.1}x{vh:.1})"
+        );
+    }
+}

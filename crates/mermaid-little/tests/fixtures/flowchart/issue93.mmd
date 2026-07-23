@@ -1,0 +1,26 @@
+flowchart LR
+    subgraph Devices["用户设备"]
+        A1["Alice / Laptop"]
+        A2["Alice / Phone"]
+        B1["Bob / Laptop"]
+        B2["Bob / Phone"]
+    end
+
+    DIR["Directory + Domain Authority"]
+    COMMIT["Conversation Committer"]
+    RELAY["Encrypted Relay"]
+    GW["Mail Gateway"]
+    MTA["Existing MTA"]
+    SMTP["SMTP Network"]
+
+    A1 <-->|"已提交密文直连"| B1
+    A2 <-->|"账户同步"| A1
+    B2 <-->|"账户同步"| B1
+    A1 -->|"签名提案 + HLC"| COMMIT
+    COMMIT -->|"会话内序号 + 提交证明"| A1
+    A1 -->|"接收设备离线时暂存"| RELAY
+    RELAY -->|"拉取/唤醒"| B1
+    Devices <-->|"签名目录与策略"| DIR
+    Devices <-->|"外部邮件明文边界"| GW
+    GW <--> MTA
+    MTA <--> SMTP

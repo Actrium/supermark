@@ -1009,6 +1009,7 @@ fn compute_viewbox_browser(
     l: &FlowchartLayout,
     padding: f64,
     title: Option<&str>,
+    label_pos: &std::collections::HashMap<String, (f64, f64)>,
 ) -> (f64, f64, f64, f64, f64) {
     use crate::render::foreign_object::{
         measure_html_markup_label, replace_fa_icons, HtmlLabelFont,
@@ -1158,9 +1159,14 @@ fn compute_viewbox_browser(
         let processed = replace_fa_icons(label_text);
         let (lw, lh) = measure_html_markup_label(&processed, &font, 200.0, true);
         let lw = lw + FLOWCHART_EDGE_LABEL_PADDING_X * 2.0;
-        let dagre_lx = e.label_x.unwrap_or(0.0);
-        let dagre_ly = e.label_y.unwrap_or(0.0);
-        let (lx, ly) = recompute_edge_label_position(e, l).unwrap_or((dagre_lx, dagre_ly));
+        let (lx, ly) = match label_pos.get(&e.id).copied() {
+            Some(p) => p,
+            None => {
+                let dagre_lx = e.label_x.unwrap_or(0.0);
+                let dagre_ly = e.label_y.unwrap_or(0.0);
+                recompute_edge_label_position(e, l).unwrap_or((dagre_lx, dagre_ly))
+            }
+        };
         bounds.expand_box(lx - lw / 2.0, ly - lh / 2.0, lw, lh);
     }
 
@@ -1245,6 +1251,16 @@ pub fn render(
     // `%%{init: {flowchart: {htmlLabels: false}}}%%` flips it for an entire
     // diagram. Cluster, node and edge labels all consult this flag.
     let html_labels = d.html_labels.unwrap_or(true);
+
+    // Resolve edge-label positions once, applying collision avoidance so that
+    // no two top-level label bounding boxes overlap (issue #93). For diagrams
+    // whose labels don't collide this is a no-op and the rendered SVG stays
+    // byte-identical to the layout output.
+    let horizontal_flow = matches!(
+        d.direction,
+        crate::model::flowchart::Direction::LR | crate::model::flowchart::Direction::RL
+    );
+    let label_pos = compute_edge_label_positions(l, horizontal_flow);
 
     let mut inner = String::new();
 
@@ -1341,7 +1357,7 @@ pub fn render(
         if is_cyclic_segment_from_anchor_rewrite(e) {
             continue;
         }
-        inner.push_str(&render_edge_label(e, html_labels, l));
+        inner.push_str(&render_edge_label(e, html_labels, l, &label_pos));
     }
     inner.push_str(unified_shell::close_layer());
 
@@ -1395,6 +1411,7 @@ pub fn render(
                     theme,
                     id,
                     html_labels,
+                    &label_pos,
                 ));
             }
         } else {
@@ -1497,7 +1514,7 @@ pub fn render(
     // bounds including shape geometry, edge curves, and label
     // positions. We compute from layout nodes and edges.
     let (vb_x, vb_y, vb_w, vb_h, content_center_x) =
-        compute_viewbox_browser(l, padding, d.meta.title.as_deref());
+        compute_viewbox_browser(l, padding, d.meta.title.as_deref(), &label_pos);
 
     // ── Assemble final SVG ─────────────────────────────────────────
     let acc_title = d.meta.acc_title.as_deref();
@@ -2281,6 +2298,7 @@ fn render_isolated_cluster_inner_root(
     theme: &ThemeVariables,
     svg_id: &str,
     html_labels: bool,
+    label_pos: &std::collections::HashMap<String, (f64, f64)>,
 ) -> String {
     // Retrieve pre-computed outer translate from the layout engine.
     let tx = cnode
@@ -2462,7 +2480,7 @@ fn render_isolated_cluster_inner_root(
         if is_cyclic_segment_from_anchor_rewrite(e) {
             continue;
         }
-        out.push_str(&render_edge_label(e, html_labels, l));
+        out.push_str(&render_edge_label(e, html_labels, l, &label_pos));
     }
     out.push_str(unified_shell::close_layer());
 
@@ -2517,6 +2535,7 @@ fn render_isolated_cluster_inner_root(
             theme,
             svg_id,
             html_labels,
+            label_pos,
         ));
     }
 
@@ -3489,7 +3508,12 @@ fn render_edge_path(
     )
 }
 
-fn render_edge_label(e: &UEdge, html_labels: bool, l: &FlowchartLayout) -> String {
+fn render_edge_label(
+    e: &UEdge,
+    html_labels: bool,
+    l: &FlowchartLayout,
+    label_pos: &std::collections::HashMap<String, (f64, f64)>,
+) -> String {
     use crate::render::foreign_object::{
         markdown_label_to_html, measure_html_markup_label, render_edge_label as fo_edge,
         replace_fa_icons, string_label_to_html, HtmlLabelFont, LabelOpts,
@@ -3541,18 +3565,22 @@ fn render_edge_label(e: &UEdge, html_labels: bool, l: &FlowchartLayout) -> Strin
         let (w, h) = measure_html_markup_label(&processed, &HtmlLabelFont::default(), 200.0, true);
         (w, h, None)
     };
-    let dagre_lx = e.label_x.unwrap_or(0.0);
-    let dagre_ly = e.label_y.unwrap_or(0.0);
-    // Mirror upstream `positionEdgeLabel` (edges.js:253). When `paths.updatedPath`
-    // is set (i.e. the rendered SVG path differs from the dagre point sequence,
-    // typically because the edge crosses a cluster boundary via
-    // `cutPathAtIntersect`), the label is re-anchored to the half-distance
-    // midpoint of the *clipped* path, with x/y rounded to 5 decimals via
-    // `roundNumber(_, 5)`. We approximate this by detecting cluster-bound
-    // edges (via `orig_start` / `orig_end` referencing an `is_group` node)
-    // and recomputing the label position with `cutPathAtIntersect` +
-    // `traverseEdge` ported from upstream `edges.js`.
-    let (lx, ly) = recompute_edge_label_position(e, l).unwrap_or((dagre_lx, dagre_ly));
+    // Final label position comes from the pre-computed collision-resolved map
+    // (see `compute_edge_label_positions`). For edges not in the map — labels
+    // inside an isolated cluster's inner frame — fall back to the upstream
+    // `positionEdgeLabel` (edges.js:253) recompute: when the rendered path
+    // differs from the dagre point sequence (typically because the edge
+    // crosses a cluster boundary via `cutPathAtIntersect`), the label is
+    // re-anchored to the half-distance midpoint of the *clipped* path, with
+    // x/y rounded to 5 decimals via `roundNumber(_, 5)`.
+    let (lx, ly) = match label_pos.get(&e.id).copied() {
+        Some(p) => p,
+        None => {
+            let dagre_lx = e.label_x.unwrap_or(0.0);
+            let dagre_ly = e.label_y.unwrap_or(0.0);
+            recompute_edge_label_position(e, l).unwrap_or((dagre_lx, dagre_ly))
+        }
+    };
     // htmlLabels=false path — emit `<text>`/`<tspan>` instead of <foreignObject>.
     // Mirrors upstream `createText(...)` non-html branch (createText.ts:338+,
     // createFormattedText) plus `insertEdgeLabel` which moves the
@@ -4621,6 +4649,212 @@ fn recompute_edge_label_position(e: &UEdge, l: &FlowchartLayout) -> Option<(f64,
     } else {
         Some((round_to_5(x), round_to_5(y)))
     }
+}
+
+/// Axis-aligned label box used by `resolve_label_collisions`.
+#[derive(Clone, Copy)]
+struct LabelBox {
+    cx: f64,
+    cy: f64,
+    w: f64,
+    h: f64,
+}
+
+/// Minimum clearance kept between adjacent edge labels after collision
+/// avoidance. Reuses the label renderer's own horizontal text padding
+/// (`FLOWCHART_EDGE_LABEL_PADDING_X`) so the inter-label gap mirrors the
+/// intra-label text-to-box gap rather than introducing an independent magic
+/// number.
+const EDGE_LABEL_COLLISION_GAP: f64 = FLOWCHART_EDGE_LABEL_PADDING_X;
+
+/// Resolve overlapping label bounding boxes by stacking each cluster of
+/// colliding labels along the axis perpendicular to the rank flow. This is
+/// the standard 1-D interval-separation algorithm and is *guaranteed* to
+/// produce a conflict-free arrangement (unlike iterative pairwise nudging,
+/// which can leave a residual overlap when three or more labels interact).
+///
+/// `horizontal_flow` is true for LR/RL diagrams: labels live in vertical
+/// gutters between columns, so colliding labels are stacked along Y (and
+/// grouped by X-band overlap). For TB/BT the axes swap.
+///
+/// Proof of conflict-freeness: two boxes overlap only if their intervals
+/// intersect on *both* axes. Boxes are grouped by transitive overlap on the
+/// cross axis, so any two boxes that share the cross axis are in the same
+/// group and get distinct, gap-separated positions on the separation axis.
+/// The uniform centroid-preserving shift applied at the end moves a group
+/// only along the separation axis, leaving cross-axis relationships — and
+/// thus the grouping — unchanged. Hence no two boxes overlap after the pass.
+/// Non-colliding boxes belong to singleton groups and are not moved, so
+/// diagrams without label collisions render byte-identically to the layout
+/// output.
+fn resolve_label_collisions(boxes: &mut [LabelBox], horizontal_flow: bool) {
+    let n = boxes.len();
+    if n < 2 {
+        return;
+    }
+    let gap = EDGE_LABEL_COLLISION_GAP;
+
+    // (center, half-extent) on the cross axis — the axis that decides whether
+    // two labels compete for the same band.
+    let cross = |b: &LabelBox| -> (f64, f64) {
+        if horizontal_flow {
+            (b.cx, b.w / 2.0)
+        } else {
+            (b.cy, b.h / 2.0)
+        }
+    };
+    // (center, half-extent) on the separation axis — the axis we stack along.
+    let axis = |b: &LabelBox| -> (f64, f64) {
+        if horizontal_flow {
+            (b.cy, b.h / 2.0)
+        } else {
+            (b.cx, b.w / 2.0)
+        }
+    };
+
+    // Union-find over transitive cross-axis overlap.
+    fn find(parent: &mut [usize], x: usize) -> usize {
+        let mut r = x;
+        while parent[r] != r {
+            r = parent[r];
+        }
+        let mut i = x;
+        while parent[i] != r {
+            let nxt = parent[i];
+            parent[i] = r;
+            i = nxt;
+        }
+        r
+    }
+    let mut parent = (0..n).collect::<Vec<_>>();
+    for i in 0..n {
+        let (ic, ih) = cross(&boxes[i]);
+        for j in (i + 1)..n {
+            let (jc, jh) = cross(&boxes[j]);
+            if (ic - jc).abs() < ih + jh {
+                let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                if ri != rj {
+                    parent[ri] = rj;
+                }
+            }
+        }
+    }
+
+    let mut groups: std::collections::HashMap<usize, Vec<usize>> =
+        std::collections::HashMap::new();
+    for i in 0..n {
+        groups.entry(find(&mut parent, i)).or_default().push(i);
+    }
+
+    for (_root, mut members) in groups {
+        if members.len() < 2 {
+            continue;
+        }
+        // Stack in ascending separation-axis order; the relative order is the
+        // labels' natural vertical (or horizontal) sequence.
+        members.sort_by(|&a, &b| {
+            axis(&boxes[a])
+                .0
+                .partial_cmp(&axis(&boxes[b]).0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let original_centroid: f64 =
+            members.iter().map(|&i| axis(&boxes[i]).0).sum::<f64>() / members.len() as f64;
+
+        // Greedy order-preserving stack: each box clears the previous box's
+        // far edge plus `gap`. This is the minimum displacement that resolves
+        // every overlap within the group while preserving order.
+        let mut new_pos: Vec<f64> = Vec::with_capacity(members.len());
+        let mut stack_far = f64::NEG_INFINITY;
+        for &i in &members {
+            let (c, half) = axis(&boxes[i]);
+            let near = c - half;
+            let desired_near = near.max(stack_far + gap);
+            let new_c = desired_near + half;
+            new_pos.push(new_c);
+            stack_far = new_c + half;
+        }
+
+        // Recenter the stack on the group's original centroid so the cluster
+        // stays near its edges instead of drifting to one side. The shift is
+        // along the separation axis only — cross-axis positions (and thus the
+        // grouping) are untouched, so conflict-freeness is preserved.
+        let new_centroid: f64 = new_pos.iter().sum::<f64>() / new_pos.len() as f64;
+        let shift = original_centroid - new_centroid;
+        for (&i, &p) in members.iter().zip(new_pos.iter()) {
+            if horizontal_flow {
+                boxes[i].cy = p + shift;
+            } else {
+                boxes[i].cx = p + shift;
+            }
+        }
+    }
+}
+
+/// Compute the final render position of every top-level (non-isolated)
+/// edge label, applying collision avoidance so that no two label bounding
+/// boxes overlap (issue #93: mermaid's `positionEdgeLabel` recompute can
+/// collapse bidi / fan-in labels to nearly the same point).
+///
+/// Each label's base position is exactly what
+/// `recompute_edge_label_position` (or dagre) would produce, so when no
+/// labels collide — the common case — every entry equals the pre-collision
+/// position and the rendered SVG stays byte-identical to the layout output.
+/// Only edges rendered in the top-level coordinate frame participate; labels
+/// inside an isolated cluster's inner frame are left at their base positions
+/// (they are looked up by id and fall through to the per-edge recompute).
+fn compute_edge_label_positions(
+    l: &FlowchartLayout,
+    horizontal_flow: bool,
+) -> std::collections::HashMap<String, (f64, f64)> {
+    use crate::render::foreign_object::{measure_html_markup_label, replace_fa_icons, HtmlLabelFont};
+    let font = HtmlLabelFont::default();
+    let mut entries: Vec<(String, LabelBox)> = Vec::new();
+    for e in &l.edges {
+        if edge_is_inside_isolated(e.start.as_deref(), e.end.as_deref(), l) {
+            continue;
+        }
+        if is_replaced_self_loop(e) {
+            continue;
+        }
+        if is_cyclic_segment_from_anchor_rewrite(e) {
+            continue;
+        }
+        let label_text = e.label.as_deref().unwrap_or("");
+        if label_text.is_empty() {
+            continue;
+        }
+        // Size estimate mirrors `compute_viewbox_browser`'s label measurement
+        // so the collision box matches the box the viewBox already accounts
+        // for. The raw text (fa-icons substituted) is a conservative width
+        // for markdown labels — wider boxes only over-separate slightly.
+        let processed = replace_fa_icons(label_text);
+        let (lw, lh) = measure_html_markup_label(&processed, &font, 200.0, true);
+        let lw = lw + FLOWCHART_EDGE_LABEL_PADDING_X * 2.0;
+        let dagre_lx = e.label_x.unwrap_or(0.0);
+        let dagre_ly = e.label_y.unwrap_or(0.0);
+        let (lx, ly) = recompute_edge_label_position(e, l).unwrap_or((dagre_lx, dagre_ly));
+        entries.push((e.id.clone(), LabelBox { cx: lx, cy: ly, w: lw, h: lh }));
+    }
+    // Snapshot the pre-collision positions so labels that don't move keep
+    // their exact base coordinates (byte-identical to the layout output);
+    // only labels that the pass actually relocates get rounded.
+    let originals: Vec<(f64, f64)> = entries.iter().map(|(_, b)| (b.cx, b.cy)).collect();
+    let mut boxes: Vec<LabelBox> = entries.iter().map(|(_, b)| *b).collect();
+    resolve_label_collisions(&mut boxes, horizontal_flow);
+    entries
+        .into_iter()
+        .zip(boxes.iter())
+        .zip(originals.iter())
+        .map(|(((id, _), b), &(ocx, ocy))| {
+            let moved = (b.cx - ocx).abs() > 1e-6 || (b.cy - ocy).abs() > 1e-6;
+            if moved {
+                (id, (round_to_5(b.cx), round_to_5(b.cy)))
+            } else {
+                (id, (ocx, ocy))
+            }
+        })
+        .collect()
 }
 
 /// Build the rendered `d=` attribute approximation for the upstream
