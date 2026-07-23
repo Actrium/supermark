@@ -9,6 +9,7 @@ export { SelectionContext as SelectionUIContext, type SelectionContextValue } fr
 export * from './useDocumentSelection';
 export * from './overlay';
 export * from './blockSink';
+export * from './nativeBridge';
 export { SelectionRoot, pointToSelectionForRoot, type SelectionRootProps } from './SelectionRoot';
 export { SelectionOverlay, type SelectionOverlayProps } from './SelectionOverlay';
 export { SelectableBlock, type SelectableBlockProps } from './SelectableBlock';

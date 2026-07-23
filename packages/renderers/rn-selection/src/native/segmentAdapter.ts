@@ -1,5 +1,5 @@
 import type { SelectionNodeId, SelectionPoint, SelectionRange } from '../model';
-import type { SelectionUnitIndex } from '../resolve';
+import { locateSelectionPoint, type SelectionUnitIndex } from '../resolve';
 import type {
   SegmentLongPressEvent,
   SegmentMenuActionEvent,
@@ -121,17 +121,63 @@ export function menuActionToRange(
 }
 
 /**
- * Map a document `SelectionRange` back into a segment-local `[start, end]`
- * pair, ordered ascending, ready to hand to `TextSegmentCommands.selectRange`
- * / `copyRange`.
+ * Map a document `SelectionRange` into this segment's local `[start, end)`
+ * UTF-16 pair, ordered ascending, ready to hand to
+ * `TextSegmentCommands.selectRange` / `copyRange`.
+ *
+ * Endpoints are resolved with `locateSelectionPoint` on the full document
+ * index — the same resolution `resolveSelectionRange` uses — and then
+ * projected onto the segment's spans: a point before the segment clamps to
+ * `0`, a point after it (e.g. on the block's trailing break unit, which the
+ * document stream owns but the segment does not render) clamps to the segment
+ * end, and a zero-text syntax unit inside the block lands on the next span's
+ * start. The naive per-span `pointToSegmentOffset` fallback cannot do this:
+ * without the document index it maps an out-of-segment point that shares the
+ * block's `nodeId` into the FIRST span, collapsing an end-of-block selection
+ * to the block's head.
+ *
+ * Returns `null` when the segment renders no text or the projected range
+ * collapses.
  */
 export function rangeToSegmentSelection(
   range: SelectionRange,
+  index: SelectionUnitIndex,
   spans: readonly SegmentSpan[]
-): { startUtf16: number; endUtf16: number } {
-  const a = pointToSegmentOffset(spans, range.anchor);
-  const f = pointToSegmentOffset(spans, range.focus);
-  return a <= f ? { startUtf16: a, endUtf16: f } : { startUtf16: f, endUtf16: a };
+): { startUtf16: number; endUtf16: number } | null {
+  if (spans.length === 0) return null;
+
+  const spanByUnitIndex = new Map<number, SegmentSpan>();
+  let firstUnitIndex = Number.MAX_SAFE_INTEGER;
+  let lastUnitIndex = -1;
+  for (const span of spans) {
+    const unitIndex = index.byUnitId.get(span.unitId);
+    if (unitIndex === undefined) continue;
+    spanByUnitIndex.set(unitIndex, span);
+    if (unitIndex < firstUnitIndex) firstUnitIndex = unitIndex;
+    if (unitIndex > lastUnitIndex) lastUnitIndex = unitIndex;
+  }
+  if (lastUnitIndex < 0) return null;
+  const segmentEnd = spans[spans.length - 1].end;
+
+  const project = (located: { unitIndex: number; intraOffset: number }): number => {
+    const span = spanByUnitIndex.get(located.unitIndex);
+    if (span) return span.start + clamp(located.intraOffset, 0, span.end - span.start);
+    if (located.unitIndex < firstUnitIndex) return 0;
+    if (located.unitIndex > lastUnitIndex) return segmentEnd;
+    // A zero-text unit interleaved between this segment's spans: it occupies no
+    // stream text, so both its before and after positions coincide with the
+    // next rendered span's start.
+    for (const [unitIndex, candidate] of spanByUnitIndex) {
+      if (unitIndex > located.unitIndex) return candidate.start;
+    }
+    return segmentEnd;
+  };
+
+  const a = project(locateSelectionPoint(index, range.anchor));
+  const f = project(locateSelectionPoint(index, range.focus));
+  const startUtf16 = Math.min(a, f);
+  const endUtf16 = Math.max(a, f);
+  return startUtf16 === endUtf16 ? null : { startUtf16, endUtf16 };
 }
 
 /**

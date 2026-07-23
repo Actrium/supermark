@@ -54,7 +54,13 @@ export function createBlockSink(deps: BlockSinkDeps): SegmentEventSink {
       const range = longPressToRange(event, deps.getSpans());
       deps.store.beginAt(range.anchor);
       deps.store.extendTo(range.focus);
-      // Left in 'selecting'; the overlay renders from snapshot.units either way.
+      // Committing completes the gesture: the native bridge answers a committed
+      // single-block range with `selectRange` — exactly the host response the
+      // vendored contract expects after a long-press (native selection handles
+      // + system menu). A host can still `extendTo` afterwards to grow the
+      // selection; that re-enters 'selecting' and hands display back to the
+      // coordinator overlay.
+      deps.store.commit();
     },
     onMenuAction(event: SegmentMenuActionEvent) {
       const range = menuActionToRange(event, deps.getSpans());

@@ -85,11 +85,14 @@ function makeDeps(
 }
 
 describe('createBlockSink', () => {
-  test('onLongPress maps a segment range into store selection', () => {
+  test('onLongPress maps a segment range into a committed store selection', () => {
     const { deps, store } = makeDeps(blockP1);
     createBlockSink(deps).onLongPress?.(lp(0, 11));
     const snap = store.getSnapshot();
-    expect(snap.phase).toBe('selecting');
+    // Committed so the native bridge answers with `selectRange` (native
+    // handles + system menu) — the vendored contract's expected long-press
+    // response.
+    expect(snap.phase).toBe('selected');
     expect(serializeSelectionUnits(snap.units, 'plainText')).toBe('Hello world');
   });
 

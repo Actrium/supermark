@@ -5,6 +5,7 @@ import { buildSegmentSpans } from '../native/segmentAdapter';
 import type { SelectionSerializeFormat } from '../serialize';
 import { SelectionContext, type SelectionContextValue } from './SelectionContext';
 import { createBlockSink, type SelectionCopyRequest } from './blockSink';
+import { createNativeBridge } from './nativeBridge';
 import { resolvePointToSelection, type Point } from './hitTest';
 import { SelectionRegistry } from './registry';
 import { SelectionOverlay } from './SelectionOverlay';
@@ -65,6 +66,12 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   useEffect(() => {
     registry.setUnits(units);
   }, [registry, units]);
+
+  // Downlink of the command bridge: committed single-block ranges drive the
+  // vendored native selection (handles + system menu); cross-block selection
+  // stays on the coordinator overlay. Uplink (native events -> store) is wired
+  // per block through `createBlockSink` below.
+  useEffect(() => createNativeBridge(store, registry), [store, registry]);
 
   // Surface range changes; covered units live on the store snapshot.
   useEffect(() => {

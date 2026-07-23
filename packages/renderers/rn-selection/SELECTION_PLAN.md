@@ -237,6 +237,54 @@ Workstreams, in order:
    vendored component's floors (see README "Platform requirements") and keep
    them in sync as the bridge lands.
 
+### Command bridge (implemented, device verification pending)
+
+All four workstreams above are in place (19 new unit tests; 145 total):
+
+- **Downlink** — `coordinator/nativeBridge.ts`: `createNativeBridge(store,
+  registry)` subscribes the store and answers a committed single-block range
+  with the owning handle's `selectRange`, and `idle` with `clearSelection`.
+  `planNativeSelection` is the pure planning half: covered units vote on the
+  owning block (units no block renders — trailing breaks, syntax units —
+  abstain), and a second owner, an atom/boundary owner, or a handle-less owner
+  vetoes the push. Command discipline: `selecting` never touches native (so a
+  menu-action reflect cannot re-pop the menu the user just used), an identical
+  re-commit is deduped, and a cross-block commit clears a previous native push.
+- **Offset projection** — `rangeToSegmentSelection` now resolves endpoints via
+  `locateSelectionPoint` on the document index before projecting onto segment
+  spans, so a focus on a block's trailing break clamps to the segment end
+  (the old per-span nodeId fallback collapsed it to the block head), a point
+  before the block clamps to 0, and interleaved zero-text units land on the
+  next span's start.
+- **Uplink closure** — `createBlockSink.onLongPress` now commits after
+  begin/extend, so a native long-press round-trips: gesture → store → bridge →
+  native `selectRange` (selection handles + system menu) — the host response
+  the vendored contract expects. `extendTo` afterwards re-enters `selecting`
+  and hands display back to the overlay.
+- **Version reconciliation** — `peerDependencies.react-native` tightened to
+  `>= 0.81.0`; the README's per-platform floors (Android 0.85 hard) remain
+  authoritative.
+
+**Simulator-verified on iOS** (iPhone 17 Pro sim, RN 0.81 New Arch, Debug,
+programmatic commits): a committed single-block range renders the native
+selection highlight with system grab handles stopping exactly at the mapped
+UTF-16 offset (trailing emoji excluded) and pops the system edit menu
+(Cut / Copy / Look Up); a committed cross-block range draws only the merged
+coordinator overlay — no native selection, no menu (the veto path); `clear()`
+removes the native highlight and handles and returns the store to idle.
+
+Known vendored-side limitation found during verification: `clearSelection`
+clears the text selection but does NOT dismiss an already-presented system
+edit menu — the menu lingers until the user touches elsewhere. The JS command
+surface has no dismiss entrypoint, so this needs a vendored native fix
+(dismiss the `UIEditMenuInteraction` in `clearSelection`), tracked for the
+next native round.
+
+Still pending on-device: real long-press gesture → native menu round-trip,
+handle dragging inside a native selection, and behavior with
+`clearSelectionOnMenuAction` (native clears itself; the bridge's pushed record
+goes stale until the next range change — benign, but worth observing).
+
 ## Initial Scope
 
 The seed package provides, ahead of the RN coordinator:

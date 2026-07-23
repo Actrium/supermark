@@ -118,6 +118,16 @@ function SelectionControls({ onStatus }: { onStatus: (status: string) => void })
     store.commit();
   };
 
+  // Single-block commit: the native bridge answers with the vendored
+  // `selectRange`, so on device this pops native selection handles + the
+  // system menu inside p1 ("Hello world"). The cross-block Select A..B above
+  // stays overlay-only by design.
+  const selectNative = () => {
+    store.beginAt({ nodeId: 'p1', unitId: 'p1#0', offset: 0 });
+    store.extendTo({ nodeId: 'p1', unitId: 'p1#1', offset: 5 });
+    store.commit();
+  };
+
   const copyMarkdown = () => {
     const md = serializeSelectionUnits(snap.units, 'markdown');
     onStatus(typeof md === 'string' ? md : '');
@@ -132,6 +142,9 @@ function SelectionControls({ onStatus }: { onStatus: (status: string) => void })
     <View style={s.controls}>
       <TouchableOpacity style={s.button} onPress={selectAB}>
         <Text style={s.buttonText}>Select A..B</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={s.button} onPress={selectNative}>
+        <Text style={s.buttonText}>Select native</Text>
       </TouchableOpacity>
       <TouchableOpacity style={s.button} onPress={copyMarkdown}>
         <Text style={s.buttonText}>Copy markdown</Text>

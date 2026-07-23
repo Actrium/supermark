@@ -46,8 +46,11 @@ marks.
 
 The coordinator layer (`SelectionRoot`, `useDocumentSelection`, registry /
 hit-testing / selection state) and the `SelectableRichText` segment adapter are in
-place as pure tested modules; overlay drawing and live native event wiring need a
-device and are the next round — see the plan's Status section.
+place as pure tested modules. The command bridge is wired both ways: native
+long-press / menu-action events flow up into the selection store, and a committed
+single-block range flows back down as a native `selectRange` (system handles +
+menu); cross-block selection stays on the coordinator overlay. On-device gesture
+verification is still pending — see the plan's Status section.
 
 ## Platform Requirements
 
@@ -59,10 +62,11 @@ device and are the next round — see the plan's Status section.
 - **iOS: upstream targets React Native >= 0.83;** this repo's example builds and
   runs it on 0.81.5 (New Arch, simulator-verified), so 0.81 works in practice but
   is not an upstream-supported floor.
-- The package `peerDependencies` currently say `react-native >= 0.72.0` — that is
-  inherited from the RN renderer and looser than the real floors above; treat this
-  section as authoritative until the interaction bridge lands and the peer range
-  is tightened.
+- The package `peerDependencies` declare `react-native >= 0.81.0` — the lowest
+  floor any platform supports (iOS, as verified in this repo's example). A single
+  peer range cannot express the stricter Android floor, so the per-platform
+  floors above stay authoritative: on Android the vendored component will not
+  compile below 0.85 regardless of the peer range.
 
 ## Native Primitive Boundary
 

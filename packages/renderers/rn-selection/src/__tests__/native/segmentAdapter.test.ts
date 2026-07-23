@@ -125,14 +125,107 @@ describe('event translation', () => {
   test('rangeToSegmentSelection orders the result ascending regardless of direction', () => {
     const forward = rangeToSegmentSelection(
       { anchor: { nodeId: 'h', unitId: 'h#1', offset: 2 }, focus: { nodeId: 'h', unitId: 'h#2', offset: 2 } },
+      index,
       spans
     );
     const reversed = rangeToSegmentSelection(
       { anchor: { nodeId: 'h', unitId: 'h#2', offset: 2 }, focus: { nodeId: 'h', unitId: 'h#1', offset: 2 } },
+      index,
       spans
     );
     expect(forward).toEqual({ startUtf16: 2, endUtf16: 7 });
     expect(reversed).toEqual({ startUtf16: 2, endUtf16: 7 });
+  });
+});
+
+describe('rangeToSegmentSelection document-index projection', () => {
+  const brk = (unitId: string, nodeId: string): SelectionUnit => ({
+    kind: 'break',
+    unitId,
+    nodeId,
+    text: '\n',
+    reason: 'block',
+    node: NODE,
+  });
+  // Three-paragraph stream; the segment under test renders p1's visible units.
+  const units: SelectionUnit[] = [
+    tUnit('p0#0', 'p0', 'Prev'),
+    brk('p0#1', 'p0'),
+    tUnit('p1#0', 'p1', 'Hello '),
+    tUnit('p1#1', 'p1', 'world'),
+    brk('p1#2', 'p1'),
+    tUnit('p2#0', 'p2', 'Next'),
+  ];
+  const index = buildUnitIndex(units);
+  const spans = buildSegmentSpans({ unitIds: ['p1#0', 'p1#1'] }, index);
+
+  test('a focus on the trailing break clamps to the segment end, not the head', () => {
+    // The break shares nodeId 'p1' but is not rendered by the segment; the old
+    // per-span nodeId fallback collapsed this to the FIRST span.
+    const seg = rangeToSegmentSelection(
+      {
+        anchor: { nodeId: 'p1', unitId: 'p1#0', offset: 0 },
+        focus: { nodeId: 'p1', unitId: 'p1#2', offset: 1 },
+      },
+      index,
+      spans
+    );
+    expect(seg).toEqual({ startUtf16: 0, endUtf16: 11 });
+  });
+
+  test('an anchor before the segment clamps to 0', () => {
+    const seg = rangeToSegmentSelection(
+      {
+        anchor: { nodeId: 'p0', unitId: 'p0#0', offset: 2 },
+        focus: { nodeId: 'p1', unitId: 'p1#1', offset: 3 },
+      },
+      index,
+      spans
+    );
+    expect(seg).toEqual({ startUtf16: 0, endUtf16: 9 });
+  });
+
+  test('a zero-text unit interleaved between spans projects to the next span start', () => {
+    const mixed: SelectionUnit[] = [
+      tUnit('m#0', 'm', 'ab'),
+      tUnit('m#1', 'm', ''),
+      tUnit('m#2', 'm', 'cd'),
+    ];
+    const mIndex = buildUnitIndex(mixed);
+    const mSpans = buildSegmentSpans({ unitIds: ['m#0', 'm#1', 'm#2'] }, mIndex);
+    const seg = rangeToSegmentSelection(
+      {
+        anchor: { nodeId: 'm', unitId: 'm#1', offset: 1 },
+        focus: { nodeId: 'm', unitId: 'm#2', offset: 2 },
+      },
+      mIndex,
+      mSpans
+    );
+    expect(seg).toEqual({ startUtf16: 2, endUtf16: 4 });
+  });
+
+  test('a collapsed projection returns null', () => {
+    const seg = rangeToSegmentSelection(
+      {
+        anchor: { nodeId: 'p1', unitId: 'p1#0', offset: 2 },
+        focus: { nodeId: 'p1', unitId: 'p1#0', offset: 2 },
+      },
+      index,
+      spans
+    );
+    expect(seg).toBeNull();
+  });
+
+  test('a segment with no spans returns null', () => {
+    const seg = rangeToSegmentSelection(
+      {
+        anchor: { nodeId: 'p1', unitId: 'p1#0', offset: 0 },
+        focus: { nodeId: 'p1', unitId: 'p1#1', offset: 5 },
+      },
+      index,
+      []
+    );
+    expect(seg).toBeNull();
   });
 });
 
