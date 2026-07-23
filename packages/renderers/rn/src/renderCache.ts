@@ -80,6 +80,14 @@ export class AsyncRendererCache<T> {
 // Renderer-level caches are keyed by namespace and policy rather than config identity.
 // This lets equivalent inline config objects share completed and in-flight work while
 // each AsyncRendererCache remains bounded by its resolved LRU policy.
+//
+// Lifecycle note: the key encodes `namespace:maxSize:ttl`, so if a host changes cache
+// policy at runtime (e.g. maxSize 10 -> 20) a NEW AsyncRendererCache is created under
+// the new key and the old one stays in this Map. This is intentional: we cannot safely
+// tell whether the old cache is still referenced by an in-flight render. The leak is
+// bounded — each stranded cache holds at most `maxSize` entries plus a transient
+// `pending` map — and changing policy at runtime is rare (policy usually comes from a
+// static host config for the whole app lifetime), so no proactive sweep is wired.
 const rendererCaches = new Map<string, AsyncRendererCache<unknown>>();
 
 /** Resolves an engine override on top of the diagram-wide cache policy. */
@@ -121,6 +129,12 @@ export function getRendererCache<T>(
   namespace: string,
   policy: RendererCachePolicy
 ): AsyncRendererCache<T> | undefined {
+  // maxSize:0 means "zero capacity", i.e. nothing can be retained, so caching is
+  // disabled even when policy.enabled is true. Note this can surprise a host that
+  // sets options.cache:true together with diagram.defaultCache.maxSize:0: the
+  // explicit zero capacity wins and documents are not cached. The combination is
+  // self-consistent (0 capacity stores nothing) but uncommon — if both signals
+  // appear, raise the maxSize rather than relying on the global toggle here.
   if (!policy.enabled || policy.maxSize === 0) {
     return undefined;
   }

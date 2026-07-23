@@ -1595,6 +1595,13 @@ export interface SupramarkConfig {
  *
  * @param enabledByDefault - 默认是否启用所有 Feature（默认为 true）
  * @returns Supramark 配置对象
+ *
+ * 行为说明：返回的 config 固定带 `options.cache: true`，即宿主运行时
+ * （@supramark/rn / @supramark/web）会启用进程级运行时缓存——已解析文档
+ * 与已归一化图表 SVG 在虚拟列表重挂载等场景下复用。该缓存默认有界（按条目数），
+ * 可通过 `diagram.defaultCache` / `diagram.engines[engine].cache` 调整或关闭。
+ * 基于 {@link createConfigFromRegistry} 的宿主因此默认获得该缓存行为；
+ * 若需关闭，传入显式覆盖 `options.cache: false` 的 config。
  */
 export function createConfigFromRegistry(enabledByDefault = true): SupramarkConfig {
   const features = FeatureRegistry.list().map(feature => ({
