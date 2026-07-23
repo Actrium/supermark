@@ -150,7 +150,9 @@ const nonPlainIdentities = new WeakMap<object, number>();
 let nextNonPlainId = 1;
 
 function isPlainObject(value: object): boolean {
-  const proto = Object.getPrototypeOf(value);
+  // Object.getPrototypeOf is typed `any` in the ES5 lib, so assert the return
+  // to keep the type-aware lint (no-unsafe-assignment) happy.
+  const proto = Object.getPrototypeOf(value) as object | null;
   return proto === null || proto === Object.prototype;
 }
 
