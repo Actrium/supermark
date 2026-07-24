@@ -907,7 +907,7 @@ fn strip_task_marker_from_text(value: &mut String) -> Option<bool> {
 }
 
 fn map_fence(fence: &CodeFence, position: Option<SourcePosition>) -> SupramarkNode {
-    let info = fence.info.trim();
+    let info = crate::common::utils::unescape_all(fence.info.trim());
     let mut parts = info.split_whitespace();
     let lang = parts.next().map(str::to_owned);
     let meta_raw = {

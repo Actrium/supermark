@@ -312,9 +312,13 @@ pub fn is_punct_char(ch: char) -> bool {
     use unicode_general_category::GeneralCategory::*;
 
     match get_general_category(ch) {
-        // P
+        // P (Punctuation)
         ConnectorPunctuation | DashPunctuation | OpenPunctuation | ClosePunctuation |
-        InitialPunctuation | FinalPunctuation | OtherPunctuation => true,
+        InitialPunctuation | FinalPunctuation | OtherPunctuation |
+        // S (Symbol) — CommonMark 0.31.2 treats all Symbol categories as
+        // punctuation for emphasis flanking, so currency signs ($, £, €) and
+        // math/modifier symbols cannot form intraword emphasis.
+        MathSymbol | CurrencySymbol | ModifierSymbol | OtherSymbol => true,
 
         // L
         UppercaseLetter | LowercaseLetter | TitlecaseLetter | ModifierLetter | OtherLetter |
@@ -322,8 +326,6 @@ pub fn is_punct_char(ch: char) -> bool {
         NonspacingMark | SpacingMark | EnclosingMark |
         // N
         DecimalNumber | LetterNumber | OtherNumber |
-        // S
-        MathSymbol | CurrencySymbol | ModifierSymbol | OtherSymbol |
         // Z
         SpaceSeparator | LineSeparator | ParagraphSeparator |
         // C
