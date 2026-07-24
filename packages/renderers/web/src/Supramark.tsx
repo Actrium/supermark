@@ -8,6 +8,7 @@ import type {
   SupramarkDefinitionItemNode,
   SupramarkDefinitionTermNode,
   SupramarkDefinitionDescriptionNode,
+  SupramarkRawNode,
   SupramarkDiagramConfig,
   SupramarkConfig,
   SupramarkCodeHighlightResult,
@@ -346,6 +347,75 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
     </ErrorBoundary>
   );
 };
+
+const RAW_ATTR_MAP: Record<string, string> = {
+  class: 'className',
+  for: 'htmlFor',
+  tabindex: 'tabIndex',
+  readonly: 'readOnly',
+  maxlength: 'maxLength',
+  colspan: 'colSpan',
+  rowspan: 'rowSpan',
+  cellpadding: 'cellPadding',
+  cellspacing: 'cellSpacing',
+  contenteditable: 'contentEditable',
+  crossorigin: 'crossOrigin',
+  datetime: 'dateTime',
+  usemap: 'useMap',
+};
+
+function parseRawAttrs(attrPart: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const re = /([a-zA-Z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+)))?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(attrPart)) !== null) {
+    const name = m[1];
+    const val = m[2] ?? m[3] ?? m[4] ?? '';
+    const mapped = RAW_ATTR_MAP[name.toLowerCase()] ?? name;
+    attrs[mapped] = val;
+  }
+  return attrs;
+}
+
+// CommonMark raw HTML may be an arbitrary fragment (open tag, close tag,
+// comment, declaration). React's component model maps each node to one
+// complete DOM element, so only a raw value that forms a single balanced
+// element or self-closing tag can be rendered faithfully via a same-named
+// host with dangerouslySetInnerHTML. Fragments fall through to null — the
+// documented React limitation (cases involving comments, declarations, or
+// split open/close tags stay unmatched in conformance runs).
+function renderRawNode(node: SupramarkRawNode, key: number): React.ReactNode {
+  const value = node.value ?? '';
+  const tagMatch = value.match(/^<([a-zA-Z][\w-]*)/);
+  if (!tagMatch) return null;
+  const tag = tagMatch[1];
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const openRe = new RegExp('^<' + escaped + '\\b([^>]*)>', 'i');
+  const openM = value.match(openRe);
+  if (!openM) return null;
+  const attrPart = openM[1];
+  if (/\/\s*$/.test(attrPart)) {
+    return React.createElement(tag, {
+      key,
+      ...parseRawAttrs(attrPart.replace(/\/\s*$/, '')),
+    });
+  }
+  const closeRe = new RegExp('</' + escaped + '\\s*>\\s*$', 'i');
+  const closeM = value.match(closeRe);
+  if (!closeM) return null;
+  const inner = value.slice(openM[0].length, value.length - closeM[0].length);
+  const attrs = parseRawAttrs(attrPart);
+  // React rejects dangerouslySetInnerHTML on <textarea> (it models content as
+  // a controlled value), so inject the raw inner text as children instead.
+  if (tag.toLowerCase() === 'textarea') {
+    return React.createElement(tag, { key, ...attrs, defaultValue: inner });
+  }
+  return React.createElement(tag, {
+    key,
+    ...attrs,
+    dangerouslySetInnerHTML: { __html: inner },
+  });
+}
 
 const INLINE_NODE_TYPES = new Set<SupramarkNode['type']>([
   'text',
@@ -937,6 +1007,8 @@ function renderNode(
       // Rust parser 把 list_item.children 等场景的 inline 节点扁平铺开（非 paragraph 包裹），
       // renderNode 遍历到这些类型时委托给 renderInlineNode，避免走 default 返回 null 吞掉内容。
       return renderInlineNode(node, key, classNames, rendered, highlighted, config);
+    case 'raw':
+      return renderRawNode(node as SupramarkRawNode, key);
     default:
       return null;
   }
@@ -1108,6 +1180,8 @@ function renderInlineNode(
         </sup>
       );
     }
+    case 'raw':
+      return renderRawNode(node as SupramarkRawNode, key);
     default:
       return null;
   }

@@ -68,6 +68,10 @@ function listItem(children: SupramarkRootNode['children']) {
   return { type: 'list_item', children } as const;
 }
 
+function raw(value: string, block = true) {
+  return { type: 'raw', format: 'html', value, block } as const;
+}
+
 describe('CommonMark block rendering', () => {
   test('renders a blockquote with its paragraph children', async () => {
     const ast = makeRoot([{ type: 'blockquote', children: [paragraph('quote')] }]);
@@ -195,5 +199,58 @@ describe('CommonMark list item block/inline boundaries', () => {
     const ast = makeRoot([unorderedList([listItem([text('foo')])])]);
     const container = await renderAst(ast);
     expect(container.innerHTML).toMatch(/<li>foo<\/li>/);
+  });
+});
+
+describe('CommonMark raw HTML', () => {
+  test('renders a balanced block raw element via a same-named host', async () => {
+    // commonmark-0.31.2-0185: `<div>\nbar\n</div>` stays as <div>\nbar\n</div>
+    const ast = makeRoot([raw('<div>\nbar\n</div>')]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toContain('<div>');
+    expect(container.innerHTML).toContain('bar');
+    expect(container.innerHTML).toContain('</div>');
+    // no extra wrapper element around the raw div
+    expect(container.firstChild?.nodeName).toBe('DIV');
+  });
+
+  test('preserves the literal inner text of a raw block (no markdown processing)', async () => {
+    // commonmark-0.31.2-0189: `<div>\n*Emphasized* text.\n</div>` — `*x*` stays literal
+    const ast = makeRoot([raw('<div>\n*Emphasized* text.\n</div>')]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toContain('*Emphasized*');
+    expect(container.innerHTML).not.toContain('<em>');
+  });
+
+  test('renders a self-closing inline custom element in a paragraph', async () => {
+    // commonmark-0.31.2-0617: `Foo <responsive-image src="foo.jpg" />`
+    const ast = makeRoot([
+      {
+        type: 'paragraph',
+        children: [text('Foo '), raw('<responsive-image src="foo.jpg" />', false)],
+      },
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toContain('Foo');
+    expect(container.innerHTML).toMatch(/<responsive-image[^>]*src="foo.jpg"/);
+  });
+
+  test('renders a raw <textarea> with its literal content', async () => {
+    // commonmark-0.31.2-0171: textarea content is raw text, not markdown
+    const ast = makeRoot([raw('<textarea>\n\n*foo*\n\n</textarea>')]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toMatch(/<textarea[^>]*>/);
+    expect(container.innerHTML).toContain('*foo*');
+    expect(container.innerHTML).toContain('</textarea>');
+  });
+
+  test('drops an unbalanced raw fragment (open tag only) — React limitation', async () => {
+    // commonmark-0.31.2-0152 splits `<DIV CLASS="foo">` and `</DIV>` into two
+    // raw nodes; neither is a balanced element, so React cannot host it and
+    // the fragment is dropped (no <DIV> reaches the DOM).
+    const ast = makeRoot([raw('<DIV CLASS="foo">')]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).not.toContain('foo');
+    expect(container.innerHTML).not.toContain('CLASS');
   });
 });
