@@ -347,6 +347,48 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
   );
 };
 
+const INLINE_NODE_TYPES = new Set<SupramarkNode['type']>([
+  'text',
+  'strong',
+  'emphasis',
+  'delete',
+  'inline_code',
+  'math_inline',
+  'link',
+  'image',
+  'break',
+  'footnote_reference',
+]);
+
+// CommonMark separates a list item's children with a newline at every block
+// boundary (inline→block, block→inline, block→block). Between two inline
+// nodes (one inline run) there is no separator. Only the inline↔block
+// newlines survive semantic normalization (they attach to adjacent text),
+// so emitting them here matches the expected DOM without affecting the
+// already-passing compact block→block cases.
+function renderListItemChildren(
+  children: SupramarkNode[],
+  classNames: SupramarkClassNames,
+  rendered: Map<string, DiagramRenderResult>,
+  highlighted: Map<string, SupramarkCodeHighlightResult>,
+  config: SupramarkConfig | undefined,
+  containerRenderers: Record<string, ContainerRendererWeb> | undefined
+): React.ReactNode[] {
+  const result: React.ReactNode[] = [];
+  children.forEach((child, index) => {
+    if (index > 0) {
+      const prev = children[index - 1];
+      const bothInline =
+        INLINE_NODE_TYPES.has(prev.type) && INLINE_NODE_TYPES.has(child.type);
+      if (!bothInline) result.push('\n');
+    }
+    result.push(
+      renderNode(child, index, classNames, rendered, highlighted, config, containerRenderers)
+    );
+  });
+  return result;
+}
+
 function renderNode(
   node: SupramarkNode,
   key: number,
@@ -502,8 +544,13 @@ function renderNode(
 
       return (
         <li key={key} className={classNames.listItem}>
-          {item.children.map((child, index) =>
-            renderNode(child, index, classNames, rendered, highlighted, config, containerRenderers)
+          {renderListItemChildren(
+            item.children,
+            classNames,
+            rendered,
+            highlighted,
+            config,
+            containerRenderers
           )}
         </li>
       );
@@ -1032,7 +1079,14 @@ function renderInlineNode(
       );
     }
     case 'break':
-      return <br key={key} />;
+      // CommonMark serializes a hard line break as `<br />\n`; the trailing
+      // newline becomes a significant text node when followed by inline text,
+      // so emit it explicitly to match the expected DOM.
+      return (
+        <React.Fragment key={key}>
+          <br />{'\n'}
+        </React.Fragment>
+      );
     case 'delete': {
       const deleteNode = node;
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-gfm'])) {

@@ -52,6 +52,22 @@ function paragraph(text: string) {
   return { type: 'paragraph', children: [{ type: 'text', value: text }] } as const;
 }
 
+function text(value: string) {
+  return { type: 'text', value } as const;
+}
+
+function heading(depth: number, content: string) {
+  return { type: 'heading', depth, children: [text(content)] } as const;
+}
+
+function unorderedList(children: SupramarkRootNode['children']) {
+  return { type: 'list', ordered: false, children } as const;
+}
+
+function listItem(children: SupramarkRootNode['children']) {
+  return { type: 'list_item', children } as const;
+}
+
 describe('CommonMark block rendering', () => {
   test('renders a blockquote with its paragraph children', async () => {
     const ast = makeRoot([{ type: 'blockquote', children: [paragraph('quote')] }]);
@@ -107,5 +123,77 @@ describe('CommonMark block rendering', () => {
     const codeMatch = container.innerHTML.match(/<code[^>]*>/i);
     expect(codeMatch).not.toBeNull();
     expect(codeMatch![0]).not.toMatch(/language-/i);
+  });
+});
+
+describe('CommonMark hard line breaks', () => {
+  test('emits a newline after <br /> between text in a paragraph', async () => {
+    // commonmark-0.31.2-0633: `foo  \nbaz` -> <p>foo<br />\nbaz</p>
+    const ast = makeRoot([
+      {
+        type: 'paragraph',
+        children: [text('foo'), { type: 'break' }, text('baz')],
+      },
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toMatch(/foo<br\s*\/?>\nbaz/);
+  });
+
+  test('emits a newline after <br /> inside emphasis', async () => {
+    // commonmark-0.31.2-0638: `*foo  \nbar*` -> <p><em>foo<br />\nbar</em></p>
+    const ast = makeRoot([
+      {
+        type: 'paragraph',
+        children: [
+          {
+            type: 'emphasis',
+            children: [text('foo'), { type: 'break' }, text('bar')],
+          },
+        ],
+      },
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toMatch(/foo<br\s*\/?>\nbar/);
+  });
+});
+
+describe('CommonMark list item block/inline boundaries', () => {
+  test('separates inline text from a nested list with a newline', async () => {
+    // commonmark-0.31.2-0323: `- a\n  - b` -> <li>a\n<ul>...
+    const ast = makeRoot([
+      unorderedList([
+        listItem([text('a'), unorderedList([listItem([text('b')])])]),
+      ]),
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toMatch(/<li>a\n<ul/);
+  });
+
+  test('separates a nested block from following inline text with a newline', async () => {
+    // commonmark-0.31.2-0300 (second item): `<h2>Bar</h2>\nbaz`
+    const ast = makeRoot([
+      unorderedList([listItem([heading(2, 'Bar'), text('baz')])]),
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toMatch(/<h2[^>]*>Bar<\/h2>\nbaz/);
+  });
+
+  test('does not insert a newline between adjacent inline nodes in a tight item', async () => {
+    const ast = makeRoot([
+      unorderedList([
+        listItem([
+          text('a'),
+          { type: 'emphasis', children: [text('b')] },
+        ]),
+      ]),
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toMatch(/<li>a<em>b<\/em><\/li>/);
+  });
+
+  test('does not insert a newline in a tight item with only inline text', async () => {
+    const ast = makeRoot([unorderedList([listItem([text('foo')])])]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toMatch(/<li>foo<\/li>/);
   });
 });
