@@ -1,0 +1,166 @@
+name: CommonMark 语义与视觉对照验证
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_issue:
+        description: "失败后创建或更新 Issue"
+        type: boolean
+        default: true
+      run_visual:
+        description: "执行浏览器视觉对照测试"
+        type: boolean
+        default: true
+      fail_workflow:
+        description: "存在未通过用例时将工作流标记为失败"
+        type: boolean
+        default: true
+      issue_repository:
+        description: "Issue 目标仓库（owner/repo，留空使用当前仓库）"
+        type: string
+        default: ""
+  push:
+    branches: [main, develop]
+    paths:
+      - ".github/workflows/commonmark-conformance.yml"
+      - "tests/cases/**"
+      - "tests/markdown-conformance/**"
+      - "crates/supramark-markdown/**"
+      - "packages/core/**"
+      - "packages/renderers/web/**"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - ".github/workflows/commonmark-conformance.yml"
+      - "tests/cases/**"
+      - "tests/markdown-conformance/**"
+      - "crates/supramark-markdown/**"
+      - "packages/core/**"
+      - "packages/renderers/web/**"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: commonmark-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commonmark-conformance:
+    name: 导入并对照 CommonMark 规范用例（语义与视觉）
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CREATE_ISSUE: ${{ github.event_name == 'workflow_dispatch' && inputs.create_issue || (github.event_name != 'workflow_dispatch' && vars.COMMONMARK_AUTO_ISSUE != 'false') }}
+      RUN_VISUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.run_visual || (github.event_name != 'workflow_dispatch' && vars.COMMONMARK_RUN_VISUAL != 'false') }}
+      FAIL_WORKFLOW: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_workflow || (github.event_name != 'workflow_dispatch' && vars.COMMONMARK_FAIL_WORKFLOW != 'false') }}
+      ISSUE_REPOSITORY: ${{ inputs.issue_repository || vars.COMMONMARK_ISSUE_REPOSITORY || github.repository }}
+
+    steps:
+      - name: 显示运行配置
+        run: |
+          echo "create_issue=$CREATE_ISSUE"
+          echo "run_visual=$RUN_VISUAL"
+          echo "fail_workflow=$FAIL_WORKFLOW"
+          echo "issue_repository=$ISSUE_REPOSITORY"
+
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 配置 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10.28.2"
+
+      - name: 安装用例依赖
+        working-directory: tests/markdown-conformance
+        run: pnpm install --frozen-lockfile
+
+      - name: 安装 Playwright Chromium
+        if: env.RUN_VISUAL == 'true'
+        working-directory: tests/markdown-conformance
+        run: node node_modules/playwright/cli.js install --with-deps chromium
+
+      - name: 配置 Rust
+        uses: dtolnay/rust-toolchain@1.97.0
+
+      - name: 导入锁定的 CommonMark 数据源
+        run: node tests/markdown-conformance/scripts/import.mjs commonmark
+
+      - name: 校验统一 JSON 用例
+        run: node tests/markdown-conformance/scripts/validate.mjs commonmark
+
+      - name: 检查导入产物可重复
+        run: git diff --exit-code -- tests/cases/_fixtures/commonmark/
+
+      - name: 运行 Markdown parser 回归测试
+        run: cargo test -p supramark-markdown --test public_api
+
+      - name: 构建 Supramark Markdown CLI
+        run: cargo build -p supramark-markdown --bin supramark-markdown
+
+      - name: 执行 CommonMark 对照
+        id: conformance_test
+        continue-on-error: true
+        env:
+          FAIL_ON_FAILURES: "1"
+        shell: bash
+        run: |
+          if [ "$RUN_VISUAL" = "true" ]; then
+            node tests/markdown-conformance/scripts/run-commonmark-visual.mjs
+          else
+            node tests/markdown-conformance/scripts/run-commonmark.mjs
+          fi
+
+      - name: 上传中文报告与失败详情
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: commonmark-conformance-report
+          path: tests/markdown-conformance/artifacts/commonmark/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 自动创建或更新失败 Issue
+        if: steps.conformance_test.outcome == 'failure' && github.event_name != 'pull_request' && env.CREATE_ISSUE == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.COMMONMARK_ISSUE_TOKEN || github.token }}
+          GH_REPO: ${{ env.ISSUE_REPOSITORY }}
+          ISSUE_TITLE: "[CommonMark 对照测试] 自动验证失败"
+          ISSUE_BODY: tests/markdown-conformance/artifacts/commonmark/issue.md
+        shell: bash
+        run: |
+          issue_number="$(
+            gh issue list \
+              --repo "$GH_REPO" \
+              --state open \
+              --limit 100 \
+              --json number,title \
+              --jq '.[] | select(.title == "[CommonMark 对照测试] 自动验证失败") | .number' \
+              | head -n 1
+          )"
+
+          if [ -n "$issue_number" ]; then
+            gh issue edit "$issue_number" --repo "$GH_REPO" --body-file "$ISSUE_BODY"
+            echo "已更新 Issue #$issue_number"
+          else
+            issue_url="$(
+              gh issue create \
+                --repo "$GH_REPO" \
+                --title "$ISSUE_TITLE" \
+                --body-file "$ISSUE_BODY"
+            )"
+            echo "已创建 Issue：$issue_url"
+          fi
+
+      - name: 标记语义或视觉对照失败
+        if: steps.conformance_test.outcome == 'failure' && env.FAIL_WORKFLOW == 'true'
+        run: |
+          echo "CommonMark 语义或视觉对照存在未通过用例，中文报告和 Issue 内容已生成。"
+          exit 1
