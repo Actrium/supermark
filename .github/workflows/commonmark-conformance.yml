@@ -28,15 +28,6 @@ on:
       - "crates/supramark-markdown/**"
       - "packages/core/**"
       - "packages/renderers/web/**"
-  pull_request:
-    branches: [main, develop]
-    paths:
-      - ".github/workflows/commonmark-conformance.yml"
-      - "tests/cases/**"
-      - "tests/markdown-conformance/**"
-      - "crates/supramark-markdown/**"
-      - "packages/core/**"
-      - "packages/renderers/web/**"
 
 permissions:
   contents: read
