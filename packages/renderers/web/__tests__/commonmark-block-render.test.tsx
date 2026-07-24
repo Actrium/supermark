@@ -244,13 +244,24 @@ describe('CommonMark raw HTML', () => {
     expect(container.innerHTML).toContain('</textarea>');
   });
 
-  test('drops an unbalanced raw fragment (open tag only) — React limitation', async () => {
+  test('renders a bare open-tag raw fragment as an empty same-named host', async () => {
     // commonmark-0.31.2-0152 splits `<DIV CLASS="foo">` and `</DIV>` into two
-    // raw nodes; neither is a balanced element, so React cannot host it and
-    // the fragment is dropped (no <DIV> reaches the DOM).
+    // raw nodes. A bare open-tag fragment with no close tag and no following
+    // sibling renders as a same-named host carrying the attributes; the HTML
+    // parser auto-closes it. (With a matching close-tag sibling, mergeRawNodes
+    // wraps the intervening children — covered by the conformance suite.)
     const ast = makeRoot([raw('<DIV CLASS="foo">')]);
     const container = await renderAst(ast);
-    expect(container.innerHTML).not.toContain('foo');
-    expect(container.innerHTML).not.toContain('CLASS');
+    expect(container.innerHTML).toMatch(/<div[^>]*>/i);
+    expect(container.innerHTML).toContain('foo');
+  });
+
+  test('renders a comment raw node via DOM injection', async () => {
+    // `<!-- foo -->` is a raw fragment React cannot emit as an element, so
+    // the renderer parses the value through a <template> and splices the
+    // resulting comment node in place.
+    const ast = makeRoot([raw('<!-- foo -->')]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toContain('<!-- foo -->');
   });
 });
