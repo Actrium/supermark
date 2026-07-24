@@ -334,7 +334,7 @@ function renderNode(
       const marker = isTaskList ? `${checkSymbol} ` : `${listMarker ?? '•'} `;
 
       // Tight list (inline-only children): plain <Text>, width-safe (see #101).
-      if (!item.children.some(child => !isInlineNode(child))) {
+      if (item.children.every(isInlineNode)) {
         return (
           <Text key={key} style={styles.paragraph}>
             {marker}
@@ -708,6 +708,9 @@ function codeTokenTextStyle(token: {
   };
 }
 
+// Inline node types — keep in sync with renderInlineNode's switch below: any
+// inline type handled there must be listed here, or list_item will mistake it
+// for a block and route it through renderNode.
 const INLINE_NODE_TYPES: ReadonlySet<string> = new Set([
   'text',
   'strong',
@@ -747,7 +750,7 @@ function renderListItemBody(
     if (inlineBuf.length === 0) return;
     const prefix = markerPending ? marker : '';
     out.push(
-      <Text key={`li-inline-${seq}`} style={styles.paragraph}>
+      <Text key={`li-${seq}`} style={styles.paragraph}>
         {prefix}
         {inlineBuf.map((n, i) => renderInlineNode(n, i, styles, highlighted, config))}
       </Text>,
@@ -775,10 +778,13 @@ function renderListItemBody(
       markerPending = false;
       continue;
     }
-    // Other blocks (nested list, subsequent paragraph): render normally.
+    // Other blocks (nested list, subsequent paragraph): indent to align under
+    // the marker, then render via renderNode.
     flushInline();
     out.push(
-      renderNode(child, seq, styles, highlighted, config, onOpenHtmlPage, containerRenderers),
+      <View key={`li-${seq}`} style={styles.listItemIndent}>
+        {renderNode(child, 0, styles, highlighted, config, onOpenHtmlPage, containerRenderers)}
+      </View>,
     );
     seq += 1;
   }

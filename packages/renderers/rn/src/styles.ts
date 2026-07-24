@@ -28,6 +28,7 @@ export interface SupramarkStyles {
   list?: ViewStyle;
   listItem?: ViewStyle;
   listItemBlock?: ViewStyle;
+  listItemIndent?: ViewStyle;
   bullet?: TextStyle;
   listItemText?: TextStyle;
 
@@ -129,6 +130,9 @@ export const defaultStyles = StyleSheet.create({
   },
   listItemBlock: {
     flexDirection: 'column',
+  },
+  listItemIndent: {
+    paddingLeft: 16,
   },
   bullet: {
     marginRight: 6,

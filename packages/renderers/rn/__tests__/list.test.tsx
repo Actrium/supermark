@@ -171,4 +171,33 @@ describe('loose / nested list rendering (block children)', () => {
     expect(texts).toContain('• outer');
     expect(texts).toContain('• inner');
   });
+
+  it('loose nested list: paragraph body + nested sub-list both render', async () => {
+    const ast = {
+      type: 'root',
+      children: [
+        {
+          type: 'list',
+          ordered: false,
+          children: [
+            {
+              type: 'list_item',
+              children: [
+                { type: 'paragraph', children: [{ type: 'text', value: 'outer' }] },
+                {
+                  type: 'list',
+                  ordered: false,
+                  children: [{ type: 'list_item', children: [{ type: 'text', value: 'inner' }] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as SupramarkRootNode;
+    const r = await renderAst(ast);
+    const texts = textContents(r.root);
+    expect(texts).toContain('• outer');
+    expect(texts).toContain('• inner');
+  });
 });
