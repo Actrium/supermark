@@ -277,7 +277,8 @@ function renderNode(
   highlighted: Map<string, SupramarkCodeHighlightResult>,
   config?: SupramarkConfig,
   onOpenHtmlPage?: (node: SupramarkContainerNode) => void,
-  containerRenderers?: Record<string, ContainerRendererRN>
+  containerRenderers?: Record<string, ContainerRendererRN>,
+  listMarker?: string
 ): RenderedNode {
   switch (node.type) {
     case 'paragraph':
@@ -308,10 +309,20 @@ function renderNode(
     }
     case 'list': {
       const list = node;
+      const startIndex = list.start ?? 1;
       return (
         <View key={key} style={styles.list}>
           {list.children.map((item, index) =>
-            renderNode(item, index, styles, highlighted, config, onOpenHtmlPage, containerRenderers)
+            renderNode(
+              item,
+              index,
+              styles,
+              highlighted,
+              config,
+              onOpenHtmlPage,
+              containerRenderers,
+              list.ordered ? `${startIndex + index}.` : '•',
+            )
           )}
         </View>
       );
@@ -320,14 +331,16 @@ function renderNode(
       const item = node;
       const isTaskList = item.checked !== undefined;
       const checkSymbol = item.checked === true ? '☑' : '☐';
+      // Render the item as a plain <Text> mirroring paragraph. The shared row
+      // listItem wraps content in a flex:1 <Text> whose width yoga mis-measures
+      // under streaming and wraps prematurely; paragraph shape avoids that path.
+      const marker = isTaskList ? `${checkSymbol} ` : `${listMarker ?? '•'} `;
 
       return (
-        <View key={key} style={styles.listItem}>
-          <Text style={styles.bullet}>{isTaskList ? checkSymbol : '•'}</Text>
-          <Text style={styles.listItemText}>
-            {renderInlineNodes(item.children, styles, highlighted, config)}
-          </Text>
-        </View>
+        <Text key={key} style={styles.paragraph}>
+          {marker}
+          {renderInlineNodes(item.children, styles, highlighted, config)}
+        </Text>
       );
     }
     case 'diagram': {
