@@ -1,0 +1,331 @@
+.app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 20px 80px;
+}
+
+/* ── Summary ─────────────────────────────────────────────── */
+.summary-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+.summary-head h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 650;
+}
+.summary-head p {
+  margin: 0;
+  font-size: 13px;
+}
+.rate-big {
+  font-size: 30px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--pass);
+  text-align: right;
+  line-height: 1;
+}
+.summary-rate .muted {
+  display: block;
+  text-align: right;
+  margin-top: 4px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0 20px;
+}
+
+.badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.badge-pass { color: var(--pass); border-color: var(--pass); }
+.badge-whitespace { color: var(--whitespace); border-color: var(--whitespace); }
+.badge-fail { color: var(--fail); border-color: var(--fail); }
+.badge-error { color: var(--error); border-color: var(--error); }
+
+.sections h2 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+.section-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px 24px;
+  columns: 2;
+  column-gap: 32px;
+}
+.section-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(80px, 2fr) auto;
+  align-items: center;
+  gap: 10px;
+  break-inside: avoid;
+}
+.section-name {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.section-bar {
+  height: 6px;
+  background: var(--bg-elev2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.section-bar-fill {
+  height: 100%;
+  background: var(--pass);
+}
+.section-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── Focus banner ────────────────────────────────────────── */
+.focus-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--link);
+  border-radius: 8px;
+  background: rgba(88, 166, 255, 0.08);
+  font-size: 13px;
+}
+.focus-clear {
+  background: transparent;
+  color: var(--link);
+  border: 1px solid var(--link);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.focus-clear:hover {
+  background: rgba(88, 166, 255, 0.15);
+}
+
+/* ── Filters ─────────────────────────────────────────────── */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.filters select,
+.filters input {
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: var(--sans);
+}
+.filters input[type='search'] {
+  flex: 1;
+  min-width: 200px;
+}
+.filter-count {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* ── Case list ───────────────────────────────────────────── */
+.case-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.case {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  overflow: hidden;
+}
+.case-pending {
+  padding: 12px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.case-head {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 13px;
+}
+.case-head:hover {
+  background: var(--bg-elev2);
+}
+.case-num {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--link);
+}
+.case-section {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.case-ms {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.case-caret {
+  color: var(--muted);
+}
+
+.case-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border-top: 1px solid var(--border);
+}
+.case-col {
+  background: var(--bg-elev);
+  padding: 10px 12px;
+  min-width: 0;
+}
+.case-col-wide {
+  grid-column: 1 / -1;
+}
+.case-col-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.case-code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow: auto;
+}
+.case-error {
+  color: var(--fail);
+}
+
+/* ── Diff ────────────────────────────────────────────────── */
+.diff {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 0;
+  max-height: 420px;
+  overflow: auto;
+}
+.diff-line {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  padding: 0 10px;
+}
+.diff-marker {
+  color: var(--muted);
+  user-select: none;
+}
+.diff-add { background: rgba(63, 185, 80, 0.12); }
+.diff-add .diff-marker { color: var(--pass); }
+.diff-del { background: rgba(248, 81, 73, 0.12); }
+.diff-del .diff-marker { color: var(--fail); }
+.diff-text { white-space: pre-wrap; word-break: break-word; }
+
+/* ── AST toggle ──────────────────────────────────────────── */
+.ast-toggle {
+  padding: 0 12px 12px;
+}
+.ast-toggle button {
+  background: var(--bg-elev2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ast-json {
+  margin-top: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+/* ── Misc ────────────────────────────────────────────────── */
+.load-more {
+  display: block;
+  margin: 20px auto 0;
+  padding: 8px 18px;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.load-more:hover {
+  background: var(--bg-elev2);
+}
+.empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* The narrow single-column layout for small windows. */
+@media (max-width: 720px) {
+  .case-body {
+    grid-template-columns: 1fr;
+  }
+  .section-grid {
+    columns: 1;
+  }
+  .summary-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .rate-big,
+  .summary-rate .muted {
+    text-align: left;
+  }
+}

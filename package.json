@@ -16,6 +16,7 @@
     "packages/features/cards/*",
     "examples/react-native",
     "examples/react-web-csr",
+    "examples/rust-vs-official",
     "crates/*/packages/web",
     "crates/*/packages/react-native",
     "crates/vison/vison-renderers/web",
