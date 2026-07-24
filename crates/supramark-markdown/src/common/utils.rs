@@ -303,10 +303,11 @@ pub fn calc_right_whitespace_with_tabstops(source: &str, mut indent: i32) -> (us
 
 /// Checks whether a given character should count as punctuation
 ///
-/// used to determine word boundaries, made to match the implementation of
-/// `isPunctChar` from the JS library.
-/// This is currently implemented as a `match`, but might be simplified as a
-/// regex if benchmarking shows this to be beneficient.
+/// Matches the CommonMark reference `isPunctChar` definition: an ASCII
+/// punctuation character or a character in the Unicode general categories
+/// `P` (punctuation) or `S` (symbol). Without `S`, currency/math symbols
+/// such as `£`, `€` wrongly act as word boundaries in emphasis flanking
+/// (see CommonMark 0.31.2 case 0354).
 pub fn is_punct_char(ch: char) -> bool {
     use unicode_general_category::get_general_category;
     use unicode_general_category::GeneralCategory::*;
@@ -314,7 +315,9 @@ pub fn is_punct_char(ch: char) -> bool {
     match get_general_category(ch) {
         // P
         ConnectorPunctuation | DashPunctuation | OpenPunctuation | ClosePunctuation |
-        InitialPunctuation | FinalPunctuation | OtherPunctuation => true,
+        InitialPunctuation | FinalPunctuation | OtherPunctuation |
+        // S — CommonMark counts symbols as punctuation for flanking
+        MathSymbol | CurrencySymbol | ModifierSymbol | OtherSymbol => true,
 
         // L
         UppercaseLetter | LowercaseLetter | TitlecaseLetter | ModifierLetter | OtherLetter |
@@ -322,8 +325,6 @@ pub fn is_punct_char(ch: char) -> bool {
         NonspacingMark | SpacingMark | EnclosingMark |
         // N
         DecimalNumber | LetterNumber | OtherNumber |
-        // S
-        MathSymbol | CurrencySymbol | ModifierSymbol | OtherSymbol |
         // Z
         SpaceSeparator | LineSeparator | ParagraphSeparator |
         // C
@@ -335,9 +336,54 @@ pub fn is_punct_char(ch: char) -> bool {
 mod tests {
     use super::cut_right_whitespace_with_tabstops as cut_ws;
     use super::find_indent_of;
+    use super::is_punct_char;
     use super::replace_entity_pattern;
     use super::rfind_and_count;
     use super::unescape_all;
+
+    #[test]
+    fn is_punct_char_matches_commonmark_reference() {
+        // ASCII punctuation.
+        for ch in [
+            '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-', '.', '/', ':', ';',
+            '<', '=', '>', '?', '@', '[', '\\', ']', '^', '_', '`', '{', '|', '}', '~',
+        ] {
+            assert!(
+                is_punct_char(ch),
+                "ASCII punct {ch:?} should be punctuation"
+            );
+        }
+
+        // Unicode P (punctuation) categories.
+        for ch in ['“', '”', '‘', '’', '—', '–', '…', '«', '»', '¿', '¡'] {
+            assert!(is_punct_char(ch), "Unicode P {ch:?} should be punctuation");
+        }
+
+        // Unicode S (symbol) categories — currency, math, modifier, other.
+        // CommonMark 0.31.2 case 0354 depends on these counting as punctuation.
+        for ch in ['£', '€', '¥', '¢', '+', '<', '=', '>', '|', '^', '`', '~'] {
+            assert!(is_punct_char(ch), "Unicode S {ch:?} should be punctuation");
+        }
+        for ch in ['∞', '∂', '√', '∑', '∏', '∫', '∴', '≈', '≠', '≤', '≥'] {
+            assert!(
+                is_punct_char(ch),
+                "Math symbol {ch:?} should be punctuation"
+            );
+        }
+        for ch in ['©', '®', '™', '°', '‰', '§', '¶', '•'] {
+            assert!(
+                is_punct_char(ch),
+                "Other symbol {ch:?} should be punctuation"
+            );
+        }
+
+        // Non-punctuation: letters, marks, numbers, whitespace, control.
+        for ch in [
+            'a', 'Z', '0', '5', ' ', '\t', '\n', 'α', 'β', '中', '文', '日', 'ä', 'ø',
+        ] {
+            assert!(!is_punct_char(ch), "{ch:?} should NOT be punctuation");
+        }
+    }
 
     #[test]
     fn rfind_and_count_test() {

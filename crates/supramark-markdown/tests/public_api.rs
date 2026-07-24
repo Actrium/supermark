@@ -658,3 +658,41 @@ fn nests_footnote_definition_inside_blockquote() {
     };
     assert_eq!(label, "a");
 }
+
+/// CommonMark 0.31.2 case 0354: currency/math symbols (`$`, `£`, `€`) are
+/// Unicode punctuation for flanking, so `*$*` / `*£*` / `*€*` must not form
+/// emphasis. Regression test for <https://github.com/Actrium/supramark/issues/116>.
+#[test]
+fn emphasis_unicode_symbol_flanking_case_0354() {
+    let ast = parse("*$*alpha.\n\n*£*bravo.\n\n*€*charlie.\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+
+    let expected = ["*$*alpha.", "*£*bravo.", "*€*charlie."];
+    assert_eq!(children.len(), expected.len());
+
+    for (node, want) in children.iter().zip(expected) {
+        let SupramarkNode::Paragraph { children, .. } = node else {
+            panic!("expected paragraph, got {node:?}");
+        };
+        assert_no_emphasis(children);
+        assert_eq!(children.len(), 1, "expected a single text child");
+        let SupramarkNode::Text { value, .. } = &children[0] else {
+            panic!("expected text, got {:?}", children[0]);
+        };
+        assert_eq!(value, want);
+    }
+}
+
+fn assert_no_emphasis(nodes: &[SupramarkNode]) {
+    for node in nodes {
+        match node {
+            SupramarkNode::Emphasis { .. } | SupramarkNode::Strong { .. } => {
+                panic!("unexpected emphasis/strong node: {node:?}");
+            }
+            SupramarkNode::Paragraph { children, .. } => assert_no_emphasis(children),
+            _ => {}
+        }
+    }
+}
