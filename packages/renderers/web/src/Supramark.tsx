@@ -417,6 +417,18 @@ function renderNode(
           );
       }
     }
+    case 'blockquote': {
+      const quote = node;
+      return (
+        <blockquote key={key} className={classNames.blockquote}>
+          {quote.children.map((child, index) =>
+            renderNode(child, index, classNames, rendered, highlighted, config, containerRenderers)
+          )}
+        </blockquote>
+      );
+    }
+    case 'thematic_break':
+      return <hr key={key} className={classNames.thematicBreak} />;
     case 'code': {
       const codeBlock = node;
       return renderCodeBlock(codeBlock, key, classNames, highlighted);
@@ -444,11 +456,16 @@ function renderNode(
       const items = list.children.map((item, index) =>
         renderNode(item, index, classNames, rendered, highlighted, config, containerRenderers)
       );
-      return list.ordered ? (
-        <ol key={key} className={classNames.listOrdered}>
-          {items}
-        </ol>
-      ) : (
+      if (list.ordered) {
+        const start =
+          list.start !== undefined && list.start !== 1 ? list.start : undefined;
+        return (
+          <ol key={key} className={classNames.listOrdered} start={start}>
+            {items}
+          </ol>
+        );
+      }
+      return (
         <ul key={key} className={classNames.listUnordered}>
           {items}
         </ul>
@@ -887,18 +904,20 @@ function renderCodeBlock(
   const highlight = highlighted.get(
     buildCodeHighlightKey(codeBlock.value, codeBlock.lang, codeBlock.meta)
   );
+  const languageClass = codeBlock.lang ? `language-${codeBlock.lang}` : undefined;
+  const codeClassName = [classNames.code, languageClass].filter(Boolean).join(' ') || undefined;
 
   if (!highlight) {
     return (
       <pre key={key} className={classNames.codeBlock}>
-        <code className={classNames.code}>{codeBlock.value}</code>
+        <code className={codeClassName}>{codeBlock.value}</code>
       </pre>
     );
   }
 
   return (
     <pre key={key} className={classNames.codeBlock}>
-      <code className={classNames.code} data-language={highlight.language ?? codeBlock.lang}>
+      <code className={codeClassName} data-language={highlight.language ?? codeBlock.lang}>
         {highlight.lines.map((line, lineIndex) => (
           <React.Fragment key={lineIndex}>
             {line.tokens.map((token, tokenIndex) => (
