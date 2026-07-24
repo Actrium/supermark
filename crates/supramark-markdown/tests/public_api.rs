@@ -658,3 +658,42 @@ fn nests_footnote_definition_inside_blockquote() {
     };
     assert_eq!(label, "a");
 }
+
+#[test]
+fn fence_info_decodes_entities_into_lang() {
+    let ast = parse("``` f&ouml;&ouml;\nfoo\n```\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Code { lang, value, .. } = &children[0] else {
+        panic!("expected code block, got {children:?}");
+    };
+    assert_eq!(lang.as_deref(), Some("föö"));
+    assert_eq!(value, "foo\n");
+}
+
+#[test]
+fn fence_info_resolves_backslash_escapes_into_lang() {
+    let ast = parse("``` foo\\+bar\nfoo\n```\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Code { lang, value, .. } = &children[0] else {
+        panic!("expected code block, got {children:?}");
+    };
+    assert_eq!(lang.as_deref(), Some("foo+bar"));
+    assert_eq!(value, "foo\n");
+}
+
+#[test]
+fn fence_info_preserves_meta_after_decoding_lang() {
+    let ast = parse("``` f&ouml;&ouml; meta=&amp;\nfoo\n```\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Code { lang, meta, .. } = &children[0] else {
+        panic!("expected code block, got {children:?}");
+    };
+    assert_eq!(lang.as_deref(), Some("föö"));
+    assert_eq!(meta.as_deref(), Some("meta=&"));
+}
