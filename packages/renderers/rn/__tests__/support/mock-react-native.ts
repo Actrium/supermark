@@ -14,6 +14,9 @@ mock.module('react-native', () => ({
   View: 'View',
   Text: 'Text',
   ActivityIndicator: 'ActivityIndicator',
+  ScrollView: 'ScrollView',
+  Linking: { openURL: () => Promise.resolve() },
+  TouchableOpacity: 'TouchableOpacity',
   Dimensions: { get: () => ({ width: 375, height: 812 }) },
   StyleSheet: { create: (s: unknown) => s },
 }));

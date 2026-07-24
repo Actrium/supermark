@@ -1,36 +1,15 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import React from 'react';
 import { create, act, type ReactTestRenderer } from 'react-test-renderer';
 import type { DiagramRenderResult } from '@supramark/engines';
 import type { SupramarkDiagramNode, SupramarkSourceState } from '@supramark/core';
 
 import './support/mock-react-native';
+import { engineState } from './support/mock-renderer';
 
 // react-test-renderer 需要显式开启 act 环境，否则 effect 不会同步 flush。
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
-
-// 受控 engine：DiagramNode 在模块加载时调用一次 createReactNativeDiagramEngine，
-// 因此 mock engine 跨测试共享；每个测试通过 engineState 观察调用与控制 resolve。
-const engineState = {
-  renderCalls: 0,
-  pendingResolve: null as null | ((result: DiagramRenderResult) => void),
-};
-
-mock.module('react-native-svg', () => ({
-  SvgXml: 'SvgXml',
-}));
-
-mock.module('@supramark/engines/rn', () => ({
-  createReactNativeDiagramEngine: () => ({
-    render: () => {
-      engineState.renderCalls += 1;
-      return new Promise<DiagramRenderResult>(resolve => {
-        engineState.pendingResolve = resolve;
-      });
-    },
-  }),
-}));
 
 // 动态 import：确保上方 mock 在 DiagramNode 加载 react-native / engines/rn 前生效。
 const { DiagramNode } = await import('../src/DiagramNode');
