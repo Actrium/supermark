@@ -75,6 +75,7 @@ node tests/markdown-conformance/scripts/run-commonmark-visual.mjs
 - `summary.md`：中文汇总和失败列表。
 - `report.html`：中文可视化报告，并排显示预期、实际和差异图。
 - `issue.md`：包含问题描述、复现步骤、预期结果和实际结果的 Issue 内容。
+- `issue-metadata.json`：记录数据源感知的 Issue 标题、稳定标记和标签。
 - `summary.json`、`failures.json`、`visual-failures.json`：机器可读结果。
 - `visual/`：失败用例的 PNG 产物。
 - `evidence/<用例 ID>/`：实际 AST、实际 HTML、预期及实际语义树。
@@ -85,7 +86,8 @@ node tests/markdown-conformance/scripts/run-commonmark-visual.mjs
 浏览器 WASM Parser，避免重复解析；最终 DOM 来自生产 Renderer。
 
 GitHub Actions 工作流位于 `.github/workflows/commonmark-conformance.yml`。失败运行会上传完整
-中文报告并生成 `issue.md`；启用 Issue 开关后会创建或更新聚合 Issue。Pull Request 只验证和上传产物。
+中文报告并生成 `issue.md` 与 `issue-metadata.json`；启用 Issue 开关后会创建或更新聚合 Issue。Pull Request 只验证和上传产物。
+Issue 标题格式为 `[<数据源显示名>] 验证结果问题：存在未通过用例`，并自动添加 `bug` 标签；稳定标记用于更新同一数据源已有的聚合 Issue。
 
 手动运行工作流时可以配置三个开关：
 

@@ -4,7 +4,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { astToHtml } from '../lib/semantic/ast-semantics.mjs';
 import { renderCommonMarkHtmlReport } from '../lib/reports/html-report.mjs';
-import { renderCommonMarkIssue } from '../lib/reports/issue-report.mjs';
+import {
+  buildConformanceIssueMetadata,
+  renderCommonMarkIssue,
+} from '../lib/reports/issue-report.mjs';
 import {
   attachEvidence,
   buildFailureGroups,
@@ -73,6 +76,9 @@ const fixtureDirectory = path.join(
 );
 const document = JSON.parse(await readFile(path.join(fixtureDirectory, 'cases.json'), 'utf8'));
 const version = JSON.parse(await readFile(path.join(fixtureDirectory, 'version.json'), 'utf8'));
+const sourceConfig = JSON.parse(
+  await readFile(path.join(SUITE_ROOT, 'config', 'sources', 'commonmark.json'), 'utf8')
+);
 const baselineDocument = await readOptionalJson(BASELINE_PATH);
 const selectedCases = filter
   ? document.cases.filter(testCase => filter.has(testCase.id))
@@ -185,7 +191,8 @@ const summary = {
   failureGroups,
   locale: 'zh-CN',
   result: notPassed.length === 0 && visualExecution.notPassed === 0 ? '通过' : '失败',
-  source: 'commonmark',
+  source: sourceConfig.name,
+  sourceDisplayName: sourceConfig.displayName ?? sourceConfig.name,
   profile: parserProfile,
   comparisonTarget: semanticTarget,
   sourceCommit: version.commit,
@@ -216,6 +223,7 @@ const evidenceById = await writeFailureEvidence({
 const semanticFailureRecords = attachEvidence(notPassed, evidenceById);
 const visualFailureRecords = attachEvidence(visualFailures, evidenceById);
 const issuePath = path.join(artifactDirectory, 'issue.md');
+const issueMetadataPath = path.join(artifactDirectory, 'issue-metadata.json');
 await mkdir(artifactDirectory, { recursive: true });
 await writeFile(path.join(artifactDirectory, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
 await writeFile(
@@ -241,17 +249,27 @@ await writeFile(
   })
 );
 if (summary.result === '失败') {
-  await writeFile(issuePath, renderCommonMarkIssue({
-    summary,
-    semanticFailures: semanticFailureRecords,
-    visualFailures: visualFailureRecords,
-    caseById,
-    astById,
-    actualHtmlById,
-    sourceVersion: version.version,
-  }));
+  const issueMetadata = buildConformanceIssueMetadata(summary);
+  await Promise.all([
+    writeFile(
+      issuePath,
+      renderCommonMarkIssue({
+        summary,
+        semanticFailures: semanticFailureRecords,
+        visualFailures: visualFailureRecords,
+        caseById,
+        astById,
+        actualHtmlById,
+        sourceVersion: version.version,
+      })
+    ),
+    writeFile(issueMetadataPath, JSON.stringify(issueMetadata, null, 2) + '\n'),
+  ]);
 } else {
-  await rm(issuePath, { force: true });
+  await Promise.all([
+    rm(issuePath, { force: true }),
+    rm(issueMetadataPath, { force: true }),
+  ]);
 }
 
 console.log(`CommonMark 语义对照：通过 ${summary.passed}/${summary.total}，未通过 ${summary.notPassed}`);

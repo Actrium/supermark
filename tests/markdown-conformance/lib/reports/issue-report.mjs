@@ -3,6 +3,18 @@ import { htmlToSemanticTree } from '../semantic/html-semantics.mjs';
 const REPRESENTATIVE_LIMIT = 5;
 const DETAIL_LIMIT = 4_000;
 
+export function buildConformanceIssueMetadata(summary) {
+  const source = summary.source;
+  const sourceDisplayName = summary.sourceDisplayName ?? source;
+  return {
+    schemaVersion: 1,
+    source,
+    title: '[' + sourceDisplayName + '] 验证结果问题：存在未通过用例',
+    labels: ['bug'],
+    marker: '<!-- supramark-' + source + '-conformance -->',
+  };
+}
+
 export function renderCommonMarkIssue({
   summary,
   semanticFailures,
@@ -12,6 +24,7 @@ export function renderCommonMarkIssue({
   actualHtmlById,
   sourceVersion,
 }) {
+  const metadata = buildConformanceIssueMetadata(summary);
   const workflowUrl = summary.runtime?.workflowUrl;
   const representatives = selectRepresentatives(
     summary.failureGroups ?? [],
@@ -19,7 +32,7 @@ export function renderCommonMarkIssue({
     visualFailures
   );
   const lines = [
-    '<!-- supramark-commonmark-conformance -->',
+    metadata.marker,
     '# CommonMark 语义与视觉对照测试失败',
     '',
     '## **问题描述**',

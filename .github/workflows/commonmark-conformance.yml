@@ -132,31 +132,70 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.COMMONMARK_ISSUE_TOKEN || github.token }}
           GH_REPO: ${{ env.ISSUE_REPOSITORY }}
-          ISSUE_TITLE: "[CommonMark 对照测试] 自动验证失败"
           ISSUE_BODY: tests/markdown-conformance/artifacts/commonmark/issue.md
+          ISSUE_METADATA: tests/markdown-conformance/artifacts/commonmark/issue-metadata.json
         shell: bash
         run: |
+          mapfile -t issue_metadata < <(
+            node -e '
+              const fs = require("node:fs");
+              const metadata = JSON.parse(
+                fs.readFileSync(process.env.ISSUE_METADATA, "utf8")
+              );
+              process.stdout.write([
+                metadata.source,
+                metadata.title,
+                metadata.labels.join(","),
+                metadata.marker,
+              ].join("\n"));
+            '
+          )
+          issue_source="${issue_metadata[0]}"
+          issue_title="${issue_metadata[1]}"
+          issue_labels="${issue_metadata[2]}"
+          issue_marker="${issue_metadata[3]}"
+
+          if [ -z "$issue_source" ] || [ -z "$issue_title" ] || [ -z "$issue_labels" ] || [ -z "$issue_marker" ]; then
+            echo "Issue 元数据不完整，无法创建或更新 Issue。"
+            exit 1
+          fi
+
+          if ! gh label view "$issue_labels" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh label create "$issue_labels" \
+              --repo "$GH_REPO" \
+              --color "d73a4a" \
+              --description "测试发现需要修复的问题"
+          fi
+
           issue_number="$(
             gh issue list \
               --repo "$GH_REPO" \
               --state open \
               --limit 100 \
-              --json number,title \
-              --jq '.[] | select(.title == "[CommonMark 对照测试] 自动验证失败") | .number' \
+              --json number,title,body \
+              | jq -r \
+                  --arg title "$issue_title" \
+                  --arg marker "$issue_marker" \
+                  '.[] | select(.title == $title or ((.body // "") | contains($marker))) | .number' \
               | head -n 1
           )"
 
           if [ -n "$issue_number" ]; then
-            gh issue edit "$issue_number" --repo "$GH_REPO" --body-file "$ISSUE_BODY"
-            echo "已更新 Issue #$issue_number"
+            gh issue edit "$issue_number" \
+              --repo "$GH_REPO" \
+              --title "$issue_title" \
+              --body-file "$ISSUE_BODY" \
+              --add-label "$issue_labels"
+            echo "已更新 $issue_source Issue #$issue_number：$issue_title"
           else
             issue_url="$(
               gh issue create \
                 --repo "$GH_REPO" \
-                --title "$ISSUE_TITLE" \
-                --body-file "$ISSUE_BODY"
+                --title "$issue_title" \
+                --body-file "$ISSUE_BODY" \
+                --label "$issue_labels"
             )"
-            echo "已创建 Issue：$issue_url"
+            echo "已创建 $issue_source Issue：$issue_url"
           fi
 
       - name: 标记语义或视觉对照失败
