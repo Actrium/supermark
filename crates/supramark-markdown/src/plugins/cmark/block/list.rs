@@ -88,7 +88,13 @@ impl NodeValue for ListItem {
         node: &Node,
         ctx: &crate::supramark::AstV2Ctx<'_>,
     ) -> Option<Vec<crate::supramark::SupramarkNode>> {
-        let (checked, children) = ctx.map_list_item_children(&node.children);
+        let (checked, mut children) = ctx.map_list_item_children(&node.children);
+        // Tight items unwrap the paragraph, so an inline text run can sit
+        // directly next to a nested block (e.g. `- a\n  - b`). cmark emits a
+        // line break between them (`<li>a\n<ul>`); carry that break as a
+        // trailing space on the text node so renderers that echo `node.value`
+        // still separate the text from the block. See issue #115.
+        preserve_text_break_before_blocks(&mut children);
         Some(vec![crate::supramark::SupramarkNode::ListItem {
             checked,
             children,
@@ -106,6 +112,36 @@ impl NodeValue for ListItem {
 
 pub fn add(md: &mut MarkdownParser) {
     md.block.add_rule::<ListScanner>().after::<HrScanner>();
+}
+
+/// Append a trailing space to a text node that sits immediately before a
+/// block-level sibling, preserving the soft break that cmark renders as a
+/// newline between inline text and a nested block within a list item.
+fn preserve_text_break_before_blocks(children: &mut [crate::supramark::SupramarkNode]) {
+    for index in 0..children.len() {
+        let next_is_block = index + 1 < children.len() && is_block_level(&children[index + 1]);
+        if let crate::supramark::SupramarkNode::Text { value, .. } = &mut children[index] {
+            if next_is_block && !value.ends_with(' ') && !value.ends_with('\n') {
+                value.push(' ');
+            }
+        }
+    }
+}
+
+fn is_block_level(node: &crate::supramark::SupramarkNode) -> bool {
+    !matches!(
+        node,
+        crate::supramark::SupramarkNode::Text { .. }
+            | crate::supramark::SupramarkNode::Strong { .. }
+            | crate::supramark::SupramarkNode::Emphasis { .. }
+            | crate::supramark::SupramarkNode::InlineCode { .. }
+            | crate::supramark::SupramarkNode::Link { .. }
+            | crate::supramark::SupramarkNode::Image { .. }
+            | crate::supramark::SupramarkNode::Break { .. }
+            | crate::supramark::SupramarkNode::Delete { .. }
+            | crate::supramark::SupramarkNode::MathInline { .. }
+            | crate::supramark::SupramarkNode::FootnoteReference { .. }
+    )
 }
 
 #[doc(hidden)]

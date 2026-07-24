@@ -130,6 +130,110 @@ fn public_api_maps_task_list_items() {
     assert_eq!(first_text(second_children), "Todo");
 }
 
+#[test]
+fn public_api_preserves_break_in_tight_list_item_before_nested_block() {
+    // Tight list item whose text is followed by a nested list keeps a
+    // trailing space on the text node, mirroring cmark's `<li>a\n<ul>`
+    // formatting so renderers that echo `node.value` separate the text
+    // from the nested block. See issue #115.
+    let ast = parse("- a\n  - b\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::List {
+        children: items, ..
+    } = &children[0]
+    else {
+        panic!("expected list");
+    };
+    let SupramarkNode::ListItem {
+        children: first, ..
+    } = &items[0]
+    else {
+        panic!("expected first item");
+    };
+    // The tight paragraph is unwrapped, so the text node is a direct child.
+    let SupramarkNode::Text { value, .. } = &first[0] else {
+        panic!("expected text, got {first:?}");
+    };
+    assert_eq!(value, "a ");
+    assert!(matches!(&first[1], SupramarkNode::List { .. }));
+
+    // The nested item has no following block, so its text stays unpadded.
+    let SupramarkNode::List {
+        children: nested, ..
+    } = &first[1]
+    else {
+        panic!("expected nested list");
+    };
+    let SupramarkNode::ListItem {
+        children: nested_item,
+        ..
+    } = &nested[0]
+    else {
+        panic!("expected nested item");
+    };
+    let SupramarkNode::Text { value, .. } = &nested_item[0] else {
+        panic!("expected nested text");
+    };
+    assert_eq!(value, "b");
+}
+
+#[test]
+fn public_api_does_not_pad_tight_item_without_nested_block() {
+    // A plain tight item with no following block must not receive a trailing
+    // space — cmark renders `<li>foo</li>` with no trailing whitespace.
+    let ast = parse("- foo\n- bar\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::List {
+        children: items, ..
+    } = &children[0]
+    else {
+        panic!("expected list");
+    };
+    let SupramarkNode::ListItem {
+        children: first, ..
+    } = &items[0]
+    else {
+        panic!("expected first item");
+    };
+    let SupramarkNode::Text { value, .. } = &first[0] else {
+        panic!("expected text");
+    };
+    assert_eq!(value, "foo");
+}
+
+#[test]
+fn public_api_does_not_pad_loose_list_item_text() {
+    // Loose items keep the paragraph wrapper, so the text is not a direct
+    // child of the list item and must be left untouched.
+    let ast = parse("- foo\n\n  - bar\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::List {
+        children: items, ..
+    } = &children[0]
+    else {
+        panic!("expected list");
+    };
+    let SupramarkNode::ListItem {
+        children: first, ..
+    } = &items[0]
+    else {
+        panic!("expected first item");
+    };
+    let SupramarkNode::Paragraph { children, .. } = &first[0] else {
+        panic!("expected paragraph, got {first:?}");
+    };
+    let SupramarkNode::Text { value, .. } = &children[0] else {
+        panic!("expected text");
+    };
+    assert_eq!(value, "foo");
+}
+
 fn first_text(nodes: &[SupramarkNode]) -> &str {
     match &nodes[0] {
         SupramarkNode::Paragraph { children, .. } => first_text(children),
