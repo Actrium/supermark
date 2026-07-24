@@ -27,6 +27,7 @@ export interface SupramarkStyles {
   // Lists
   list?: ViewStyle;
   listItem?: ViewStyle;
+  listItemBlock?: ViewStyle;
   bullet?: TextStyle;
   listItemText?: TextStyle;
 
@@ -125,6 +126,9 @@ export const defaultStyles = StyleSheet.create({
   listItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+  },
+  listItemBlock: {
+    flexDirection: 'column',
   },
   bullet: {
     marginRight: 6,
