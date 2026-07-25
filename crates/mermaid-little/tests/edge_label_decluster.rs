@@ -230,10 +230,10 @@ fn decluster_floors_cjk_label_width() {
     )
     .expect("declustered render");
 
-    let base_w = label_width_for(&baseline, "账户同步")
-        .expect("baseline renders the 账户同步 label");
-    let decl_w = label_width_for(&declustered, "账户同步")
-        .expect("declustered renders the 账户同步 label");
+    let base_w =
+        label_width_for(&baseline, "账户同步").expect("baseline renders the 账户同步 label");
+    let decl_w =
+        label_width_for(&declustered, "账户同步").expect("declustered renders the 账户同步 label");
 
     // Default path keeps the shim width (well under the real ~64px CJK render).
     assert!(

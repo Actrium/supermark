@@ -1779,7 +1779,11 @@ fn build_edge<'a>(
     // Only floor when the label actually contains CJK, so pure-Latin diagrams
     // keep their byte-exact spacing. Height is left to the shim: it controls
     // intra-rank separation, not the inter-rank gap this fixes.
-    let lw = if edge_label_decluster && label_text.chars().any(crate::layout::label_metrics::is_cjk) {
+    let lw = if edge_label_decluster
+        && label_text
+            .chars()
+            .any(crate::layout::label_metrics::is_wide_glyph)
+    {
         crate::layout::label_metrics::cjk_aware_label_width(label_text, lw_shim)
     } else {
         lw_shim

@@ -2158,6 +2158,106 @@ fn edge_is_inside_isolated(src: Option<&str>, dst: Option<&str>, l: &FlowchartLa
     }
 }
 
+/// The `translate(tx, ty)` an isolated cluster's inner root group carries.
+///
+/// Single source of truth: `render_isolated_cluster_inner_root` emits exactly
+/// this, and the edge-label decluster pass uses it to lift cluster-local
+/// coordinates into screen space. If the two ever disagreed, the pass would
+/// resolve collisions that do not exist on screen.
+fn isolated_cluster_translate(cnode: &UNode) -> (f64, f64) {
+    // Prefer the pre-computed outer translate from the layout engine.
+    let tx = cnode
+        .extra
+        .get("outer_tx")
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or_else(|| {
+            // Fallback: classic formula using inner dagre coords.
+            let cx = cnode.x.unwrap_or(0.0);
+            let w = cnode.width.unwrap_or(0.0);
+            let padding = cnode.padding.unwrap_or(8.0);
+            cx - padding - w / 2.0
+        });
+    let ty = cnode
+        .extra
+        .get("outer_ty")
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or_else(|| {
+            let cy = cnode.y.unwrap_or(0.0);
+            let h = cnode.height.unwrap_or(0.0);
+            let padding = cnode.padding.unwrap_or(8.0);
+            cy - h / 2.0 - padding
+        });
+    (tx, ty)
+}
+
+/// Isolated-cluster ancestors of `node_id`, outermost first.
+///
+/// Each one emits a nested `<g transform="translate(...)">`, so the screen
+/// position of anything drawn inside is its local position plus the sum of the
+/// chain's translates.
+fn isolated_ancestor_chain(node_id: &str, l: &FlowchartLayout) -> Vec<String> {
+    let mut chain: Vec<String> = Vec::new();
+    let mut current = node_id;
+    // Bounded by the node count so a malformed parent cycle cannot hang render.
+    for _ in 0..l.nodes.len() {
+        let Some(n) = l.nodes.iter().find(|n| n.id == current) else {
+            break;
+        };
+        let Some(parent) = n.parent_id.as_deref() else {
+            break;
+        };
+        if l.isolated_cluster_ids.contains(parent) {
+            chain.push(parent.to_string());
+        }
+        current = parent;
+    }
+    chain.reverse();
+    chain
+}
+
+/// Sum of the translates of a chain of isolated clusters.
+fn chain_translate(chain: &[String], l: &FlowchartLayout) -> (f64, f64) {
+    chain.iter().fold((0.0, 0.0), |(tx, ty), id| {
+        match l.nodes.iter().find(|n| &n.id == id) {
+            Some(cnode) => {
+                let (dx, dy) = isolated_cluster_translate(cnode);
+                (tx + dx, ty + dy)
+            }
+            None => (tx, ty),
+        }
+    })
+}
+
+/// Screen-space offset of a node: it is drawn inside its innermost isolated
+/// cluster's inner root, so every isolated ancestor's translate applies.
+fn node_frame_offset(node_id: &str, l: &FlowchartLayout) -> (f64, f64) {
+    chain_translate(&isolated_ancestor_chain(node_id, l), l)
+}
+
+/// Screen-space offset of an edge label.
+///
+/// An edge renders in the deepest isolated cluster containing *both* endpoints,
+/// i.e. the longest common prefix of the endpoints' ancestor chains. That
+/// matches both render sites: [`edge_is_inside_isolated`] sends an edge whose
+/// endpoints have different outermost isolated ancestors to the outer level
+/// (empty prefix), and `render_isolated_cluster_inner_root` skips an edge whose
+/// endpoint sits in a sub-isolated cluster so the recursion emits it deeper
+/// (longer prefix).
+fn edge_frame_offset(e: &UEdge, l: &FlowchartLayout) -> (f64, f64) {
+    let (Some(s), Some(d)) = (e.start.as_deref(), e.end.as_deref()) else {
+        return (0.0, 0.0);
+    };
+    let cs = isolated_ancestor_chain(s, l);
+    let cd = isolated_ancestor_chain(d, l);
+    let common: Vec<String> = cs
+        .iter()
+        .zip(cd.iter())
+        .take_while(|(a, b)| a == b)
+        .map(|(a, _)| a.clone())
+        .collect();
+    chain_translate(&common, l)
+}
+
 /// Return true if `node_id` is a descendant of `cluster_id` (transitively).
 fn is_descendant_of(node_id: &str, cluster_id: &str, l: &FlowchartLayout) -> bool {
     let mut current = node_id;
@@ -2314,28 +2414,7 @@ fn render_isolated_cluster_inner_root(
     adjustments: &EdgeLabelAdjustments,
     decluster: bool,
 ) -> String {
-    // Retrieve pre-computed outer translate from the layout engine.
-    let tx = cnode
-        .extra
-        .get("outer_tx")
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or_else(|| {
-            // Fallback: classic formula using inner dagre coords.
-            let cx = cnode.x.unwrap_or(0.0);
-            let w = cnode.width.unwrap_or(0.0);
-            let padding = cnode.padding.unwrap_or(8.0);
-            cx - padding - w / 2.0
-        });
-    let ty = cnode
-        .extra
-        .get("outer_ty")
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or_else(|| {
-            let cy = cnode.y.unwrap_or(0.0);
-            let h = cnode.height.unwrap_or(0.0);
-            let padding = cnode.padding.unwrap_or(8.0);
-            cy - h / 2.0 - padding
-        });
+    let (tx, ty) = isolated_cluster_translate(cnode);
 
     let mut out = String::new();
     out.push_str(&format!(
@@ -2494,7 +2573,13 @@ fn render_isolated_cluster_inner_root(
         if is_cyclic_segment_from_anchor_rewrite(e) {
             continue;
         }
-        out.push_str(&render_edge_label(e, html_labels, l, adjustments, decluster));
+        out.push_str(&render_edge_label(
+            e,
+            html_labels,
+            l,
+            adjustments,
+            decluster,
+        ));
     }
     out.push_str(unified_shell::close_layer());
 
@@ -4764,13 +4849,39 @@ fn build_edge_label_adjustments(l: &FlowchartLayout, opts: &RenderOptions) -> Ed
             if w <= 0.0 || h <= 0.0 {
                 return None;
             }
-            Some((x, y, w + COLLISION_MARGIN * 2.0, h + COLLISION_MARGIN * 2.0))
+            // A node inside an isolated cluster carries cluster-local coords.
+            // Lift it into screen space so it can be compared against labels
+            // that live in a different frame.
+            let (ox, oy) = node_frame_offset(&n.id, l);
+            Some((
+                x + ox,
+                y + oy,
+                w + COLLISION_MARGIN * 2.0,
+                h + COLLISION_MARGIN * 2.0,
+            ))
         })
         .collect();
     // Each entry carries its own (cluster-clipped) edge polyline so the label
     // can be slid along it. Edges with no usable points fall through to the
     // byte-exact base position and are not recorded here.
-    type EdgeLabelEntry = (String, Vec<(f64, f64)>, f64, f64);
+    //
+    // Everything below runs in SCREEN space. Labels inside an isolated cluster
+    // are emitted under `<g class="root" transform="translate(...)">`, so their
+    // raw coords are cluster-local; comparing those directly against another
+    // frame's coords invents collisions between labels that are far apart on
+    // screen (and pushes them apart for no reason). Each entry is translated in
+    // on the way here and translated back out when the adjustment is recorded.
+    struct EdgeLabelEntry {
+        id: String,
+        /// The edge's polyline, already in screen space.
+        points: Vec<(f64, f64)>,
+        w: f64,
+        h: f64,
+        /// Translate that was added to `points`; subtracted again before the
+        /// adjustment is stored, so the map stays in the frame the label is
+        /// actually emitted in (the same frame `base_edge_label_pos` uses).
+        offset: (f64, f64),
+    }
     let mut entries: Vec<EdgeLabelEntry> = Vec::new();
     for e in &l.edges {
         if is_replaced_self_loop(e) || is_cyclic_segment_from_anchor_rewrite(e) {
@@ -4787,7 +4898,18 @@ fn build_edge_label_adjustments(l: &FlowchartLayout, opts: &RenderOptions) -> Ed
             + COLLISION_MARGIN * 2.0;
         let lh = lh + COLLISION_MARGIN * 2.0;
         if let Some(pts) = processed_edge_points(e, l) {
-            entries.push((e.id.clone(), pts, lw, lh));
+            let offset = edge_frame_offset(e, l);
+            let points: Vec<(f64, f64)> = pts
+                .into_iter()
+                .map(|(x, y)| (x + offset.0, y + offset.1))
+                .collect();
+            entries.push(EdgeLabelEntry {
+                id: e.id.clone(),
+                points,
+                w: lw,
+                h: lh,
+                offset,
+            });
         }
     }
     let n = entries.len();
@@ -4797,9 +4919,9 @@ fn build_edge_label_adjustments(l: &FlowchartLayout, opts: &RenderOptions) -> Ed
     // centres[i] = (cx, cy, w, h), initialised at the arc-length midpoint (t=0.5).
     let mut centres: Vec<LabelRect> = entries
         .iter()
-        .map(|(_, pts, w, h)| {
-            let (cx, cy) = point_along_arc(pts, 0.5).unwrap_or((0.0, 0.0));
-            (cx, cy, *w, *h)
+        .map(|en| {
+            let (cx, cy) = point_along_arc(&en.points, 0.5).unwrap_or((0.0, 0.0));
+            (cx, cy, en.w, en.h)
         })
         .collect();
     let midpoint = centres.clone();
@@ -4818,7 +4940,7 @@ fn build_edge_label_adjustments(l: &FlowchartLayout, opts: &RenderOptions) -> Ed
             let mut best_score = label_conflict_score(i, cx, cy, &centres, &obstacles);
             let mut best_pos = (cx, cy);
             for &t in T_CANDIDATES.iter() {
-                let Some((tx, ty)) = point_along_arc(&entries[i].1, t) else {
+                let Some((tx, ty)) = point_along_arc(&entries[i].points, t) else {
                     continue;
                 };
                 let s = label_conflict_score(i, tx, ty, &centres, &obstacles);
@@ -4882,7 +5004,12 @@ fn build_edge_label_adjustments(l: &FlowchartLayout, opts: &RenderOptions) -> Ed
         let (bx, by, _, _) = midpoint[i];
         let (mx, my, _, _) = centres[i];
         if (mx - bx).abs() > 1e-9 || (my - by).abs() > 1e-9 {
-            map.insert(entries[i].0.clone(), (round_to_5(mx), round_to_5(my)));
+            // Back out of screen space into the frame this label is emitted in.
+            let (ox, oy) = entries[i].offset;
+            map.insert(
+                entries[i].id.clone(),
+                (round_to_5(mx - ox), round_to_5(my - oy)),
+            );
         }
     }
     EdgeLabelAdjustments(map)

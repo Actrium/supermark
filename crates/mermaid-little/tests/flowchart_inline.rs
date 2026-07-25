@@ -213,8 +213,9 @@ fn flowchart_parser_roundtrips_all_fixtures() {
             };
             let th = theme::get_theme("default");
             let rel_for_panic = rel.clone();
-            let l_result =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fcl::layout(&d, &th, false)));
+            let l_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                fcl::layout(&d, &th, false)
+            }));
             let l = match l_result {
                 Ok(Ok(l)) => l,
                 Ok(Err(e)) => {

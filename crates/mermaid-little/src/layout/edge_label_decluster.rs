@@ -97,11 +97,7 @@ pub fn decluster_with_obstacles(
 /// One pass of mutual label<->label separation. Returns true if any label
 /// moved. Each overlapping pair is pushed apart along the axis of minimum
 /// penetration, splitting the displacement equally between the two labels.
-fn separate_labels(
-    centres: &mut [LabelRect],
-    base: &[LabelRect],
-    cfg: &DeclusterConfig,
-) -> bool {
+fn separate_labels(centres: &mut [LabelRect], base: &[LabelRect], cfg: &DeclusterConfig) -> bool {
     let n = centres.len();
     let mut moved = false;
     for i in 0..n {
