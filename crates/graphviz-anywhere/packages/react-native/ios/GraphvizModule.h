@@ -16,7 +16,7 @@
 
 @interface GraphvizModule : NSObject <RCTBridgeModule
 #ifdef RCT_NEW_ARCH_ENABLED
-  , NativeGraphvizNativeSpec
+  , NativeGraphvizSpec
 #endif
 >
 
