@@ -86,6 +86,35 @@ fn edge_label_rects(svg: &str) -> Vec<Rect> {
     rects
 }
 
+/// foreignObject width of the first edge-label block whose visible text
+/// contains `needle`. Used to check the opt-in CJK width floor.
+fn label_width_for(svg: &str, needle: &str) -> Option<f64> {
+    static BLOCK_RE: OnceLock<Regex> = OnceLock::new();
+    static SIZE_RE: OnceLock<Regex> = OnceLock::new();
+    let block = BLOCK_RE.get_or_init(|| {
+        Regex::new(r#"(?s)<g class="edgeLabel".*?</g>\s*</g>"#).expect("block regex")
+    });
+    let size = SIZE_RE.get_or_init(|| {
+        Regex::new(r#"width="([0-9.]+)"[^>]*height="([0-9.]+)""#).expect("size regex")
+    });
+    for cap in block.captures_iter(svg) {
+        let blob = &cap[0];
+        if !blob.contains(needle) {
+            continue;
+        }
+        let Some(idx) = blob.find("foreignObject") else {
+            continue;
+        };
+        let Some(sm) = size.captures(&blob[idx..]) else {
+            continue;
+        };
+        if let Ok(w) = sm[1].parse::<f64>() {
+            return Some(w);
+        }
+    }
+    None
+}
+
 fn viewbox(svg: &str) -> (f64, f64, f64, f64) {
     let v = svg
         .split("viewBox=\"")
@@ -183,5 +212,41 @@ fn byte_exact_default_is_unchanged_by_options() {
     assert_eq!(
         a, b,
         "byte_exact options must match the default convert path"
+    );
+}
+
+#[test]
+fn decluster_floors_cjk_label_width() {
+    // The shim under-measures CJK ("账户同步" ~28px); opt-in must emit the
+    // foreignObject at the CJK-aware width (~4 × EM = 64) so the real glyphs
+    // fit and centre instead of overflowing a too-narrow box. This locks the
+    // render-stage width floor that fixes the "label looks off-centre / pushed
+    // toward one endpoint" symptom from issue #93.
+    let baseline = convert_with_id(REPRO, "mermaid-1").expect("baseline render");
+    let declustered = convert_with_options(
+        REPRO,
+        "mermaid-1",
+        &RenderOptions::default().with_edge_label_decluster(true),
+    )
+    .expect("declustered render");
+
+    let base_w = label_width_for(&baseline, "账户同步")
+        .expect("baseline renders the 账户同步 label");
+    let decl_w = label_width_for(&declustered, "账户同步")
+        .expect("declustered renders the 账户同步 label");
+
+    // Default path keeps the shim width (well under the real ~64px CJK render).
+    assert!(
+        base_w < 40.0,
+        "baseline 账户同步 width should be the shim (~28), got {base_w}"
+    );
+    // Opt-in floors the width to ≥ 4 × EM = 64.
+    assert!(
+        decl_w >= 64.0,
+        "declustered 账户同步 width should be floored to ≥ 4*EM (64), got {decl_w}"
+    );
+    assert!(
+        decl_w > base_w,
+        "decluster should widen the CJK label: base={base_w} decl={decl_w}"
     );
 }
