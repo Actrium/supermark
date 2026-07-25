@@ -535,7 +535,7 @@ function mergeRawNodes(
   while (i < children.length) {
     const node = children[i];
     if (node?.type === 'raw') {
-      const rawNode = node as SupramarkRawNode;
+      const rawNode = node;
       const value = rawNode.value ?? '';
       const open = rawOpenTagFragment(value);
       if (open) {
@@ -545,7 +545,7 @@ function mergeRawNodes(
           const sib = children[j];
           if (
             sib.type === 'raw' &&
-            rawCloseTagName((sib as SupramarkRawNode).value ?? '') === tagLower
+            rawCloseTagName(sib.value ?? '') === tagLower
           ) {
             closeIdx = j;
             break;
@@ -1227,7 +1227,7 @@ function renderNode(
       // renderNode 遍历到这些类型时委托给 renderInlineNode，避免走 default 返回 null 吞掉内容。
       return renderInlineNode(node, key, classNames, rendered, highlighted, config);
     case 'raw':
-      return renderRawNode(node as SupramarkRawNode, key);
+      return renderRawNode(node, key);
     default:
       return null;
   }
@@ -1338,7 +1338,7 @@ function serializeInlineNode(
     case 'text':
       return escapeHtmlText(node.value);
     case 'raw':
-      return (node as SupramarkRawNode).value ?? '';
+      return node.value ?? '';
     case 'strong': {
       const inner = serializeInlineList(node.children, _classNames, config);
       return inner === null ? null : `<strong>${inner}</strong>`;
@@ -1416,7 +1416,7 @@ function serializeBlockToHtml(
       return `<pre><code${codeClass}>${escapeHtmlText(node.value)}</code></pre>\n`;
     }
     case 'raw':
-      return (node as SupramarkRawNode).value ?? '';
+      return node.value ?? '';
     case 'thematic_break':
       return '<hr />\n';
     case 'heading': {
@@ -1424,7 +1424,7 @@ function serializeBlockToHtml(
       if (inline === null) return null;
       const tag = `h${node.depth}`;
       const clsKey = `h${node.depth}` as keyof SupramarkClassNames;
-      const cls = classNames[clsKey] as string | undefined;
+      const cls = classNames[clsKey];
       const clsAttr = cls ? ` class="${escapeHtmlAttr(cls)}"` : '';
       return `<${tag}${clsAttr}>${inline}</${tag}>\n`;
     }
@@ -1568,7 +1568,7 @@ function renderInlineNode(
       );
     }
     case 'raw':
-      return renderRawNode(node as SupramarkRawNode, key);
+      return renderRawNode(node, key);
     default:
       return null;
   }
