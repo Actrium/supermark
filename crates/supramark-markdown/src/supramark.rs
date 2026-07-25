@@ -1726,4 +1726,95 @@ mod tests {
                 if label == "1" && matches!(children.first(), Some(SupramarkNode::Paragraph { .. }))
         ));
     }
+
+    #[test]
+    fn maps_autolink_to_link() {
+        // `<https://example.com>` is a CommonMark autolink; the AST must carry
+        // the URL on a Link node (not a bare text/raw node) so the web renderer
+        // can emit an `<a href="…">`.
+        let ast = parse("<https://example.com>");
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root");
+        };
+        let SupramarkNode::Paragraph {
+            children: paragraph,
+            ..
+        } = &children[0]
+        else {
+            panic!("expected paragraph");
+        };
+        let SupramarkNode::Link {
+            url,
+            children: link_children,
+            ..
+        } = &paragraph[0]
+        else {
+            panic!("expected link for autolink");
+        };
+        assert_eq!(url, "https://example.com");
+        assert!(matches!(
+            link_children.first(),
+            Some(SupramarkNode::Text { value, .. }) if value == "https://example.com"
+        ));
+    }
+
+    #[test]
+    fn html_block_closing_tag_paragraph_interruption() {
+        // CommonMark 0.31.2 HTML block type-6 start condition uses a name list
+        // that excludes pre/script/style/textarea (those are type-1 via their
+        // *open* tags). So `</td>` (a type-6 name) interrupts the paragraph and
+        // becomes its own raw block, while `</pre>` matches no start condition
+        // and stays inline within the paragraph.
+        let ast = parse("bar\n</td>\n");
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root");
+        };
+        assert_eq!(
+            children.len(),
+            2,
+            "closing td tag should interrupt the paragraph"
+        );
+        assert!(matches!(&children[0], SupramarkNode::Paragraph { .. }));
+        assert!(matches!(
+            &children[1],
+            SupramarkNode::Raw { block: true, value, .. } if value == "</td>\n"
+        ));
+
+        let ast = parse("bar\n</pre>\n");
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root");
+        };
+        assert_eq!(
+            children.len(),
+            1,
+            "closing pre tag must NOT interrupt the paragraph"
+        );
+        let SupramarkNode::Paragraph {
+            children: paragraph,
+            ..
+        } = &children[0]
+        else {
+            panic!("expected paragraph");
+        };
+        assert!(paragraph
+            .iter()
+            .any(|node| matches!(node, SupramarkNode::Raw { value, .. } if value == "</pre>")));
+    }
+
+    #[test]
+    fn unescapes_code_fence_info_string() {
+        // CommonMark unescapes backslash escapes and entities in the fence info
+        // string, so ````js&amp;`` / ````js\!`` resolve to `js&` / `js!` rather
+        // than being passed through literally.
+        for (input, expected_lang) in [("```js&amp;\nx\n```", "js&"), ("```js\\!\nx\n```", "js!")] {
+            let ast = parse(input);
+            let SupramarkNode::Root { children, .. } = ast else {
+                panic!("expected root");
+            };
+            let SupramarkNode::Code { lang, .. } = &children[0] else {
+                panic!("expected code block for {input}");
+            };
+            assert_eq!(lang.as_deref(), Some(expected_lang));
+        }
+    }
 }

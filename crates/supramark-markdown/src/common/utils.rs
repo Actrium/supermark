@@ -463,6 +463,21 @@ mod tests {
     }
 
     #[test]
+    fn is_punct_char_treats_symbol_categories_as_punct() {
+        // CommonMark 0.31.2 treats all Unicode Symbol categories (Math, Currency,
+        // Modifier, Other) as punctuation for emphasis flanking, so currency
+        // signs and math symbols cannot form intraword emphasis. Letters,
+        // digits, and whitespace stay non-punctuation.
+        use super::is_punct_char;
+        for ch in ['$', '€', '£', '∑', '→', '∞', '☆'] {
+            assert!(is_punct_char(ch), "{ch:?} should be punctuation");
+        }
+        for ch in ['a', 'Z', '0', '5', ' ', '中', 'α'] {
+            assert!(!is_punct_char(ch), "{ch:?} should NOT be punctuation");
+        }
+    }
+
+    #[test]
     fn test_unescape_all_xss() {
         assert_eq!(
             unescape_all(r#"javascript&#x3A;alert(1)"#),
