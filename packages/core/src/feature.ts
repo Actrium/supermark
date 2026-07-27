@@ -1576,6 +1576,17 @@ export interface SupramarkConfig {
     /** 是否启用严格模式（更严格的验证） */
     strict?: boolean;
 
+    /**
+     * 是否允许渲染 raw HTML（HTML 块 / 内联原始 HTML）。
+     *
+     * - 默认 `false`：raw 节点被丢弃，等价于该节点不存在（与未引入
+     *   raw 渲染前的行为一致），避免未受信 markdown 执行脚本。
+     * - 设为 `true`：开启 raw HTML 透传（满足 CommonMark 规范预期），
+     *   但宿主需自行确保 markdown 来源可信 —— 输出不做任何净化，
+     *   `<img onerror>`、`<iframe srcdoc>` 等会被原样写入 DOM。
+     */
+    allowDangerousHtml?: boolean;
+
     /** 其他全局配置 */
     [key: string]: unknown;
   };

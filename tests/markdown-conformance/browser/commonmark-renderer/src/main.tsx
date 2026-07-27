@@ -66,6 +66,7 @@ function RenderCase({
       markdown={request.markdown}
       ast={request.ast as never}
       classNames={{ root: 'commonmark-production-root' }}
+      config={{ options: { allowDangerousHtml: true } }}
       onError={onError}
       onRenderStateChange={onRenderStateChange}
     />

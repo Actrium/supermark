@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import React, { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   SupramarkRootNode,
   SupramarkNode,
@@ -8,6 +8,7 @@ import type {
   SupramarkDefinitionItemNode,
   SupramarkDefinitionTermNode,
   SupramarkDefinitionDescriptionNode,
+  SupramarkRawNode,
   SupramarkDiagramConfig,
   SupramarkConfig,
   SupramarkCodeHighlightResult,
@@ -330,22 +331,361 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
     >
       <SourceStateContext.Provider value={parsedDocument.sourceState}>
         <div className={mergedClassNames.root}>
-          {parsedDocument.root.children.map((node, index) =>
-            renderNode(
-              node,
-              index,
-              mergedClassNames,
-              parsedDocument.rendered,
-              parsedDocument.highlighted,
-              config,
-              mergedContainerRenderers
-            )
+          {mergeRawNodes(
+            parsedDocument.root.children,
+            (node, index) =>
+              renderNode(
+                node,
+                index,
+                mergedClassNames,
+                parsedDocument.rendered,
+                parsedDocument.highlighted,
+                config,
+                mergedContainerRenderers
+              ),
+            mergedClassNames,
+            config
           )}
         </div>
       </SourceStateContext.Provider>
     </ErrorBoundary>
   );
 };
+
+const RAW_ATTR_MAP: Record<string, string> = {
+  class: 'className',
+  for: 'htmlFor',
+  tabindex: 'tabIndex',
+  readonly: 'readOnly',
+  maxlength: 'maxLength',
+  colspan: 'colSpan',
+  rowspan: 'rowSpan',
+  cellpadding: 'cellPadding',
+  cellspacing: 'cellSpacing',
+  contenteditable: 'contentEditable',
+  crossorigin: 'crossOrigin',
+  datetime: 'dateTime',
+  usemap: 'useMap',
+};
+
+function parseRawAttrs(attrPart: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const re = /([a-zA-Z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+)))?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(attrPart)) !== null) {
+    const name = m[1];
+    const val = m[2] ?? m[3] ?? m[4] ?? '';
+    const mapped = RAW_ATTR_MAP[name.toLowerCase()] ?? name;
+    attrs[mapped] = val;
+  }
+  return attrs;
+}
+
+function escapeHtmlText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeHtmlAttr(value: string): string {
+  return escapeHtmlText(value).replace(/"/g, '&quot;');
+}
+
+// Whether the host has opted into raw-HTML passthrough. Default off: raw nodes
+// are dropped (rendered as null), matching the pre-raw-HTML behaviour so an
+// upgrade never silently enables script execution from untrusted markdown. The
+// conformance harness sets this true because CommonMark's expected HTML is
+// defined with raw HTML passed through.
+function isDangerousHtmlAllowed(config?: SupramarkConfig): boolean {
+  return config?.options?.allowDangerousHtml === true;
+}
+
+// React's component model emits one DOM element per node, so it cannot express
+// raw HTML fragments the browser's tree-construction stage would normally own:
+// HTML comments, CDATA, processing instructions, bare open/close tags, or
+// multi-tag blocks. `RawHtml` injects such a value by parsing it through a
+// `<template>` element and splicing the resulting nodes in place of a hidden
+// placeholder span. The placeholder is removed in a layout effect (before the
+// host reads innerHTML) and re-attached on cleanup so React's unmount can
+// remove it without touching a detached node. Real-browser only: the template
+// API is unavailable in SSR/non-DOM environments, where the value is dropped.
+function RawHtml({ value }: { value: string }): React.ReactNode {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const parent = el.parentNode;
+    if (!parent) return;
+    const doc = el.ownerDocument ?? (typeof document !== 'undefined' ? document : null);
+    if (!doc || typeof doc.createElement !== 'function') return;
+    const template = doc.createElement('template');
+    template.innerHTML = value;
+    // Record the inserted nodes and the placeholder's exact position so a
+    // re-render (value change) removes exactly what we added — not whatever
+    // currently sits around the placeholder, and not nodes React owns — and
+    // restores the placeholder to its original slot rather than appending it
+    // to the end of the parent (which would corrupt insertion order on the
+    // next run). Without this, every re-render duplicates the prior output
+    // and drifts trailing siblings ahead of new content.
+    const inserted: Node[] = [];
+    const nextSibling: Node | null = el.nextSibling;
+    while (template.content.firstChild) {
+      const node = template.content.firstChild;
+      parent.insertBefore(node, el);
+      inserted.push(node);
+    }
+    parent.removeChild(el);
+    return () => {
+      for (const node of inserted) {
+        if (node.parentNode === parent) {
+          parent.removeChild(node);
+        }
+      }
+      if (!el.parentNode) {
+        try {
+          parent.insertBefore(el, nextSibling);
+        } catch {
+          // ignore — parent already torn down
+        }
+      }
+    };
+  }, [value]);
+  return <span ref={ref} style={{ display: 'none' }} aria-hidden={true} />;
+}
+
+// CommonMark raw HTML may be an arbitrary fragment (open tag, close tag,
+// comment, declaration). React's component model maps each node to one
+// complete DOM element, so only a raw value that forms a single balanced
+// element or self-closing tag can be rendered faithfully via a same-named
+// host with dangerouslySetInnerHTML. Fragments fall through to null — the
+// documented React limitation (cases involving comments, declarations, or
+// split open/close tags stay unmatched in conformance runs).
+function renderRawNode(node: SupramarkRawNode, key: number): React.ReactNode {
+  const value = node.value ?? '';
+  const tagMatch = value.match(/^<([a-zA-Z][\w-]*)/);
+  if (!tagMatch) return React.createElement(RawHtml, { key, value });
+  const tag = tagMatch[1].toLowerCase();
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const openRe = new RegExp('^<' + escaped + '\\b([^>]*)>', 'i');
+  const openM = value.match(openRe);
+  if (!openM) return React.createElement(RawHtml, { key, value });
+  const attrPart = openM[1];
+  if (/\/\s*$/.test(attrPart)) {
+    return React.createElement(tag, {
+      key,
+      ...parseRawAttrs(attrPart.replace(/\/\s*$/, '')),
+    });
+  }
+  const closeRe = new RegExp('</' + escaped + '\\s*>\\s*$', 'i');
+  const closeM = value.match(closeRe);
+  if (!closeM) {
+    // Unbalanced. If the value carries content after the open tag (e.g.
+    // `<div>\nfoo`), render a same-named host with that content as innerHTML
+    // (the HTML parser auto-closes it). A bare open tag with no content is
+    // handled by mergeRawNodes (it absorbs following siblings); inline bare
+    // open tags outside a merge context still render as an empty host.
+    const tail = value.slice(openM[0].length);
+    const attrs = parseRawAttrs(attrPart);
+    if (tail.trim()) {
+      // A tail that itself carries markup (a stray close tag, or trailing
+      // content after a balanced pair) is a fragment a single host's
+      // innerHTML context would mis-parse — `<div></div>\n…` would swallow
+      // the stray `</div>`. Emit it verbatim so the browser's root
+      // tree-construction owns the structure.
+      if (tail.includes('<')) {
+        return React.createElement(RawHtml, { key, value });
+      }
+      if (tag.toLowerCase() === 'textarea') {
+        return React.createElement(tag, { key, ...attrs, defaultValue: tail });
+      }
+      return React.createElement(tag, {
+        key,
+        ...attrs,
+        dangerouslySetInnerHTML: { __html: tail },
+      });
+    }
+    if (!node.block) {
+      return React.createElement(tag, { key, ...attrs });
+    }
+    return React.createElement(RawHtml, { key, value });
+  }
+  const inner = value.slice(openM[0].length, value.length - closeM[0].length);
+  const attrs = parseRawAttrs(attrPart);
+  // React rejects dangerouslySetInnerHTML on <textarea> (it models content as
+  // a controlled value), so inject the raw inner text as children instead.
+  if (tag.toLowerCase() === 'textarea') {
+    return React.createElement(tag, { key, ...attrs, defaultValue: inner });
+  }
+  return React.createElement(tag, {
+    key,
+    ...attrs,
+    dangerouslySetInnerHTML: { __html: inner },
+  });
+}
+
+// Classify a raw value as a lone open-tag fragment — a value that is exactly
+// a `<tag ...>` (optionally trailing whitespace), with no content and no
+// matching close tag. Returns {tag, attrPart} or null. Null covers comments,
+// declarations, self-closing tags, balanced elements, and open-tag-with-
+// content values (e.g. `<div>\nfoo`); those are handled by renderRawNode.
+function rawOpenTagFragment(value: string): { tag: string; attrPart: string } | null {
+  const m = value.match(/^<([a-zA-Z][\w-]*)\b([^>]*)>\s*$/);
+  if (!m) return null;
+  if (/\/\s*$/.test(m[2])) return null;
+  return { tag: m[1].toLowerCase(), attrPart: m[2] };
+}
+
+function rawCloseTagName(value: string): string | null {
+  const m = value.match(/^<\/([a-zA-Z][\w-]*)\s*>/);
+  return m ? m[1].toLowerCase() : null;
+}
+
+// CommonMark can split one logical HTML element across multiple raw sibling
+// nodes — an open-tag raw, the markdown-rendered children, then a close-tag
+// raw. React's component model can't emit a bare fragment, so we merge such
+// runs into a single same-named host element whose children are the rendered
+// siblings between the open and close tags. An open-tag fragment with no
+// matching close tag in its siblings absorbs everything to the end of the
+// run (the HTML parser would auto-close it there). Balanced/self-closing
+// raw nodes and comments are left to renderRawNode / the comment path.
+function mergeRawNodes(
+  children: SupramarkNode[],
+  renderSingle: (node: SupramarkNode, key: number) => React.ReactNode,
+  classNames?: SupramarkClassNames,
+  config?: SupramarkConfig
+): React.ReactNode[] {
+  // Raw HTML is opt-in. When disabled, skip raw-merge entirely so raw nodes
+  // fall through to their per-node renderer (which drops them) and no
+  // dangerouslySetInnerHTML host element is ever emitted.
+  const allowDangerous = isDangerousHtmlAllowed(config);
+  const result: React.ReactNode[] = [];
+  let i = 0;
+  while (i < children.length) {
+    const node = children[i];
+    if (allowDangerous && node?.type === 'raw') {
+      const rawNode = node;
+      const value = rawNode.value ?? '';
+      const open = rawOpenTagFragment(value);
+      if (open) {
+        const tagLower = open.tag.toLowerCase();
+        let closeIdx = -1;
+        for (let j = i + 1; j < children.length; j++) {
+          const sib = children[j];
+          if (
+            sib.type === 'raw' &&
+            rawCloseTagName(sib.value ?? '') === tagLower
+          ) {
+            closeIdx = j;
+            break;
+          }
+        }
+        const attrs = parseRawAttrs(open.attrPart);
+        if (closeIdx >= 0) {
+          const inner = children.slice(i + 1, closeIdx);
+          // When the wrapped children are block-level, emit the whole
+          // element verbatim: cmark emits block-boundary newlines inside the
+          // container (e.g. `<del>\n<p>…</p>\n</del>`) that the reference
+          // HTML relies on, and a React host element drops them.
+          if (inner.some(hasBlockChild) && classNames) {
+            const serialized = serializeBlocksToHtml(inner, classNames, config);
+            const closeValue =
+              (children[closeIdx] as SupramarkRawNode).value ?? '';
+            if (serialized !== null) {
+              result.push(
+                React.createElement(RawHtml, {
+                  key: i,
+                  value: value + serialized + closeValue,
+                })
+              );
+              i = closeIdx + 1;
+              continue;
+            }
+          }
+          result.push(
+            React.createElement(
+              open.tag,
+              { key: i, ...attrs },
+              mergeRawNodes(inner, renderSingle, classNames, config)
+            )
+          );
+          i = closeIdx + 1;
+          continue;
+        }
+        // Bare open tag with no matching close sibling: fall through to the
+        // per-node renderer (RawHtml emits the literal fragment so the
+        // browser's HTML parser owns tree construction / auto-closing).
+      } else {
+        // Unclosed block-container open tag (e.g. `<div>\n*foo*\n` or
+        // `  <div>\n`): cmark leaves it unclosed and the reference HTML
+        // relies on the final parser folding following blocks into the open
+        // container. Absorb following siblings into one verbatim RawHtml so
+        // the browser's root tree-construction owns the folding. Only when
+        // every following sibling serializes to static HTML.
+        if (unclosedBlockContainerOpen(value, rawNode.block) && classNames) {
+          const following = children.slice(i + 1);
+          const serialized = serializeBlocksToHtml(
+            following,
+            classNames,
+            config
+          );
+          if (serialized !== null) {
+            result.push(
+              React.createElement(RawHtml, { key: i, value: value + serialized })
+            );
+            i = children.length;
+            continue;
+          }
+        }
+      }
+    }
+    result.push(renderSingle(node, i));
+    i++;
+  }
+  return result;
+}
+
+const INLINE_NODE_TYPES = new Set<SupramarkNode['type']>([
+  'text',
+  'strong',
+  'emphasis',
+  'delete',
+  'inline_code',
+  'math_inline',
+  'link',
+  'image',
+  'break',
+  'footnote_reference',
+]);
+
+// CommonMark separates a list item's children with a newline at every block
+// boundary (inline→block, block→inline, block→block). Between two inline
+// nodes (one inline run) there is no separator. Only the inline↔block
+// newlines survive semantic normalization (they attach to adjacent text),
+// so emitting them here matches the expected DOM without affecting the
+// already-passing compact block→block cases.
+function renderListItemChildren(
+  children: SupramarkNode[],
+  classNames: SupramarkClassNames,
+  rendered: Map<string, DiagramRenderResult>,
+  highlighted: Map<string, SupramarkCodeHighlightResult>,
+  config: SupramarkConfig | undefined,
+  containerRenderers: Record<string, ContainerRendererWeb> | undefined
+): React.ReactNode[] {
+  const result: React.ReactNode[] = [];
+  children.forEach((child, index) => {
+    if (index > 0) {
+      const prev = children[index - 1];
+      const bothInline =
+        INLINE_NODE_TYPES.has(prev.type) && INLINE_NODE_TYPES.has(child.type);
+      if (!bothInline) result.push('\n');
+    }
+    result.push(
+      renderNode(child, index, classNames, rendered, highlighted, config, containerRenderers)
+    );
+  });
+  return result;
+}
 
 function renderNode(
   node: SupramarkNode,
@@ -357,7 +697,22 @@ function renderNode(
   containerRenderers?: Record<string, ContainerRendererWeb>
 ): React.ReactNode {
   switch (node.type) {
-    case 'paragraph':
+    case 'paragraph': {
+      // When a paragraph contains raw HTML inline, emit the whole paragraph
+      // as a literal `<p>…</p>\n` string at the root (via RawHtml) so the
+      // browser's tree-construction owns active formatting element
+      // reconstruction across the `</p>` boundary. cmark outputs such
+      // paragraphs verbatim, and the reference HTML's unclosed-`<a>` leak
+      // into trailing whitespace only reproduces when the parser sees the
+      // `</p>` and the trailing `\n` in one root fragment — a React `<p>`
+      // element closes its innerHTML at the element edge and cannot.
+      const rawHtml = inlineNodesToHtml(node.children, classNames, config);
+      if (rawHtml !== null) {
+        const classAttr = classNames.paragraph
+          ? ` class="${escapeHtmlAttr(classNames.paragraph)}"`
+          : '';
+        return <RawHtml key={key} value={`<p${classAttr}>${rawHtml}</p>\n`} />;
+      }
       return (
         <p key={key} className={classNames.paragraph}>
           {renderInlineNodes(
@@ -369,6 +724,7 @@ function renderNode(
           )}
         </p>
       );
+    }
     case 'heading': {
       const heading = node;
       const content = renderInlineNodes(
@@ -417,6 +773,22 @@ function renderNode(
           );
       }
     }
+    case 'blockquote': {
+      const quote = node;
+      return (
+        <blockquote key={key} className={classNames.blockquote}>
+          {mergeRawNodes(
+            quote.children,
+            (child, index) =>
+              renderNode(child, index, classNames, rendered, highlighted, config, containerRenderers),
+            classNames,
+            config
+          )}
+        </blockquote>
+      );
+    }
+    case 'thematic_break':
+      return <hr key={key} className={classNames.thematicBreak} />;
     case 'code': {
       const codeBlock = node;
       return renderCodeBlock(codeBlock, key, classNames, highlighted);
@@ -444,11 +816,16 @@ function renderNode(
       const items = list.children.map((item, index) =>
         renderNode(item, index, classNames, rendered, highlighted, config, containerRenderers)
       );
-      return list.ordered ? (
-        <ol key={key} className={classNames.listOrdered}>
-          {items}
-        </ol>
-      ) : (
+      if (list.ordered) {
+        const start =
+          list.start !== undefined && list.start !== 1 ? list.start : undefined;
+        return (
+          <ol key={key} className={classNames.listOrdered} start={start}>
+            {items}
+          </ol>
+        );
+      }
+      return (
         <ul key={key} className={classNames.listUnordered}>
           {items}
         </ul>
@@ -485,8 +862,13 @@ function renderNode(
 
       return (
         <li key={key} className={classNames.listItem}>
-          {item.children.map((child, index) =>
-            renderNode(child, index, classNames, rendered, highlighted, config, containerRenderers)
+          {renderListItemChildren(
+            item.children,
+            classNames,
+            rendered,
+            highlighted,
+            config,
+            containerRenderers
           )}
         </li>
       );
@@ -873,6 +1255,13 @@ function renderNode(
       // Rust parser 把 list_item.children 等场景的 inline 节点扁平铺开（非 paragraph 包裹），
       // renderNode 遍历到这些类型时委托给 renderInlineNode，避免走 default 返回 null 吞掉内容。
       return renderInlineNode(node, key, classNames, rendered, highlighted, config);
+    case 'raw':
+      // Raw HTML is opt-in. When the host has not enabled
+      // `options.allowDangerousHtml`, raw nodes are dropped rather than
+      // rendered, preserving the pre-raw-HTML default (no innerHTML /
+      // dangerouslySetInnerHTML surface from untrusted markdown).
+      if (!isDangerousHtmlAllowed(config)) return null;
+      return renderRawNode(node, key);
     default:
       return null;
   }
@@ -887,18 +1276,20 @@ function renderCodeBlock(
   const highlight = highlighted.get(
     buildCodeHighlightKey(codeBlock.value, codeBlock.lang, codeBlock.meta)
   );
+  const languageClass = codeBlock.lang ? `language-${codeBlock.lang}` : undefined;
+  const codeClassName = [classNames.code, languageClass].filter(Boolean).join(' ') || undefined;
 
   if (!highlight) {
     return (
       <pre key={key} className={classNames.codeBlock}>
-        <code className={classNames.code}>{codeBlock.value}</code>
+        <code className={codeClassName}>{codeBlock.value}</code>
       </pre>
     );
   }
 
   return (
     <pre key={key} className={classNames.codeBlock}>
-      <code className={classNames.code} data-language={highlight.language ?? codeBlock.lang}>
+      <code className={codeClassName} data-language={highlight.language ?? codeBlock.lang}>
         {highlight.lines.map((line, lineIndex) => (
           <React.Fragment key={lineIndex}>
             {line.tokens.map((token, tokenIndex) => (
@@ -936,9 +1327,186 @@ function renderInlineNodes(
   highlighted: Map<string, SupramarkCodeHighlightResult>,
   config?: SupramarkConfig
 ): React.ReactNode {
-  return nodes.map((node, index) =>
+  return mergeRawNodes(nodes, (node, index) =>
     renderInlineNode(node, index, classNames, rendered, highlighted, config)
   );
+}
+
+// Serialize a paragraph's inline children to a static HTML string when the run
+// contains raw HTML. This is the only way to reproduce parse5's tree
+// construction inside a `<p>` — an unclosed inline tag like `<a href="bar">`
+// triggers active-formatting-element reconstruction at `</p>`, which React's
+// element model (one closed DOM node per raw node) cannot express. Returns
+// null when the run has no raw node or holds a child that cannot be statically
+// serialized (math, footnote refs), so the caller falls back to the component
+// model for that paragraph.
+function inlineNodesToHtml(
+  nodes: SupramarkNode[],
+  classNames: SupramarkClassNames,
+  config?: SupramarkConfig
+): string | null {
+  if (!isDangerousHtmlAllowed(config)) return null;
+  if (!nodes.some((n) => n.type === 'raw')) return null;
+  return serializeInlineList(nodes, classNames, config);
+}
+
+function serializeInlineList(
+  nodes: SupramarkNode[],
+  classNames: SupramarkClassNames,
+  config?: SupramarkConfig
+): string | null {
+  let out = '';
+  for (const node of nodes) {
+    const piece = serializeInlineNode(node, classNames, config);
+    if (piece === null) return null;
+    out += piece;
+  }
+  return out;
+}
+
+function serializeInlineNode(
+  node: SupramarkNode,
+  classNames: SupramarkClassNames,
+  config?: SupramarkConfig
+): string | null {
+  const cls = (value?: string) => (value ? ` class="${escapeHtmlAttr(value)}"` : '');
+  switch (node.type) {
+    case 'text':
+      return escapeHtmlText(node.value);
+    case 'raw':
+      return node.value ?? '';
+    case 'strong': {
+      const inner = serializeInlineList(node.children, classNames, config);
+      return inner === null ? null : `<strong${cls(classNames.strong)}>${inner}</strong>`;
+    }
+    case 'emphasis': {
+      const inner = serializeInlineList(node.children, classNames, config);
+      return inner === null ? null : `<em${cls(classNames.emphasis)}>${inner}</em>`;
+    }
+    case 'inline_code':
+      return `<code${cls(classNames.inlineCode)}>${escapeHtmlText(node.value)}</code>`;
+    case 'link': {
+      const inner = serializeInlineList(node.children, classNames, config);
+      if (inner === null) return null;
+      const title = node.title ? ` title="${escapeHtmlAttr(node.title)}"` : '';
+      return `<a href="${escapeHtmlAttr(node.url)}"${title}${cls(classNames.link)}>${inner}</a>`;
+    }
+    case 'image': {
+      const title = node.title ? ` title="${escapeHtmlAttr(node.title)}"` : '';
+      return `<img src="${escapeHtmlAttr(node.url)}" alt="${escapeHtmlAttr(node.alt ?? '')}"${title}${cls(classNames.image)} />`;
+    }
+    case 'break':
+      return '<br />\n';
+    case 'delete': {
+      const inner = serializeInlineList(node.children, classNames, config);
+      if (inner === null) return null;
+      return isFeatureGroupEnabled(config, ['@supramark/feature-gfm'])
+        ? `<del${cls(classNames.delete)}>${inner}</del>`
+        : inner;
+    }
+    case 'math_inline':
+    case 'footnote_reference':
+    default:
+      return null;
+  }
+}
+
+const BLOCK_NODE_TYPES = new Set<SupramarkNode['type']>([
+  'paragraph',
+  'code',
+  'heading',
+  'blockquote',
+  'list',
+  'list_item',
+  'thematic_break',
+  'math_block',
+]);
+
+function hasBlockChild(node: SupramarkNode): boolean {
+  return BLOCK_NODE_TYPES.has(node.type);
+}
+
+// Serialize block-level nodes to the static HTML string cmark emits. Used when
+// raw HTML container nodes (unclosed `<div>`, or a `<del>…</del>` split across
+// nodes) must fold following/inner blocks into one verbatim RawHtml value so
+// the browser's root tree-construction owns the structure. Returns null for
+// any block that cannot be statically serialized (math, tables, nested lists
+// with task items), so the caller falls back to component rendering.
+function serializeBlockToHtml(
+  node: SupramarkNode,
+  classNames: SupramarkClassNames,
+  config?: SupramarkConfig
+): string | null {
+  switch (node.type) {
+    case 'paragraph': {
+      const inline = serializeInlineList(node.children, classNames, config);
+      if (inline === null) return null;
+      const cls = classNames.paragraph
+        ? ` class="${escapeHtmlAttr(classNames.paragraph)}"`
+        : '';
+      return `<p${cls}>${inline}</p>\n`;
+    }
+    case 'code': {
+      const lang = node.lang ?? '';
+      const languageClass = lang ? `language-${escapeHtmlAttr(lang)}` : '';
+      const codeClass = [classNames.code ?? '', languageClass]
+        .filter(Boolean)
+        .join(' ');
+      const codeClassAttr = codeClass ? ` class="${escapeHtmlAttr(codeClass)}"` : '';
+      const preClassAttr = classNames.codeBlock
+        ? ` class="${escapeHtmlAttr(classNames.codeBlock)}"`
+        : '';
+      return `<pre${preClassAttr}><code${codeClassAttr}>${escapeHtmlText(node.value)}</code></pre>\n`;
+    }
+    case 'raw':
+      return node.value ?? '';
+    case 'thematic_break':
+      return '<hr />\n';
+    case 'heading': {
+      const inline = serializeInlineList(node.children, classNames, config);
+      if (inline === null) return null;
+      const tag = `h${node.depth}`;
+      const clsKey = `h${node.depth}` as keyof SupramarkClassNames;
+      const cls = classNames[clsKey];
+      const clsAttr = cls ? ` class="${escapeHtmlAttr(cls)}"` : '';
+      return `<${tag}${clsAttr}>${inline}</${tag}>\n`;
+    }
+    default:
+      return null;
+  }
+}
+
+function serializeBlocksToHtml(
+  nodes: SupramarkNode[],
+  classNames: SupramarkClassNames,
+  config?: SupramarkConfig
+): string | null {
+  let out = '';
+  for (const node of nodes) {
+    const piece = serializeBlockToHtml(node, classNames, config);
+    if (piece === null) return null;
+    out += piece;
+  }
+  return out;
+}
+
+// Detect a block raw whose value is an open tag with no matching close tag in
+// the value itself — e.g. `<div>\n*foo*\n` or `  <div>\n`. cmark leaves such a
+// container unclosed and the reference HTML relies on the final parser folding
+// following blocks into it. Used to absorb following siblings into one RawHtml.
+function unclosedBlockContainerOpen(
+  value: string,
+  isBlock: boolean | undefined
+): string | null {
+  if (!isBlock) return null;
+  const m = value.match(/^\s*<([a-zA-Z][\w-]*)\b/);
+  if (!m) return null;
+  const tag = m[1].toLowerCase();
+  if (/^\s*\//.test(value.trimStart())) return null;
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp('</' + escaped + '\\s*>', 'i').test(value)) return null;
+  if (/\/\s*>\s*$/.test(value)) return null;
+  return tag;
 }
 
 function renderInlineNode(
@@ -1013,7 +1581,14 @@ function renderInlineNode(
       );
     }
     case 'break':
-      return <br key={key} />;
+      // CommonMark serializes a hard line break as `<br />\n`; the trailing
+      // newline becomes a significant text node when followed by inline text,
+      // so emit it explicitly to match the expected DOM.
+      return (
+        <React.Fragment key={key}>
+          <br />{'\n'}
+        </React.Fragment>
+      );
     case 'delete': {
       const deleteNode = node;
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-gfm'])) {
@@ -1035,6 +1610,13 @@ function renderInlineNode(
         </sup>
       );
     }
+    case 'raw':
+      // Raw HTML is opt-in. When the host has not enabled
+      // `options.allowDangerousHtml`, raw nodes are dropped rather than
+      // rendered, preserving the pre-raw-HTML default (no innerHTML /
+      // dangerouslySetInnerHTML surface from untrusted markdown).
+      if (!isDangerousHtmlAllowed(config)) return null;
+      return renderRawNode(node, key);
     default:
       return null;
   }
