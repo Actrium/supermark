@@ -31,6 +31,24 @@ pub fn convert_with_id(mmd: &str, id: &str) -> Result<String, JsValue> {
     mermaid_little::convert_with_id(mmd, id).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+/// Convert with an explicit diagram id and non-byte-exact readability
+/// tweaks, mirroring [`mermaid_little::convert_with_options`].
+///
+/// `edge_label_decluster` toggles the opt-in edge-label collision-avoidance
+/// pass (#93). With it off, the output matches [`convert_with_id`] for the
+/// same `id` — pass `"mermaid-1"` to match the default [`convert`] path.
+#[wasm_bindgen]
+pub fn convert_with_options(
+    mmd: &str,
+    id: &str,
+    edge_label_decluster: bool,
+) -> Result<String, JsValue> {
+    let opts =
+        mermaid_little::RenderOptions::default().with_edge_label_decluster(edge_label_decluster);
+    mermaid_little::convert_with_options(mmd, id, &opts)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
 /// Version of the compiled `mermaid-little-web` wasm.
 #[wasm_bindgen]
 pub fn version() -> String {

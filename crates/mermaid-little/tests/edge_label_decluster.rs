@@ -6,6 +6,12 @@
 //! the `Devices` boundary). That overlap is upstream Mermaid behaviour
 //! (confirmed via mermaid.live), so the default render stays byte-exact and
 //! the decluster is opt-in via `RenderOptions::edge_label_decluster`.
+//!
+//! The pass is **best-effort**: it reduces overlap but does not guarantee
+//! zero overlaps when `max_displacement` binds (see the module header on
+//! `edge_label_decluster`). Tests here assert the general property (overlap
+//! count strictly decreases) plus a fixture-specific zero-overlap check for
+//! the #93 repro, which is known to fully resolve.
 
 #![cfg(feature = "metrics-ttf-parser")]
 
@@ -174,11 +180,27 @@ fn decluster_removes_edge_label_overlaps() {
         "baseline should have overlapping edge labels (else the repro no longer reproduces #93)"
     );
 
-    // The opt-in pass must remove every overlap.
+    // The pass is best-effort: it reduces overlap but does not guarantee
+    // zero overlaps when `max_displacement` binds (see the module header on
+    // `edge_label_decluster`). The general property it does provide is that
+    // the overlap count strictly decreases — assert that here, since it is
+    // robust to layout drift.
     let decl_overlaps = overlap_pairs(&decl_rects);
     assert!(
+        decl_overlaps.len() < base_overlaps.len(),
+        "decluster must reduce overlap count: baseline={}, declustered={}",
+        base_overlaps.len(),
+        decl_overlaps.len()
+    );
+
+    // For this fixture (#93 repro) the pass fully resolves every overlap.
+    // This is a fixture-specific fact, not a general guarantee — if the
+    // layout ever shifts such that zero no longer holds, update this
+    // assertion rather than reading it as an algorithm contract.
+    assert!(
         decl_overlaps.is_empty(),
-        "declustered output still has {} overlapping pair(s)",
+        "declustered output still has {} overlapping pair(s) — the #93 \
+         fixture is expected to fully resolve, but the pass is best-effort",
         decl_overlaps.len()
     );
 
