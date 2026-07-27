@@ -36,10 +36,19 @@ function createContainer(): TestContainer {
   return container;
 }
 
-async function renderAst(ast: SupramarkRootNode): Promise<TestContainer> {
+async function renderAst(
+  ast: SupramarkRootNode,
+  options?: { allowDangerousHtml?: boolean }
+): Promise<TestContainer> {
   const container = createContainer();
   await act(async () => {
-    root?.render(<Supramark markdown="" ast={ast} />);
+    root?.render(
+      <Supramark
+        markdown=""
+        ast={ast}
+        config={options?.allowDangerousHtml ? { options: { allowDangerousHtml: true } } : undefined}
+      />
+    );
   });
   return container;
 }
@@ -206,7 +215,7 @@ describe('CommonMark raw HTML', () => {
   test('renders a balanced block raw element via a same-named host', async () => {
     // commonmark-0.31.2-0185: `<div>\nbar\n</div>` stays as <div>\nbar\n</div>
     const ast = makeRoot([raw('<div>\nbar\n</div>')]);
-    const container = await renderAst(ast);
+    const container = await renderAst(ast, { allowDangerousHtml: true });
     expect(container.innerHTML).toContain('<div>');
     expect(container.innerHTML).toContain('bar');
     expect(container.innerHTML).toContain('</div>');
@@ -217,7 +226,7 @@ describe('CommonMark raw HTML', () => {
   test('preserves the literal inner text of a raw block (no markdown processing)', async () => {
     // commonmark-0.31.2-0189: `<div>\n*Emphasized* text.\n</div>` — `*x*` stays literal
     const ast = makeRoot([raw('<div>\n*Emphasized* text.\n</div>')]);
-    const container = await renderAst(ast);
+    const container = await renderAst(ast, { allowDangerousHtml: true });
     expect(container.innerHTML).toContain('*Emphasized*');
     expect(container.innerHTML).not.toContain('<em>');
   });
@@ -230,7 +239,7 @@ describe('CommonMark raw HTML', () => {
         children: [text('Foo '), raw('<responsive-image src="foo.jpg" />', false)],
       },
     ]);
-    const container = await renderAst(ast);
+    const container = await renderAst(ast, { allowDangerousHtml: true });
     expect(container.innerHTML).toContain('Foo');
     expect(container.innerHTML).toMatch(/<responsive-image[^>]*src="foo.jpg"/);
   });
@@ -238,7 +247,7 @@ describe('CommonMark raw HTML', () => {
   test('renders a raw <textarea> with its literal content', async () => {
     // commonmark-0.31.2-0171: textarea content is raw text, not markdown
     const ast = makeRoot([raw('<textarea>\n\n*foo*\n\n</textarea>')]);
-    const container = await renderAst(ast);
+    const container = await renderAst(ast, { allowDangerousHtml: true });
     expect(container.innerHTML).toMatch(/<textarea[^>]*>/);
     expect(container.innerHTML).toContain('*foo*');
     expect(container.innerHTML).toContain('</textarea>');
@@ -251,7 +260,7 @@ describe('CommonMark raw HTML', () => {
     // parser auto-closes it. (With a matching close-tag sibling, mergeRawNodes
     // wraps the intervening children — covered by the conformance suite.)
     const ast = makeRoot([raw('<DIV CLASS="foo">')]);
-    const container = await renderAst(ast);
+    const container = await renderAst(ast, { allowDangerousHtml: true });
     expect(container.innerHTML).toMatch(/<div[^>]*>/i);
     expect(container.innerHTML).toContain('foo');
   });
@@ -261,7 +270,72 @@ describe('CommonMark raw HTML', () => {
     // the renderer parses the value through a <template> and splices the
     // resulting comment node in place.
     const ast = makeRoot([raw('<!-- foo -->')]);
-    const container = await renderAst(ast);
+    const container = await renderAst(ast, { allowDangerousHtml: true });
     expect(container.innerHTML).toContain('<!-- foo -->');
+  });
+
+  test('drops raw HTML when allowDangerousHtml is not enabled (default off)', async () => {
+    // Raw HTML is opt-in. Without the flag, raw nodes are dropped so an
+    // upgrade never silently enables script execution from untrusted
+    // markdown — matching the pre-raw-HTML behaviour. The raw `<img onerror>`
+    // must not reach the DOM; surrounding content still renders.
+    const ast = makeRoot([
+      raw('<div><img src="x" onerror="alert(1)"></div>'),
+      paragraph('after'),
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).not.toContain('onerror');
+    expect(container.innerHTML).not.toContain('<img');
+    expect(container.innerHTML).toContain('after');
+  });
+
+  test('drops inline raw HTML inside a paragraph when the flag is off', async () => {
+    const ast = makeRoot([
+      {
+        type: 'paragraph',
+        children: [text('hello '), raw('<img src="z" onerror="alert(1)">', false), text(' world')],
+      },
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).not.toContain('onerror');
+    expect(container.innerHTML).not.toContain('<img');
+    expect(container.innerHTML).toContain('hello');
+    expect(container.innerHTML).toContain('world');
+  });
+
+  test('does not duplicate raw output across re-renders', async () => {
+    // RawHtml's useLayoutEffect cleanup must remove the nodes it spliced in
+    // and restore the placeholder's slot, otherwise every re-render appends
+    // another copy — unbounded growth for streaming markdown.
+    const ast = makeRoot([
+      {
+        type: 'paragraph',
+        children: [text('a '), raw('<span>x</span>', false)],
+      },
+    ]);
+    const container = await renderAst(ast, { allowDangerousHtml: true });
+    const firstHtml = container.innerHTML.replace(/<span style="display: ?none[^>]*><\/span>/, '');
+    const spanCount = (firstHtml.match(/<span>x<\/span>/g) ?? []).length;
+    expect(spanCount).toBe(1);
+
+    // Re-render the same container with a different raw value.
+    const ast2 = makeRoot([
+      {
+        type: 'paragraph',
+        children: [text('b '), raw('<span>y</span>', false)],
+      },
+    ]);
+    await act(async () => {
+      root?.render(
+        <Supramark
+          markdown=""
+          ast={ast2}
+          config={{ options: { allowDangerousHtml: true } }}
+        />
+      );
+    });
+    const secondHtml = container.innerHTML.replace(/<span style="display: ?none[^>]*><\/span>/, '');
+    expect((secondHtml.match(/<span>x<\/span>/g) ?? []).length).toBe(0);
+    expect((secondHtml.match(/<span>y<\/span>/g) ?? []).length).toBe(1);
   });
 });

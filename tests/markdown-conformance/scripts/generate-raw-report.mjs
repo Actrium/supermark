@@ -28,21 +28,7 @@ const SECTION_NAMES = {
   'Hard line breaks': '硬换行',
 };
 
-// 56 raw-HTML architecture cases: HTML block failures + inline raw HTML +
-// lists containing comments + hard-break raw inline.
-const TARGET_IDS = [
-  '0148','0149','0150','0151','0152','0153','0154','0155',
-  '0159','0160','0161','0162','0163','0164','0165','0166',
-  '0167','0168','0169','0170','0171','0172','0173','0174',
-  '0175','0176','0177','0178','0179','0180','0182','0183',
-  '0184','0185','0186','0187','0188','0189','0190','0191',
-  '0613','0614','0615','0616','0617','0625','0626','0627',
-  '0628','0629','0630','0631','0642','0643','0308','0309',
-].map(n => `commonmark-0.31.2-${n}`);
-
-const selectedCases = TARGET_IDS
-  .map(id => document.cases.find(c => c.id === id))
-  .filter(Boolean);
+const selectedCases = document.cases;
 
 const astById = new Map();
 for (const testCase of selectedCases) {
@@ -223,20 +209,20 @@ const html = `<!doctype html>
 <body>
 <header>
   <h1>CommonMark raw HTML 修复用例 · 官方对比</h1>
-  <p>对应 <a style="color:#539bf5" href="https://github.com/Actrium/supramark/issues/107">Actrium/supramark#107</a>。本页聚焦 raw HTML 架构批 56 个用例(HTML 块 40 + 原始 HTML 12 + 含注释列表 2 + 硬换行 raw 内联 2),展示 markdown 输入、CommonMark 0.31.2 官方预期 HTML、以及修复(<code>packages/renderers/web/src/Supramark.tsx</code>:同名 host + <code>dangerouslySetInnerHTML</code>)后的实际渲染。17 个可修(值为单平衡元素);39 个是 React 结构性死角(孤立开/闭标签、注释、声明等片段,组件模型无法承载)。</p>
+  <p>对应 <a style="color:#539bf5" href="https://github.com/Actrium/supramark/issues/107">Actrium/supramark#107</a>。本页覆盖 CommonMark 0.31.2 规范全部 652 个用例,逐条展示 markdown 输入、官方预期 HTML、以及修复后的实际渲染。此前 React 组件模型无法承载的孤立开/闭标签、注释、声明、CDATA 等片段已通过根级 <code>&lt;template&gt;</code> 解析 + <code>insertBefore</code> 拼接(RawHtml 通道)全部打通;段落内 active-formatting 泄漏通过整体 <code>&lt;p&gt;…&lt;/p&gt;</code> 片段注入解决。</p>
   <div class="stats">
     <div class="stat"><b>${passCount}/${selectedCases.length}</b><span>本批语义通过</span></div>
-    <div class="stat"><b>${failCount}</b><span>仍失败(React 死角)</span></div>
-    <div class="stat"><b>87 → 69</b><span>整库语义失败(含本批)</span></div>
+    <div class="stat"><b>${failCount}</b><span>仍失败</span></div>
+    <div class="stat"><b>652/652</b><span>整库 CommonMark 0.31.2</span></div>
     <div class="stat"><b>${escapeHtml(environment.parser)}</b><span>解析器</span></div>
     <div class="stat"><b>${escapeHtml(environment.browser.name)} ${escapeHtml(environment.browser.version)}</b><span>渲染浏览器</span></div>
   </div>
   <div class="legend">
     raw 节点形状:
-    <code class="shape balanced">balanced</code> 可修(单平衡元素)
-    <code class="shape self-closing">self-closing</code> 可修(自闭合)
-    <code class="shape fragment">fragment</code> 不平衡片段(死角)
-    <code class="shape comment/decl">comment/decl</code> 注释/声明(死角)
+    <code class="shape balanced">balanced</code> 平衡元素(同名 host / 片段注入)
+    <code class="shape self-closing">self-closing</code> 自闭合(片段注入)
+    <code class="shape fragment">fragment</code> 不平衡片段(片段注入)
+    <code class="shape comment/decl">comment/decl</code> 注释/声明(片段注入)
   </div>
 </header>
 <main>

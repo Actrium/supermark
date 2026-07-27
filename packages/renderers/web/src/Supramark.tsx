@@ -392,6 +392,15 @@ function escapeHtmlAttr(value: string): string {
   return escapeHtmlText(value).replace(/"/g, '&quot;');
 }
 
+// Whether the host has opted into raw-HTML passthrough. Default off: raw nodes
+// are dropped (rendered as null), matching the pre-raw-HTML behaviour so an
+// upgrade never silently enables script execution from untrusted markdown. The
+// conformance harness sets this true because CommonMark's expected HTML is
+// defined with raw HTML passed through.
+function isDangerousHtmlAllowed(config?: SupramarkConfig): boolean {
+  return config?.options?.allowDangerousHtml === true;
+}
+
 // React's component model emits one DOM element per node, so it cannot express
 // raw HTML fragments the browser's tree-construction stage would normally own:
 // HTML comments, CDATA, processing instructions, bare open/close tags, or
@@ -412,14 +421,30 @@ function RawHtml({ value }: { value: string }): React.ReactNode {
     if (!doc || typeof doc.createElement !== 'function') return;
     const template = doc.createElement('template');
     template.innerHTML = value;
-    parent.insertBefore(template.content, el);
-    el.remove();
+    // Record the inserted nodes and the placeholder's exact position so a
+    // re-render (value change) removes exactly what we added — not whatever
+    // currently sits around the placeholder, and not nodes React owns — and
+    // restores the placeholder to its original slot rather than appending it
+    // to the end of the parent (which would corrupt insertion order on the
+    // next run). Without this, every re-render duplicates the prior output
+    // and drifts trailing siblings ahead of new content.
+    const inserted: Node[] = [];
+    const nextSibling: Node | null = el.nextSibling;
+    while (template.content.firstChild) {
+      const node = template.content.firstChild;
+      parent.insertBefore(node, el);
+      inserted.push(node);
+    }
+    parent.removeChild(el);
     return () => {
-      // Re-attach the placeholder so React's unmount removeChild finds it
-      // where it expects; this node is transient (never read back).
+      for (const node of inserted) {
+        if (node.parentNode === parent) {
+          parent.removeChild(node);
+        }
+      }
       if (!el.parentNode) {
         try {
-          parent.appendChild(el);
+          parent.insertBefore(el, nextSibling);
         } catch {
           // ignore — parent already torn down
         }
@@ -530,11 +555,15 @@ function mergeRawNodes(
   classNames?: SupramarkClassNames,
   config?: SupramarkConfig
 ): React.ReactNode[] {
+  // Raw HTML is opt-in. When disabled, skip raw-merge entirely so raw nodes
+  // fall through to their per-node renderer (which drops them) and no
+  // dangerouslySetInnerHTML host element is ever emitted.
+  const allowDangerous = isDangerousHtmlAllowed(config);
   const result: React.ReactNode[] = [];
   let i = 0;
   while (i < children.length) {
     const node = children[i];
-    if (node?.type === 'raw') {
+    if (allowDangerous && node?.type === 'raw') {
       const rawNode = node;
       const value = rawNode.value ?? '';
       const open = rawOpenTagFragment(value);
@@ -1227,6 +1256,11 @@ function renderNode(
       // renderNode 遍历到这些类型时委托给 renderInlineNode，避免走 default 返回 null 吞掉内容。
       return renderInlineNode(node, key, classNames, rendered, highlighted, config);
     case 'raw':
+      // Raw HTML is opt-in. When the host has not enabled
+      // `options.allowDangerousHtml`, raw nodes are dropped rather than
+      // rendered, preserving the pre-raw-HTML default (no innerHTML /
+      // dangerouslySetInnerHTML surface from untrusted markdown).
+      if (!isDangerousHtmlAllowed(config)) return null;
       return renderRawNode(node, key);
     default:
       return null;
@@ -1311,6 +1345,7 @@ function inlineNodesToHtml(
   classNames: SupramarkClassNames,
   config?: SupramarkConfig
 ): string | null {
+  if (!isDangerousHtmlAllowed(config)) return null;
   if (!nodes.some((n) => n.type === 'raw')) return null;
   return serializeInlineList(nodes, classNames, config);
 }
@@ -1331,41 +1366,42 @@ function serializeInlineList(
 
 function serializeInlineNode(
   node: SupramarkNode,
-  _classNames: SupramarkClassNames,
+  classNames: SupramarkClassNames,
   config?: SupramarkConfig
 ): string | null {
+  const cls = (value?: string) => (value ? ` class="${escapeHtmlAttr(value)}"` : '');
   switch (node.type) {
     case 'text':
       return escapeHtmlText(node.value);
     case 'raw':
       return node.value ?? '';
     case 'strong': {
-      const inner = serializeInlineList(node.children, _classNames, config);
-      return inner === null ? null : `<strong>${inner}</strong>`;
+      const inner = serializeInlineList(node.children, classNames, config);
+      return inner === null ? null : `<strong${cls(classNames.strong)}>${inner}</strong>`;
     }
     case 'emphasis': {
-      const inner = serializeInlineList(node.children, _classNames, config);
-      return inner === null ? null : `<em>${inner}</em>`;
+      const inner = serializeInlineList(node.children, classNames, config);
+      return inner === null ? null : `<em${cls(classNames.emphasis)}>${inner}</em>`;
     }
     case 'inline_code':
-      return `<code>${escapeHtmlText(node.value)}</code>`;
+      return `<code${cls(classNames.inlineCode)}>${escapeHtmlText(node.value)}</code>`;
     case 'link': {
-      const inner = serializeInlineList(node.children, _classNames, config);
+      const inner = serializeInlineList(node.children, classNames, config);
       if (inner === null) return null;
       const title = node.title ? ` title="${escapeHtmlAttr(node.title)}"` : '';
-      return `<a href="${escapeHtmlAttr(node.url)}"${title}>${inner}</a>`;
+      return `<a href="${escapeHtmlAttr(node.url)}"${title}${cls(classNames.link)}>${inner}</a>`;
     }
     case 'image': {
       const title = node.title ? ` title="${escapeHtmlAttr(node.title)}"` : '';
-      return `<img src="${escapeHtmlAttr(node.url)}" alt="${escapeHtmlAttr(node.alt ?? '')}"${title} />`;
+      return `<img src="${escapeHtmlAttr(node.url)}" alt="${escapeHtmlAttr(node.alt ?? '')}"${title}${cls(classNames.image)} />`;
     }
     case 'break':
       return '<br />\n';
     case 'delete': {
-      const inner = serializeInlineList(node.children, _classNames, config);
+      const inner = serializeInlineList(node.children, classNames, config);
       if (inner === null) return null;
       return isFeatureGroupEnabled(config, ['@supramark/feature-gfm'])
-        ? `<del>${inner}</del>`
+        ? `<del${cls(classNames.delete)}>${inner}</del>`
         : inner;
     }
     case 'math_inline':
@@ -1412,8 +1448,15 @@ function serializeBlockToHtml(
     }
     case 'code': {
       const lang = node.lang ?? '';
-      const codeClass = lang ? ` class="language-${escapeHtmlAttr(lang)}"` : '';
-      return `<pre><code${codeClass}>${escapeHtmlText(node.value)}</code></pre>\n`;
+      const languageClass = lang ? `language-${escapeHtmlAttr(lang)}` : '';
+      const codeClass = [classNames.code ?? '', languageClass]
+        .filter(Boolean)
+        .join(' ');
+      const codeClassAttr = codeClass ? ` class="${escapeHtmlAttr(codeClass)}"` : '';
+      const preClassAttr = classNames.codeBlock
+        ? ` class="${escapeHtmlAttr(classNames.codeBlock)}"`
+        : '';
+      return `<pre${preClassAttr}><code${codeClassAttr}>${escapeHtmlText(node.value)}</code></pre>\n`;
     }
     case 'raw':
       return node.value ?? '';
@@ -1568,6 +1611,11 @@ function renderInlineNode(
       );
     }
     case 'raw':
+      // Raw HTML is opt-in. When the host has not enabled
+      // `options.allowDangerousHtml`, raw nodes are dropped rather than
+      // rendered, preserving the pre-raw-HTML default (no innerHTML /
+      // dangerouslySetInnerHTML surface from untrusted markdown).
+      if (!isDangerousHtmlAllowed(config)) return null;
       return renderRawNode(node, key);
     default:
       return null;
