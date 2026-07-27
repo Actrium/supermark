@@ -37,6 +37,7 @@ pub mod katex;
 pub mod layout;
 pub mod math;
 pub mod model;
+pub mod options;
 pub mod parser;
 pub mod preprocess;
 pub mod render;
@@ -47,6 +48,7 @@ pub mod theme;
 
 pub use engine::MermaidEngine;
 pub use error::MermaidError;
+pub use options::RenderOptions;
 pub use semantic::{parse_semantic, MermaidAst};
 
 /// Mirror `tests/support/generate_ref.mjs#renumberCounterIds` —
@@ -82,7 +84,26 @@ fn renumber_counter_ids(svg: &str, re: &regex::Regex, sep: &str) -> String {
 /// The `id` argument becomes the root `<svg id="..">` attribute and is
 /// scoped through CSS selectors. Use a stable value — e.g. the
 /// fixture path — for byte-exact reproducibility.
+///
+/// Equivalent to [`convert_with_options`] with [`RenderOptions::byte_exact`]
+/// (no readability tweaks; output stays byte-exact with upstream).
 pub fn convert_with_id(source: &str, id: &str) -> Result<String, MermaidError> {
+    convert_with_options(source, id, &RenderOptions::byte_exact())
+}
+
+/// Convert mermaid source text into SVG with non-byte-exact readability
+/// tweaks applied.
+///
+/// `opts` carries opt-in enhancements that deliberately diverge from upstream
+/// `mermaid@11.14.0` to improve readability. [`RenderOptions::byte_exact`]
+/// (also [`RenderOptions::default`]) reproduces upstream output exactly; see
+/// the fields on [`RenderOptions`] for what each flag does and why it is off
+/// by default.
+pub fn convert_with_options(
+    source: &str,
+    id: &str,
+    opts: &RenderOptions,
+) -> Result<String, MermaidError> {
     // Preprocess only to (a) pick the right diagram type — detection
     // runs on the frontmatter/directive-stripped head — and (b) read
     // the global `theme` name. Per-diagram parsers receive the RAW
@@ -91,7 +112,7 @@ pub fn convert_with_id(source: &str, id: &str) -> Result<String, MermaidError> {
     // `packet.showBits`, `themeVariables.pieOuterStrokeWidth`). Doing
     // it this way lets Wave 1 agents keep one API boundary —
     // `parse(&str)` — without a Config parameter.
-    let svg = make_foreign_objects_non_clipping(&convert_with_id_inner(source, id)?);
+    let svg = make_foreign_objects_non_clipping(&convert_with_id_inner(source, id, opts)?);
     // Apply the same per-SVG counter normalisation that
     // `generate_ref.mjs` runs over upstream's reference output. Only
     // `classId-\w+-N` is relevant today — class diagrams are the only
@@ -154,7 +175,11 @@ fn has_svg_attr(tag: &str, name: &str) -> bool {
     false
 }
 
-fn convert_with_id_inner(source: &str, id: &str) -> Result<String, MermaidError> {
+fn convert_with_id_inner(
+    source: &str,
+    id: &str,
+    opts: &RenderOptions,
+) -> Result<String, MermaidError> {
     let pre = preprocess::preprocess(source)?;
     let theme_name = pre.config.theme.as_deref().unwrap_or("default");
     let mut theme = theme::get_theme(theme_name);
@@ -334,8 +359,8 @@ fn convert_with_id_inner(source: &str, id: &str) -> Result<String, MermaidError>
         }
         detect::DiagramKind::Flowchart => {
             let d = parser::flowchart::parse(source)?;
-            let l = layout::flowchart::layout(&d, &theme)?;
-            render::svg_flowchart::render(&d, &l, &theme, id)
+            let l = layout::flowchart::layout(&d, &theme, opts.edge_label_decluster)?;
+            render::svg_flowchart::render_with_options(&d, &l, &theme, id, opts)
         }
         detect::DiagramKind::Venn => {
             let d = parser::venn::parse(source)?;

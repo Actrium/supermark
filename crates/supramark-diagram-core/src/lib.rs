@@ -31,6 +31,24 @@ impl RenderOutput {
     }
 }
 
+/// Engine-agnostic render hints.
+///
+/// `Default` is the byte-exact / canonical render — every flag is off, so
+/// [`DiagramEngine::render`] and [`DiagramEngine::render_with_options`] produce
+/// identical output when no flag is set. Each field is a non-canonical
+/// readability tweak that an engine may ignore (engines without an
+/// implementation keep the default render).
+///
+/// `edge_label_decluster` — flowchart edge labels normally sit at the dagre
+/// spline midpoint with no mutual avoidance, so labels that share a midpoint
+/// region overlap. This is upstream Mermaid behaviour (issue #93), not a
+/// regression, so it is off by default. Engines that support it (mermaid) nudge
+/// overlapping label boxes apart when set.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EngineRenderOptions {
+    pub edge_label_decluster: bool,
+}
+
 /// Public unified semantic AST envelope: across the boundary (serialized to
 /// TS / AST v2) it is always `{ engine, kind, data }` (design §0, decision 1).
 /// Each engine uses a strongly typed semantic struct internally and converges
@@ -99,6 +117,20 @@ pub trait DiagramEngine: Send + Sync {
     /// always required).
     fn render(&self, source: &str) -> Result<RenderOutput, DiagramError>;
 
+    /// source -> render output with non-canonical hints applied.
+    ///
+    /// The default implementation ignores `opts` and delegates to [`render`](Self::render),
+    /// so engines that don't support any option render identically either way.
+    /// Engines override this to honour the flags they implement.
+    fn render_with_options(
+        &self,
+        source: &str,
+        opts: &EngineRenderOptions,
+    ) -> Result<RenderOutput, DiagramError> {
+        let _ = opts;
+        self.render(source)
+    }
+
     /// source -> public semantic AST envelope.
     ///
     /// - `Ok(None)`: this engine / diagram kind does not currently support
@@ -152,6 +184,18 @@ impl DiagramRegistry {
         source: &str,
     ) -> Option<Result<RenderOutput, DiagramError>> {
         self.get(engine_id).map(|e| e.render(source))
+    }
+
+    /// Convenience: render with non-canonical hints; returns `None` if the
+    /// engine is not registered.
+    pub fn render_with_options(
+        &self,
+        engine_id: &str,
+        source: &str,
+        opts: &EngineRenderOptions,
+    ) -> Option<Result<RenderOutput, DiagramError>> {
+        self.get(engine_id)
+            .map(|e| e.render_with_options(source, opts))
     }
 
     /// Convenience: get semantics directly; returns `None` if the engine is not registered.

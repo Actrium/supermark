@@ -59,8 +59,12 @@ const LABEL_FONT_SIZE: f64 = 14.0;
 const FLOWCHART_PADDING: f64 = 15.0;
 
 /// Lay out a flowchart diagram. Uses dagre for the graph geometry.
-pub fn layout(d: &FlowchartDiagram, theme: &ThemeVariables) -> Result<FlowchartLayout> {
-    let layout_data = build_layout_data(d);
+pub fn layout(
+    d: &FlowchartDiagram,
+    theme: &ThemeVariables,
+    edge_label_decluster: bool,
+) -> Result<FlowchartLayout> {
+    let layout_data = build_layout_data(d, edge_label_decluster);
     let LayoutResult {
         nodes,
         edges,
@@ -757,7 +761,7 @@ fn intersect_rect(rect: (f64, f64, f64, f64), target: (f64, f64)) -> (f64, f64) 
 }
 
 /// Build a unified `LayoutData` from a flowchart AST.
-fn build_layout_data(d: &FlowchartDiagram) -> LayoutData {
+fn build_layout_data(d: &FlowchartDiagram, edge_label_decluster: bool) -> LayoutData {
     let mut data = LayoutData {
         diagram_type: Some("flowchart-v2".into()),
         direction: Some(d.direction.as_str().into()),
@@ -1020,6 +1024,7 @@ fn build_layout_data(d: &FlowchartDiagram) -> LayoutData {
             &class_map,
             d.html_labels.unwrap_or(true),
             d.curve.as_deref().unwrap_or("basis"),
+            edge_label_decluster,
         );
         // Record original endpoints before retargeting so the isolation check
         // in dagre_bridge can test against the pre-retarget cluster IDs.
@@ -1624,7 +1629,7 @@ fn measure_edge_label(text: &str, html_labels: bool, is_markdown: bool) -> (f64,
         // <p> displays the rendered HTML, but jsdom's getBoundingClientRect
         // still measures the textContent (i.e. marker-free string). In
         // both cases reuse `markdownToHTML` so the measured width matches
-        // upstream — strip_html_for_measurement removes the inserted
+        // upstream — `edge_label_plain_text` strips the inserted
         // `<strong>`/`<em>` tags and yields the plain text.
         crate::render::foreign_object::markdown_label_to_html(text)
     } else {
@@ -1635,7 +1640,7 @@ fn measure_edge_label(text: &str, html_labels: bool, is_markdown: bool) -> (f64,
     // result as ONE line — `<br>` does not split because `textContent`
     // collapses break tags. `\n` characters survive as whitespace and are
     // dropped here to match upstream's `measureTextBlock` shim.
-    let plain = strip_html_for_measurement(&measure_text);
+    let plain = crate::layout::label_metrics::strip_html_for_measurement(&measure_text);
     let w = font_metrics::text_width(&plain, EDGE_LABEL_FONT, EDGE_LABEL_SIZE, false, false);
     if !html_labels {
         // `bbox` of labelGroup = unionOf(rect{-2,-2,w+4,h+4}, text{0,0,w,h})
@@ -1644,71 +1649,6 @@ fn measure_edge_label(text: &str, html_labels: bool, is_markdown: bool) -> (f64,
         return (w + 4.0, h + 4.0);
     }
     (w, h)
-}
-
-/// Strip HTML tags and decode common entities to mirror jsdom's
-/// `textContent` for edge-label width measurement.
-fn strip_html_for_measurement(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'<' {
-            // A `<` only starts an HTML tag when followed by an ASCII letter
-            // or `/letter`. Anything else (`<<`, `< `, `<1`, `<!`, `<?`) is
-            // treated as literal text — matching parse_html_text_segments.
-            let next = bytes.get(i + 1).copied();
-            let is_tag_start = match next {
-                Some(c) if c.is_ascii_alphabetic() => true,
-                Some(b'/') => bytes
-                    .get(i + 2)
-                    .map(|c| c.is_ascii_alphabetic())
-                    .unwrap_or(false),
-                _ => false,
-            };
-            if is_tag_start {
-                if let Some(rel_end) = s[i..].find('>') {
-                    i += rel_end + 1;
-                    continue;
-                }
-            }
-            out.push('<');
-            i += 1;
-        } else if bytes[i] == b'&' {
-            if let Some(semi_rel) = s[i..].find(';') {
-                let entity = &s[i + 1..i + semi_rel];
-                let ch = match entity {
-                    "amp" => Some('&'),
-                    "lt" => Some('<'),
-                    "gt" => Some('>'),
-                    "quot" => Some('"'),
-                    "apos" => Some('\''),
-                    "nbsp" => Some('\u{00A0}'),
-                    _ => None,
-                };
-                if let Some(c) = ch {
-                    out.push(c);
-                    i += semi_rel + 1;
-                    continue;
-                }
-            }
-            out.push('&');
-            i += 1;
-        } else if bytes[i] == b'\n' {
-            // textContent treats inline `\n` as whitespace; under
-            // measureTextBlock the legacy single-line behaviour drops it.
-            i += 1;
-        } else {
-            // UTF-8-safe copy of the next char.
-            let mut len = 1usize;
-            while len < 4 && i + len < bytes.len() && (bytes[i + len] & 0xC0) == 0x80 {
-                len += 1;
-            }
-            out.push_str(&s[i..i + len]);
-            i += len;
-        }
-    }
-    out
 }
 
 /// Build a unified::Edge from a model Edge, applying link-style overrides.
@@ -1721,6 +1661,7 @@ fn build_edge<'a>(
     class_map: &BTreeMap<&'a str, &'a ClassDef>,
     html_labels: bool,
     config_curve: &str,
+    edge_label_decluster: bool,
 ) -> unified::Edge {
     // Custom-id syntax `A name@-->B` lets the source set an explicit edge id
     // (`name`). Upstream uses that id directly; only fall back to the
@@ -1765,7 +1706,27 @@ fn build_edge<'a>(
         .as_ref()
         .map(|l| matches!(l.kind, crate::model::flowchart::LabelKind::Markdown))
         .unwrap_or(false);
-    let (lw, lh) = measure_edge_label(label_text, html_labels, is_markdown_label);
+    let (lw_shim, lh) = measure_edge_label(label_text, html_labels, is_markdown_label);
+    // Byte-exact default: dagre reserves the shim width. The shim under-measures
+    // CJK, so in opt-in mode floor the width to the real rendered estimate —
+    // dagre then reserves enough rank space for the label to fit between its
+    // endpoint nodes (the layout-time fix for issue #93 label/node overlaps).
+    // The per-glyph estimate runs over the marker-free plain text (tags and
+    // entities stripped), so markup like `<br/>` / `**` / `&amp;` is not billed
+    // and the floor tracks the real painted width. Only floor when the label
+    // actually contains a wide glyph, so pure-Latin diagrams keep their
+    // byte-exact spacing. Height is left to the shim: it controls intra-rank
+    // separation, not the inter-rank gap this fixes.
+    let plain = crate::layout::label_metrics::edge_label_plain_text(label_text, is_markdown_label);
+    let lw = if edge_label_decluster
+        && plain
+            .chars()
+            .any(crate::layout::label_metrics::is_wide_glyph)
+    {
+        crate::layout::label_metrics::cjk_aware_label_width(&plain, lw_shim)
+    } else {
+        lw_shim
+    };
     ue.extra.insert("label_width".into(), lw.to_string());
     ue.extra.insert("label_height".into(), lh.to_string());
 
@@ -2054,7 +2015,7 @@ mod tests {
         let src = "flowchart TD\nA --> B\n";
         let d = fcp::parse(src).unwrap();
         let theme = ThemeVariables::default();
-        let l = layout(&d, &theme).unwrap();
+        let l = layout(&d, &theme, false).unwrap();
         assert_eq!(l.nodes.len(), 2);
         assert_eq!(l.edges.len(), 1);
         let a = l.nodes.iter().find(|n| n.id == "A").unwrap();
@@ -2066,7 +2027,7 @@ mod tests {
         let src = "flowchart TD\nsubgraph s1 [Title]\n  A-->B\nend\nA-->C\n";
         let d = fcp::parse(src).unwrap();
         let theme = ThemeVariables::default();
-        let l = layout(&d, &theme).unwrap();
+        let l = layout(&d, &theme, false).unwrap();
         assert!(l.clusters.iter().any(|c| c.id == "s1"));
         // members must have their parent_id set
         let a = l.nodes.iter().find(|n| n.id == "A").unwrap();
@@ -2078,7 +2039,7 @@ mod tests {
         let src = "flowchart LR\nA-->B\n";
         let d = fcp::parse(src).unwrap();
         let theme = ThemeVariables::default();
-        let l = layout(&d, &theme).unwrap();
+        let l = layout(&d, &theme, false).unwrap();
         let a = l.nodes.iter().find(|n| n.id == "A").unwrap();
         let b = l.nodes.iter().find(|n| n.id == "B").unwrap();
         assert!(b.x.unwrap() > a.x.unwrap());

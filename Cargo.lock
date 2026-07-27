@@ -875,6 +875,7 @@ dependencies = [
  "supramark-diagram-core",
  "supramark-font-metrics",
  "thiserror 1.0.69",
+ "unicode-width",
 ]
 
 [[package]]

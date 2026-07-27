@@ -113,6 +113,10 @@ supramark-diagram-core = { path = "../supramark-diagram-core", version = "0.1" }
 font_metrics_core = { package = "supramark-font-metrics", path = "../font-metrics", version = "0.1" }
 thiserror = "1"
 log = "0.4"
+# East Asian Width lookup, used by `layout::label_metrics` to decide which
+# glyphs render ~1em wide. Same version d2-little already pins, so the
+# workspace resolves to a single copy.
+unicode-width = "0.1"
 env_logger = { version = "0.11", optional = true }
 # QuickJS bindings for the optional `katex` feature. Pinned to 0.10 (last
 # release compatible with rust-version = "1.82"; 0.11+ requires 1.87).

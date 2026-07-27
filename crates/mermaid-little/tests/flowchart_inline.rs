@@ -130,7 +130,7 @@ fn render_one(rel: &str) -> Result<String, String> {
     if let Some(tv) = pre.config.theme_variables.as_ref() {
         theme::apply_theme_variables(&mut th, tv);
     }
-    let l = fcl::layout(&d, &th).map_err(|e| format!("layout: {e}"))?;
+    let l = fcl::layout(&d, &th, false).map_err(|e| format!("layout: {e}"))?;
     svg_flowchart::render(&d, &l, &th, &id).map_err(|e| format!("render: {e}"))
 }
 
@@ -213,8 +213,9 @@ fn flowchart_parser_roundtrips_all_fixtures() {
             };
             let th = theme::get_theme("default");
             let rel_for_panic = rel.clone();
-            let l_result =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fcl::layout(&d, &th)));
+            let l_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                fcl::layout(&d, &th, false)
+            }));
             let l = match l_result {
                 Ok(Ok(l)) => l,
                 Ok(Err(e)) => {
@@ -352,7 +353,7 @@ fn flowchart_single_diff_report() {
     if let Some(tv) = pre.config.theme_variables.as_ref() {
         theme::apply_theme_variables(&mut th, tv);
     }
-    let l = fcl::layout(&d, &th).unwrap();
+    let l = fcl::layout(&d, &th, false).unwrap();
     eprintln!("diagram_padding={}", l.diagram_padding);
     eprintln!("isolated_cluster_ids: {:?}", l.isolated_cluster_ids);
     for n in &l.nodes {
@@ -433,7 +434,7 @@ fn dump_fixture_168() {
         theme::apply_theme_variables(&mut th, tv);
     }
     let d = fcp::parse(source).unwrap();
-    let l = fcl::layout(&d, &th).unwrap();
+    let l = fcl::layout(&d, &th, false).unwrap();
 
     for e in &l.edges {
         if e.id.contains("Sub_In") {
@@ -484,7 +485,7 @@ fn dump_fixture_155_parallel_edge_assignment() {
         theme::apply_theme_variables(&mut th, tv);
     }
     let d = fcp::parse(source).unwrap();
-    let l = fcl::layout(&d, &th).unwrap();
+    let l = fcl::layout(&d, &th, false).unwrap();
 
     for e in &l.edges {
         if e.id == "L_sub1_sub4_0" || e.id == "L_S1_S2_0" {
@@ -551,7 +552,7 @@ fn dump_fixture_168_clusters() {
         theme::apply_theme_variables(&mut th, tv);
     }
     let d = fcp::parse(source).unwrap();
-    let l = fcl::layout(&d, &th).unwrap();
+    let l = fcl::layout(&d, &th, false).unwrap();
 
     for c in &l.clusters {
         eprintln!("Cluster {}: {:?}", c.id, c.bounds);

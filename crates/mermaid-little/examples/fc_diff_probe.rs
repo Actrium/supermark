@@ -92,7 +92,7 @@ fn main() {
             theme::apply_theme_variables(&mut theme, tv);
         }
         let l = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            layout_fc::layout(&d, &theme)
+            layout_fc::layout(&d, &theme, false)
         })) {
             Ok(Ok(l)) => l,
             _ => {
