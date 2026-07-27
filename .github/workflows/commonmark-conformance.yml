@@ -151,12 +151,26 @@ jobs:
             exit 1
           fi
 
-          if ! gh label view "$issue_labels" --repo "$GH_REPO" >/dev/null 2>&1; then
-            gh label create "$issue_labels" \
+          existing_labels="$(
+            gh label list \
               --repo "$GH_REPO" \
-              --color "d73a4a" \
-              --description "测试发现需要修复的问题"
-          fi
+              --limit 1000 \
+              --json name \
+              --jq '.[].name'
+          )"
+          IFS=',' read -ra issue_label_names <<< "$issue_labels"
+          for issue_label in "${issue_label_names[@]}"; do
+            issue_label="$(printf '%s' "$issue_label" | xargs)"
+            if [ -z "$issue_label" ]; then
+              continue
+            fi
+            if ! grep -Fqx -- "$issue_label" <<< "$existing_labels"; then
+              gh label create "$issue_label" \
+                --repo "$GH_REPO" \
+                --color "d73a4a" \
+                --description "测试发现需要修复的问题"
+            fi
+          done
 
           issue_number="$(
             gh issue list \
@@ -190,7 +204,7 @@ jobs:
           fi
 
       - name: 标记语义或视觉对照失败
-        if: steps.conformance_test.outcome == 'failure' && env.FAIL_WORKFLOW == 'true'
+        if: always() && steps.conformance_test.outcome == 'failure' && env.FAIL_WORKFLOW == 'true'
         run: |
           echo "CommonMark 语义或视觉对照存在未通过用例，中文报告和 Issue 内容已生成。"
           exit 1
