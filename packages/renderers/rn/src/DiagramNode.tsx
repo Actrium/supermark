@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -10,13 +10,16 @@ import {
 import { SvgXml } from 'react-native-svg';
 import type { SupramarkDiagramNode, SupramarkDiagramConfig } from '@supramark/core';
 import { shouldDeferDiagramRender } from '@supramark/core';
-import { type DiagramRenderResult } from '@supramark/engines';
+import { type DiagramRenderResult, type DiagramRenderService } from '@supramark/engines';
 import { createReactNativeDiagramEngine } from '@supramark/engines/rn';
 import { normalizeSvg, normalizeSvgLight, stripRootSvgSize } from './svgUtils';
 import { SourceStateContext } from './SourceStateContext';
+import { getRendererCache, resolveDiagramCachePolicy, stableSerialize } from './renderCache';
 
 export interface DiagramNodeProps {
   node: SupramarkDiagramNode;
+  /** Optional engine override for renderer composition and deterministic tests. */
+  diagramEngine?: DiagramRenderService;
   /**
    * Diagram subsystem config.
    *
@@ -25,15 +28,66 @@ export interface DiagramNodeProps {
    * - Per-node `node.meta` still overrides these defaults.
    */
   diagramConfig?: SupramarkDiagramConfig;
+  /** Global cache option used only when diagram-specific policies do not override it. */
+  globalCache?: boolean;
 }
 
 const defaultDiagramEngine = createReactNativeDiagramEngine();
 
-export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig }) => {
+interface CachedDiagramResult {
+  svg: string;
+}
+
+// Engine identities prevent an injected renderer from reading another engine's result.
+const diagramEngineIds = new WeakMap<DiagramRenderService, number>();
+let nextDiagramEngineId = 1;
+
+/** Returns a stable process-local identity for a diagram engine instance. */
+function getDiagramEngineId(engine: DiagramRenderService): number {
+  const existing = diagramEngineIds.get(engine);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const next = nextDiagramEngineId++;
+  diagramEngineIds.set(engine, next);
+  return next;
+}
+
+export const DiagramNode: React.FC<DiagramNodeProps> = ({
+  node,
+  diagramConfig,
+  globalCache,
+  diagramEngine = defaultDiagramEngine,
+}) => {
   const sourceState = useContext(SourceStateContext);
   // Open fences remain in a receiving state while their source can still grow.
   const deferRender = shouldDeferDiagramRender(node, sourceState);
-  const [svg, setSvg] = useState<string | null>(null);
+  // Resolve the existing per-engine override on top of diagram.defaultCache.
+  const normalizedEngine = String(node.engine || '').toLowerCase();
+  const options = useMemo(
+    () => buildRenderOptions(node.engine, node.meta, diagramConfig),
+    [node.engine, node.meta, diagramConfig]
+  );
+  const cachePolicy = useMemo(
+    () =>
+      resolveDiagramCachePolicy(
+        diagramConfig?.engines?.[node.engine]?.cache,
+        diagramConfig?.defaultCache,
+        globalCache
+      ),
+    [diagramConfig, globalCache, node.engine]
+  );
+  const diagramCache = getRendererCache<CachedDiagramResult>('diagram', cachePolicy);
+  // Include every render-affecting input so cached SVG cannot cross option variants.
+  const diagramCacheKey = useMemo(
+    () =>
+      `${getDiagramEngineId(diagramEngine)}\u0000${normalizedEngine}\u0000${node.code}\u0000${stableSerialize(options)}`,
+    [diagramEngine, node.code, normalizedEngine, options]
+  );
+  const [svg, setSvg] = useState<string | null>(() =>
+    deferRender ? null : (diagramCache?.get(diagramCacheKey)?.svg ?? null)
+  );
   const [error, setError] = useState<string | null>(null);
   // 容器实际宽度：图表应跟随父容器（如聊天气泡等窄容器）渲染，而非直接
   // 按屏宽，否则会右偏 / 溢出。0 表示尚未测量，渲染时回退屏宽。
@@ -53,46 +107,72 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({ node, diagramConfig })
 
     let cancelled = false;
     setError(null);
+    const cached = diagramCache?.get(diagramCacheKey);
+    if (cached) {
+      setSvg(cached.svg);
+      return;
+    }
+
     setSvg(null);
 
-    const normalizedEngine = String(node.engine || '').toLowerCase();
-    const options = buildRenderOptions(node.engine, node.meta, diagramConfig);
-    const renderPromise: Promise<DiagramRenderResult> = defaultDiagramEngine.render({
-      engine: normalizedEngine,
-      code: node.code,
-      options,
-    });
+    // Cache the normalized SVG rather than only the engine payload so remounts
+    // can restore the exact render input synchronously and skip normalization.
+    const renderDiagram = async (): Promise<CachedDiagramResult> => {
+      const result: DiagramRenderResult = await diagramEngine.render({
+        engine: normalizedEngine,
+        code: node.code,
+        options,
+      });
+
+      if (!result.success) {
+        const errorMsg = result.error
+          ? `${result.error.message}: ${result.error.details || result.payload}`
+          : result.payload || 'Unknown error';
+        throw new Error(errorMsg);
+      }
+
+      let normalized: string;
+      try {
+        normalized = result.payload.includes('<style')
+          ? normalizeSvg(result.payload)
+          : normalizeSvgLight(result.payload);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`SVG normalization failed: ${message}`);
+      }
+      return { svg: normalized };
+    };
+
+    const renderPromise = diagramCache
+      ? diagramCache.getOrCreate(diagramCacheKey, renderDiagram)
+      : renderDiagram();
 
     renderPromise
       .then(result => {
         if (cancelled) return;
-
-        if (!result.success) {
-          const errorMsg = result.error
-            ? `${result.error.message}: ${result.error.details || result.payload}`
-            : result.payload || 'Unknown error';
-          setError(errorMsg);
-          return;
-        }
-
-        try {
-          const normalized = result.payload.includes('<style')
-            ? normalizeSvg(result.payload)
-            : normalizeSvgLight(result.payload);
-          setSvg(normalized);
-        } catch (err) {
-          setError(`SVG normalization failed: ${String(err)}`);
-        }
+        setSvg(result.svg);
       })
       .catch(err => {
         if (cancelled) return;
-        setError(String(err));
+        setError(err instanceof Error ? err.message : String(err));
       });
 
     return () => {
       cancelled = true;
     };
-  }, [deferRender, node.engine, node.code, node.meta, diagramConfig]);
+  }, [
+    deferRender,
+    node.engine,
+    node.code,
+    node.meta,
+    diagramConfig,
+    globalCache,
+    normalizedEngine,
+    options,
+    diagramCache,
+    diagramCacheKey,
+    diagramEngine,
+  ]);
 
   if (deferRender) {
     return (

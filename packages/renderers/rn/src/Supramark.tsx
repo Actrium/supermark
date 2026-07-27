@@ -11,6 +11,7 @@ import type {
   SupramarkDefinitionItemNode,
   SupramarkDefinitionTermNode,
   SupramarkDefinitionDescriptionNode,
+  SupramarkDiagramConfig,
   SupramarkConfig,
   SupramarkCodeHighlightResult,
   SupramarkCodeHighlighter,
@@ -34,13 +35,70 @@ import {
 } from './styles';
 import { ErrorBoundary, type ErrorInfo, ErrorDisplay } from './ErrorBoundary';
 import { SourceStateContext } from './SourceStateContext';
+import {
+  getRendererCache,
+  resolveDiagramCachePolicy,
+  resolveRendererCachePolicy,
+  type RendererCachePolicy,
+} from './renderCache';
 
 type RenderedNode = React.ComponentProps<typeof Text>['children'];
 
 interface ParsedDocument {
-  root: SupramarkRootNode;
-  highlighted: Map<string, SupramarkCodeHighlightResult>;
-  sourceState: SupramarkSourceState;
+  /** Immutable after expansion; cached snapshots may be shared by multiple renderer instances. */
+  readonly root: SupramarkRootNode;
+  readonly highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>;
+  readonly sourceState: SupramarkSourceState;
+}
+
+// Highlighter identities keep parsed-document cache entries separated when a host swaps services.
+const codeHighlighterIds = new WeakMap<SupramarkCodeHighlighter, number>();
+let nextCodeHighlighterId = 1;
+
+/** Returns a stable process-local identity for one optional code highlighter. */
+function getCodeHighlighterId(highlighter?: SupramarkCodeHighlighter): number {
+  if (!highlighter) {
+    return 0;
+  }
+
+  const existing = codeHighlighterIds.get(highlighter);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const next = nextCodeHighlighterId++;
+  codeHighlighterIds.set(highlighter, next);
+  return next;
+}
+
+/** Resolves document-cache bounds from global, default-diagram, or engine policies. */
+function resolveDocumentCachePolicy(config?: SupramarkConfig): RendererCachePolicy {
+  if (config?.options?.cache === true) {
+    return resolveRendererCachePolicy({ enabled: true }, config.diagram?.defaultCache);
+  }
+
+  if (config?.diagram?.defaultCache?.enabled === true) {
+    return resolveRendererCachePolicy(undefined, config.diagram.defaultCache);
+  }
+
+  const enabledEnginePolicies = Object.values(config?.diagram?.engines ?? {})
+    .map(engineConfig => engineConfig?.cache)
+    .filter(cache => cache?.enabled === true)
+    .map(cache => resolveRendererCachePolicy(cache, undefined));
+  if (enabledEnginePolicies.length === 0) {
+    return resolveRendererCachePolicy(undefined, undefined);
+  }
+
+  // Use the strictest enabled engine bounds because one document may contain
+  // several diagram engines backed by the same parsed-document cache.
+  const finiteTtls = enabledEnginePolicies
+    .map(policy => policy.ttl)
+    .filter((ttl): ttl is number => ttl !== undefined);
+  return {
+    enabled: true,
+    maxSize: Math.min(...enabledEnginePolicies.map(policy => policy.maxSize)),
+    ttl: finiteTtls.length > 0 ? Math.min(...finiteTtls) : undefined,
+  };
 }
 
 // Minimal shape of the optional `react-native-maps` module. Only the members
@@ -104,7 +162,11 @@ export interface SupramarkProps {
    * 否则前景文字可能不可读 —— 例如 theme="dark" 时宿主容器应使用深色背景。
    */
   theme?: 'light' | 'dark' | SupramarkStyles;
-  /** Feature 配置（用于按需启用/禁用图表等扩展能力） */
+  /**
+   * Feature 配置（用于按需启用/禁用图表等扩展能力）。
+   * `options.cache` 是文档和图表缓存的全局默认值；更具体的 diagram policy 可覆盖它。
+   * 缓存按等价输入共享，不要求 config 对象引用在重挂载间保持不变。
+   */
   config?: SupramarkConfig;
   /** Whether the Markdown source may still receive appended streaming content. */
   sourceState?: SupramarkSourceState;
@@ -143,16 +205,30 @@ export const Supramark: React.FC<SupramarkProps> = ({
   codeHighlighter,
   codeHighlightTheme,
 }) => {
+  // Global options.cache provides the least-specific cache default.
+  const documentCachePolicy = useMemo(() => resolveDocumentCachePolicy(config), [config]);
+  const documentCache = getRendererCache<ParsedDocument>('parsed-document', documentCachePolicy);
+  const codeHighlightEnabled = isFeatureGroupEnabled(config, ['@supramark/feature-code-highlight']);
+  // Completed documents can share parsing/highlighting only when every input is equivalent.
+  // Config is intentionally omitted because parse currently derives no plugins or AST transforms
+  // from it; add the relevant config fingerprint here if that parse contract ever changes.
+  const documentCacheKey = useMemo(
+    () =>
+      `${markdown}\u0000${codeHighlightEnabled ? 'highlight' : 'plain'}\u0000${codeHighlightTheme ?? ''}\u0000${getCodeHighlighterId(codeHighlighter)}`,
+    [markdown, codeHighlightEnabled, codeHighlighter, codeHighlightTheme]
+  );
   // The AST and its source state must advance together so a stale open fence
   // is never marked complete.
-  const [parsedDocument, setParsedDocument] = useState<ParsedDocument | null>(
+  const [parsedDocument, setParsedDocument] = useState<ParsedDocument | null>(() =>
     ast
       ? {
           root: ast,
           highlighted: new Map(),
           sourceState,
         }
-      : null
+      : sourceState === 'complete'
+        ? (documentCache?.get(documentCacheKey) ?? null)
+        : null
   );
   const [parseError, setParseError] = useState<ErrorInfo | null>(null);
 
@@ -179,23 +255,56 @@ export const Supramark: React.FC<SupramarkProps> = ({
     let cancelled = false;
     void (async () => {
       try {
-        const parsed = ast ?? (await parse(markdown, { config }));
-        // Post-process：递归解析 opaque container 的 value。
-        // 新 AST v2 的 opaque container children 为空，正文在 value（原始 markdown）。
-        // Rust parser 不认 feature 插件 JS 侧注册的 registerContainerHook，
-        // 把所有 :::xxx 当 opaque 处理。这里在主组件异步上下文里把 value 解析成
-        // AST 子树填回 children，renderNode 就能正常渲染。
-        await expandOpaqueContainers(parsed);
-        const highlightedMap = await preHighlightAll(
-          collectCodeHighlightTasks(parsed.children, config, codeHighlightTheme),
-          codeHighlighter
-        );
-        if (!cancelled) {
-          setParsedDocument({
+        const cached =
+          !ast && sourceState === 'complete' ? documentCache?.get(documentCacheKey) : undefined;
+        if (cached) {
+          if (!cancelled) {
+            setParsedDocument(cached);
+            setParseError(null);
+          }
+          return;
+        }
+
+        // Build one immutable render snapshot; after opaque containers are expanded,
+        // renderers must treat root and descendants as read-only because completed
+        // snapshots may be shared across instances and virtual-list remounts.
+        const buildParsedDocument = async (): Promise<ParsedDocument> => {
+          const parsed = ast ?? (await parse(markdown, { config }));
+          // Post-process：递归解析 opaque container 的 value。
+          // 新 AST v2 的 opaque container children 为空，正文在 value（原始 markdown）。
+          // Rust parser 不认 feature 插件 JS 侧注册的 registerContainerHook，
+          // 把所有 :::xxx 当 opaque 处理。这里在主组件异步上下文里把 value 解析成
+          // AST 子树填回 children，renderNode 就能正常渲染。
+          await expandOpaqueContainers(parsed);
+          const highlightedMap = await preHighlightAll(
+            collectCodeHighlightTasks(parsed.children, config, codeHighlightTheme),
+            codeHighlighter
+          );
+          return {
             root: parsed,
             highlighted: highlightedMap,
             sourceState,
-          });
+          };
+        };
+
+        const nextDocument =
+          !ast && sourceState === 'complete' && documentCache
+            ? await documentCache.getOrCreate(
+                documentCacheKey,
+                buildParsedDocument,
+                // diagram.defaultCache alone retains only diagram-bearing documents;
+                // options.cache=true explicitly opts the host into caching all documents.
+                document =>
+                  config?.options?.cache === true ||
+                  containsCacheableDiagramNode(
+                    document.root.children,
+                    config?.diagram,
+                    config?.options?.cache
+                  )
+              )
+            : await buildParsedDocument();
+        if (!cancelled) {
+          setParsedDocument(nextDocument);
           setParseError(null);
         }
       } catch (error) {
@@ -221,7 +330,17 @@ export const Supramark: React.FC<SupramarkProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [markdown, ast, config, onError, codeHighlighter, codeHighlightTheme, sourceState]);
+  }, [
+    markdown,
+    ast,
+    config,
+    onError,
+    codeHighlighter,
+    codeHighlightTheme,
+    sourceState,
+    documentCache,
+    documentCacheKey,
+  ]);
 
   const mergedContainerRenderers = useMemo(() => {
     // FeatureConfig 只描述启用状态与 options，不再携带 renderer 定义。
@@ -270,11 +389,43 @@ export const Supramark: React.FC<SupramarkProps> = ({
   );
 };
 
+/** Returns whether a parsed subtree contains a diagram whose resolved cache is enabled. */
+function containsCacheableDiagramNode(
+  nodes: SupramarkNode[],
+  diagramConfig?: SupramarkDiagramConfig,
+  globalCache?: boolean
+): boolean {
+  for (const node of nodes) {
+    if (node.type === 'diagram') {
+      const policy = resolveDiagramCachePolicy(
+        diagramConfig?.engines?.[node.engine]?.cache,
+        diagramConfig?.defaultCache,
+        globalCache
+      );
+      if (policy.enabled) {
+        return true;
+      }
+    }
+    if (
+      'children' in node &&
+      Array.isArray((node as { children?: SupramarkNode[] }).children) &&
+      containsCacheableDiagramNode(
+        (node as { children: SupramarkNode[] }).children,
+        diagramConfig,
+        globalCache
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function renderNode(
   node: SupramarkNode,
   key: number,
   styles: ReturnType<typeof mergeStyles>,
-  highlighted: Map<string, SupramarkCodeHighlightResult>,
+  highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
   config?: SupramarkConfig,
   onOpenHtmlPage?: (node: SupramarkContainerNode) => void,
   containerRenderers?: Record<string, ContainerRendererRN>,
@@ -349,7 +500,14 @@ function renderNode(
       if (!isDiagramFeatureEnabled(config, diagram.engine, 'rn:diagram-feature')) {
         return renderDisabledDiagram(diagram, key, styles);
       }
-      return <DiagramNode key={key} node={diagram} diagramConfig={config?.diagram} />;
+      return (
+        <DiagramNode
+          key={key}
+          node={diagram}
+          diagramConfig={config?.diagram}
+          globalCache={config?.options?.cache}
+        />
+      );
     }
     case 'container': {
       const container = node;
@@ -644,7 +802,7 @@ function renderCodeBlock(
   codeBlock: SupramarkCodeNode,
   key: number,
   styles: ReturnType<typeof mergeStyles>,
-  highlighted: Map<string, SupramarkCodeHighlightResult>
+  highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>
 ): RenderedNode {
   const highlight = highlighted.get(
     buildCodeHighlightKey(codeBlock.value, codeBlock.lang, codeBlock.meta)
@@ -694,7 +852,7 @@ function codeTokenTextStyle(token: {
 function renderInlineNodes(
   nodes: SupramarkNode[],
   styles: ReturnType<typeof mergeStyles>,
-  highlighted: Map<string, SupramarkCodeHighlightResult>,
+  highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
   config?: SupramarkConfig
 ): RenderedNode {
   return nodes.map((node, index) => renderInlineNode(node, index, styles, highlighted, config));
@@ -704,7 +862,7 @@ function renderInlineNode(
   node: SupramarkNode,
   key: number,
   styles: ReturnType<typeof mergeStyles>,
-  highlighted: Map<string, SupramarkCodeHighlightResult>,
+  highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
   config?: SupramarkConfig
 ): RenderedNode {
   switch (node.type) {

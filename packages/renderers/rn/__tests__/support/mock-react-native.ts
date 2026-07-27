@@ -13,10 +13,17 @@ import { mock } from 'bun:test';
 mock.module('react-native', () => ({
   View: 'View',
   Text: 'Text',
-  ActivityIndicator: 'ActivityIndicator',
   ScrollView: 'ScrollView',
-  Linking: { openURL: () => Promise.resolve() },
   TouchableOpacity: 'TouchableOpacity',
+  ActivityIndicator: 'ActivityIndicator',
   Dimensions: { get: () => ({ width: 375, height: 812 }) },
+  Linking: { openURL: async () => undefined },
   StyleSheet: { create: (s: unknown) => s },
+}));
+
+// react-native-svg is a native module under bun's test runtime; register its
+// mock here for the same reason and so DiagramNode / SupramarkCache tests do
+// not each redefine it (a per-file surface would clobber this one process-wide).
+mock.module('react-native-svg', () => ({
+  SvgXml: 'SvgXml',
 }));
