@@ -49,6 +49,88 @@ pub fn is_wide_glyph(c: char) -> bool {
     unicode_width::UnicodeWidthChar::width(c) == Some(2)
 }
 
+/// The marker-free plain text a label actually paints — the same string
+/// `measure_edge_label` / `measure_html_markup_label` and the browser measure.
+/// Markdown labels go through `markdown_label_to_html` first (so `**x**` →
+/// `<strong>x</strong>`), then [`strip_html_for_measurement`] removes every
+/// tag and decodes entities.
+///
+/// Feed this — not the raw markup — into [`cjk_aware_label_width`]: the
+/// per-glyph estimate must run over painted glyphs only, or markup characters
+/// (`<br/>`, `**`, `&amp;`, `<i class="fa …">`) get billed ~0.56em each and the
+/// width floor re-inflates past the real painted width, re-creating the
+/// off-centre appearance issue #93's fix exists to remove.
+pub fn edge_label_plain_text(text: &str, is_markdown: bool) -> String {
+    let measure_text = if is_markdown {
+        crate::render::foreign_object::markdown_label_to_html(text)
+    } else {
+        text.to_string()
+    };
+    strip_html_for_measurement(&measure_text)
+}
+
+/// Strip HTML tags and decode common entities to mirror jsdom's `textContent`
+/// for label width measurement. A `<` only starts a tag when followed by an
+/// ASCII letter or `/letter` (so `<<`, `<1`, `<!` stay literal); entities
+/// decode to their character; inline `\n` is dropped (textContent whitespace
+/// collapsed by the single-line measure shim).
+pub fn strip_html_for_measurement(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            let next = bytes.get(i + 1).copied();
+            let is_tag_start = match next {
+                Some(c) if c.is_ascii_alphabetic() => true,
+                Some(b'/') => bytes
+                    .get(i + 2)
+                    .map(|c| c.is_ascii_alphabetic())
+                    .unwrap_or(false),
+                _ => false,
+            };
+            if is_tag_start {
+                if let Some(rel_end) = s[i..].find('>') {
+                    i += rel_end + 1;
+                    continue;
+                }
+            }
+            out.push('<');
+            i += 1;
+        } else if bytes[i] == b'&' {
+            if let Some(semi_rel) = s[i..].find(';') {
+                let entity = &s[i + 1..i + semi_rel];
+                let ch = match entity {
+                    "amp" => Some('&'),
+                    "lt" => Some('<'),
+                    "gt" => Some('>'),
+                    "quot" => Some('"'),
+                    "apos" => Some('\''),
+                    "nbsp" => Some('\u{00A0}'),
+                    _ => None,
+                };
+                if let Some(c) = ch {
+                    out.push(c);
+                    i += semi_rel + 1;
+                    continue;
+                }
+            }
+            out.push('&');
+            i += 1;
+        } else if bytes[i] == b'\n' {
+            i += 1;
+        } else {
+            let mut len = 1usize;
+            while len < 4 && i + len < bytes.len() && (bytes[i + len] & 0xC0) == 0x80 {
+                len += 1;
+            }
+            out.push_str(&s[i..i + len]);
+            i += len;
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,5 +219,32 @@ mod tests {
     #[test]
     fn empty_returns_shim() {
         assert_eq!(cjk_aware_label_width("", 5.0), 5.0);
+    }
+
+    #[test]
+    fn strip_removes_tags_and_decodes_entities() {
+        assert_eq!(strip_html_for_measurement("a<b>b</b>c"), "abc");
+        assert_eq!(strip_html_for_measurement("x<br/>y"), "xy");
+        assert_eq!(strip_html_for_measurement("a&amp;b"), "a&b");
+        assert_eq!(strip_html_for_measurement("1<2"), "1<2"); // literal '<', not a tag
+        assert_eq!(strip_html_for_measurement("a\nb"), "ab"); // inline newline dropped
+    }
+
+    #[test]
+    fn plain_text_strips_markup_before_width_floor() {
+        // Markdown bold wraps the 4 ideographs — the floor must see the glyphs
+        // only, not the `**` markers (which would bill 2 × 0.56em extra and
+        // re-inflate the box past the painted width).
+        let bold = format!("**{ZHANG_HU_TONG_BU}**");
+        assert_eq!(edge_label_plain_text(&bold, true), ZHANG_HU_TONG_BU);
+        // A `<br/>` between glyphs is a tag, not 5 painted chars.
+        let br = "\u{8D26}\u{6237}<br/>\u{540C}\u{6B65}";
+        assert_eq!(edge_label_plain_text(br, false), ZHANG_HU_TONG_BU);
+        // `&amp;` decodes to a single `&`, so the entity isn't billed as 5 chars.
+        let ent = "\u{8D26}\u{6237}&amp;\u{540C}\u{6B65}";
+        assert_eq!(
+            edge_label_plain_text(ent, false),
+            "\u{8D26}\u{6237}&\u{540C}\u{6B65}"
+        );
     }
 }

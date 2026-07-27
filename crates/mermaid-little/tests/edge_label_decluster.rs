@@ -250,3 +250,33 @@ fn decluster_floors_cjk_label_width() {
         "decluster should widen the CJK label: base={base_w} decl={decl_w}"
     );
 }
+
+#[test]
+fn decluster_floor_ignores_markup_in_cjk_label() {
+    // A CJK label with a `<br/>` tag: the width floor must run over the painted
+    // glyphs (\u{540c}\u{6b65}\u{6570}\u{636e} = 同步数据, 4 wide → 4*EM = 64),
+    // not the raw markup (同步<br/>数据, 9 chars → ~108.8). Round-2 review
+    // measured the raw-markup floor at ~108.8 vs ~64 correct; the over-wide box
+    // re-created the off-centre overlap this PR fixes. Marks the render-stage
+    // fix for review item "floor runs over raw markup".
+    let src =
+        "flowchart LR\n    A[\"A\"] -->|\"\u{540C}\u{6B65}<br/>\u{6570}\u{636E}\"| B[\"B\"]\n";
+    let svg = convert_with_options(
+        src,
+        "mermaid-1",
+        &RenderOptions::default().with_edge_label_decluster(true),
+    )
+    .expect("render");
+
+    let w = label_width_for(&svg, "\u{540C}\u{6B65}") // 同步
+        .or_else(|| label_width_for(&svg, "\u{6570}\u{636E}")) // 数据
+        .expect("edge label rendered");
+    assert!(
+        w >= 64.0,
+        "CJK width floor lost: {w} (expected >= 4*EM = 64)"
+    );
+    assert!(
+        w < 80.0,
+        "markup chars leaked into the width floor: {w} (expected ~64, raw-markup floor was ~108)"
+    );
+}

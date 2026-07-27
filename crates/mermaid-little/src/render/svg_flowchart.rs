@@ -4893,7 +4893,13 @@ fn build_edge_label_adjustments(l: &FlowchartLayout, opts: &RenderOptions) -> Ed
         }
         let processed = replace_fa_icons(label_text);
         let (lw_m, lh) = measure_html_markup_label(&processed, &font, 200.0, true);
-        let lw = crate::layout::label_metrics::cjk_aware_label_width(&processed, lw_m)
+        // Floor the width over the marker-free plain text (tags / entities
+        // stripped), not the raw markup — otherwise `<br/>`, `**` and `&amp;`
+        // are billed ~0.56em each and the collision box widens past the real
+        // painted width, re-creating the off-centre overlap from issue #93.
+        let is_markdown = e.label_type.as_deref() == Some("markdown");
+        let plain = crate::layout::label_metrics::edge_label_plain_text(&processed, is_markdown);
+        let lw = crate::layout::label_metrics::cjk_aware_label_width(&plain, lw_m)
             + FLOWCHART_EDGE_LABEL_PADDING_X * 2.0
             + COLLISION_MARGIN * 2.0;
         let lh = lh + COLLISION_MARGIN * 2.0;

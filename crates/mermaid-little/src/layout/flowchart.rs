@@ -1629,7 +1629,7 @@ fn measure_edge_label(text: &str, html_labels: bool, is_markdown: bool) -> (f64,
         // <p> displays the rendered HTML, but jsdom's getBoundingClientRect
         // still measures the textContent (i.e. marker-free string). In
         // both cases reuse `markdownToHTML` so the measured width matches
-        // upstream — strip_html_for_measurement removes the inserted
+        // upstream — `edge_label_plain_text` strips the inserted
         // `<strong>`/`<em>` tags and yields the plain text.
         crate::render::foreign_object::markdown_label_to_html(text)
     } else {
@@ -1640,7 +1640,7 @@ fn measure_edge_label(text: &str, html_labels: bool, is_markdown: bool) -> (f64,
     // result as ONE line — `<br>` does not split because `textContent`
     // collapses break tags. `\n` characters survive as whitespace and are
     // dropped here to match upstream's `measureTextBlock` shim.
-    let plain = strip_html_for_measurement(&measure_text);
+    let plain = crate::layout::label_metrics::strip_html_for_measurement(&measure_text);
     let w = font_metrics::text_width(&plain, EDGE_LABEL_FONT, EDGE_LABEL_SIZE, false, false);
     if !html_labels {
         // `bbox` of labelGroup = unionOf(rect{-2,-2,w+4,h+4}, text{0,0,w,h})
@@ -1649,71 +1649,6 @@ fn measure_edge_label(text: &str, html_labels: bool, is_markdown: bool) -> (f64,
         return (w + 4.0, h + 4.0);
     }
     (w, h)
-}
-
-/// Strip HTML tags and decode common entities to mirror jsdom's
-/// `textContent` for edge-label width measurement.
-fn strip_html_for_measurement(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'<' {
-            // A `<` only starts an HTML tag when followed by an ASCII letter
-            // or `/letter`. Anything else (`<<`, `< `, `<1`, `<!`, `<?`) is
-            // treated as literal text — matching parse_html_text_segments.
-            let next = bytes.get(i + 1).copied();
-            let is_tag_start = match next {
-                Some(c) if c.is_ascii_alphabetic() => true,
-                Some(b'/') => bytes
-                    .get(i + 2)
-                    .map(|c| c.is_ascii_alphabetic())
-                    .unwrap_or(false),
-                _ => false,
-            };
-            if is_tag_start {
-                if let Some(rel_end) = s[i..].find('>') {
-                    i += rel_end + 1;
-                    continue;
-                }
-            }
-            out.push('<');
-            i += 1;
-        } else if bytes[i] == b'&' {
-            if let Some(semi_rel) = s[i..].find(';') {
-                let entity = &s[i + 1..i + semi_rel];
-                let ch = match entity {
-                    "amp" => Some('&'),
-                    "lt" => Some('<'),
-                    "gt" => Some('>'),
-                    "quot" => Some('"'),
-                    "apos" => Some('\''),
-                    "nbsp" => Some('\u{00A0}'),
-                    _ => None,
-                };
-                if let Some(c) = ch {
-                    out.push(c);
-                    i += semi_rel + 1;
-                    continue;
-                }
-            }
-            out.push('&');
-            i += 1;
-        } else if bytes[i] == b'\n' {
-            // textContent treats inline `\n` as whitespace; under
-            // measureTextBlock the legacy single-line behaviour drops it.
-            i += 1;
-        } else {
-            // UTF-8-safe copy of the next char.
-            let mut len = 1usize;
-            while len < 4 && i + len < bytes.len() && (bytes[i + len] & 0xC0) == 0x80 {
-                len += 1;
-            }
-            out.push_str(&s[i..i + len]);
-            i += len;
-        }
-    }
-    out
 }
 
 /// Build a unified::Edge from a model Edge, applying link-style overrides.
@@ -1776,15 +1711,19 @@ fn build_edge<'a>(
     // CJK, so in opt-in mode floor the width to the real rendered estimate —
     // dagre then reserves enough rank space for the label to fit between its
     // endpoint nodes (the layout-time fix for issue #93 label/node overlaps).
-    // Only floor when the label actually contains CJK, so pure-Latin diagrams
-    // keep their byte-exact spacing. Height is left to the shim: it controls
-    // intra-rank separation, not the inter-rank gap this fixes.
+    // The per-glyph estimate runs over the marker-free plain text (tags and
+    // entities stripped), so markup like `<br/>` / `**` / `&amp;` is not billed
+    // and the floor tracks the real painted width. Only floor when the label
+    // actually contains a wide glyph, so pure-Latin diagrams keep their
+    // byte-exact spacing. Height is left to the shim: it controls intra-rank
+    // separation, not the inter-rank gap this fixes.
+    let plain = crate::layout::label_metrics::edge_label_plain_text(label_text, is_markdown_label);
     let lw = if edge_label_decluster
-        && label_text
+        && plain
             .chars()
             .any(crate::layout::label_metrics::is_wide_glyph)
     {
-        crate::layout::label_metrics::cjk_aware_label_width(label_text, lw_shim)
+        crate::layout::label_metrics::cjk_aware_label_width(&plain, lw_shim)
     } else {
         lw_shim
     };
