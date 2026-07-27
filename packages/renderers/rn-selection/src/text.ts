@@ -11,19 +11,30 @@
  * an offset out to the nearest cluster edge in the requested direction.
  *
  * Widening, not narrowing: callers always snap a slice's start `backward` and
- * its end `forward` (see `resolve.ts#splitTextUnit`), so a selection can only
+ * its end `forward` (see `resolve.ts#splitTextUnit` and
+ * `native/segmentAdapter.ts#rangeToSegmentSelection`), so a selection can only
  * grow to include a whole cluster it partially overlapped — it never shrinks
- * and never drops content the caller asked for.
+ * and never drops content the caller asked for. Both the clipboard path and
+ * the native-highlight path go through here, which is what keeps the two
+ * agreeing on where a selection ends.
+ *
+ * Two implementations, same contract: `Intl.Segmenter` when the engine has it,
+ * and the UAX #29 tables in `graphemeBreak.ts` when it does not — which is the
+ * normal case on React Native, since Hermes ships no `Intl.Segmenter`.
  */
+
+import { graphemeClusterStarts } from './graphemeBreak';
 
 export type GraphemeDirection = 'backward' | 'forward';
 
 // Minimal ambient typing for `Intl.Segmenter`. This package's `tsconfig`
 // targets a `lib` that predates the ES2022 Intl types, so the global type is
 // declared locally via merging rather than by widening the shared `lib`
-// list. The runtime feature itself is optional (older Hermes lacks it
-// entirely) — see `getGraphemeSegmenter` below for the matching runtime
-// guard and `snapSurrogatePairOnly` for the fallback used when it is absent.
+// list. The runtime feature is optional and, on the runtime that matters
+// most here, absent: Hermes ships no `Intl.Segmenter`, so React Native takes
+// the fallback path on every device. See `getGraphemeSegmenter` below for the
+// runtime guard and `snapWithClusterTable` / `graphemeBreak.ts` for what runs
+// when it is missing.
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace -- ambient Intl declaration merging requires a namespace
   namespace Intl {
@@ -58,31 +69,25 @@ function getGraphemeSegmenter(): Intl.Segmenter | undefined {
   return typeof ctor === 'function' ? new ctor(undefined, { granularity: 'grapheme' }) : undefined;
 }
 
-function isHighSurrogate(code: number): boolean {
-  return code >= 0xd800 && code <= 0xdbff;
-}
-
-function isLowSurrogate(code: number): boolean {
-  return code >= 0xdc00 && code <= 0xdfff;
-}
-
 /**
- * Surrogate-pair-only fallback used when `Intl.Segmenter` is unavailable.
+ * Fallback used when `Intl.Segmenter` is unavailable — which on React Native
+ * means *the normal case*, not a legacy one: Hermes ships no `Intl.Segmenter`.
  *
- * This only guarantees an offset never lands between a high/low surrogate
- * pair, i.e. inside a single astral code point. It does NOT reassemble
- * multi-code-point clusters such as ZWJ sequences or base+combining-mark
- * pairs — those can still be split under this fallback. That is an accepted
- * degradation on engines old enough to lack `Intl.Segmenter`; there is no
- * general-purpose grapheme table to fall back on without one.
+ * `graphemeBreak.ts` implements UAX #29 extended grapheme cluster boundaries
+ * over hand-maintained property tables, so this path reassembles ZWJ emoji
+ * sequences, skin-tone modifiers, variation selectors, regional-indicator flag
+ * pairs, Hangul syllables and base+combining-mark pairs — not just surrogate
+ * pairs. Its documented gap is `SpacingMark` / `Prepend` (Indic spacing vowel
+ * signs); see that module's header.
  */
-function snapSurrogatePairOnly(text: string, offset: number, direction: GraphemeDirection): number {
-  const before = text.charCodeAt(offset - 1);
-  const after = text.charCodeAt(offset);
-  if (isHighSurrogate(before) && isLowSurrogate(after)) {
-    return direction === 'forward' ? offset + 1 : offset - 1;
+function snapWithClusterTable(text: string, offset: number, direction: GraphemeDirection): number {
+  let boundaryBefore = 0;
+  for (const index of graphemeClusterStarts(text)) {
+    if (index === offset) return offset;
+    if (index > offset) return direction === 'forward' ? index : boundaryBefore;
+    boundaryBefore = index;
   }
-  return offset;
+  return direction === 'forward' ? text.length : boundaryBefore;
 }
 
 /**
@@ -130,5 +135,5 @@ export function snapToGraphemeBoundary(
   const segmenter = getGraphemeSegmenter();
   return segmenter
     ? snapWithSegmenter(text, offset, direction, segmenter)
-    : snapSurrogatePairOnly(text, offset, direction);
+    : snapWithClusterTable(text, offset, direction);
 }

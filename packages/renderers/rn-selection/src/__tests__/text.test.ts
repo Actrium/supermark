@@ -39,9 +39,10 @@ describe('snapToGraphemeBoundary (Intl.Segmenter path)', () => {
   });
 });
 
-describe('snapToGraphemeBoundary (surrogate-pair-only fallback)', () => {
-  // Simulate an engine without `Intl.Segmenter` (e.g. older Hermes) by hiding
-  // it for the duration of each test in this block.
+describe('snapToGraphemeBoundary (cluster-table fallback)', () => {
+  // Hermes — the engine every React Native release ships by default — has no
+  // `Intl.Segmenter`, so this block is the ON-DEVICE path, not a legacy one.
+  // Hide the global for the duration of each test to exercise it.
   const realSegmenter = (Intl as { Segmenter?: unknown }).Segmenter;
 
   afterEach(() => {
@@ -61,14 +62,109 @@ describe('snapToGraphemeBoundary (surrogate-pair-only fallback)', () => {
     expect(snapToGraphemeBoundary('hello', 2, 'forward')).toBe(2);
   });
 
-  test('documented limitation: a ZWJ join point is not protected by the fallback', () => {
+  test('a ZWJ family emoji is one cluster', () => {
     (Intl as { Segmenter?: unknown }).Segmenter = undefined;
-    // Offset lands right after the first person's surrogate pair, i.e. exactly
-    // at the ZWJ code unit — not inside any surrogate pair — so the fallback
-    // (which only looks at surrogate pairs) leaves it untouched even though a
-    // real segmenter would widen it to the whole family cluster.
+    // 4 astral people joined by 3 ZWJs = 11 UTF-16 units, one cluster.
     const family = '\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}';
-    expect(snapToGraphemeBoundary(family, 2, 'backward')).toBe(2);
-    expect(snapToGraphemeBoundary(family, 2, 'forward')).toBe(2);
+    expect(family.length).toBe(11);
+    // Offset 2 sits exactly on the first ZWJ — not inside a surrogate pair, so
+    // the old surrogate-only fallback left it there and sliced half a family.
+    expect(snapToGraphemeBoundary(family, 2, 'backward')).toBe(0);
+    expect(snapToGraphemeBoundary(family, 2, 'forward')).toBe(family.length);
+    // Every interior offset widens to the whole cluster.
+    for (let offset = 1; offset < family.length; offset += 1) {
+      expect(snapToGraphemeBoundary(family, offset, 'backward')).toBe(0);
+      expect(snapToGraphemeBoundary(family, offset, 'forward')).toBe(family.length);
+    }
+  });
+
+  test('a skin-tone modifier stays attached to its base emoji', () => {
+    (Intl as { Segmenter?: unknown }).Segmenter = undefined;
+    const thumbsUp = '\u{1F44D}\u{1F3FD}'; // 👍 + medium skin tone, 4 units
+    expect(thumbsUp.length).toBe(4);
+    // Offset 2 is the seam between the base and the modifier: copying at 2
+    // used to yield a default-yellow 👍, i.e. changed content.
+    expect(snapToGraphemeBoundary(thumbsUp, 2, 'backward')).toBe(0);
+    expect(snapToGraphemeBoundary(thumbsUp, 2, 'forward')).toBe(4);
+  });
+
+  test('a combining accent stays attached to its base letter', () => {
+    (Intl as { Segmenter?: unknown }).Segmenter = undefined;
+    const text = 'é'; // e + COMBINING ACUTE ACCENT
+    expect(snapToGraphemeBoundary(text, 1, 'backward')).toBe(0);
+    expect(snapToGraphemeBoundary(text, 1, 'forward')).toBe(2);
+  });
+
+  test('an emoji with a variation selector is one cluster', () => {
+    (Intl as { Segmenter?: unknown }).Segmenter = undefined;
+    const heart = '❤️'; // ❤️ = heart + VS16
+    expect(snapToGraphemeBoundary(heart, 1, 'backward')).toBe(0);
+    expect(snapToGraphemeBoundary(heart, 1, 'forward')).toBe(2);
+  });
+
+  test('regional indicators pair into flags rather than gluing into a run', () => {
+    (Intl as { Segmenter?: unknown }).Segmenter = undefined;
+    // 🇨🇳🇯🇵 — two flags, 8 UTF-16 units, clusters at 0 and 4.
+    const flags = '\u{1F1E8}\u{1F1F3}\u{1F1EF}\u{1F1F5}';
+    expect(flags.length).toBe(8);
+    expect(snapToGraphemeBoundary(flags, 2, 'backward')).toBe(0);
+    expect(snapToGraphemeBoundary(flags, 2, 'forward')).toBe(4);
+    // The seam between the two flags is a real boundary and must not move.
+    expect(snapToGraphemeBoundary(flags, 4, 'backward')).toBe(4);
+    expect(snapToGraphemeBoundary(flags, 4, 'forward')).toBe(4);
+    expect(snapToGraphemeBoundary(flags, 6, 'backward')).toBe(4);
+    expect(snapToGraphemeBoundary(flags, 6, 'forward')).toBe(8);
+  });
+
+  test('CR LF is one cluster', () => {
+    (Intl as { Segmenter?: unknown }).Segmenter = undefined;
+    expect(snapToGraphemeBoundary('a\r\nb', 2, 'backward')).toBe(1);
+    expect(snapToGraphemeBoundary('a\r\nb', 2, 'forward')).toBe(3);
+  });
+
+  test('a Hangul syllable built from jamo is one cluster', () => {
+    (Intl as { Segmenter?: unknown }).Segmenter = undefined;
+    // Hangul jamo L (U+1100) + V (U+1161) + T (U+11A8) compose into ONE
+    // syllable cluster. Spelled as escapes: repo convention keeps code and
+    // test sources ASCII-only.
+    const han = '\u{1100}\u{1161}\u{11A8}';
+    expect(snapToGraphemeBoundary(han, 1, 'backward')).toBe(0);
+    expect(snapToGraphemeBoundary(han, 2, 'forward')).toBe(3);
+  });
+
+  test('the fallback agrees with Intl.Segmenter on every offset of a mixed string', () => {
+    // Cross-check: for each offset, the table-driven fallback and a real
+    // segmenter must produce the same snap. Skipped if the host lacks
+    // Intl.Segmenter, in which case there is nothing to compare against.
+    if (typeof realSegmenter !== 'function') return;
+    const samples = [
+      'plain ascii',
+      'café é',
+      'a\u{1F600}b',
+      '\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}!',
+      '\u{1F44D}\u{1F3FD}\u{1F44D}',
+      '\u{1F1E8}\u{1F1F3}\u{1F1EF}\u{1F1F5}',
+      '❤️❤',
+      'x\r\ny',
+      '\u{1100}\u{1161}\u{11A8}\u{1100}',
+      '\u{4F60}\u{597D}\u{1F600}\u{0301}',
+    ];
+    for (const text of samples) {
+      const expected: number[][] = [];
+      for (let offset = 0; offset <= text.length; offset += 1) {
+        (Intl as { Segmenter?: unknown }).Segmenter = realSegmenter;
+        expected.push([
+          snapToGraphemeBoundary(text, offset, 'backward'),
+          snapToGraphemeBoundary(text, offset, 'forward'),
+        ]);
+      }
+      for (let offset = 0; offset <= text.length; offset += 1) {
+        (Intl as { Segmenter?: unknown }).Segmenter = undefined;
+        expect([
+          snapToGraphemeBoundary(text, offset, 'backward'),
+          snapToGraphemeBoundary(text, offset, 'forward'),
+        ]).toEqual(expected[offset]);
+      }
+    }
   });
 });

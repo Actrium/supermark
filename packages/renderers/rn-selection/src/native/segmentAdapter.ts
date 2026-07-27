@@ -1,5 +1,6 @@
 import type { SelectionNodeId, SelectionPoint, SelectionRange } from '../model';
 import { locateSelectionPoint, type SelectionUnitIndex } from '../resolve';
+import { snapToGraphemeBoundary } from '../text';
 import type {
   SegmentLongPressEvent,
   SegmentMenuActionEvent,
@@ -87,12 +88,8 @@ export function segmentOffsetToPoint(
  * segment-local UTF-16 offset. A direct `unitId` match wins; otherwise the
  * first span sharing `nodeId` is used. Returns `0` when nothing matches.
  */
-export function pointToSegmentOffset(
-  spans: readonly SegmentSpan[],
-  point: SelectionPoint
-): number {
-  let span =
-    point.unitId !== undefined ? spans.find(s => s.unitId === point.unitId) : undefined;
+export function pointToSegmentOffset(spans: readonly SegmentSpan[], point: SelectionPoint): number {
+  let span = point.unitId !== undefined ? spans.find(s => s.unitId === point.unitId) : undefined;
   if (!span) span = spans.find(s => s.nodeId === point.nodeId);
   if (!span) return 0;
   return span.start + clamp(point.offset, 0, span.end - span.start);
@@ -175,9 +172,36 @@ export function rangeToSegmentSelection(
 
   const a = project(locateSelectionPoint(index, range.anchor));
   const f = project(locateSelectionPoint(index, range.focus));
-  const startUtf16 = Math.min(a, f);
-  const endUtf16 = Math.max(a, f);
+  // Snap to the same grapheme-cluster boundaries the serializer uses. Without
+  // this the native highlight and the clipboard disagree inside a cluster:
+  // `project` is built on `locateSelectionPoint`, which does not snap, while
+  // `resolveSelectionRange` -> `splitTextUnit` widens outward. The native view
+  // would then be told to select a range ending on a lone surrogate and would
+  // resolve it by its own rule, so the user sees one thing highlighted and
+  // pastes another. Widening (start backward, end forward) matches the
+  // serializer's direction exactly, so both consumers land on one range.
+  const segmentText = segmentTextFromSpans(index, spans);
+  const startUtf16 = snapToGraphemeBoundary(segmentText, Math.min(a, f), 'backward');
+  const endUtf16 = snapToGraphemeBoundary(segmentText, Math.max(a, f), 'forward');
   return startUtf16 === endUtf16 ? null : { startUtf16, endUtf16 };
+}
+
+/**
+ * Reassemble the segment's visible plain text from its span table, so
+ * `rangeToSegmentSelection` can snap against the same string the native view
+ * holds. Spans are contiguous and ordered by construction
+ * (`buildSegmentSpans`), and every span's unit is a text/break unit — those
+ * are the only kinds with a non-zero `textLength`.
+ */
+function segmentTextFromSpans(index: SelectionUnitIndex, spans: readonly SegmentSpan[]): string {
+  let text = '';
+  for (const span of spans) {
+    const unitIndex = index.byUnitId.get(span.unitId);
+    if (unitIndex === undefined) continue;
+    const unit = index.entries[unitIndex].unit;
+    if (unit.kind === 'text' || unit.kind === 'break') text += unit.text;
+  }
+  return text;
 }
 
 /**
@@ -187,9 +211,7 @@ export function rangeToSegmentSelection(
  * here — while `selectedText` is derived by slicing `paragraphText` with
  * `min`/`max` so it stays stable even if native ever sends reversed offsets.
  */
-export function normalizeLongPress(
-  e: SelectableRichTextLongPressEvent
-): SegmentLongPressEvent {
+export function normalizeLongPress(e: SelectableRichTextLongPressEvent): SegmentLongPressEvent {
   const start = Math.min(e.selectionStart, e.selectionEnd);
   const end = Math.max(e.selectionStart, e.selectionEnd);
   return {
@@ -206,9 +228,7 @@ export function normalizeLongPress(
  * `SegmentMenuActionEvent`. Offsets are preserved verbatim (see
  * `normalizeLongPress`); `selectedText` is passed through as reported by native.
  */
-export function normalizeMenuAction(
-  e: SelectableRichTextMenuActionEvent
-): SegmentMenuActionEvent {
+export function normalizeMenuAction(e: SelectableRichTextMenuActionEvent): SegmentMenuActionEvent {
   return {
     id: e.id,
     title: e.title,

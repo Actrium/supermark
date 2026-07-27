@@ -27,5 +27,10 @@
   },
   "dependencies": {
     "@supramark/core": "workspace:*"
+  },
+  "devDependencies": {
+    "react": "19.1.0",
+    "react-test-renderer": "19.1.0",
+    "typescript": "^5.5.0"
   }
 }

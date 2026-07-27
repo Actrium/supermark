@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { SupramarkTextNode } from '@supramark/core';
 import type { SelectionTextUnit, SelectionUnit } from '../../model';
-import { buildUnitIndex } from '../../resolve';
+import { buildUnitIndex, resolveSelectionRange } from '../../resolve';
+import { serializeSelectionUnits } from '../../serialize';
 import {
   buildSegmentSpans,
   longPressToRange,
@@ -281,5 +282,59 @@ describe('normalizeLongPress / normalizeMenuAction', () => {
       startUtf16: 6,
       endUtf16: 11,
     });
+  });
+});
+
+
+// The resolve path and the native path must agree on where a selection may be
+// cut. `resolveSelectionRange` -> `splitTextUnit` grapheme-snaps outward; the
+// native plan is built from `locateSelectionPoint`, which does not. Before the
+// snap was added to `rangeToSegmentSelection`, a focus landing inside a
+// surrogate pair produced a native range one code unit shorter than the text
+// the clipboard actually received: the user saw one thing highlighted and
+// pasted another.
+describe('rangeToSegmentSelection grapheme agreement with the serializer', () => {
+  const STAR = '\u{1F31F}'; // astral, 2 UTF-16 units
+
+  const units: SelectionUnit[] = [
+    tUnit('p1#0', 'p1', 'Hi '),
+    tUnit('p1#1', 'p1', `${STAR}b`),
+  ];
+  const index = buildUnitIndex(units);
+  const spans = buildSegmentSpans({ unitIds: ['p1#0', 'p1#1'] }, index);
+  const segmentText = `Hi ${STAR}b`;
+
+  test('a focus inside a surrogate pair widens to the same range the copy uses', () => {
+    const range = {
+      anchor: { nodeId: 'p1', unitId: 'p1#0', offset: 0 },
+      // Offset 1 inside 'STAR + b' is the seam between the high and low
+      // surrogate of STAR.
+      focus: { nodeId: 'p1', unitId: 'p1#1', offset: 1 },
+    };
+
+    const seg = rangeToSegmentSelection(range, index, spans);
+    expect(seg).not.toBeNull();
+    const nativeSlice = segmentText.slice(seg!.startUtf16, seg!.endUtf16);
+    const copied = serializeSelectionUnits(resolveSelectionRange(units, range), 'plainText');
+
+    expect(nativeSlice).toBe(copied as string);
+    expect(nativeSlice).toBe(`Hi ${STAR}`);
+    // And nothing was cut mid-pair: a lone surrogate would fail this.
+    expect([...nativeSlice].length).toBe(4);
+  });
+
+  test('every offset in the segment keeps native and clipboard in step', () => {
+    const anchor = { nodeId: 'p1', unitId: 'p1#0', offset: 0 };
+    const focusUnitLength = `${STAR}b`.length;
+    for (let offset = 1; offset <= focusUnitLength; offset += 1) {
+      const range = { anchor, focus: { nodeId: 'p1', unitId: 'p1#1', offset } };
+      const seg = rangeToSegmentSelection(range, index, spans);
+      if (seg === null) continue;
+      const copied = serializeSelectionUnits(
+        resolveSelectionRange(units, range),
+        'plainText'
+      ) as string;
+      expect(segmentText.slice(seg.startUtf16, seg.endUtf16)).toBe(copied);
+    }
   });
 });
