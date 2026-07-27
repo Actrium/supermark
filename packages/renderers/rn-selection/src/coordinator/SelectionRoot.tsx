@@ -87,8 +87,11 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       registry,
       store,
       registerBlock: block => {
-        registry.register(block);
-        return () => registry.unregister(block.nodeId);
+        // Capture what was actually stored and hand it back on unregister, so
+        // a stale instance's cleanup cannot delete a live registration that
+        // reused the same nodeId. See `SelectionRegistry.unregister`.
+        const registered = registry.register(block);
+        return () => registry.unregister(block.nodeId, registered);
       },
       updateLayout: (nodeId, rect) => registry.updateLayout(nodeId, rect),
       updateUnits: (nodeId, unitIds) => registry.updateUnits(nodeId, unitIds),

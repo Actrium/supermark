@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { SupramarkTextNode } from '@supramark/core';
-import type {
-  SelectionBreakUnit,
-  SelectionTextUnit,
-  SelectionUnit,
-} from '../../model';
+import type { SelectionBreakUnit, SelectionTextUnit, SelectionUnit } from '../../model';
 import type { TextSegmentHandle } from '../../nativePrimitive';
 import { createNativeBridge, planNativeSelection } from '../../coordinator/nativeBridge';
 import { SelectionRegistry } from '../../coordinator/registry';

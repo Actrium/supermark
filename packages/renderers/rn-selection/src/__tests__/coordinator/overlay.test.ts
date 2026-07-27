@@ -98,9 +98,7 @@ describe('computeOverlayRects', () => {
     const covered = [tUnit('a#0', 'a', 'x'), tUnit('b#0', 'b', 'y')];
     const sorted = [block('a', ['a#0'], rectA), block('b', ['b#0'], rectB)];
     const reversed = [block('b', ['b#0'], rectB), block('a', ['a#0'], rectA)];
-    expect(computeOverlayRects(reversed, covered)).toEqual(
-      computeOverlayRects(sorted, covered)
-    );
+    expect(computeOverlayRects(reversed, covered)).toEqual(computeOverlayRects(sorted, covered));
   });
 
   test('the merge does not mutate the source registry rects', () => {

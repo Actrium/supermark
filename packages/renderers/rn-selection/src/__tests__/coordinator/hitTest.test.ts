@@ -62,10 +62,13 @@ describe('resolvePointToSelection', () => {
   });
 
   test('point inside a block, right/lower half -> after', () => {
+    // "After" a TEXT unit is its full length, not 1: `offset` is unit-relative
+    // and `locateSelectionPoint` clamps text offsets into [0, text.length], so
+    // a hardcoded 1 would mean "one character in" and select a single letter.
     expect(resolvePointToSelection(blocks(), { x: 90, y: 15 }, index)).toEqual({
       nodeId: 'A',
       unitId: 'A#0',
-      offset: 1,
+      offset: 5,
     });
   });
 
@@ -74,7 +77,7 @@ describe('resolvePointToSelection', () => {
     expect(resolvePointToSelection(blocks(), { x: 50, y: 24 }, index)).toEqual({
       nodeId: 'A',
       unitId: 'A#0',
-      offset: 1,
+      offset: 5,
     });
     expect(resolvePointToSelection(blocks(), { x: 50, y: 27 }, index)).toEqual({
       nodeId: 'B',
@@ -92,11 +95,39 @@ describe('resolvePointToSelection', () => {
   });
 
   test('point after the last block clamps to document end', () => {
+    // The whole of C#0, not its first character.
     expect(resolvePointToSelection(blocks(), { x: 50, y: 200 }, index)).toEqual({
       nodeId: 'C',
       unitId: 'C#0',
+      offset: 5,
+    });
+  });
+
+  test('an atom block still uses offset 1 for "after"', () => {
+    // Zero-text units carry no interior, so `locateSelectionPoint` reads any
+    // positive offset as "after" — 1 is correct here and 0 would be "before".
+    const atomUnits: SelectionUnit[] = [
+      { kind: 'atom', unitId: 'D#0', nodeId: 'D', node: NODE } as SelectionUnit,
+    ];
+    const atomIndex = buildUnitIndex(atomUnits);
+    const atomBlocks: RegisteredBlock[] = [
+      { nodeId: 'D', unitIds: ['D#0'], kind: 'atom', rect: rectA },
+    ];
+    expect(resolvePointToSelection(atomBlocks, { x: 50, y: 200 }, atomIndex)).toEqual({
+      nodeId: 'D',
+      unitId: 'D#0',
       offset: 1,
     });
+  });
+
+  test('a block that renders no units resolves to null, not the document start', () => {
+    // `block.unitIds[len - 1]` on an empty array yields undefined, and
+    // `locateSelectionPoint` clamps `{unitId: undefined}` to unit 0 offset 0 —
+    // silently answering "document start" for a block that has no answer.
+    const empty: RegisteredBlock[] = [{ nodeId: 'E', unitIds: [], kind: 'text', rect: rectA }];
+    expect(resolvePointToSelection(empty, { x: 50, y: 200 }, index)).toBeNull();
+    expect(resolvePointToSelection(empty, { x: 50, y: -10 }, index)).toBeNull();
+    expect(resolvePointToSelection(empty, { x: 90, y: 10 }, index)).toBeNull();
   });
 
   test('point beside a block within its vertical band localizes by x', () => {
@@ -104,7 +135,7 @@ describe('resolvePointToSelection', () => {
     expect(resolvePointToSelection(blocks(), { x: 150, y: 10 }, index)).toEqual({
       nodeId: 'A',
       unitId: 'A#0',
-      offset: 1,
+      offset: 5,
     });
   });
 
@@ -136,7 +167,8 @@ describe('resolvePointToSelection', () => {
       measure: { localOffsetAt: () => 4 },
     };
     const point = localizePoint(block, { x: 10, y: 10 }, index);
-    expect(point.unitId).toBe('A#0');
-    expect(point.offset).toBe(4);
+    expect(point).not.toBeNull();
+    expect(point?.unitId).toBe('A#0');
+    expect(point?.offset).toBe(4);
   });
 });

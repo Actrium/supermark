@@ -138,7 +138,8 @@ clean, 32 unit tests):
 - `linearize.ts` — linearizes core Markdown while keeping `unit.text` **plain**.
   Markdown affixes (heading prefix, list markers, blockquote `>`, code fences,
   inline `**`/`_`/`[..](url)`) live in per-format payloads or empty-text syntax
-  units, so plain-text and Markdown serialization are both lossless. Covers
+  units, so plain-text serialization is lossless and Markdown serialization is
+  best-effort (see the limitations list in `README.md`). Covers
   paragraph, heading, list, blockquote, code, inline code, image, math, diagram,
   definition list, footnote, raw, and thematic break.
 - `resolve.ts` — `resolveSelectionRange(units, range)` maps a range to the units it
@@ -191,7 +192,8 @@ All still pure TypeScript except the typecheck-only React wiring; 100 unit tests
 - **Simulator-verified on iOS** (iPhone 17 Pro sim, RN 0.81 New Arch, Debug):
   the vendored pod autolinks and builds; programmatic cross-block selection
   paints a merged block-level highlight (uncovered blocks excluded); Markdown
-  copy reconstructs heading prefix / bold / emoji losslessly; clear removes the
+  copy reconstructs heading prefix / bold / emoji for the cases exercised on
+  screen; clear removes the
   overlay and returns the store to idle. The example app's `SelectionDemo`
   screen drives all of this with on-screen status for screenshot verification.
 

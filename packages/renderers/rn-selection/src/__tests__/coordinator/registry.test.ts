@@ -6,7 +6,11 @@ import type {
   SelectionTextUnit,
   SelectionUnit,
 } from '../../model';
-import { SelectionRegistry, type LayoutRect, type RegisteredBlock } from '../../coordinator/registry';
+import {
+  SelectionRegistry,
+  type LayoutRect,
+  type RegisteredBlock,
+} from '../../coordinator/registry';
 
 // resolve/registry copy `node` but never inspect it.
 const NODE = { type: 'text', value: '' } as SupramarkTextNode;
@@ -178,5 +182,80 @@ describe('SelectionRegistry', () => {
     // Swap node positions: b now precedes a in the linearized stream.
     reg.setUnits([tUnit('b#0', 'b', 'b'), tUnit('a#0', 'a', 'a'), brk('a#1', 'a')]);
     expect(reg.getBlocks().map(b => b.nodeId)).toEqual(['b', 'a']);
+  });
+});
+
+describe('registration identity guard', () => {
+  test('a stale disposer cannot unregister the live block that reused its nodeId', () => {
+    // React mounts a replacement BEFORE unmounting what it replaces, so two
+    // instances sharing a nodeId produce register(new) -> unregister(old).
+    // `linearize.ts` derives block ids as `pos:<start>-<end>`, which a re-parse
+    // readily reassigns, so this ordering is reachable in normal use.
+    const reg = new SelectionRegistry([tUnit('a#0', 'a', 'hello')]);
+
+    const oldBlock: RegisteredBlock = { nodeId: 'a', unitIds: ['a#0'], kind: 'text' };
+    const oldRegistered = reg.register(oldBlock);
+
+    const newBlock: RegisteredBlock = {
+      nodeId: 'a',
+      unitIds: ['a#0'],
+      kind: 'text',
+      rect: { x: 0, y: 0, w: 10, h: 10 } as LayoutRect,
+    };
+    const newRegistered = reg.register(newBlock);
+
+    // Old instance's cleanup runs last and must be a no-op.
+    reg.unregister('a', oldRegistered);
+
+    expect(reg.getBlock('a')).toBe(newRegistered);
+    expect(reg.getBlock('a')?.rect).toEqual({ x: 0, y: 0, w: 10, h: 10 });
+  });
+
+  test('the live disposer still unregisters', () => {
+    const reg = new SelectionRegistry([tUnit('a#0', 'a', 'hello')]);
+    const registered = reg.register({ nodeId: 'a', unitIds: ['a#0'], kind: 'text' });
+    reg.unregister('a', registered);
+    expect(reg.getBlock('a')).toBeUndefined();
+  });
+
+  test('an unguarded unregister still removes, for callers that do not track identity', () => {
+    const reg = new SelectionRegistry([tUnit('a#0', 'a', 'hello')]);
+    reg.register({ nodeId: 'a', unitIds: ['a#0'], kind: 'text' });
+    reg.unregister('a');
+    expect(reg.getBlock('a')).toBeUndefined();
+  });
+});
+
+describe('setUnits drops blocks whose units no longer exist', () => {
+  test('a block left behind by a removed paragraph is dropped', () => {
+    const reg = new SelectionRegistry([tUnit('a#0', 'a', 'a'), tUnit('b#0', 'b', 'b')]);
+    reg.register({ nodeId: 'a', unitIds: ['a#0'], kind: 'text' });
+    reg.register({ nodeId: 'b', unitIds: ['b#0'], kind: 'text' });
+
+    // Re-parse: 'b' is gone and 'a' got a fresh unit id, which its own block
+    // has already pushed in (children effects run before the parent's).
+    reg.updateUnits('a', ['a#1']);
+    reg.setUnits([tUnit('a#1', 'a', 'a')]);
+
+    expect(reg.getBlock('b')).toBeUndefined();
+    expect(reg.getBlock('a')).toBeDefined();
+    // The stale block no longer bunches at the end of document order...
+    expect(reg.getBlocks().map(x => x.nodeId)).toEqual(['a']);
+    // ...nor answers ownership questions with a dead unit id.
+    expect(reg.getBlockForUnit('b#0')).toBeUndefined();
+  });
+
+  test('a block that has not received its units yet is kept', () => {
+    const reg = new SelectionRegistry([tUnit('a#0', 'a', 'a')]);
+    reg.register({ nodeId: 'pending', unitIds: [], kind: 'text' });
+    reg.setUnits([tUnit('a#0', 'a', 'a')]);
+    expect(reg.getBlock('pending')).toBeDefined();
+  });
+
+  test('a block keeping one live unit out of several survives', () => {
+    const reg = new SelectionRegistry([tUnit('a#0', 'a', 'a'), tUnit('a#1', 'a', 'b')]);
+    reg.register({ nodeId: 'a', unitIds: ['a#0', 'a#1'], kind: 'text' });
+    reg.setUnits([tUnit('a#0', 'a', 'a')]);
+    expect(reg.getBlock('a')).toBeDefined();
   });
 });

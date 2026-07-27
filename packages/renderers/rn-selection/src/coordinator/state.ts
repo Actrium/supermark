@@ -1,5 +1,5 @@
 import type { SelectionPoint, SelectionRange, SelectionUnit } from '../model';
-import { resolveSelectionRange } from '../resolve';
+import { buildUnitIndex, resolveSelectionRange, type SelectionUnitIndex } from '../resolve';
 
 export type SelectionPhase = 'idle' | 'selecting' | 'selected';
 
@@ -36,9 +36,7 @@ const EMPTY_IDLE: SelectionSnapshot = { phase: 'idle', range: null, units: [] };
  * so `useSyncExternalStore` never tears; a NEW object is minted only inside
  * `recompute`, right before listeners fire.
  */
-export function createSelectionStore(
-  getUnits: () => readonly SelectionUnit[]
-): SelectionStore {
+export function createSelectionStore(getUnits: () => readonly SelectionUnit[]): SelectionStore {
   let anchor: SelectionPoint | null = null;
   let focus: SelectionPoint | null = null;
   let phase: SelectionPhase = 'idle';
@@ -50,9 +48,32 @@ export function createSelectionStore(
     return { anchor, focus };
   }
 
+  // Memoize the unit index by array identity. Every drag move calls
+  // `recompute`, and `resolveSelectionRange` would otherwise rebuild a
+  // document-wide index each time: measured at 20 000 units x 60 moves,
+  // 942-1204 ms in Bun on desktop, i.e. ~16-20 ms per move before Hermes and
+  // the bridge are involved. Keyed on the array reference rather than taking
+  // the registry's index, because `SelectionRoot` refreshes `unitsRef` during
+  // render while `registry.setUnits` runs in an effect — a gesture firing in
+  // between would otherwise resolve against a stale index.
+  let indexedUnits: readonly SelectionUnit[] | null = null;
+  let unitIndex: SelectionUnitIndex | null = null;
+
+  function indexFor(units: readonly SelectionUnit[]): SelectionUnitIndex {
+    if (unitIndex === null || indexedUnits !== units) {
+      indexedUnits = units;
+      unitIndex = buildUnitIndex(units);
+    }
+    return unitIndex;
+  }
+
   function recompute(): void {
     const range = currentRange();
-    const units = range ? resolveSelectionRange(getUnits(), range) : [];
+    let units: SelectionUnit[] = [];
+    if (range) {
+      const current = getUnits();
+      units = resolveSelectionRange(current, range, indexFor(current));
+    }
     snapshot = { phase, range, units };
     for (const listener of listeners) listener();
   }

@@ -6,10 +6,7 @@ import type {
   SelectionTextUnit,
   SelectionUnit,
 } from '../../model';
-import type {
-  SegmentLongPressEvent,
-  SegmentMenuActionEvent,
-} from '../../nativePrimitive';
+import type { SegmentLongPressEvent, SegmentMenuActionEvent } from '../../nativePrimitive';
 import type { RegisteredBlock } from '../../coordinator/registry';
 import { createSelectionStore } from '../../coordinator/state';
 import { createBlockSink, type SelectionCopyRequest } from '../../coordinator/blockSink';

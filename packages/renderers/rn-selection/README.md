@@ -39,10 +39,30 @@ const markdown = serializeSelectionUnits(selected, 'markdown'); // 'plainText' |
 ```
 
 `unit.text` holds plain text only; Markdown syntax is reconstructed on
-serialization, so plain-text and Markdown copies are both lossless. Full-table
-selections copy as GFM table / TSV / HTML; partial table selections degrade to
-clean tab-separated plain text. Partial slices never split emoji or combining
-marks.
+serialization. Plain-text copy is lossless. **Markdown copy is best-effort**, not
+lossless — see "Markdown copy: known limitations" below. Full-table selections
+copy as GFM table / TSV / HTML; partial table selections degrade to clean
+tab-separated plain text. Partial slices never split emoji, flags, ZWJ sequences
+or combining marks, on engines with `Intl.Segmenter` and on Hermes alike.
+
+### Markdown copy: known limitations
+
+Reproduced through `linearize -> resolve -> serialize`. None of these lose text;
+they lose or invent *markup*, so a copied fragment may not re-parse to the same
+AST it came from.
+
+- **Text is never re-escaped.** AST text is decoded on the way in and emitted
+  verbatim, so `a * b _c_ [d] \ #` round-trips into emphasis and a heading.
+- **Fixed code fences.** Inline code always uses a single backtick, so
+  `` a ` b `` breaks; fenced code always uses three, so an embedded ``` breaks.
+- **Hard breaks flatten.** A `break` unit emits a bare `\n`, which re-parses as
+  a space rather than a hard break.
+- **Link titles and URLs are not escaped**, so a URL containing spaces breaks.
+- **Emphasis is ambiguous.** Nested and intra-word emphasis both emit `_`.
+- **`footnote_reference` leaks its marker** into plain text: `linearize.ts`
+  classifies it as a text unit rather than a syntax unit, so `see[^1]` copies
+  with the `[^1]` visible. Heading marks and list markers are correctly syntax
+  units and do not have this problem.
 
 The coordinator layer (`SelectionRoot`, `useDocumentSelection`, registry /
 hit-testing / selection state) and the `SelectableRichText` segment adapter are in

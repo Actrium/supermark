@@ -93,9 +93,36 @@ export class SelectionRegistry {
   setUnits(units: readonly SelectionUnit[]): void {
     this._index = buildUnitIndex(units);
     this.orderCache = null;
+
+    // Drop blocks whose units no longer exist in the new stream. A re-parse
+    // reassigns unit ids (`linearize.ts` derives them as `pos:<start>-<end>`),
+    // so a block left behind by a removed paragraph would keep its entry
+    // forever: `orderKey` gives it ORDER_LAST so it bunches at the end of
+    // `getBlocks()` and corrupts the document ordering `chooseBlock` relies on,
+    // and `getBlockForUnit` still resolves its dead unit ids into
+    // `planNativeSelection`'s ownership vote.
+    //
+    // A block with no unit ids at all is kept: React children effects run
+    // before the parent's, so a freshly mounted block has already called
+    // `updateUnits` by the time this runs — but a block mid-registration may
+    // legitimately still be empty, and dropping it would unregister a live one.
+    let dropped = false;
+    for (const [nodeId, block] of this.blocks) {
+      if (block.unitIds.length === 0) continue;
+      const alive = block.unitIds.some(id => this._index.byUnitId.has(id));
+      if (!alive) {
+        this.blocks.delete(nodeId);
+        dropped = true;
+      }
+    }
+    if (dropped) this.unitToNode = null;
   }
 
-  register(block: RegisteredBlock): void {
+  /**
+   * Register a block and return the object actually stored, which callers pass
+   * back to `unregister` as an identity guard — see that method.
+   */
+  register(block: RegisteredBlock): RegisteredBlock {
     // Preserve a previously measured rect when a re-registration carries none.
     // A React block re-registers (effect cleanup + re-run) with no rect while
     // its `onLayout` does not re-fire on an unchanged layout; without this the
@@ -109,6 +136,7 @@ export class SelectionRegistry {
     this.orderCache = null;
     this.unitToNode = null;
     this.notify('register', block.nodeId);
+    return next;
   }
 
   /**
@@ -126,7 +154,20 @@ export class SelectionRegistry {
     this.notify('units', nodeId);
   }
 
-  unregister(nodeId: SelectionNodeId): void {
+  /**
+   * Remove a block. When `expected` is given, the entry is removed only if it
+   * is still the one that was registered — pass the value `register` returned.
+   *
+   * React mounts a replacement before unmounting the component it replaces, so
+   * two instances sharing a `nodeId` produce the order
+   * register(new) -> unregister(old). Without the guard, the old instance's
+   * cleanup deletes the LIVE registration, leaving the mounted block with no
+   * rect and no handle. This is not hypothetical: `linearize.ts` derives block
+   * ids as `pos:<start>-<end>`, which a re-parse readily reassigns to a
+   * different component instance.
+   */
+  unregister(nodeId: SelectionNodeId, expected?: RegisteredBlock): void {
+    if (expected !== undefined && this.blocks.get(nodeId) !== expected) return;
     if (!this.blocks.delete(nodeId)) return;
     this.orderCache = null;
     this.unitToNode = null;

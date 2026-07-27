@@ -20,6 +20,14 @@ export interface SelectionUnitIndex {
   entries: UnitIndexEntry[];
   byUnitId: Map<string, number>;
   byNodeId: Map<string, number[]>;
+  /**
+   * First and last unit index carrying each `structuralGroup` id. Derived in
+   * the same pass as the rest of the index because it depends only on the unit
+   * stream — `findPartialStructuralGroups` used to recompute it by walking all
+   * N entries on every `beginAt` / `extendTo` / `commit`, i.e. on every frame
+   * of a drag.
+   */
+  structuralGroupBounds: Map<string, { min: number; max: number }>;
 }
 
 /** Length a unit contributes to the global plain-text stream. */
@@ -42,6 +50,7 @@ export function buildUnitIndex(units: readonly SelectionUnit[]): SelectionUnitIn
   const entries: UnitIndexEntry[] = [];
   const byUnitId = new Map<string, number>();
   const byNodeId = new Map<string, number[]>();
+  const structuralGroupBounds = new Map<string, { min: number; max: number }>();
   let startOffset = 0;
   units.forEach((unit, unitIndex) => {
     const textLength = unitTextLength(unit);
@@ -50,9 +59,19 @@ export function buildUnitIndex(units: readonly SelectionUnit[]): SelectionUnitIn
     const existing = byNodeId.get(unit.nodeId);
     if (existing) existing.push(unitIndex);
     else byNodeId.set(unit.nodeId, [unitIndex]);
+    const group = unit.kind === 'text' ? unit.structuralGroup : undefined;
+    if (group !== undefined) {
+      const bounds = structuralGroupBounds.get(group);
+      if (bounds) {
+        if (unitIndex < bounds.min) bounds.min = unitIndex;
+        if (unitIndex > bounds.max) bounds.max = unitIndex;
+      } else {
+        structuralGroupBounds.set(group, { min: unitIndex, max: unitIndex });
+      }
+    }
     startOffset += textLength;
   });
-  return { entries, byUnitId, byNodeId };
+  return { entries, byUnitId, byNodeId, structuralGroupBounds };
 }
 
 /**
@@ -100,7 +119,10 @@ export function locateSelectionPoint(
     }
     if (lastContentIndex >= 0) {
       // Offset overruns every content unit: clamp to the last one's end.
-      return { unitIndex: lastContentIndex, intraOffset: index.entries[lastContentIndex].textLength };
+      return {
+        unitIndex: lastContentIndex,
+        intraOffset: index.entries[lastContentIndex].textLength,
+      };
     }
     // Node only has zero-text units: pick the first, before/after by offset.
     return { unitIndex: candidates[0], intraOffset: point.offset > 0 ? 1 : 0 };
@@ -196,20 +218,8 @@ function findPartialStructuralGroups(
   startUnitIndex: number,
   endUnitIndex: number
 ): Set<string> {
-  const bounds = new Map<string, { min: number; max: number }>();
-  for (const entry of index.entries) {
-    const group = entry.unit.kind === 'text' ? entry.unit.structuralGroup : undefined;
-    if (group === undefined) continue;
-    const existing = bounds.get(group);
-    if (existing) {
-      if (entry.unitIndex < existing.min) existing.min = entry.unitIndex;
-      if (entry.unitIndex > existing.max) existing.max = entry.unitIndex;
-    } else {
-      bounds.set(group, { min: entry.unitIndex, max: entry.unitIndex });
-    }
-  }
   const partial = new Set<string>();
-  for (const [group, { min, max }] of bounds) {
+  for (const [group, { min, max }] of index.structuralGroupBounds) {
     if (startUnitIndex > min || endUnitIndex < max) partial.add(group);
   }
   return partial;
@@ -223,9 +233,16 @@ function findPartialStructuralGroups(
  */
 export function resolveSelectionRange(
   units: readonly SelectionUnit[],
-  range: SelectionRange
+  range: SelectionRange,
+  /**
+   * Prebuilt index for `units`. Pass one when resolving the same stream
+   * repeatedly — every frame of a drag, say — so the O(N) index build is not
+   * repeated. It MUST have been built from exactly these `units`; when in
+   * doubt, omit it and one is built here.
+   */
+  prebuiltIndex?: SelectionUnitIndex
 ): SelectionUnit[] {
-  const index = buildUnitIndex(units);
+  const index = prebuiltIndex ?? buildUnitIndex(units);
   const a = locateSelectionPoint(index, range.anchor);
   const f = locateSelectionPoint(index, range.focus);
 
@@ -254,7 +271,12 @@ export function resolveSelectionRange(
       // A single structural unit alone never spans its whole group, so its
       // payload is dropped by `partialGroups` — `splitTextUnit` also drops it on
       // a partial slice, and returns it verbatim only on full coverage.
-      return [degradePartialStructural(splitTextUnit(unit, start.intraOffset, end.intraOffset), partialGroups)];
+      return [
+        degradePartialStructural(
+          splitTextUnit(unit, start.intraOffset, end.intraOffset),
+          partialGroups
+        ),
+      ];
     }
     // A fully covered non-text unit (0 -> 1).
     return [unit];
@@ -288,7 +310,9 @@ export function resolveSelectionRange(
   const endUnit = endEntry.unit;
   if (endUnit.kind === 'text') {
     if (end.intraOffset > 0) {
-      result.push(degradePartialStructural(splitTextUnit(endUnit, 0, end.intraOffset), partialGroups));
+      result.push(
+        degradePartialStructural(splitTextUnit(endUnit, 0, end.intraOffset), partialGroups)
+      );
     }
   } else if (end.intraOffset >= 1) {
     // Non-text tail unit only enters when its trailing edge is covered.

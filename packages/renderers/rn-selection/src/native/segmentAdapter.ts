@@ -11,7 +11,7 @@ import type {
   SelectableRichTextLongPressEvent,
   SelectableRichTextMenuActionEvent,
   SelectableRichTextRef,
-} from '../../native/selectable-rich-text/src/types';
+} from '@boomsi/react-native-selectable-text';
 
 /**
  * Pure mapping helpers between a native text segment's local UTF-16 offsets
@@ -242,15 +242,20 @@ export function normalizeMenuAction(e: SelectableRichTextMenuActionEvent): Segme
  * Wrap a vendored `SelectableRichTextRef` as a `TextSegmentHandle`. Only the
  * ref's methods are used at runtime; the ref type itself is erased at
  * compile time, so this file never pulls in a react-native value import.
+ *
+ * Takes an accessor rather than the ref itself: a React `useRef` is `null`
+ * until the native view mounts, and the handle is registered from an effect
+ * that may run before it. Reading through the accessor on every call keeps the
+ * handle valid across remounts too, where a captured ref value would go stale.
  */
 export function createSegmentHandle(
   nodeId: SelectionNodeId,
-  ref: SelectableRichTextRef
+  getRef: () => SelectableRichTextRef | null | undefined
 ): TextSegmentHandle {
   return {
     nodeId,
-    selectRange: (start, end) => ref.selectRange(start, end),
-    clearSelection: () => ref.clearSelection(),
-    copyRange: (start, end) => ref.copyRange(start, end),
+    selectRange: (start, end) => getRef()?.selectRange(start, end),
+    clearSelection: () => getRef()?.clearSelection(),
+    copyRange: (start, end) => getRef()?.copyRange(start, end),
   };
 }

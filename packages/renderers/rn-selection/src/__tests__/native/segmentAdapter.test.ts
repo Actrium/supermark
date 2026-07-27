@@ -125,12 +125,18 @@ describe('event translation', () => {
 
   test('rangeToSegmentSelection orders the result ascending regardless of direction', () => {
     const forward = rangeToSegmentSelection(
-      { anchor: { nodeId: 'h', unitId: 'h#1', offset: 2 }, focus: { nodeId: 'h', unitId: 'h#2', offset: 2 } },
+      {
+        anchor: { nodeId: 'h', unitId: 'h#1', offset: 2 },
+        focus: { nodeId: 'h', unitId: 'h#2', offset: 2 },
+      },
       index,
       spans
     );
     const reversed = rangeToSegmentSelection(
-      { anchor: { nodeId: 'h', unitId: 'h#2', offset: 2 }, focus: { nodeId: 'h', unitId: 'h#1', offset: 2 } },
+      {
+        anchor: { nodeId: 'h', unitId: 'h#2', offset: 2 },
+        focus: { nodeId: 'h', unitId: 'h#1', offset: 2 },
+      },
       index,
       spans
     );
@@ -285,7 +291,6 @@ describe('normalizeLongPress / normalizeMenuAction', () => {
   });
 });
 
-
 // The resolve path and the native path must agree on where a selection may be
 // cut. `resolveSelectionRange` -> `splitTextUnit` grapheme-snaps outward; the
 // native plan is built from `locateSelectionPoint`, which does not. Before the
@@ -296,10 +301,7 @@ describe('normalizeLongPress / normalizeMenuAction', () => {
 describe('rangeToSegmentSelection grapheme agreement with the serializer', () => {
   const STAR = '\u{1F31F}'; // astral, 2 UTF-16 units
 
-  const units: SelectionUnit[] = [
-    tUnit('p1#0', 'p1', 'Hi '),
-    tUnit('p1#1', 'p1', `${STAR}b`),
-  ];
+  const units: SelectionUnit[] = [tUnit('p1#0', 'p1', 'Hi '), tUnit('p1#1', 'p1', `${STAR}b`)];
   const index = buildUnitIndex(units);
   const spans = buildSegmentSpans({ unitIds: ['p1#0', 'p1#1'] }, index);
   const segmentText = `Hi ${STAR}b`;
