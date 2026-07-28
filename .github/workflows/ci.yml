@@ -102,12 +102,24 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Run supramark-markdown lib tests
+      - name: Run supramark-markdown tests (lib + integration)
         # Unit tests for the canonical parser's AST v2 mapping (autolink → Link,
         # HTML block type-6 paragraph interruption, fence info unescaping,
-        # punctuation classification). Single matrix entry is enough.
+        # punctuation classification), plus tests/public_api.rs — the contract
+        # suite for what `parse()` hands the renderers.
+        #
+        # This used to be `--lib`, which left tests/public_api.rs running in
+        # exactly one place: the `cargo test -p supramark-markdown --test
+        # public_api` step of commonmark-conformance.yml, a workflow with no
+        # `pull_request` trigger. #121 changed HTML-block line-terminator
+        # semantics without updating two assertions there, so main merged red
+        # and stayed red for three pushes — and because that step runs before
+        # the CLI build and the conformance comparison, those were skipped on
+        # every run, so the CommonMark comparison never actually executed.
+        # Dropping `--lib` puts the contract suite on the PR-gating path where
+        # a break is caught before merge.
         if: matrix.node-version == '20.x'
-        run: cargo test -p supramark-markdown --lib
+        run: cargo test -p supramark-markdown
 
       - name: Install wasm-pack
         uses: taiki-e/install-action@v2
@@ -315,6 +327,47 @@ jobs:
 
       - name: cargo test -p d2-little (lib unit tests)
         run: cargo test -p d2-little --lib
+
+  # mermaid-little had no CI job at all (#123). The "Test & Build" job only
+  # builds the wasm bundle via `bun run build:wasm`, which compiles
+  # mermaid-little-web for wasm32 but never compiles or runs the crate's own
+  # tests — so a change that breaks `cargo test -p mermaid-little`, or breaks
+  # the crate's native build entirely, lands with every check green. The
+  # decluster work in #122 / #128 touches layout code whose only regression
+  # coverage lives in these suites.
+  #
+  # Unlike plantuml-little (graphviz native lib) and d2-little (heavy e2e),
+  # mermaid-little needs no native deps and no submodules, and the default
+  # feature set (`cli`, `metrics-ttf-parser`) is what the byte-exact suites
+  # want, so the full `cargo test -p mermaid-little` runs here rather than
+  # just `--lib`. The `katex` / `cose_bilkent` features stay off — they
+  # vendor QuickJS and are a separate, much slower tier.
+  #
+  # Runtime is ~3.5 min of test execution on top of the build (the lib suite
+  # and the reference suite dominate at ~100 s and ~85 s), which is why this
+  # is its own job rather than a step in "Test & Build".
+  mermaid-rust-tests:
+    name: mermaid-little Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: mermaid-little-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: mermaid-little-cargo-
+
+      - name: cargo test -p mermaid-little (lib + integration)
+        run: cargo test -p mermaid-little
 
   # plantuml-little byte-exact reference-SVG suite (issue #46, "Full" tier).
   # The committed goldens in tests/reference/ are byte-exact against the wasm
