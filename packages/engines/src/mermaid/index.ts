@@ -10,6 +10,7 @@ interface MermaidWasmModule {
   default?: unknown;
   init?: unknown;
   convert?: unknown;
+  convert_with_options?: unknown;
   render?: unknown;
 }
 
@@ -426,9 +427,31 @@ async function ensureLoaded(): Promise<
     );
   }
 
-  renderFn = (code: string) => {
-    // Underlying wasm `convert(code)` is synchronous; await tolerates
+  const convertWithOptions =
+    typeof mod.convert_with_options === 'function'
+      ? (mod.convert_with_options as (
+          mmd: string,
+          id: string,
+          edgeLabelDecluster: boolean
+        ) => string)
+      : null;
+
+  renderFn = (code: string, options?: Record<string, unknown>) => {
+    // Underlying wasm convert entries are synchronous; await tolerates
     // both sync and async returns.
+    if (options?.edgeLabelDecluster === true) {
+      if (convertWithOptions) {
+        // `convert_with_options(code, "mermaid-1", true)` matches the id the
+        // default `convert(code)` path uses, with the decluster pass enabled.
+        return convertWithOptions(code, 'mermaid-1', true);
+      }
+      // Older wasm bundle without the options entry — fall back to the
+      // byte-exact convert and warn so the missing wiring is visible.
+      console.warn(
+        '[supramark] @actrium/mermaid-little-web does not export convert_with_options; ' +
+          'edgeLabelDecluster was requested but is ignored. Rebuild the wasm (bun run build:wasm).'
+      );
+    }
     return convert(code);
   };
   return renderFn;
@@ -458,6 +481,12 @@ import { DiagramRenderError } from '../types.js';
 export interface Options extends RenderOptions {
   /** Mermaid 主题（mermaid 自家枚举），默认 'default' */
   mermaidTheme?: 'default' | 'dark' | 'neutral' | 'forest';
+  /**
+   * 开启边标签去聚簇（#93）。off 时与上游 `mermaid@11.14.0` 字节精确一致；
+   * on 时在布局阶段为 CJK 标签预留真实宽度，并在渲染阶段把仍重叠的标签框推开。
+   * 默认 off。仅 web 绑定生效；RN 暂未接通。
+   */
+  edgeLabelDecluster?: boolean;
   /** 传给 mermaid 的其它 style/theme 变量（如 fontFamily, primaryColor 等） */
   [key: string]: unknown;
 }

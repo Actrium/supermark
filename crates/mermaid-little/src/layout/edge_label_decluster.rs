@@ -15,6 +15,14 @@
 //! by label-displacers in graph layout. Each label may only move a bounded
 //! distance from its base position so it stays tethered to its edge.
 //!
+//! **Best-effort, not a guarantee.** The pass *reduces* overlap but does not
+//! promise zero overlaps: when `max_displacement` binds, labels that cannot
+//! be pushed far enough apart remain stacked. The property the pass actually
+//! provides is "overlap count strictly decreases"; "zero overlaps" is a
+//! fixture-specific fact that holds for some layouts (e.g. the #93 repro)
+//! and not others. Tests assert the general property, and only assert zero
+//! for a fixture known to fully resolve.
+//!
 //! The function is pure arithmetic over centre-based rects `(cx, cy, w, h)`
 //! so it is trivially testable without laying out a real diagram.
 

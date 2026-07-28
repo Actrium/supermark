@@ -14,7 +14,12 @@
  * ```
  */
 
-// Re-export the raw wasm-bindgen API. `convert`, `convert_with_id`, and
-// `version` are the public functions; everything else (`__wbg_set_wasm`
-// etc.) stays internal to the generated JS.
-export { convert, convert_with_id as convertWithId, version } from './wasm/mermaid_little_web.js';
+// Re-export the raw wasm-bindgen API. `convert`, `convert_with_id`,
+// `convert_with_options`, and `version` are the public functions; everything
+// else (`__wbg_set_wasm` etc.) stays internal to the generated JS.
+export {
+  convert,
+  convert_with_id as convertWithId,
+  convert_with_options as convertWithOptions,
+  version,
+} from './wasm/mermaid_little_web.js';

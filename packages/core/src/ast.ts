@@ -173,6 +173,13 @@ export interface SupramarkDiagramEngineConfig {
   /** 可选：特定引擎的服务端地址（例如 PlantUML server） */
   server?: string;
 
+  /**
+   * 可选：开启 mermaid 边标签去聚簇（#93）。仅 mermaid 引擎消费；
+   * off 时与上游 `mermaid@11.14.0` 字节精确一致，on 时推开重叠的边标签框
+   * 并为 CJK 标签预留真实渲染宽度。其它引擎忽略此字段。
+   */
+  edgeLabelDecluster?: boolean;
+
   /** 缓存配置（仅作为上层参考，具体实现由运行时决定） */
   cache?: {
     enabled?: boolean;
