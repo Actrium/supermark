@@ -28,6 +28,22 @@ on:
       - "crates/supramark-markdown/**"
       - "packages/core/**"
       - "packages/renderers/web/**"
+  # Same paths as the push trigger, so a PR that can change conformance is
+  # checked before it merges rather than after. Without this, the workflow
+  # only ever ran post-merge: #121 landed a parser change that broke
+  # tests/public_api.rs, main went red, and nothing had told the PR.
+  #
+  # The issue-filing step already carries a `github.event_name !=
+  # 'pull_request'` guard (dead until now), so PR runs report through the
+  # check and the run artifacts, and never open or update an issue.
+  pull_request:
+    paths:
+      - ".github/workflows/commonmark-conformance.yml"
+      - "tests/cases/**"
+      - "tests/markdown-conformance/**"
+      - "crates/supramark-markdown/**"
+      - "packages/core/**"
+      - "packages/renderers/web/**"
 
 permissions:
   contents: read
