@@ -185,8 +185,8 @@ pub fn render(
         out.push_str(&format!(
             r#"<text x="{x}" font-size="{fs}" font-weight="bold" y="25" fill="{fill}" font-family="{ff}">{title}</text>"#,
             x = fmt_num(l.left_margin),
-            fs = &l.title_font_size,
-            fill = &l.title_color,
+            fs = l.title_font_size,
+            fill = l.title_color,
             ff = escape_attr_family(&l.title_font_family),
             title = escape_text(&l.title),
         ));
@@ -212,7 +212,7 @@ fn render_actor_legend(out: &mut String, a: &JourneyActorLegend) {
         "<circle cx=\"20\" cy=\"{cy}\" class=\"actor-{pos}\" fill=\"{fill}\" stroke=\"#000\" r=\"7\"></circle>",
         cy = fmt_num(a.circle_cy),
         pos = a.pos,
-        fill = &a.colour,
+        fill = a.colour,
     ));
     // Each line: <text x="40" y="{ly}" class="legend"><tspan x="50">{line}</tspan></text>
     for line in &a.lines {
@@ -241,7 +241,7 @@ fn render_section(
         "<rect x=\"{x}\" y=\"{sy}\" fill=\"{fill}\" stroke=\"#666\" width=\"{w}\" height=\"{h}\" rx=\"3\" ry=\"3\" class=\"journey-section section-type-{n}\"></rect>",
         x = fmt_num(sec.x),
         sy = fmt_num(sec_y),
-        fill = &sec.fill,
+        fill = sec.fill,
         w = fmt_num(sec.width),
         h = fmt_num(sec_h),
         n = sec.num,
@@ -284,7 +284,7 @@ fn render_task(out: &mut String, task: &JourneyTaskLayout, l: &JourneyLayout, id
         "<rect x=\"{x}\" y=\"{y}\" fill=\"{fill}\" stroke=\"#666\" width=\"{w}\" height=\"{h}\" rx=\"3\" ry=\"3\" class=\"task task-type-{n}\"></rect>",
         x = fmt_num(task.x),
         y = fmt_num(task.y),
-        fill = &task.fill,
+        fill = task.fill,
         w = fmt_num(w),
         h = fmt_num(h),
         n = task.num,
@@ -298,7 +298,7 @@ fn render_task(out: &mut String, task: &JourneyTaskLayout, l: &JourneyLayout, id
             cx = fmt_num(chip.cx),
             cy = fmt_num(task.y),
             pos = chip.pos,
-            fill = &chip.colour,
+            fill = chip.colour,
             title = escape_text(&chip.title),
         ));
     }

@@ -352,10 +352,9 @@ fn scan_str_after(s: &str, key: &str) -> Option<String> {
     let rest = rest.strip_prefix(':')?.trim_start();
     let (open, close) = if let Some(r) = rest.strip_prefix('"') {
         (r, '"')
-    } else if let Some(r) = rest.strip_prefix('\'') {
-        (r, '\'')
     } else {
-        return None;
+        let r = rest.strip_prefix('\'')?;
+        (r, '\'')
     };
     let end = open.find(close)?;
     Some(open[..end].to_string())

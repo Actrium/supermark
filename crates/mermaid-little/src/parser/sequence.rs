@@ -811,10 +811,9 @@ fn parse_note(s: &str) -> Option<Note> {
         (NotePlacement::LeftOf, r)
     } else if let Some(r) = s.strip_prefix("right of ") {
         (NotePlacement::RightOf, r)
-    } else if let Some(r) = s.strip_prefix("over ") {
-        (NotePlacement::Over, r)
     } else {
-        return None;
+        let r = s.strip_prefix("over ")?;
+        (NotePlacement::Over, r)
     };
     let (anchors_str, body) = rest.split_once(':')?;
     let anchors: Vec<String> = anchors_str
@@ -1110,10 +1109,9 @@ fn sniff_bool(block: &str, key: &str) -> Option<bool> {
         (i, dq.len())
     } else if let Some(i) = block.find(&sq) {
         (i, sq.len())
-    } else if let Some(i) = block.find(&bare) {
-        (i, key.len())
     } else {
-        return None;
+        let i = block.find(&bare)?;
+        (i, key.len())
     };
     let after = &block[p + key_len..];
     let after = after.trim_start_matches(|c: char| c.is_whitespace() || c == ':');

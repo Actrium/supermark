@@ -819,7 +819,7 @@ fn render_edge(id_prefix: &str, e: &UEdge) -> String {
         r#"<path d="{d}" id="{id_prefix}-{eid}" class="{cls}" style="{st}" data-edge="true" data-et="edge" data-id="{did}" data-points="{b64}" data-look="classic"{ma}></path>"#,
         d = d,
         eid = xml_escape(&e.id),
-        cls = &classes,
+        cls = classes,
         st = style,
         did = edge_data_id,
         b64 = data_points_b64,
