@@ -391,6 +391,42 @@ jobs:
       - name: cargo test -p mermaid-little (lib + integration)
         run: cargo test -p mermaid-little
 
+  # mermaid-little fmt + clippy gate, mirroring `d2-little-full` (the second
+  # half of #123's "Suggested shape"). Clippy is non-blocking for now
+  # (`continue-on-error`) because the crate has 19 pre-existing warnings
+  # (12 × redundant `&` in `format!`, 7 × `?` operator, per #123), so
+  # `-D warnings` would fail the step on a clean tree. Once those are
+  # cleaned up, drop `continue-on-error` to make clippy gating. rustfmt is
+  # gating today — an unformatted PR should not merge.
+  mermaid-little-lint:
+    name: mermaid-little Rust (fmt + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: mermaid-little-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: mermaid-little-cargo-
+
+      - name: rustfmt
+        run: cargo fmt -p mermaid-little --check
+
+      - name: clippy (deny warnings, non-blocking — see #123)
+        continue-on-error: true
+        run: cargo clippy -p mermaid-little --all-targets -- -D warnings
+
   # plantuml-little byte-exact reference-SVG suite (issue #46, "Full" tier).
   # The committed goldens in tests/reference/ are byte-exact against the wasm
   # Graphviz build (@kookyleo/graphviz-anywhere-web@0.1.8), so the suite runs
