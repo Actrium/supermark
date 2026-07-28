@@ -9,9 +9,14 @@
 //!
 //! The pass is **best-effort**: it reduces overlap but does not guarantee
 //! zero overlaps when `max_displacement` binds (see the module header on
-//! `edge_label_decluster`). Tests here assert the general property (overlap
-//! count strictly decreases) plus a fixture-specific zero-overlap check for
-//! the #93 repro, which is known to fully resolve.
+//! `edge_label_decluster`). These integration tests assert only the general
+//! property — overlap count strictly decreases — which is robust to layout
+//! drift. The strict zero-overlap contract is covered by the pass's own
+//! unit test `result_has_no_remaining_overlaps`, which feeds `decluster` a
+//! synthetic rect cluster whose required displacement (~29 px) is far under
+//! `max_displacement` (80 px) — so `max_displacement` provably does not
+//! bind, and a red zero-overlap result there always means a regression,
+//! never layout drift.
 
 #![cfg(feature = "metrics-ttf-parser")]
 
@@ -155,7 +160,7 @@ fn overlap_pairs(rects: &[Rect]) -> Vec<(usize, usize)> {
 }
 
 #[test]
-fn decluster_removes_edge_label_overlaps() {
+fn decluster_reduces_edge_label_overlaps() {
     let baseline = convert_with_id(REPRO, "mermaid-1").expect("baseline render");
     let declustered = convert_with_options(
         REPRO,
@@ -184,23 +189,14 @@ fn decluster_removes_edge_label_overlaps() {
     // zero overlaps when `max_displacement` binds (see the module header on
     // `edge_label_decluster`). The general property it does provide is that
     // the overlap count strictly decreases — assert that here, since it is
-    // robust to layout drift.
+    // robust to layout drift. The strict zero-overlap contract lives in
+    // the pass's unit test `result_has_no_remaining_overlaps`, on a
+    // synthetic rect cluster where `max_displacement` provably cannot bind.
     let decl_overlaps = overlap_pairs(&decl_rects);
     assert!(
         decl_overlaps.len() < base_overlaps.len(),
         "decluster must reduce overlap count: baseline={}, declustered={}",
         base_overlaps.len(),
-        decl_overlaps.len()
-    );
-
-    // For this fixture (#93 repro) the pass fully resolves every overlap.
-    // This is a fixture-specific fact, not a general guarantee — if the
-    // layout ever shifts such that zero no longer holds, update this
-    // assertion rather than reading it as an algorithm contract.
-    assert!(
-        decl_overlaps.is_empty(),
-        "declustered output still has {} overlapping pair(s) — the #93 \
-         fixture is expected to fully resolve, but the pass is best-effort",
         decl_overlaps.len()
     );
 
