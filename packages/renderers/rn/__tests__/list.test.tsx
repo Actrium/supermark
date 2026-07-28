@@ -100,3 +100,104 @@ describe('list rendering', () => {
     expect(texts).toContain('☑ b');
   });
 });
+
+describe('loose / nested list rendering (block children)', () => {
+  it('loose unordered list renders item bodies (paragraph children) with markers', async () => {
+    const ast = {
+      type: 'root',
+      children: [
+        {
+          type: 'list',
+          ordered: false,
+          children: [
+            { type: 'list_item', children: [{ type: 'paragraph', children: [{ type: 'text', value: 'a' }] }] },
+            { type: 'list_item', children: [{ type: 'paragraph', children: [{ type: 'text', value: 'b' }] }] },
+          ],
+        },
+      ],
+    } as unknown as SupramarkRootNode;
+    const r = await renderAst(ast);
+    const texts = textContents(r.root);
+    expect(texts).toContain('• a');
+    expect(texts).toContain('• b');
+  });
+
+  it('loose ordered list renders numbered markers with bodies', async () => {
+    const ast = {
+      type: 'root',
+      children: [
+        {
+          type: 'list',
+          ordered: true,
+          start: 1,
+          children: [
+            { type: 'list_item', children: [{ type: 'paragraph', children: [{ type: 'text', value: 'a' }] }] },
+            { type: 'list_item', children: [{ type: 'paragraph', children: [{ type: 'text', value: 'b' }] }] },
+          ],
+        },
+      ],
+    } as unknown as SupramarkRootNode;
+    const r = await renderAst(ast);
+    const texts = textContents(r.root);
+    expect(texts).toContain('1. a');
+    expect(texts).toContain('2. b');
+  });
+
+  it('nested list renders the sub-list instead of dropping it', async () => {
+    const ast = {
+      type: 'root',
+      children: [
+        {
+          type: 'list',
+          ordered: false,
+          children: [
+            {
+              type: 'list_item',
+              children: [
+                { type: 'text', value: 'outer' },
+                {
+                  type: 'list',
+                  ordered: false,
+                  children: [{ type: 'list_item', children: [{ type: 'text', value: 'inner' }] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as SupramarkRootNode;
+    const r = await renderAst(ast);
+    const texts = textContents(r.root);
+    expect(texts).toContain('• outer');
+    expect(texts).toContain('• inner');
+  });
+
+  it('loose nested list: paragraph body + nested sub-list both render', async () => {
+    const ast = {
+      type: 'root',
+      children: [
+        {
+          type: 'list',
+          ordered: false,
+          children: [
+            {
+              type: 'list_item',
+              children: [
+                { type: 'paragraph', children: [{ type: 'text', value: 'outer' }] },
+                {
+                  type: 'list',
+                  ordered: false,
+                  children: [{ type: 'list_item', children: [{ type: 'text', value: 'inner' }] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as SupramarkRootNode;
+    const r = await renderAst(ast);
+    const texts = textContents(r.root);
+    expect(texts).toContain('• outer');
+    expect(texts).toContain('• inner');
+  });
+});

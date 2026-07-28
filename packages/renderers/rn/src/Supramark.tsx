@@ -482,16 +482,33 @@ function renderNode(
       const item = node;
       const isTaskList = item.checked !== undefined;
       const checkSymbol = item.checked === true ? '☑' : '☐';
-      // Render the item as a plain <Text> mirroring paragraph. The shared row
-      // listItem wraps content in a flex:1 <Text> whose width yoga mis-measures
-      // under streaming and wraps prematurely; paragraph shape avoids that path.
       const marker = isTaskList ? `${checkSymbol} ` : `${listMarker ?? '•'} `;
 
+      // Tight list (inline-only children): plain <Text>, width-safe (see #101).
+      if (item.children.every(isInlineNode)) {
+        return (
+          <Text key={key} style={styles.paragraph}>
+            {marker}
+            {renderInlineNodes(item.children, styles, highlighted, config)}
+          </Text>
+        );
+      }
+
+      // Loose / nested list (block children): render via renderNode so paragraph
+      // and nested list don't fall through to null. Column layout keeps <Text>
+      // children stretching to full width (width-safe, unlike row + flex:1).
       return (
-        <Text key={key} style={styles.paragraph}>
-          {marker}
-          {renderInlineNodes(item.children, styles, highlighted, config)}
-        </Text>
+        <View key={key} style={styles.listItemBlock}>
+          {renderListItemBody(
+            item.children,
+            marker,
+            styles,
+            highlighted,
+            config,
+            onOpenHtmlPage,
+            containerRenderers,
+          )}
+        </View>
       );
     }
     case 'diagram': {
@@ -847,6 +864,90 @@ function codeTokenTextStyle(token: {
     fontStyle: fontStyle.includes('italic') ? ('italic' as const) : undefined,
     textDecorationLine: fontStyle.includes('underline') ? ('underline' as const) : undefined,
   };
+}
+
+// Inline node types — keep in sync with renderInlineNode's switch below: any
+// inline type handled there must be listed here, or list_item will mistake it
+// for a block and route it through renderNode.
+const INLINE_NODE_TYPES: ReadonlySet<string> = new Set([
+  'text',
+  'strong',
+  'emphasis',
+  'inline_code',
+  'math_inline',
+  'link',
+  'image',
+  'break',
+  'delete',
+  'footnote_reference',
+]);
+
+function isInlineNode(node: SupramarkNode): boolean {
+  return INLINE_NODE_TYPES.has(node.type);
+}
+
+// Render list_item children that mix inline and block nodes (loose / nested
+// lists). Inline runs collapse into one <Text> (the first run gets the marker);
+// block nodes (paragraph, nested list) go through renderNode instead of being
+// dropped by renderInlineNodes' default→null.
+function renderListItemBody(
+  children: SupramarkNode[],
+  marker: string,
+  styles: ReturnType<typeof mergeStyles>,
+  highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
+  config: SupramarkConfig | undefined,
+  onOpenHtmlPage: ((node: SupramarkContainerNode) => void) | undefined,
+  containerRenderers: Record<string, ContainerRendererRN> | undefined,
+): RenderedNode[] {
+  const out: RenderedNode[] = [];
+  let inlineBuf: SupramarkNode[] = [];
+  let markerPending = true;
+  let seq = 0;
+
+  const flushInline = () => {
+    if (inlineBuf.length === 0) return;
+    const prefix = markerPending ? marker : '';
+    out.push(
+      <Text key={`li-${seq}`} style={styles.paragraph}>
+        {prefix}
+        {inlineBuf.map((n, i) => renderInlineNode(n, i, styles, highlighted, config))}
+      </Text>,
+    );
+    seq += 1;
+    inlineBuf = [];
+    markerPending = false;
+  };
+
+  for (const child of children) {
+    if (isInlineNode(child)) {
+      inlineBuf.push(child);
+      continue;
+    }
+    // Prefix the marker onto the first paragraph's inline content (loose lists).
+    if (child.type === 'paragraph' && markerPending) {
+      flushInline();
+      out.push(
+        <Text key={`li-${seq}`} style={styles.paragraph}>
+          {marker}
+          {renderInlineNodes(child.children, styles, highlighted, config)}
+        </Text>,
+      );
+      seq += 1;
+      markerPending = false;
+      continue;
+    }
+    // Other blocks (nested list, subsequent paragraph): indent to align under
+    // the marker, then render via renderNode.
+    flushInline();
+    out.push(
+      <View key={`li-${seq}`} style={styles.listItemIndent}>
+        {renderNode(child, 0, styles, highlighted, config, onOpenHtmlPage, containerRenderers)}
+      </View>,
+    );
+    seq += 1;
+  }
+  flushInline();
+  return out;
 }
 
 function renderInlineNodes(
