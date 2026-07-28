@@ -27,7 +27,7 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - ".github/workflows/commonmark-conformance.yml"
+      - ".github/workflows/markdown-conformance.yml"
       - "tests/cases/**"
       - "tests/markdown-conformance/**"
       - "crates/supramark-markdown/**"
@@ -43,7 +43,7 @@ on:
   # check and the run artifacts, and never open or update an issue.
   pull_request:
     paths:
-      - ".github/workflows/commonmark-conformance.yml"
+      - ".github/workflows/markdown-conformance.yml"
       - "tests/cases/**"
       - "tests/markdown-conformance/**"
       - "crates/supramark-markdown/**"

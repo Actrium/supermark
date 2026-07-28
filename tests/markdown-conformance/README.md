@@ -111,7 +111,7 @@ node tests/markdown-conformance/scripts/run-visual.mjs cmark-gfm
 `packages/renderers/web/src/Supramark.tsx` 生产 React Renderer。浏览器宿主只隔离图表引擎和
 浏览器 WASM Parser，避免重复解析；最终 DOM 来自生产 Renderer。
 
-GitHub Actions 工作流位于 `.github/workflows/commonmark-conformance.yml`。工作流先校验所选数据源，
+GitHub Actions 工作流位于 `.github/workflows/markdown-conformance.yml`。工作流先校验所选数据源，
 再通过动态 matrix 为每个数据源独立导入、验证、对照、上传报告并维护聚合 Issue。失败运行会上传完整
 中文报告并生成 `issue.md` 与 `issue-metadata.json`；启用 Issue 开关后会创建或更新聚合 Issue。Pull Request 只验证和上传产物。
 Issue 标题格式为 `[<数据源显示名>] 验证结果问题：存在未通过用例`，并自动添加 `bug` 标签；稳定标记用于更新同一数据源已有的聚合 Issue。
