@@ -6,6 +6,28 @@ on:
   pull_request:
     branches: [main, develop]
 
+# KNOWN GAP -- needs a repository setting, not a change in this file.
+#
+# On `pull_request`, actions/checkout already builds the PR merged into its
+# base (refs/pull/N/merge), so every job below runs against the merge result
+# rather than the PR head. What is missing is a re-run when the base moves:
+# a green check stays green after main advances underneath it, and nothing
+# re-evaluates it before merge.
+#
+# #105 is the worked example. It was cut on 2026-07-24 and went green. #92
+# then landed on main and narrowed `highlighted` to ReadonlyMap across the
+# RN render chain. #105's own helper still declared a mutable Map, so the
+# two together did not type-check -- while #105 sat green, because its
+# checks were computed against the pre-#92 main and never recomputed. The
+# break only surfaced when the branch was explicitly updated.
+#
+# The fix is the "Require branches to be up to date before merging" toggle
+# on the `main` ruleset (`strict_required_status_checks_policy: true`),
+# which forces a re-run against current main before the merge button
+# unlocks. That is admin-only -- write access cannot set it. Until an admin
+# turns it on, treat a long-lived green PR as unverified and update its
+# branch before merging.
+
 jobs:
   # License compliance — REUSE spec + cargo-deny over the Rust workspace.
   # The workspace-internal SPDX field check runs in the test job
