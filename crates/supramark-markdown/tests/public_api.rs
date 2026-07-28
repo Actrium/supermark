@@ -310,7 +310,12 @@ fn public_api_preserves_raw_html_blocks() {
     };
 
     assert_eq!(format, "html");
-    assert_eq!(value, "<div>Hello</div>");
+    // An HTML block owns its line terminator. CommonMark 0.31.2 defines the
+    // expected output for `<div>Hello</div>\n` as the source lines verbatim,
+    // newline included, which is what `html_block.rs` now emits (700cc57e) and
+    // what the 652/652 conformance run depends on. This assertion encoded the
+    // pre-#121 behaviour and was not updated with it.
+    assert_eq!(value, "<div>Hello</div>\n");
     assert!(*block);
 }
 
@@ -331,7 +336,8 @@ fn public_api_preserves_multiline_raw_html_blocks() {
     };
 
     assert_eq!(format, "html");
-    assert_eq!(value, "<div>\n  <p>x</p>\n</div>");
+    // Trailing newline retained, same rule as the single-line case above.
+    assert_eq!(value, "<div>\n  <p>x</p>\n</div>\n");
     assert!(*block);
 }
 
