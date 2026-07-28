@@ -894,7 +894,7 @@ function renderListItemBody(
   children: SupramarkNode[],
   marker: string,
   styles: ReturnType<typeof mergeStyles>,
-  highlighted: Map<string, SupramarkCodeHighlightResult>,
+  highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
   config: SupramarkConfig | undefined,
   onOpenHtmlPage: ((node: SupramarkContainerNode) => void) | undefined,
   containerRenderers: Record<string, ContainerRendererRN> | undefined,
