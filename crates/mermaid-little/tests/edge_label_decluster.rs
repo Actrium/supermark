@@ -13,10 +13,11 @@
 //! property — overlap count strictly decreases — which is robust to layout
 //! drift. The strict zero-overlap contract is covered by the pass's own
 //! unit test `result_has_no_remaining_overlaps`, which feeds `decluster` a
-//! synthetic rect cluster whose required displacement (~29 px) is far under
-//! `max_displacement` (80 px) — so `max_displacement` provably does not
-//! bind, and a red zero-overlap result there always means a regression,
-//! never layout drift.
+//! synthetic rect cluster far smaller than `max_displacement` (80 px) — so
+//! a label clamped by the budget would leave an overlap, meaning the
+//! zero-overlap result is itself the proof that `max_displacement` did not
+//! bind. A red zero-overlap result there always means a regression, never
+//! layout drift.
 
 #![cfg(feature = "metrics-ttf-parser")]
 

@@ -220,11 +220,12 @@ mod tests {
     fn result_has_no_remaining_overlaps() {
         // The strict zero-overlap contract. This feeds `decluster` a dense
         // cluster of four 30x10 labels stacked within ~2 px of (50, 50) plus
-        // a distant outlier. Resolving the cluster needs at most
-        // ~(4 * 10 + 3 * gap) / 2 ≈ 29 px of displacement from the base
-        // centre — far under `max_displacement` (default 80 px), so
-        // `max_displacement` provably does not bind here and the pass is
-        // expected to fully resolve every overlap. A red assertion below is
+        // a distant outlier — a cluster far smaller than the displacement
+        // budget (default `max_displacement` = 80 px; the greedy resolves
+        // it with ~18 px of movement). The assertion below checks the
+        // contract directly: a label clamped by `max_displacement` would
+        // leave an overlap, so the pass achieving zero overlaps here is
+        // itself the proof that the budget did not bind. A red result is
         // therefore always a regression, never layout drift. The
         // integration test on the #93 repro asserts only strict-decrease,
         // since that realistic fixture can leave `max_displacement` bound.
