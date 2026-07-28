@@ -1,0 +1,104 @@
+{
+  "name": "@boomsi/react-native-selectable-text",
+  "version": "0.1.0",
+  "description": "New Architecture selectable rich text component for React Native",
+  "main": "lib/commonjs/index.js",
+  "module": "lib/module/index.js",
+  "types": "lib/typescript/module/src/index.d.ts",
+  "react-native": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/typescript/module/src/index.d.ts",
+      "react-native": "./src/index.ts",
+      "default": "./lib/module/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "ios",
+    "common",
+    "*.podspec",
+    "!ios/build",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*",
+    "android",
+    "!android/build"
+  ],
+  "keywords": [
+    "react-native",
+    "ios",
+    "selectable-text",
+    "uitextview"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/toupitutuetoudada/react-native-selectable-text.git"
+  },
+  "author": "toupitutuetoudada",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/toupitutuetoudada/react-native-selectable-text/issues"
+  },
+  "homepage": "https://github.com/toupitutuetoudada/react-native-selectable-text#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": ">=0.81.0"
+  },
+  "workspaces": [
+    "example"
+  ],
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "commonjs",
+        {}
+      ],
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  },
+  "codegenConfig": {
+    "name": "RNSelectableTextSpec",
+    "type": "components",
+    "jsSrcsDir": "src",
+    "includesGeneratedCode": true,
+    "ios": {
+      "componentProvider": {
+        "SelectableRichText": "RCTSelectableRichTextComponentView"
+      }
+    },
+    "android": {
+      "javaPackageName": "com.selectableapp.selectabletext"
+    }
+  },
+  "create-react-native-library": {
+    "type": "library",
+    "languages": "js",
+    "tools": [
+      "eslint",
+      "jest",
+      "lefthook",
+      "release-it"
+    ],
+    "version": "0.63.0"
+  }
+}

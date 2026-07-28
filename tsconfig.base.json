@@ -42,6 +42,10 @@
       "@supramark/web": ["packages/renderers/web/src/index.ts"],
       "@supramark/web/createSupramark": ["packages/renderers/web/src/createSupramark.tsx"],
       "@supramark/rn": ["packages/renderers/rn/src/index.ts"],
+      "@supramark/rn-selection": ["packages/renderers/rn-selection/src/index.ts"],
+      "@boomsi/react-native-selectable-text": [
+        "packages/renderers/rn-selection/src/shims/selectable-rich-text.d.ts"
+      ],
 
       "@supramark/feature-core-markdown": ["packages/features/core-markdown/src/index.ts"],
       "@supramark/feature-gfm": ["packages/features/main/gfm/src/index.ts"],

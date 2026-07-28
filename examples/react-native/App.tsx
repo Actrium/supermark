@@ -55,6 +55,7 @@ import '@actrium/supramark-plantuml-native-rn';
 import '@supramark/markdown-native-rn';
 
 import { DEMOS } from '../demos';
+import SelectionDemo from './SelectionDemo';
 
 // admonition is a ContainerFeature — its container hooks must be registered
 // explicitly. html-page / map register theirs via side-effect import in their
@@ -127,6 +128,7 @@ const SMOKE_SPEC: Array<{ name: string; key: string; source: string }> = [
 export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>('light');
+  const [showSelection, setShowSelection] = useState(false);
   const [smoke, setSmoke] = useState<SmokeResult[]>(
     SMOKE_SPEC.map((s) => ({ name: s.name, status: 'pending', detail: 'booting...' })),
   );
@@ -171,6 +173,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // After all hooks: conditional screens must not skip hook calls.
+  if (showSelection) {
+    return <SelectionDemo onBack={() => setShowSelection(false)} />;
+  }
+
   const containerStyle = [styles.container, isDark && { backgroundColor: themeBackground.dark }];
   const headerStyle = [styles.header, isDark && { borderBottomColor: '#30363d' }];
   const titleStyle = [styles.title, isDark && { color: '#ffffff' }];
@@ -211,6 +218,12 @@ export default function App() {
             onPress={runNativeSmokeTest}
           >
             <Text style={themeButtonTextStyle}>🧪 Re-run native FFI smoke (d2 / mermaid / plantuml)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[themeButtonStyle, { marginTop: 8, alignSelf: 'flex-start' }]}
+            onPress={() => setShowSelection(true)}
+          >
+            <Text style={themeButtonTextStyle}>Selection Demo</Text>
           </TouchableOpacity>
         </View>
         <ScrollView contentContainerStyle={menuContentStyle}>

@@ -35,6 +35,11 @@ function discoverPackageSrcDirs(): string[] {
       '-not',
       '-path',
       '*/lib/*',
+      // vendored third-party source is eslint-ignored wholesale; linting the
+      // dir would fail with "all files matching the pattern are ignored".
+      '-not',
+      '-path',
+      '*/native/selectable-rich-text/*',
     ],
     { cwd: repoRoot, encoding: 'utf8' }
   );
