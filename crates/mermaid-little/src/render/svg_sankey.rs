@@ -87,7 +87,7 @@ pub fn render(
             y = js_num(y0),
             h = js_num(node.y1 - node.y0),
             w = js_num(node.x1 - node.x0),
-            color = &l.node_colors[i],
+            color = l.node_colors[i],
         ));
     }
     out.push_str("</g>");
@@ -163,8 +163,8 @@ pub fn render(
                 uid = uid,
                 x1 = js_num(x0),
                 x2 = js_num(x1),
-                c1 = &l.node_colors[link.source],
-                c2 = &l.node_colors[link.target],
+                c1 = l.node_colors[link.source],
+                c2 = l.node_colors[link.target],
             ));
         }
         let path = sankey_link_horizontal(x0, link.y0, x1, link.y1);
@@ -251,7 +251,7 @@ fn compute_bbox(d: &SankeyDiagram, l: &SankeyLayout) -> (f64, f64, f64, f64) {
             let rounded = (node.value * 100.0).round() / 100.0;
             format!(
                 "{id}\n{p}{v}{s}",
-                id = &d.nodes[i],
+                id = d.nodes[i],
                 p = d.config.prefix,
                 v = js_num(rounded),
                 s = d.config.suffix
