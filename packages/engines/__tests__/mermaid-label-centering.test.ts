@@ -48,9 +48,17 @@ mock.module('../src/host-bridge.js', () => ({
   installHostMetricsBridge: () => {},
 }));
 
+// Both entries are tracked so the wiring tests below can assert which wasm
+// entry the engines layer routed through. The same rich RAW_SVG satisfies
+// the #40 content assertions (the post-processing is independent of which
+// entry produced the SVG).
+const convertFn = mock(() => RAW_SVG);
+const convertWithOptionsFn = mock((_mmd: string, _id: string, _flag: boolean) => RAW_SVG);
+
 mock.module('@actrium/mermaid-little-web', () => ({
   __esModule: true,
-  convert: () => RAW_SVG,
+  convert: convertFn,
+  convert_with_options: convertWithOptionsFn,
 }));
 
 const { renderMermaidSvg } = await import('../src/mermaid/index.ts');
@@ -68,9 +76,7 @@ describe('mermaid label centering (#40)', () => {
 
     // The background rect must straddle x=0 (x = -width/2) so it shares
     // the text's centre line. width=88 → x=-44.
-    const rectX = out.match(
-      /<rect class="background"[^>]* x="([^"]+)"/
-    )?.[1];
+    const rectX = out.match(/<rect class="background"[^>]* x="([^"]+)"/)?.[1];
     expect(rectX).toBe('-44');
   });
 
@@ -89,5 +95,33 @@ describe('mermaid label centering (#40)', () => {
     expect(out).toContain('<foreignObject overflow="visible"');
     // <p> default margin collapses (would otherwise re-introduce an offset).
     expect(out).toContain('margin:0');
+  });
+});
+
+describe('mermaid edge-label decluster wiring (#126 item 3)', () => {
+  it('routes through convert_with_options when edgeLabelDecluster is set', async () => {
+    const code = 'flowchart LR\n  A -->|label| B';
+    await renderMermaidSvg(code, { edgeLabelDecluster: true });
+
+    expect(convertWithOptionsFn.mock.calls.at(-1)).toEqual([code, 'mermaid-1', true]);
+  });
+
+  it('does not call the byte-exact convert when decluster is on', async () => {
+    const before = convertFn.mock.calls.length;
+    await renderMermaidSvg('flowchart LR\n  A --> B', { edgeLabelDecluster: true });
+    expect(convertFn.mock.calls.length).toBe(before);
+  });
+
+  it('keeps the default path on convert(code) without the option', async () => {
+    const code = 'flowchart LR\n  A --> B';
+    await renderMermaidSvg(code);
+
+    expect(convertFn.mock.calls.at(-1)).toEqual([code]);
+  });
+
+  it('does not call convert_with_options on the default path', async () => {
+    const before = convertWithOptionsFn.mock.calls.length;
+    await renderMermaidSvg('flowchart LR\n  A --> B');
+    expect(convertWithOptionsFn.mock.calls.length).toBe(before);
   });
 });

@@ -8,4 +8,9 @@
 // actual wasm-pack output.
 export function convert(mmd: string): string;
 export function convert_with_id(mmd: string, id: string): string;
+export function convert_with_options(
+  mmd: string,
+  id: string,
+  edge_label_decluster: boolean
+): string;
 export function version(): string;

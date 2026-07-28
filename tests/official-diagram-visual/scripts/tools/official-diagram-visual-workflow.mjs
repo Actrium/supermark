@@ -67,6 +67,7 @@ const viewport = parseViewportEnv(
   process.env.CI === 'true' ? { width: 1280, height: 900 } : { width: 2048, height: 1096 }
 );
 const deviceScaleFactor = parseNumberEnv('PLAYWRIGHT_DEVICE_SCALE_FACTOR', 1);
+const previewWidth = parseNumberEnv('SUPRAMARK_PREVIEW_WIDTH', 540);
 
 const featureByLanguage = new Map([
   ['mermaid', 'mermaid'],
@@ -101,8 +102,8 @@ if (runnableCases.length === 0) {
 }
 
 const launchOptions = existsSync(chromePath)
-  ? { executablePath: chromePath, headless: playwrightHeadless }
-  : { headless: playwrightHeadless };
+  ? { executablePath: chromePath, headless: playwrightHeadless, args: ['--start-maximized'] }
+  : { headless: playwrightHeadless, args: ['--start-maximized'] };
 const browser = await chromium.launch(launchOptions);
 const runEnvironment = {
   playwright: {
@@ -113,6 +114,7 @@ const runEnvironment = {
     browserVersion: browser.version(),
   },
   targetBaseUrl,
+  previewWidth,
 };
 
 const reports = [];
@@ -121,9 +123,7 @@ try {
   const initialFeature = runnableCases
     .map(testCase => featureByLanguage.get(testCase.language))
     .find(Boolean);
-  const initialUrl = initialFeature
-    ? `${targetBaseUrl}?feature=${encodeURIComponent(initialFeature)}`
-    : targetBaseUrl;
+  const initialUrl = buildInitialUrl(initialFeature);
   await page.goto(initialUrl, { waitUntil: 'networkidle', timeout: 90000 });
   for (const testCase of runnableCases) {
     console.log(`Running ${testCase.id}`);
@@ -171,6 +171,7 @@ const summary = {
     perceptualDistanceRatio: r.visual?.perceptual?.distanceRatio ?? null,
     geometryAspectRatioDelta: r.geometry?.aspectRatioDelta ?? null,
     geometryAspectRatioMismatch: r.geometry?.aspectRatioMismatch ?? null,
+    captureMethod: r.actual?.captureMethod ?? null,
     expectedSize: r.visual?.expectedSize ?? null,
     actualSize: r.visual?.actualSize ?? null,
     sizeDelta: r.visual?.sizeDelta ?? null,
@@ -227,6 +228,10 @@ function parseNumberEnv(name, fallback) {
   if (!raw) return fallback;
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function parseViewportEnv(name, fallback) {
@@ -318,32 +323,38 @@ async function runCase(page, browser, testCase) {
   page.on('pageerror', onPageError);
 
   try {
-    const url = `${targetBaseUrl}?feature=${encodeURIComponent(feature)}`;
-    let selectedFeature;
-    try {
-      selectedFeature = await selectFeature(page, feature);
-    } catch (error) {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
-      selectedFeature = await selectFeature(page, feature);
-    }
-    await page.waitForTimeout(200);
-    const selectedExample = await selectExampleType(page, testCase.caseType);
-    const beforeRenderHtml = await page
+    const url = buildPreviewUrl(feature);
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
+    const preview = page;
+    const selectedFeature = await selectFeature(preview, feature);
+    await delay(200);
+    const selectedExample = await selectExampleType(preview, testCase.caseType);
+    const selectedPreviewWidth = await setPreviewWidth(preview, previewWidth);
+    const beforeRenderHtml = await preview
       .locator('.feature-preview-render-content')
       .first()
       .evaluate(element => element.innerHTML)
       .catch(() => '');
-    const editor = page.locator('textarea').first();
+    const editor = preview.locator('textarea').first();
     await editor.waitFor({ timeout: 30000 });
     await editor.fill(testCase.markdown);
-    await waitForRenderRefresh(page, beforeRenderHtml);
-    await waitForRender(page);
+    await waitForRenderRefresh(preview, beforeRenderHtml);
+    await waitForRender(preview);
 
-    const probe = await page.evaluate(() => {
+    const probe = await preview.evaluate(() => {
       const content = document.querySelector('.feature-preview-render-content');
       const diagram = content?.querySelector('[data-supramark-diagram]');
       const svg = diagram?.querySelector('svg') ?? content?.querySelector('svg');
       const canvas = diagram?.querySelector('canvas') ?? content?.querySelector('canvas');
+      const canvasDataUrl = canvas
+        ? (() => {
+            try {
+              return canvas.toDataURL('image/png');
+            } catch {
+              return '';
+            }
+          })()
+        : '';
       const errors = [...document.querySelectorAll('.feature-preview-render-content, body')]
         .map(el => el.textContent || '')
         .join('\n')
@@ -352,6 +363,7 @@ async function runCase(page, browser, testCase) {
       return {
         html: diagram?.outerHTML ?? svg?.outerHTML ?? canvas?.outerHTML ?? '',
         svg: svg?.outerHTML ?? '',
+        canvasDataUrl,
         text: content?.textContent ?? '',
         rect: rect
           ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, left: rect.left }
@@ -364,6 +376,7 @@ async function runCase(page, browser, testCase) {
 
     const actualSvgPath = resolve(outDir, 'actual', `${testCase.id}.svg`);
     const actualPngPath = resolve(outDir, 'actual', `${testCase.id}.png`);
+    const actualPreviewPath = resolve(outDir, 'actual', `${testCase.id}.preview.png`);
     const actualErrorScreenshotPath = resolve(outDir, 'actual', `${testCase.id}.error.png`);
     const expectedPngPath = resolve(outDir, 'expected', `${testCase.id}.png`);
 
@@ -376,7 +389,7 @@ async function runCase(page, browser, testCase) {
     const hasRenderableOutput = Boolean(probe.hasSvg || probe.hasCanvas);
 
     if (errors.length > 0 || !hasRenderableOutput) {
-      const errorLocator = page.locator('.feature-preview-render-content').first();
+      const errorLocator = preview.locator('.feature-preview-render-content').first();
       if (await errorLocator.count()) {
         await errorLocator.screenshot({ path: actualErrorScreenshotPath });
       }
@@ -389,6 +402,7 @@ async function runCase(page, browser, testCase) {
         feature,
         selectedFeature,
         selectedExample,
+        selectedPreviewWidth,
         url,
         runEnvironment,
         status: 'fail',
@@ -413,16 +427,8 @@ async function runCase(page, browser, testCase) {
       };
     }
 
-    const didScreenshot = await screenshotFirstAvailable(page, [
-      '.feature-preview-render-content [data-supramark-diagram] svg',
-      '.feature-preview-render-content svg',
-      '.feature-preview-render-content [data-supramark-diagram] canvas',
-      '.feature-preview-render-content canvas',
-      '.feature-preview-render-content [data-supramark-diagram]',
-    ], actualPngPath);
-    if (!didScreenshot && probe.svg) {
-      await screenshotSvg(browser, probe.svg, actualPngPath);
-    }
+    const actualCapture = await captureRenderedOutput(preview, browser, probe, actualPngPath);
+    await captureVisiblePreview(preview, actualPreviewPath);
 
     await rasterizeExpectedFile(browser, testCase.imagePath, expectedPngPath);
 
@@ -440,6 +446,7 @@ async function runCase(page, browser, testCase) {
       feature,
       selectedFeature,
       selectedExample,
+      selectedPreviewWidth,
       url,
       runEnvironment,
       status,
@@ -454,6 +461,8 @@ async function runCase(page, browser, testCase) {
         svgPath: probe.svg ? relative(workspaceRoot, actualSvgPath) : null,
         pngPath: existsSync(actualPngPath) ? relative(workspaceRoot, actualPngPath) : null,
         screenshotPath: existsSync(actualPngPath) ? relative(workspaceRoot, actualPngPath) : null,
+        previewPath: existsSync(actualPreviewPath) ? relative(workspaceRoot, actualPreviewPath) : null,
+        captureMethod: actualCapture.method,
       },
       semantic,
       geometry,
@@ -479,6 +488,16 @@ async function runCase(page, browser, testCase) {
     page.off('console', onConsole);
     page.off('pageerror', onPageError);
   }
+}
+
+function buildInitialUrl(feature) {
+  return feature ? buildPreviewUrl(feature) : targetBaseUrl;
+}
+
+function buildPreviewUrl(feature) {
+  const url = new URL(targetBaseUrl);
+  url.searchParams.set('feature', feature);
+  return url.toString();
 }
 
 function caseSourceFields(testCase) {
@@ -512,6 +531,25 @@ async function selectFeature(page, feature) {
     { timeout: 30000 }
   );
   return featureSelect.locator('option:checked').textContent();
+}
+
+async function setPreviewWidth(page, width) {
+  const range = page.locator('input[type="range"]').first();
+  if (!(await range.count())) return null;
+  const target = String(Math.round(width));
+  await range.evaluate((input, value) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, target);
+  await page.waitForFunction(
+    expected => document.querySelector('input[type="range"]')?.value === String(expected),
+    target,
+    { timeout: 30000 }
+  ).catch(() => {});
+  await page.waitForTimeout(200);
+  return Number(await range.inputValue());
 }
 
 async function selectExampleType(page, caseType) {
@@ -628,10 +666,60 @@ async function screenshotSvg(browser, svg, pngPath) {
   }
 }
 
+async function captureVisiblePreview(page, pngPath) {
+  await screenshotFirstAvailable(page, [
+    '.feature-preview-render',
+    '.feature-preview-render-shell',
+    '.feature-preview-render-content',
+  ], pngPath);
+}
+
+async function captureRenderedOutput(page, browser, probe, pngPath) {
+  const didScreenshot = await screenshotFirstAvailable(page, [
+    '.feature-preview-render-content [data-supramark-diagram]',
+    '.feature-preview-render-content [data-supramark-diagram] svg',
+    '.feature-preview-render-content svg',
+    '.feature-preview-render-content [data-supramark-diagram] canvas',
+    '.feature-preview-render-content canvas',
+  ], pngPath);
+  if (didScreenshot) return { method: 'dom-screenshot' };
+
+  if (isPngDataUrl(probe?.canvasDataUrl)) {
+    await writePngDataUrl(probe.canvasDataUrl, pngPath);
+    return { method: 'canvas-data-url' };
+  }
+
+  if (probe?.svg) {
+    await screenshotSvg(browser, probe.svg, pngPath);
+    return { method: 'svg-outerhtml' };
+  }
+
+  return { method: 'none' };
+}
+
+function actualCaptureMethod(probe) {
+  if (probe?.hasSvg || probe?.hasCanvas || probe?.svg) return 'dom-screenshot';
+  if (isPngDataUrl(probe?.canvasDataUrl)) return 'canvas-data-url';
+  return 'none';
+}
+
+function isPngDataUrl(value) {
+  return /^data:image\/png;base64,[A-Za-z0-9+/=]+$/i.test(String(value || ''));
+}
+
+async function writePngDataUrl(dataUrl, pngPath) {
+  const base64 = String(dataUrl || '').match(/^data:image\/png;base64,(.+)$/i)?.[1];
+  if (!base64) throw new Error('Canvas output is not a PNG data URL');
+  await writeFile(pngPath, Buffer.from(base64, 'base64'));
+}
 async function screenshotFirstAvailable(page, selectors, pngPath) {
   for (const selector of selectors) {
     const locator = page.locator(selector).first();
     if (await locator.count()) {
+      await locator.evaluate(async element => {
+        element.scrollIntoView({ block: 'center', inline: 'center' });
+        if (document.fonts?.ready) await document.fonts.ready;
+      });
       await locator.screenshot({ path: pngPath });
       return true;
     }
@@ -764,7 +852,7 @@ async function comparePng(expectedPath, actualPath, caseId) {
     content: sizeDeltaRatio(expectedBounds, actualBounds),
   };
   const pixelBand = visualBand(normalized.diffRatio);
-  const severeSizeMismatch = hasSevereSizePerceptualMismatch({ sizeDelta, perceptual });
+  const severeSizeMismatch = hasSevereSizePerceptualMismatch({ sizeDelta, perceptual, pixelBand });
   const band = visualBandWithEscalation({ pixelBand, perceptual, severeSizeMismatch });
 
   return {
@@ -983,26 +1071,53 @@ function visualBandWithEscalation({ pixelBand, perceptual, severeSizeMismatch })
   return pixelBand;
 }
 
-function hasSevereSizePerceptualMismatch({ sizeDelta, perceptual }) {
+function hasSevereSizePerceptualMismatch({ sizeDelta, perceptual, pixelBand }) {
   const contentAreaDelta = Math.abs(sizeDelta?.content?.area ?? 0);
   const originalAreaDelta = Math.abs(sizeDelta?.original?.area ?? 0);
   const severeAreaDelta = Math.max(contentAreaDelta, originalAreaDelta) >= severeSizeDeltaThreshold;
-  return severeAreaDelta && (perceptual?.distanceRatio ?? 0) > perceptualSimilarThreshold;
+  const scaleOnlySizeDelta = pixelBand === 'pass' && hasScaleOnlySizeDelta(sizeDelta);
+  return severeAreaDelta && !scaleOnlySizeDelta && (perceptual?.distanceRatio ?? 0) > perceptualSimilarThreshold;
+}
+
+function hasScaleOnlySizeDelta(sizeDelta) {
+  const content = sizeDelta?.content;
+  if (!content) return false;
+  const widthDelta = content.width ?? 0;
+  const heightDelta = content.height ?? 0;
+  const sameDirection = Math.sign(widthDelta) === Math.sign(heightDelta);
+  return sameDirection && Math.abs(widthDelta - heightDelta) <= 0.08;
 }
 
 function runSelfTests() {
   const tests = [
     {
-      name: 'downgrades severe size collapse with otherwise passing pixels to review',
+      name: 'keeps scale-only size collapse as pass when visual diff passes',
+      actual: visualBandWithEscalation({
+        pixelBand: 'pass',
+        perceptual: { distanceRatio: 0.16113 },
+        severeSizeMismatch: hasSevereSizePerceptualMismatch({
+          sizeDelta: {
+            original: { width: -0.7925, height: -0.7982, area: -0.9581 },
+            content: { width: -0.7925, height: -0.7975, area: -0.9580 },
+          },
+          perceptual: { distanceRatio: 0.16113 },
+          pixelBand: 'pass',
+        }),
+      }),
+      expected: 'pass',
+    },
+    {
+      name: 'downgrades severe non-proportional size collapse with otherwise passing pixels to review',
       actual: visualBandWithEscalation({
         pixelBand: 'pass',
         perceptual: { distanceRatio: 0.37891 },
         severeSizeMismatch: hasSevereSizePerceptualMismatch({
           sizeDelta: {
-            original: { area: -0.9763 },
-            content: { area: -0.9765 },
+            original: { width: -0.95, height: -0.20, area: -0.96 },
+            content: { width: -0.96, height: -0.18, area: -0.97 },
           },
           perceptual: { distanceRatio: 0.37891 },
+          pixelBand: 'pass',
         }),
       }),
       expected: 'review',
@@ -1018,6 +1133,7 @@ function runSelfTests() {
             content: { area: -0.1923 },
           },
           perceptual: { distanceRatio: 0.06738 },
+          pixelBand: 'pass',
         }),
       }),
       expected: 'pass',
@@ -1049,13 +1165,29 @@ function runSelfTests() {
       expected: 'a -> b',
     },
     {
+      name: 'captures rendered SVG from the visible DOM first',
+      actual: actualCaptureMethod({
+        svg: '<svg viewBox="0 0 10 10"></svg>',
+        canvasDataUrl: 'data:image/png;base64,AA==',
+      }),
+      expected: 'dom-screenshot',
+    },
+    {
+      name: 'captures actual canvas pixels before DOM screenshots',
+      actual: actualCaptureMethod({
+        svg: '',
+        canvasDataUrl: 'data:image/png;base64,AA==',
+      }),
+      expected: 'canvas-data-url',
+    },
+    {
       name: 'places reproduction code and official reference immediately after case info',
       actual: renderIssueBody({
         id: 'sample-case',
         language: 'd2',
         code: 'a -> b',
         selectedFeature: 'Diagram (D2)',
-        selectedExample: '带标签连线',
+        selectedExample: 'Labeled edges',
         docPath: 'cases/sample.md',
         url: 'https://example.test/preview/?feature=d2',
         runEnvironment: {
@@ -1082,6 +1214,32 @@ function runSelfTests() {
         .slice(0, 5)
         .join('>'),
       expected: '## 缺陷摘要>## 用例信息>## 复现代码>## 官方原渲染效果>## 运行环境',
+    },
+    {
+      name: 'marks review issue titles for manual review',
+      actual: renderIssueTitle({
+        language: 'd2',
+        selectedExample: 'Labeled edges',
+        status: 'review',
+        semantic: { missingTexts: [] },
+        geometry: { pass: true },
+        visual: { diffRatio: 0.2 },
+        errors: [],
+      }).startsWith('【需 Review】'),
+      expected: true,
+    },
+    {
+      name: 'describes missing text and layout mismatch in issue titles',
+      actual: renderIssueTitle({
+        language: 'plantuml',
+        selectedExample: '活动图示例',
+        status: 'fail',
+        semantic: { missingTexts: ['Client', 'Server'] },
+        geometry: { pass: false, aspectRatioMismatch: true },
+        visual: { diffRatio: 0.208 },
+        errors: [],
+      }),
+      expected: 'PlantUML 活动图：缺少 Client、Server 且布局比例异常',
     },
   ];
 
@@ -1129,9 +1287,10 @@ function findDiffBounds(diffPng) {
 }
 
 async function handleIssues(reports) {
-  const failedReports = reports.filter(report => report.status === 'fail');
+  const issueReports = reports.filter(report => report.status === 'fail' || report.status === 'review');
   const results = [];
   const submit = process.env.SUBMIT_GITHUB_ISSUES === '1';
+  const submitReviewIssues = process.env.SUBMIT_REVIEW_ISSUES === '1';
   const repo = process.env.ISSUE_REPO || process.env.GITHUB_REPOSITORY || 'Actrium/supramark';
   const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
   const labels = (process.env.ISSUE_LABELS || 'bug,automated-visual-regression')
@@ -1140,7 +1299,7 @@ async function handleIssues(reports) {
     .filter(Boolean);
 
   for (const report of reports) {
-    if (report.status === 'fail') continue;
+    if (report.status === 'fail' || report.status === 'review') continue;
     const staleIssuePath = resolve(outDir, 'issues', `${report.id}.md`);
     if (!existsSync(staleIssuePath)) continue;
     await writeFile(
@@ -1152,15 +1311,25 @@ async function handleIssues(reports) {
 
   await writeFile(
     resolve(outDir, 'issues', 'CURRENT_ISSUES.md'),
-    renderCurrentIssuesIndex(failedReports),
+    renderCurrentIssuesIndex(issueReports),
     'utf8'
   );
 
-  for (const report of failedReports) {
+  for (const report of issueReports) {
     const title = renderIssueTitle(report);
     const issuePath = resolve(outDir, 'issues', `${report.id}.md`);
     const localBody = renderIssueBody(report, repo, { issuePath });
     await writeFile(issuePath, `# ${title}\n\n${localBody}`, 'utf8');
+
+    if (report.status === 'review' && !submitReviewIssues) {
+      results.push({
+        id: report.id,
+        submitted: false,
+        reason: 'status is review and SUBMIT_REVIEW_ISSUES is not 1; issue body generated for manual review only.',
+        issueBodyPath: relative(workspaceRoot, issuePath),
+      });
+      continue;
+    }
 
     if (!submit) {
       results.push({
@@ -1215,28 +1384,28 @@ async function handleIssues(reports) {
   return results;
 }
 
-function renderCurrentIssuesIndex(failedReports) {
+function renderCurrentIssuesIndex(issueReports) {
   const lines = [
-    '# 当前运行缺陷列表',
+    '# 当前运行 Issue 文件列表',
     '',
-    `本文件由自动化脚本生成，只列出本轮运行 status 为 \`fail\` 的用例。`,
+    '本文件由自动化脚本生成，列出本轮运行 status 为 `fail` 或 `review` 的用例。`review` 默认仅用于人工复核；只有同时设置 `SUBMIT_GITHUB_ISSUES=1` 和 `SUBMIT_REVIEW_ISSUES=1` 才会自动提交 GitHub issue。',
     '',
   ];
 
-  if (failedReports.length === 0) {
-    lines.push('本轮没有自动判定失败的用例。');
+  if (issueReports.length === 0) {
+    lines.push('本轮没有自动判定失败或需要人工复核的用例。');
     return `${lines.join('\n')}\n`;
   }
 
-  for (const report of failedReports) {
+  for (const report of issueReports) {
+    const marker = report.status === 'review' ? '需 Review' : 'Fail';
     lines.push(
-      `- [${report.id}](./${report.id}.md)：${report.selectedFeature ?? '未记录'} / ${report.selectedExample ?? '未记录'}`
+      `- [${report.id}](./${report.id}.md)：${marker} / ${report.selectedFeature ?? '未记录'} / ${report.selectedExample ?? '未记录'}`
     );
   }
 
   return `${lines.join('\n')}\n`;
 }
-
 function renderNonCurrentIssueNote(report) {
   return `# 非当前缺陷：${report.id}
 
@@ -1270,11 +1439,12 @@ function renderCurrentRunArtifacts(reports, summary) {
     addArtifact(files, report.actual?.svgPath);
     addArtifact(files, report.actual?.pngPath);
     addArtifact(files, report.actual?.screenshotPath);
+    addArtifact(files, report.actual?.previewPath);
     addArtifact(files, report.visual?.diffPath);
     addArtifact(files, report.visual?.raw?.diffPath);
     addArtifact(files, report.visual?.normalized?.expectedPath);
     addArtifact(files, report.visual?.normalized?.actualPath);
-    if (report.status === 'fail') {
+    if (report.status === 'fail' || report.status === 'review') {
       addArtifact(files, `artifacts/official-diagram-visual-workflow/issues/${report.id}.md`);
     }
   }
@@ -1397,6 +1567,7 @@ function renderIssueBodyLegacy(report, repo, options = {}) {
     ? `${(report.visual.failThreshold * 100).toFixed(3)}%`
     : `${(visualFailThreshold * 100).toFixed(3)}%`;
   const visualBandText = report.visual?.band ?? '无';
+  const captureMethodText = report.actual?.captureMethod ?? '无';
   const severeSizeMismatchText = report.visual?.severeSizeMismatch ? '是' : '否';
   const diffBounds = report.visual?.diffBounds
     ? `x=${report.visual.diffBounds.x}, y=${report.visual.diffBounds.y}, width=${report.visual.diffBounds.width}, height=${report.visual.diffBounds.height}`
@@ -1427,7 +1598,7 @@ function renderIssueBodyLegacy(report, repo, options = {}) {
   const localOfficialReference = options.github
     ? report.expected?.sourceSvg || ''
     : localExpected || report.expected?.sourceSvg || '';
-  const localActual = report.actual?.pngPath || report.actual?.screenshotPath || '';
+  const localActual = report.actual?.previewPath || report.actual?.pngPath || report.actual?.screenshotPath || '';
   const localDiff = report.visual?.diffPath || '';
   const localRawDiff = report.visual?.raw?.diffPath || '';
   const localNormalizedExpected = report.visual?.normalized?.expectedPath || '';
@@ -1480,6 +1651,7 @@ ${report.visual ? '' : '- 视觉对比：跳过。页面未成功渲染出有效
 - 原始尺寸直接 diff：${rawDiffRatio}
 - 感知哈希距离：${perceptualDistance}
 - 视觉分级：${visualBandText}
+- Actual 生成方式：${captureMethodText}
 - 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核；若尺寸面积差异 ≥ ${formatRatio(severeSizeDeltaThreshold)} 且感知哈希距离 > ${formatRatio(perceptualSimilarThreshold)}，标记为人工复核；若像素差异本身已达到不通过则仍为不通过
 - 严重尺寸+感知异常：${severeSizeMismatchText}
 - 差异区域 bounding box：${diffBounds}
@@ -1541,28 +1713,37 @@ Supramark 渲染结果应与官方渲染效果在结构、文本、布局、连�
 
 function renderIssueTitle(report) {
   const diagram = issueDiagramLabel(report);
+  const reviewPrefix = report.status === 'review' ? '【需 Review】' : '';
   const errors = report.errors ?? [];
+  const missingTexts = report.semantic?.missingTexts ?? [];
+  const missingTextTitle = formatIssueTitleTextList(missingTexts);
+  let title;
 
   if (errors.length > 0 || report.semantic?.hasError) {
-    return `${diagram}：渲染报错`;
-  }
-  if (!report.visual) {
-    return `${diagram}：未生成可对比图像`;
-  }
-  if (report.semantic?.missingTexts?.length) {
-    return `${diagram}：缺少关键文本`;
-  }
-  if (!report.geometry?.pass) {
-    if (report.geometry?.aspectRatioMismatch) {
-      return `${diagram}：图形布局比例异常`;
-    }
-    return `${diagram}：图形尺寸异常`;
-  }
-  if (typeof report.visual.diffRatio === 'number') {
-    return `${diagram}：视觉差异 ${(report.visual.diffRatio * 100).toFixed(2)}%`;
+    title = `${diagram}：渲染报错`;
+  } else if (!report.visual) {
+    title = `${diagram}：未生成可对比图像`;
+  } else if (missingTexts.length && report.geometry?.aspectRatioMismatch) {
+    title = `${diagram}：缺少 ${missingTextTitle} 且布局比例异常`;
+  } else if (missingTexts.length) {
+    title = `${diagram}：缺少 ${missingTextTitle}`;
+  } else if (!report.geometry?.pass) {
+    title = report.geometry?.aspectRatioMismatch
+      ? `${diagram}：图形布局比例异常`
+      : `${diagram}：图形尺寸异常`;
+  } else if (typeof report.visual.diffRatio === 'number') {
+    title = `${diagram}：视觉差异 ${(report.visual.diffRatio * 100).toFixed(2)}%`;
+  } else {
+    title = `${diagram}：渲染结果不一致`;
   }
 
-  return `${diagram}：渲染结果不一致`;
+  return `${reviewPrefix}${title}`;
+}
+
+function formatIssueTitleTextList(texts) {
+  const visibleTexts = texts.filter(Boolean).slice(0, 3);
+  const suffix = texts.length > visibleTexts.length ? ` 等 ${texts.length} 项文本` : '';
+  return `${visibleTexts.join('、')}${suffix}`;
 }
 
 function renderIssueBody(report, repo, options = {}) {
@@ -1586,6 +1767,7 @@ function renderIssueBody(report, repo, options = {}) {
     ? `${(report.visual.failThreshold * 100).toFixed(3)}%`
     : `${(visualFailThreshold * 100).toFixed(3)}%`;
   const visualBandText = report.visual?.band ?? '无';
+  const captureMethodText = report.actual?.captureMethod ?? '无';
   const severeSizeMismatchText = report.visual?.severeSizeMismatch ? '是' : '否';
   const diffBounds = report.visual?.diffBounds
     ? `x=${report.visual.diffBounds.x}, y=${report.visual.diffBounds.y}, width=${report.visual.diffBounds.width}, height=${report.visual.diffBounds.height}`
@@ -1616,7 +1798,7 @@ function renderIssueBody(report, repo, options = {}) {
   const localOfficialReference = options.github
     ? report.expected?.sourceSvg || ''
     : localExpected || report.expected?.sourceSvg || '';
-  const localActual = report.actual?.pngPath || report.actual?.screenshotPath || '';
+  const localActual = report.actual?.previewPath || report.actual?.pngPath || report.actual?.screenshotPath || '';
   const localDiff = report.visual?.diffPath || '';
   const localRawDiff = report.visual?.raw?.diffPath || '';
   const localNormalizedExpected = report.visual?.normalized?.expectedPath || '';
@@ -1647,10 +1829,13 @@ function renderIssueBody(report, repo, options = {}) {
   const visualSkipNote = report.visual
     ? ''
     : '- 视觉对比：跳过。页面未成功渲染出有效图表，继续做像素对比没有意义。\n';
+  const issueVerdictText = report.status === 'review'
+    ? '需人工复核'
+    : '不通过';
 
   return `## 缺陷摘要
 
-自动化图表渲染检查发现 \`${report.id}\`${report.visual ? ' 渲染结果与官方参考结果不一致' : ' 页面未成功渲染出有效图表'}，判定为 **不通过**。
+自动化图表渲染检查发现 \`${report.id}\`${report.visual ? ' 渲染结果与官方参考结果不一致' : ' 页面未成功渲染出有效图表'}，判定为 **${issueVerdictText}**。
 
 ## 用例信息
 
@@ -1685,6 +1870,7 @@ ${visualSkipNote}- 视觉差异比例：${diffRatio}
 - 原始尺寸直接 diff：${rawDiffRatio}
 - 感知哈希距离：${perceptualDistance}
 - 视觉分级：${visualBandText}
+- Actual 生成方式：${captureMethodText}
 - 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核；若尺寸面积差异 ≥ ${formatRatio(severeSizeDeltaThreshold)} 且感知哈希距离 > ${formatRatio(perceptualSimilarThreshold)}，标记为人工复核；若像素差异本身已达到不通过则仍为不通过
 - 严重尺寸+感知异常：${severeSizeMismatchText}
 - 差异区域 bounding box：${diffBounds}
@@ -1779,7 +1965,7 @@ function classify({ semantic, geometry, visual, errors }) {
 function renderHtmlReport(reports, summary) {
   const rows = reports.map(report => {
     const expected = toWebPath(report.expected?.pngPath);
-    const actual = toWebPath(report.actual?.pngPath || report.actual?.screenshotPath);
+    const actual = toWebPath(report.actual?.previewPath || report.actual?.pngPath || report.actual?.screenshotPath);
     const diff = toWebPath(report.visual?.diffPath);
     const rawDiff = toWebPath(report.visual?.raw?.diffPath);
     const normalizedExpected = toWebPath(report.visual?.normalized?.expectedPath);

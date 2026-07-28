@@ -69,6 +69,14 @@ export { parse, expandOpaqueContainers } from './plugin.js';
 export { presetDefault, presetGFM } from './plugin.js';
 
 /**
+ * 缓存工具
+ *
+ * RN renderer 通过 Metro 的 react-native 条件加载本入口，因此这里必须与
+ * 默认入口保持缓存公共 API 一致。
+ */
+export { LRUCache, createCacheKey, simpleHash, type LRUCacheOptions } from './cache.js';
+
+/**
  * Feature 相关工具函数
  */
 export {

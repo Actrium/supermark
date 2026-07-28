@@ -22,7 +22,7 @@ impl NodeValue for HtmlBlock {
     ) -> Option<Vec<crate::supramark::SupramarkNode>> {
         Some(vec![crate::supramark::SupramarkNode::Raw {
             format: "html".to_owned(),
-            value: self.content.trim_end_matches('\n').to_owned(),
+            value: self.content.clone(),
             block: true,
             position: ctx.position(node),
         }])
@@ -133,6 +133,11 @@ impl BlockRule for HtmlBlockScanner {
         if !sequence.can_terminate_paragraph {
             return None;
         }
+        // `get_sequence` only matches type 1–6 start conditions. Type 1 names
+        // (script/pre/style/textarea) are absent from the type 6 name list, so
+        // a closing tag like `</pre>` matches no sequence and never interrupts
+        // a paragraph — it stays inline, matching cmark. A type 6 closing tag
+        // (`</div>`, `</td>`, …) matches and interrupts normally.
         Some(())
     }
 

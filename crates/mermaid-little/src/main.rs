@@ -8,6 +8,7 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let mut input_path: Option<PathBuf> = None;
     let mut output_path: Option<PathBuf> = None;
+    let mut edge_label_decluster = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -18,8 +19,13 @@ fn main() -> ExitCode {
                 };
                 output_path = Some(PathBuf::from(v));
             }
+            "--edge-label-decluster" => {
+                edge_label_decluster = true;
+            }
             "-h" | "--help" => {
-                println!("usage: mermaid-little [input.mmd] [-o output.svg]");
+                println!(
+                    "usage: mermaid-little [input.mmd] [-o output.svg] [--edge-label-decluster]"
+                );
                 return ExitCode::SUCCESS;
             }
             other if !other.starts_with('-') => {
@@ -50,11 +56,25 @@ fn main() -> ExitCode {
         }
     };
 
-    let svg = match mermaid_little::convert(&source) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return ExitCode::FAILURE;
+    let svg = if edge_label_decluster {
+        match mermaid_little::convert_with_options(
+            &source,
+            "mermaid-1",
+            &mermaid_little::RenderOptions::default().with_edge_label_decluster(true),
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        match mermaid_little::convert(&source) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
         }
     };
 

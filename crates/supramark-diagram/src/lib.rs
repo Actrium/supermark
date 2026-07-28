@@ -11,7 +11,7 @@ mod chart;
 
 // Re-export core's trait and types so downstream depends on this crate alone.
 pub use supramark_diagram_core::{
-    DiagramEngine, DiagramError, DiagramRegistry, EngineAst, RenderOutput,
+    DiagramEngine, DiagramError, DiagramRegistry, EngineAst, EngineRenderOptions, RenderOutput,
 };
 
 use std::sync::Arc;

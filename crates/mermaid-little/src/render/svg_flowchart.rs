@@ -14,10 +14,14 @@
 //!   follow-up iterations.
 
 use crate::error::Result;
+use crate::layout::edge_label_decluster::{
+    decluster, decluster_with_obstacles, DeclusterConfig, LabelRect,
+};
 use crate::layout::flowchart::FlowchartLayout;
 use crate::layout::unified::types::Point;
 use crate::layout::unified::{Cluster, Edge as UEdge, Node as UNode};
 use crate::model::flowchart::FlowchartDiagram;
+use crate::options::RenderOptions;
 use crate::render::edges;
 use crate::render::markers;
 use crate::render::shapes;
@@ -1009,6 +1013,7 @@ fn compute_viewbox_browser(
     l: &FlowchartLayout,
     padding: f64,
     title: Option<&str>,
+    adjustments: &EdgeLabelAdjustments,
 ) -> (f64, f64, f64, f64, f64) {
     use crate::render::foreign_object::{
         measure_html_markup_label, replace_fa_icons, HtmlLabelFont,
@@ -1158,9 +1163,9 @@ fn compute_viewbox_browser(
         let processed = replace_fa_icons(label_text);
         let (lw, lh) = measure_html_markup_label(&processed, &font, 200.0, true);
         let lw = lw + FLOWCHART_EDGE_LABEL_PADDING_X * 2.0;
-        let dagre_lx = e.label_x.unwrap_or(0.0);
-        let dagre_ly = e.label_y.unwrap_or(0.0);
-        let (lx, ly) = recompute_edge_label_position(e, l).unwrap_or((dagre_lx, dagre_ly));
+        let (lx, ly) = adjustments
+            .get(&e.id)
+            .unwrap_or_else(|| base_edge_label_pos(e, l));
         bounds.expand_box(lx - lw / 2.0, ly - lh / 2.0, lw, lh);
     }
 
@@ -1196,7 +1201,23 @@ pub fn render(
     theme: &ThemeVariables,
     id: &str,
 ) -> Result<String> {
+    render_with_options(d, l, theme, id, &RenderOptions::byte_exact())
+}
+
+/// Render with non-byte-exact readability tweaks applied (see [`RenderOptions`]).
+pub fn render_with_options(
+    d: &FlowchartDiagram,
+    l: &FlowchartLayout,
+    theme: &ThemeVariables,
+    id: &str,
+    opts: &RenderOptions,
+) -> Result<String> {
     let padding = l.diagram_padding;
+
+    // Opt-in edge-label collision avoidance (#93): precompute nudged centres
+    // before any label is emitted. Empty when the option is off, so the
+    // byte-exact path is unchanged.
+    let adjustments = build_edge_label_adjustments(l, opts);
 
     // Build cluster bounds map for cluster-endpoint edge clipping.
     // Keys are the original cluster IDs; values are the AABB bounds.
@@ -1341,7 +1362,13 @@ pub fn render(
         if is_cyclic_segment_from_anchor_rewrite(e) {
             continue;
         }
-        inner.push_str(&render_edge_label(e, html_labels, l));
+        inner.push_str(&render_edge_label(
+            e,
+            html_labels,
+            l,
+            &adjustments,
+            opts.edge_label_decluster,
+        ));
     }
     inner.push_str(unified_shell::close_layer());
 
@@ -1395,6 +1422,8 @@ pub fn render(
                     theme,
                     id,
                     html_labels,
+                    &adjustments,
+                    opts.edge_label_decluster,
                 ));
             }
         } else {
@@ -1497,7 +1526,7 @@ pub fn render(
     // bounds including shape geometry, edge curves, and label
     // positions. We compute from layout nodes and edges.
     let (vb_x, vb_y, vb_w, vb_h, content_center_x) =
-        compute_viewbox_browser(l, padding, d.meta.title.as_deref());
+        compute_viewbox_browser(l, padding, d.meta.title.as_deref(), &adjustments);
 
     // ── Assemble final SVG ─────────────────────────────────────────
     let acc_title = d.meta.acc_title.as_deref();
@@ -2129,6 +2158,106 @@ fn edge_is_inside_isolated(src: Option<&str>, dst: Option<&str>, l: &FlowchartLa
     }
 }
 
+/// The `translate(tx, ty)` an isolated cluster's inner root group carries.
+///
+/// Single source of truth: `render_isolated_cluster_inner_root` emits exactly
+/// this, and the edge-label decluster pass uses it to lift cluster-local
+/// coordinates into screen space. If the two ever disagreed, the pass would
+/// resolve collisions that do not exist on screen.
+fn isolated_cluster_translate(cnode: &UNode) -> (f64, f64) {
+    // Prefer the pre-computed outer translate from the layout engine.
+    let tx = cnode
+        .extra
+        .get("outer_tx")
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or_else(|| {
+            // Fallback: classic formula using inner dagre coords.
+            let cx = cnode.x.unwrap_or(0.0);
+            let w = cnode.width.unwrap_or(0.0);
+            let padding = cnode.padding.unwrap_or(8.0);
+            cx - padding - w / 2.0
+        });
+    let ty = cnode
+        .extra
+        .get("outer_ty")
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or_else(|| {
+            let cy = cnode.y.unwrap_or(0.0);
+            let h = cnode.height.unwrap_or(0.0);
+            let padding = cnode.padding.unwrap_or(8.0);
+            cy - h / 2.0 - padding
+        });
+    (tx, ty)
+}
+
+/// Isolated-cluster ancestors of `node_id`, outermost first.
+///
+/// Each one emits a nested `<g transform="translate(...)">`, so the screen
+/// position of anything drawn inside is its local position plus the sum of the
+/// chain's translates.
+fn isolated_ancestor_chain(node_id: &str, l: &FlowchartLayout) -> Vec<String> {
+    let mut chain: Vec<String> = Vec::new();
+    let mut current = node_id;
+    // Bounded by the node count so a malformed parent cycle cannot hang render.
+    for _ in 0..l.nodes.len() {
+        let Some(n) = l.nodes.iter().find(|n| n.id == current) else {
+            break;
+        };
+        let Some(parent) = n.parent_id.as_deref() else {
+            break;
+        };
+        if l.isolated_cluster_ids.contains(parent) {
+            chain.push(parent.to_string());
+        }
+        current = parent;
+    }
+    chain.reverse();
+    chain
+}
+
+/// Sum of the translates of a chain of isolated clusters.
+fn chain_translate(chain: &[String], l: &FlowchartLayout) -> (f64, f64) {
+    chain.iter().fold((0.0, 0.0), |(tx, ty), id| {
+        match l.nodes.iter().find(|n| &n.id == id) {
+            Some(cnode) => {
+                let (dx, dy) = isolated_cluster_translate(cnode);
+                (tx + dx, ty + dy)
+            }
+            None => (tx, ty),
+        }
+    })
+}
+
+/// Screen-space offset of a node: it is drawn inside its innermost isolated
+/// cluster's inner root, so every isolated ancestor's translate applies.
+fn node_frame_offset(node_id: &str, l: &FlowchartLayout) -> (f64, f64) {
+    chain_translate(&isolated_ancestor_chain(node_id, l), l)
+}
+
+/// Screen-space offset of an edge label.
+///
+/// An edge renders in the deepest isolated cluster containing *both* endpoints,
+/// i.e. the longest common prefix of the endpoints' ancestor chains. That
+/// matches both render sites: [`edge_is_inside_isolated`] sends an edge whose
+/// endpoints have different outermost isolated ancestors to the outer level
+/// (empty prefix), and `render_isolated_cluster_inner_root` skips an edge whose
+/// endpoint sits in a sub-isolated cluster so the recursion emits it deeper
+/// (longer prefix).
+fn edge_frame_offset(e: &UEdge, l: &FlowchartLayout) -> (f64, f64) {
+    let (Some(s), Some(d)) = (e.start.as_deref(), e.end.as_deref()) else {
+        return (0.0, 0.0);
+    };
+    let cs = isolated_ancestor_chain(s, l);
+    let cd = isolated_ancestor_chain(d, l);
+    let common: Vec<String> = cs
+        .iter()
+        .zip(cd.iter())
+        .take_while(|(a, b)| a == b)
+        .map(|(a, _)| a.clone())
+        .collect();
+    chain_translate(&common, l)
+}
+
 /// Return true if `node_id` is a descendant of `cluster_id` (transitively).
 fn is_descendant_of(node_id: &str, cluster_id: &str, l: &FlowchartLayout) -> bool {
     let mut current = node_id;
@@ -2274,6 +2403,7 @@ fn upstream_cluster_render_order(d: &FlowchartDiagram, l: &FlowchartLayout) -> V
 ///
 /// This function is recursive: isolated sub-clusters within `cnode` are
 /// themselves rendered as nested inner root groups.
+#[allow(clippy::too_many_arguments)]
 fn render_isolated_cluster_inner_root(
     cnode: &UNode,
     d: &FlowchartDiagram,
@@ -2281,29 +2411,10 @@ fn render_isolated_cluster_inner_root(
     theme: &ThemeVariables,
     svg_id: &str,
     html_labels: bool,
+    adjustments: &EdgeLabelAdjustments,
+    decluster: bool,
 ) -> String {
-    // Retrieve pre-computed outer translate from the layout engine.
-    let tx = cnode
-        .extra
-        .get("outer_tx")
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or_else(|| {
-            // Fallback: classic formula using inner dagre coords.
-            let cx = cnode.x.unwrap_or(0.0);
-            let w = cnode.width.unwrap_or(0.0);
-            let padding = cnode.padding.unwrap_or(8.0);
-            cx - padding - w / 2.0
-        });
-    let ty = cnode
-        .extra
-        .get("outer_ty")
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or_else(|| {
-            let cy = cnode.y.unwrap_or(0.0);
-            let h = cnode.height.unwrap_or(0.0);
-            let padding = cnode.padding.unwrap_or(8.0);
-            cy - h / 2.0 - padding
-        });
+    let (tx, ty) = isolated_cluster_translate(cnode);
 
     let mut out = String::new();
     out.push_str(&format!(
@@ -2462,7 +2573,13 @@ fn render_isolated_cluster_inner_root(
         if is_cyclic_segment_from_anchor_rewrite(e) {
             continue;
         }
-        out.push_str(&render_edge_label(e, html_labels, l));
+        out.push_str(&render_edge_label(
+            e,
+            html_labels,
+            l,
+            adjustments,
+            decluster,
+        ));
     }
     out.push_str(unified_shell::close_layer());
 
@@ -2517,6 +2634,8 @@ fn render_isolated_cluster_inner_root(
             theme,
             svg_id,
             html_labels,
+            adjustments,
+            decluster,
         ));
     }
 
@@ -3489,7 +3608,13 @@ fn render_edge_path(
     )
 }
 
-fn render_edge_label(e: &UEdge, html_labels: bool, l: &FlowchartLayout) -> String {
+fn render_edge_label(
+    e: &UEdge,
+    html_labels: bool,
+    l: &FlowchartLayout,
+    adjustments: &EdgeLabelAdjustments,
+    decluster: bool,
+) -> String {
     use crate::render::foreign_object::{
         markdown_label_to_html, measure_html_markup_label, render_edge_label as fo_edge,
         replace_fa_icons, string_label_to_html, HtmlLabelFont, LabelOpts,
@@ -3541,8 +3666,21 @@ fn render_edge_label(e: &UEdge, html_labels: bool, l: &FlowchartLayout) -> Strin
         let (w, h) = measure_html_markup_label(&processed, &HtmlLabelFont::default(), 200.0, true);
         (w, h, None)
     };
-    let dagre_lx = e.label_x.unwrap_or(0.0);
-    let dagre_ly = e.label_y.unwrap_or(0.0);
+    // Opt-in decluster: dagre reserved rank space for the CJK-floored label
+    // width (stored on the edge at layout time, see `build_edge`). Emit the
+    // foreignObject at that same width so the real glyphs fit inside the box
+    // and the centring transform (`translate(-w/2, …)`) centres the visible
+    // text. The shim under-measures CJK, so without this the box is too narrow
+    // and the text overflows to one side, making the label look off-centre.
+    let w = if decluster {
+        e.extra
+            .get("label_width")
+            .and_then(|s| s.parse::<f64>().ok())
+            .filter(|&lw| lw > w)
+            .unwrap_or(w)
+    } else {
+        w
+    };
     // Mirror upstream `positionEdgeLabel` (edges.js:253). When `paths.updatedPath`
     // is set (i.e. the rendered SVG path differs from the dagre point sequence,
     // typically because the edge crosses a cluster boundary via
@@ -3552,7 +3690,12 @@ fn render_edge_label(e: &UEdge, html_labels: bool, l: &FlowchartLayout) -> Strin
     // edges (via `orig_start` / `orig_end` referencing an `is_group` node)
     // and recomputing the label position with `cutPathAtIntersect` +
     // `traverseEdge` ported from upstream `edges.js`.
-    let (lx, ly) = recompute_edge_label_position(e, l).unwrap_or((dagre_lx, dagre_ly));
+    //
+    // When the opt-in decluster pass moved this label, prefer the adjusted
+    // centre; otherwise use the byte-exact base position above.
+    let (lx, ly) = adjustments
+        .get(&e.id)
+        .unwrap_or_else(|| base_edge_label_pos(e, l));
     // htmlLabels=false path — emit `<text>`/`<tspan>` instead of <foreignObject>.
     // Mirrors upstream `createText(...)` non-html branch (createText.ts:338+,
     // createFormattedText) plus `insertEdgeLabel` which moves the
@@ -4505,17 +4648,23 @@ fn cut_path_at_intersect_xywh(
 /// Returns the half-total-distance midpoint of the polyline. Returns `None`
 /// when the path collapses to a single point or degenerate length.
 fn traverse_edge_midpoint(pts: &[(f64, f64)]) -> Option<(f64, f64)> {
+    point_along_arc(pts, 0.5)
+}
+
+/// Point at arc-length fraction `t` along the polyline (0 = start, 1 = end,
+/// 0.5 = midpoint). Used by the opt-in decluster pass to slide a label along
+/// its own edge to a position that does not sit on a node or a sibling label.
+fn point_along_arc(pts: &[(f64, f64)], t: f64) -> Option<(f64, f64)> {
     if pts.len() < 2 {
         return None;
     }
-    // Total length.
     let mut total = 0.0_f64;
     for w in pts.windows(2) {
         let dx = w[1].0 - w[0].0;
         let dy = w[1].1 - w[0].1;
         total += (dx * dx + dy * dy).sqrt();
     }
-    let mut remaining = total / 2.0;
+    let mut remaining = total * t.clamp(0.0, 1.0);
     let mut prev: Option<(f64, f64)> = None;
     for &(px, py) in pts {
         if let Some((ppx, ppy)) = prev {
@@ -4564,35 +4713,48 @@ fn traverse_edge_midpoint(pts: &[(f64, f64)]) -> Option<(f64, f64)> {
 /// This is the `isLabelCoordinateInPath` check (utils.ts:289). When the basis
 /// curve interpolation moves the visual midpoint away from the dagre control
 /// point, the label is recomputed via `calcLabelPosition` on the polyline.
-fn recompute_edge_label_position(e: &UEdge, l: &FlowchartLayout) -> Option<(f64, f64)> {
+/// The edge polyline after the same cluster-boundary clipping
+/// [`recompute_edge_label_position`] applies (`orig_start` / `orig_end`
+/// re-clip). Factored out so the opt-in decluster pass can sample positions
+/// along the *same* path the byte-exact label centre is computed on, instead
+/// of the raw dagre points (which may extend into a cluster frame). Returns
+/// `None` when the edge has no usable points.
+fn processed_edge_points(e: &UEdge, l: &FlowchartLayout) -> Option<Vec<(f64, f64)>> {
     let pts_ref = e.points.as_ref()?;
     if pts_ref.len() < 2 {
         return None;
     }
     let mut pts: Vec<(f64, f64)> = pts_ref.iter().map(|p| (p.x, p.y)).collect();
-    let orig_start = e.extra.get("orig_start").map(|s| s.as_str());
-    let orig_end = e.extra.get("orig_end").map(|s| s.as_str());
     let cluster_bbox = |id: &str| -> Option<(f64, f64, f64, f64)> {
         let n = l.nodes.iter().find(|n| n.id == id && n.is_group)?;
-        let x = n.x?;
-        let y = n.y?;
-        let w = n.width?;
-        let h = n.height?;
-        Some((x, y, w, h))
+        Some((n.x?, n.y?, n.width?, n.height?))
     };
-    let pts_before = pts.clone();
-    if let Some(end_id) = orig_end {
+    if let Some(end_id) = e.extra.get("orig_end").map(|s| s.as_str()) {
         if let Some((nx, ny, nw, nh)) = cluster_bbox(end_id) {
             pts = cut_path_at_intersect_xywh(&pts, nx, ny, nw, nh);
         }
     }
-    if let Some(start_id) = orig_start {
+    if let Some(start_id) = e.extra.get("orig_start").map(|s| s.as_str()) {
         if let Some((nx, ny, nw, nh)) = cluster_bbox(start_id) {
             pts.reverse();
             pts = cut_path_at_intersect_xywh(&pts, nx, ny, nw, nh);
             pts.reverse();
         }
     }
+    if pts.len() < 2 {
+        None
+    } else {
+        Some(pts)
+    }
+}
+
+fn recompute_edge_label_position(e: &UEdge, l: &FlowchartLayout) -> Option<(f64, f64)> {
+    let pts_ref = e.points.as_ref()?;
+    if pts_ref.len() < 2 {
+        return None;
+    }
+    let pts_before: Vec<(f64, f64)> = pts_ref.iter().map(|p| (p.x, p.y)).collect();
+    let pts = processed_edge_points(e, l)?;
     let path_actually_changed = pts.len() != pts_before.len()
         || pts
             .iter()
@@ -4612,15 +4774,303 @@ fn recompute_edge_label_position(e: &UEdge, l: &FlowchartLayout) -> Option<(f64,
             return None;
         }
     }
-    if pts.len() < 2 {
-        return None;
-    }
     let (x, y) = traverse_edge_midpoint(&pts)?;
     if e.extra.contains_key("scope_parent") {
         Some((x, y))
     } else {
         Some((round_to_5(x), round_to_5(y)))
     }
+}
+
+/// The byte-exact edge-label centre for `e` — the same expression the
+/// upstream-mirroring render path uses: `recompute_edge_label_position`
+/// when it overrides the dagre midpoint, else the raw dagre label anchor.
+/// Factored out so the opt-in decluster pass and the render path agree on
+/// the base position a label is nudged *from*.
+fn base_edge_label_pos(e: &UEdge, l: &FlowchartLayout) -> (f64, f64) {
+    let dagre_lx = e.label_x.unwrap_or(0.0);
+    let dagre_ly = e.label_y.unwrap_or(0.0);
+    recompute_edge_label_position(e, l).unwrap_or((dagre_lx, dagre_ly))
+}
+
+/// Edge-id → declustered label centre. Populated only when
+/// `RenderOptions::edge_label_decluster` is on; empty otherwise, so the
+/// byte-exact path is untouched (`get` returns `None` everywhere).
+#[derive(Default)]
+struct EdgeLabelAdjustments(std::collections::HashMap<String, (f64, f64)>);
+
+impl EdgeLabelAdjustments {
+    fn get(&self, id: &str) -> Option<(f64, f64)> {
+        self.0.get(id).copied()
+    }
+}
+
+/// Visual width floor for an edge-label collision box.
+///
+/// The byte-exact jsdom shim has no metrics for the browser's CJK fallback
+/// font, so it measures CJK glyphs far too narrow — e.g. "接收设备离线时暂存"
+/// measures ~54 px but paints ~152 px. A label whose real width exceeds its
+/// measured width collides on screen while the decluster reads it as clear, so
+/// pairs that obviously stack never get pushed apart. Floor the width at a
+/// per-glyph estimate (CJK ≈ 1em, others ≈ 0.56em) so the box tracks what the
+/// browser paints. Height the shim gets right (line-height 1.5 × font-size).
+/// Precompute declustered edge-label centres for the opt-in readability pass.
+///
+/// Mirrors the canonical visible-label selection (skips replaced self-loops,
+/// cyclic anchor-rewrite segments, and empty labels) and the same
+/// `(lx, ly, lw, lh)` the viewBox bounds loop uses, then runs the decluster
+/// algorithm. Returns an empty map when the option is off.
+fn build_edge_label_adjustments(l: &FlowchartLayout, opts: &RenderOptions) -> EdgeLabelAdjustments {
+    use crate::render::foreign_object::{
+        measure_html_markup_label, replace_fa_icons, HtmlLabelFont,
+    };
+    if !opts.edge_label_decluster {
+        return EdgeLabelAdjustments::default();
+    }
+    let font = HtmlLabelFont::default();
+    // Collide against the label's *visual* box, not the shim's measured box:
+    // the shim under-measures CJK width (see `cjk_aware_label_width`), so a
+    // width floor keeps the box honest about what the browser paints. Height
+    // the shim measures correctly. Only the centre propagates; the emitted
+    // label keeps its real measured size.
+    const COLLISION_MARGIN: f64 = 4.0;
+    // Solid leaf nodes are static obstacles. Cluster (is_group) frames are
+    // background outlines only, so they are excluded. Computed once and reused
+    // both as the obstacle list for the AABB fallback and as the node-hit term
+    // in the along-edge t selection.
+    let obstacles: Vec<LabelRect> = l
+        .nodes
+        .iter()
+        .filter(|n| !n.is_group)
+        .filter_map(|n| {
+            let (Some(x), Some(y), Some(w), Some(h)) = (n.x, n.y, n.width, n.height) else {
+                return None;
+            };
+            if w <= 0.0 || h <= 0.0 {
+                return None;
+            }
+            // A node inside an isolated cluster carries cluster-local coords.
+            // Lift it into screen space so it can be compared against labels
+            // that live in a different frame.
+            let (ox, oy) = node_frame_offset(&n.id, l);
+            Some((
+                x + ox,
+                y + oy,
+                w + COLLISION_MARGIN * 2.0,
+                h + COLLISION_MARGIN * 2.0,
+            ))
+        })
+        .collect();
+    // Each entry carries its own (cluster-clipped) edge polyline so the label
+    // can be slid along it. Edges with no usable points fall through to the
+    // byte-exact base position and are not recorded here.
+    //
+    // Everything below runs in SCREEN space. Labels inside an isolated cluster
+    // are emitted under `<g class="root" transform="translate(...)">`, so their
+    // raw coords are cluster-local; comparing those directly against another
+    // frame's coords invents collisions between labels that are far apart on
+    // screen (and pushes them apart for no reason). Each entry is translated in
+    // on the way here and translated back out when the adjustment is recorded.
+    struct EdgeLabelEntry {
+        id: String,
+        /// The edge's polyline, already in screen space.
+        points: Vec<(f64, f64)>,
+        w: f64,
+        h: f64,
+        /// Translate that was added to `points`; subtracted again before the
+        /// adjustment is stored, so the map stays in the frame the label is
+        /// actually emitted in (the same frame `base_edge_label_pos` uses).
+        offset: (f64, f64),
+    }
+    let mut entries: Vec<EdgeLabelEntry> = Vec::new();
+    for e in &l.edges {
+        if is_replaced_self_loop(e) || is_cyclic_segment_from_anchor_rewrite(e) {
+            continue;
+        }
+        let label_text = e.label.as_deref().unwrap_or("");
+        if label_text.is_empty() {
+            continue;
+        }
+        let processed = replace_fa_icons(label_text);
+        let (lw_m, lh) = measure_html_markup_label(&processed, &font, 200.0, true);
+        // Floor the width over the marker-free plain text (tags / entities
+        // stripped), not the raw markup — otherwise `<br/>`, `**` and `&amp;`
+        // are billed ~0.56em each and the collision box widens past the real
+        // painted width, re-creating the off-centre overlap from issue #93.
+        let is_markdown = e.label_type.as_deref() == Some("markdown");
+        let plain = crate::layout::label_metrics::edge_label_plain_text(&processed, is_markdown);
+        let lw = crate::layout::label_metrics::cjk_aware_label_width(&plain, lw_m)
+            + FLOWCHART_EDGE_LABEL_PADDING_X * 2.0
+            + COLLISION_MARGIN * 2.0;
+        let lh = lh + COLLISION_MARGIN * 2.0;
+        if let Some(pts) = processed_edge_points(e, l) {
+            let offset = edge_frame_offset(e, l);
+            let points: Vec<(f64, f64)> = pts
+                .into_iter()
+                .map(|(x, y)| (x + offset.0, y + offset.1))
+                .collect();
+            entries.push(EdgeLabelEntry {
+                id: e.id.clone(),
+                points,
+                w: lw,
+                h: lh,
+                offset,
+            });
+        }
+    }
+    let n = entries.len();
+    if n == 0 {
+        return EdgeLabelAdjustments::default();
+    }
+    // centres[i] = (cx, cy, w, h), initialised at the arc-length midpoint (t=0.5).
+    let mut centres: Vec<LabelRect> = entries
+        .iter()
+        .map(|en| {
+            let (cx, cy) = point_along_arc(&en.points, 0.5).unwrap_or((0.0, 0.0));
+            (cx, cy, en.w, en.h)
+        })
+        .collect();
+    let midpoint = centres.clone();
+    // Along-edge t selection. For each label, try a spread of arc-length
+    // fractions (closest to the midpoint first) and move to the one with the
+    // lowest conflict score — a node hit costs more than a label hit. This is
+    // coordinate descent in t-space: labels stay on their own edges (so the
+    // result reads as "label belongs to this edge") while dodging nodes and
+    // siblings. Candidates are bounded away from the endpoints so a label
+    // never slides all the way onto a terminal node.
+    const T_CANDIDATES: [f64; 9] = [0.50, 0.40, 0.60, 0.35, 0.65, 0.30, 0.70, 0.25, 0.75];
+    for _ in 0..24 {
+        let mut moved = false;
+        for i in 0..n {
+            let (cx, cy, _, _) = centres[i];
+            let mut best_score = label_conflict_score(i, cx, cy, &centres, &obstacles);
+            let mut best_pos = (cx, cy);
+            for &t in T_CANDIDATES.iter() {
+                let Some((tx, ty)) = point_along_arc(&entries[i].points, t) else {
+                    continue;
+                };
+                let s = label_conflict_score(i, tx, ty, &centres, &obstacles);
+                // Strict `<`: on ties keep the earlier candidate, which is the
+                // one closer to the midpoint (T_CANDIDATES is ordered so).
+                if s < best_score {
+                    best_score = s;
+                    best_pos = (tx, ty);
+                }
+            }
+            if (best_pos.0 - cx).abs() > 1e-9 || (best_pos.1 - cy).abs() > 1e-9 {
+                centres[i].0 = best_pos.0;
+                centres[i].1 = best_pos.1;
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    // AABB fallback: separate overlapping siblings and push labels off nodes.
+    // Base is the post-slide position so the nudge stays small and the label
+    // remains near its edge. The obstacle push is what clears small node
+    // overlaps the t selection cannot avoid by sliding alone (e.g. an edge that
+    // crosses a node region): a short perpendicular nudge off the node.
+    //
+    // Guard: snapshot each label's node overlap at its best along-edge
+    // position, then revert any label the fallback left with MORE node overlap.
+    // This stops a label that is wider than the gap between two collinear nodes
+    // (a long CJK label on a short horizontal edge between two same-row nodes)
+    // from oscillating between them under the obstacle push and landing worse
+    // than the t selection's position. Small clears (overlap shrank) are kept.
+    let t_positions = centres.clone();
+    let t_node: Vec<f64> = (0..n)
+        .map(|i| node_overlap_area(i, &centres, &obstacles))
+        .collect();
+    let base = centres.clone();
+    let cfg = DeclusterConfig {
+        gap: 4.0,
+        max_displacement: 30.0,
+        max_iters: 24,
+    };
+    decluster_with_obstacles(&mut centres, &base, &obstacles, &cfg);
+    let mut reverted = false;
+    for i in 0..n {
+        if node_overlap_area(i, &centres, &obstacles) > t_node[i] + 1e-9 {
+            centres[i] = t_positions[i];
+            reverted = true;
+        }
+    }
+    // A revert can re-introduce a sibling overlap; re-separate labels only
+    // (no obstacle push, which would re-trigger the oscillation above).
+    if reverted {
+        let base2 = centres.clone();
+        decluster(&mut centres, &base2, &cfg);
+    }
+    // Record only labels whose final centre left the arc-length midpoint, so
+    // unchanged labels fall through to the byte-exact base position.
+    let mut map = std::collections::HashMap::with_capacity(n);
+    for i in 0..n {
+        let (bx, by, _, _) = midpoint[i];
+        let (mx, my, _, _) = centres[i];
+        if (mx - bx).abs() > 1e-9 || (my - by).abs() > 1e-9 {
+            // Back out of screen space into the frame this label is emitted in.
+            let (ox, oy) = entries[i].offset;
+            map.insert(
+                entries[i].id.clone(),
+                (round_to_5(mx - ox), round_to_5(my - oy)),
+            );
+        }
+    }
+    EdgeLabelAdjustments(map)
+}
+
+/// Conflict score for label `i` if its centre were `(cx, cy)`: node hits
+/// weighted 10×, label hits 1×. Lower is better. Used by the along-edge t
+/// selection to pick the position with the least collision cost.
+fn label_conflict_score(
+    i: usize,
+    cx: f64,
+    cy: f64,
+    centres: &[LabelRect],
+    obstacles: &[LabelRect],
+) -> f64 {
+    let (_, _, w, h) = centres[i];
+    let mut node_hits = 0;
+    for &(ox, oy, ow, oh) in obstacles {
+        let pen_x = (w / 2.0 + ow / 2.0) - (cx - ox).abs();
+        let pen_y = (h / 2.0 + oh / 2.0) - (cy - oy).abs();
+        if pen_x > 0.0 && pen_y > 0.0 {
+            node_hits += 1;
+        }
+    }
+    let mut label_hits = 0;
+    for (j, &(bx, by, bw, bh)) in centres.iter().enumerate() {
+        if j == i {
+            continue;
+        }
+        let pen_x = (w / 2.0 + bw / 2.0) - (cx - bx).abs();
+        let pen_y = (h / 2.0 + bh / 2.0) - (cy - by).abs();
+        if pen_x > 0.0 && pen_y > 0.0 {
+            label_hits += 1;
+        }
+    }
+    node_hits as f64 * 10.0 + label_hits as f64
+}
+
+/// Total overlap area between label `i` (at its current centre in `centres`)
+/// and all node obstacles. Used to guard the AABB fallback so it never leaves a
+/// label with more node overlap than the along-edge t selection found: a label
+/// wider than the gap between two collinear nodes gets pushed off one node
+/// straight onto the other, and without this guard the pass would end with a
+/// larger node overlap than where the t selection left it.
+fn node_overlap_area(i: usize, centres: &[LabelRect], obstacles: &[LabelRect]) -> f64 {
+    let (cx, cy, w, h) = centres[i];
+    let mut area = 0.0;
+    for &(ox, oy, ow, oh) in obstacles {
+        let pen_x = (w / 2.0 + ow / 2.0) - (cx - ox).abs();
+        let pen_y = (h / 2.0 + oh / 2.0) - (cy - oy).abs();
+        if pen_x > 0.0 && pen_y > 0.0 {
+            area += pen_x * pen_y;
+        }
+    }
+    area
 }
 
 /// Build the rendered `d=` attribute approximation for the upstream
@@ -4698,7 +5148,7 @@ mod tests {
         let src = "flowchart TD\nA --> B\n";
         let d = fcp::parse(src).unwrap();
         let th = theme::get_theme("default");
-        let l = fcl::layout(&d, &th).unwrap();
+        let l = fcl::layout(&d, &th, false).unwrap();
         let svg = render(&d, &l, &th, "test").unwrap();
         assert!(svg.starts_with("<svg "));
         assert!(svg.contains(r#"aria-roledescription="flowchart-v2""#));
@@ -4713,7 +5163,7 @@ mod tests {
         let src = "graph LR\nA-->B\n";
         let d = fcp::parse(src).unwrap();
         let th = theme::get_theme("default");
-        let l = fcl::layout(&d, &th).unwrap();
+        let l = fcl::layout(&d, &th, false).unwrap();
         let svg = render(&d, &l, &th, "t").unwrap();
         assert!(svg.contains(r#"aria-roledescription="flowchart-v2""#));
     }
@@ -4723,7 +5173,7 @@ mod tests {
         let src = "flowchart TD\nsubgraph s1 [Title]\nA-->B\nend\n";
         let d = fcp::parse(src).unwrap();
         let th = theme::get_theme("default");
-        let l = fcl::layout(&d, &th).unwrap();
+        let l = fcl::layout(&d, &th, false).unwrap();
         let svg = render(&d, &l, &th, "t").unwrap();
         assert!(svg.contains(r#"class="clusters""#));
         assert!(svg.contains(r#"class="cluster"#));
@@ -4840,7 +5290,7 @@ mod tests {
     fn render_fixture(source: &str, id: &str) -> String {
         let d = fcp::parse(source).expect("parse");
         let theme = theme::get_theme("default");
-        let l = fcl::layout(&d, &theme).expect("layout");
+        let l = fcl::layout(&d, &theme, false).expect("layout");
         super::render(&d, &l, &theme, id).expect("render")
     }
 

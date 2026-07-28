@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 2,
+  "source": "commonmark",
+  "sourceVersion": "0.31.2",
+  "sourceCommit": "9103e341a973013013bb1a80e13567007c5cef6f",
+  "caseCount": 652,
+  "parserProfile": "supramark-default",
+  "comparisonTarget": "production-web-renderer-dom",
+  "semanticFailureIds": [],
+  "visualFailureIds": []
+}

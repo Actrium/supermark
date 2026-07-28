@@ -10,7 +10,9 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use supramark_diagram_core::{DiagramEngine, DiagramError, EngineAst, RenderOutput};
+use supramark_diagram_core::{
+    DiagramEngine, DiagramError, EngineAst, EngineRenderOptions, RenderOutput,
+};
 
 #[cfg(feature = "semantic-serde")]
 use crate::semantic::{self, SemanticError};
@@ -47,6 +49,22 @@ impl DiagramEngine for MermaidEngine {
             engine: ENGINE_ID,
             message: e.to_string(),
         })?;
+        Ok(RenderOutput::svg(svg.into_bytes()))
+    }
+
+    fn render_with_options(
+        &self,
+        source: &str,
+        opts: &EngineRenderOptions,
+    ) -> Result<RenderOutput, DiagramError> {
+        let id = Self::stable_id(source);
+        let ro =
+            crate::RenderOptions::default().with_edge_label_decluster(opts.edge_label_decluster);
+        let svg =
+            crate::convert_with_options(source, &id, &ro).map_err(|e| DiagramError::Render {
+                engine: ENGINE_ID,
+                message: e.to_string(),
+            })?;
         Ok(RenderOutput::svg(svg.into_bytes()))
     }
 
@@ -181,6 +199,40 @@ mod tests {
     fn render_produces_svg_bytes() {
         let src = "flowchart TD\n    A --> B\n";
         let out = MermaidEngine.render(src).unwrap();
+        assert_eq!(out.mime, "image/svg+xml");
+        let svg = String::from_utf8(out.bytes).unwrap();
+        assert!(svg.contains("<svg"));
+    }
+}
+
+#[cfg(all(test, feature = "metrics-ttf-parser"))]
+mod render_options_tests {
+    use super::*;
+    use supramark_diagram_core::{DiagramEngine, EngineRenderOptions};
+
+    #[test]
+    fn render_with_default_options_matches_render() {
+        // Default options must be byte-identical to the canonical render —
+        // the trait override must not perturb the path when nothing is opted in.
+        let src = "flowchart LR\n    A[Start] -->|label| B[End]\n";
+        let canonical = MermaidEngine.render(src).unwrap();
+        let with_default = MermaidEngine
+            .render_with_options(src, &EngineRenderOptions::default())
+            .unwrap();
+        assert_eq!(canonical.bytes, with_default.bytes);
+    }
+
+    #[test]
+    fn render_with_edge_label_decluster_produces_svg() {
+        let src = "flowchart LR\n    A -->|one| B\n    A -->|two| B\n";
+        let out = MermaidEngine
+            .render_with_options(
+                src,
+                &EngineRenderOptions {
+                    edge_label_decluster: true,
+                },
+            )
+            .unwrap();
         assert_eq!(out.mime, "image/svg+xml");
         let svg = String::from_utf8(out.bytes).unwrap();
         assert!(svg.contains("<svg"));

@@ -3,9 +3,11 @@
 //! [`DiagramLayout`] the renderer pattern-matches on.
 
 pub mod dagre_bridge;
+pub mod edge_label_decluster;
 pub mod gantt;
 pub mod gitgraph;
 pub mod intersect;
+pub mod label_metrics;
 pub mod packet;
 pub mod pie;
 pub mod radar;
