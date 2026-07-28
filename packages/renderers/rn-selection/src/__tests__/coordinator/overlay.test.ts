@@ -110,4 +110,38 @@ describe('computeOverlayRects', () => {
     expect(rectA).toEqual({ x: 0, y: 0, w: 30, h: 20 });
     expect(rectB).toEqual({ x: 0, y: 20, w: 50, h: 20 });
   });
+
+  test('yieldNodeId skips the block the native side has taken over', () => {
+    // Single-block commit: native bridge pushed block 'a' via selectRange, so
+    // the overlay must yield for 'a' (let native handles + menu paint alone) and
+    // not stack a full-width rect underneath.
+    const rectA = { x: 0, y: 0, w: 30, h: 20 };
+    const blocks = [block('a', ['a#0'], rectA)];
+    const covered = [tUnit('a#0', 'a', 'x')];
+    expect(computeOverlayRects(blocks, covered, undefined, 'a')).toEqual([]);
+  });
+
+  test('yieldNodeId null for cross-block paints every covered block', () => {
+    // Cross-block range is never pushed native (planNativeSelection vetoes a
+    // second owner), so yieldNodeId is null and every covered block paints.
+    const rectA = { x: 0, y: 0, w: 30, h: 20 };
+    const rectB = { x: 0, y: 20, w: 50, h: 20 };
+    const blocks = [block('a', ['a#0'], rectA), block('b', ['b#0'], rectB)];
+    const covered = [tUnit('a#0', 'a', 'x'), tUnit('b#0', 'b', 'y')];
+    expect(computeOverlayRects(blocks, covered, undefined, null)).toEqual([
+      { x: 0, y: 0, w: 50, h: 40 },
+    ]);
+  });
+
+  test('yieldNodeId only skips its own block, not a neighboring covered block', () => {
+    // Single-block commit on 'a' while 'b' is also covered (e.g. a cross-block
+    // range transition): 'a' yields, 'b' still paints. In practice the bridge
+    // clears its push before a cross-block commit lands, but the overlay must
+    // still be correct if both ever coincide.
+    const rectA = { x: 0, y: 0, w: 30, h: 20 };
+    const rectB = { x: 0, y: 20, w: 50, h: 20 };
+    const blocks = [block('a', ['a#0'], rectA), block('b', ['b#0'], rectB)];
+    const covered = [tUnit('a#0', 'a', 'x'), tUnit('b#0', 'b', 'y')];
+    expect(computeOverlayRects(blocks, covered, undefined, 'a')).toEqual([rectB]);
+  });
 });

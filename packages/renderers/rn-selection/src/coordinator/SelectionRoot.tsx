@@ -67,11 +67,12 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
     registry.setUnits(units);
   }, [registry, units]);
 
-  // Downlink of the command bridge: committed single-block ranges drive the
-  // vendored native selection (handles + system menu); cross-block selection
-  // stays on the coordinator overlay. Uplink (native events -> store) is wired
-  // per block through `createBlockSink` below.
-  useEffect(() => createNativeBridge(store, registry), [store, registry]);
+  // Command bridge: committed single-block ranges drive the vendored native
+  // selection (handles + system menu); cross-block selection stays on the
+  // coordinator overlay. The handle is memoized so its `pushedStore` reference
+  // stays stable across renders (the ctx and overlay subscribe to it).
+  const bridge = useMemo(() => createNativeBridge(store, registry), [store, registry]);
+  useEffect(() => () => bridge.unsubscribe(), [bridge]);
 
   // Surface range changes; covered units live on the store snapshot.
   useEffect(() => {
@@ -86,6 +87,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
     () => ({
       registry,
       store,
+      nativePushed: bridge.pushedStore,
       registerBlock: block => {
         // Capture what was actually stored and hand it back on unregister, so
         // a stale instance's cleanup cannot delete a live registration that
@@ -109,7 +111,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
           formatForAction: id => formatForActionRef.current?.(id) ?? 'plainText',
         }),
     }),
-    [registry, store]
+    [registry, store, bridge.pushedStore]
   );
 
   return (
