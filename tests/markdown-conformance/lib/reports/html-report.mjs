@@ -1,10 +1,11 @@
-export function renderCommonMarkHtmlReport({
+export function renderConformanceHtmlReport({
   summary,
   visualFailures,
   semanticFailures,
   caseById,
   sourceVersion,
 }) {
+  const sourceDisplayName = escapeHtml(summary.sourceDisplayName ?? summary.source);
   const visual = summary.visual ?? {};
   const sectionEntries = Object.entries(visual.bySection ?? {}).filter(
     ([, counts]) => counts.failed > 0 || counts.errors > 0
@@ -211,7 +212,7 @@ export function renderCommonMarkHtmlReport({
   section.addEventListener('change', applyFilter);
 </script>
 </body>
-</html>`;
+</html>`.replaceAll('CommonMark', sourceDisplayName);
 }
 
 function renderFailureCard(failure, testCase, sectionNameZh) {

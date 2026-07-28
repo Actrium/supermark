@@ -8,7 +8,7 @@ const REPOSITORY_ROOT = path.resolve(SUITE_ROOT, '..', '..');
 const FIXTURES_ROOT = path.join(REPOSITORY_ROOT, 'tests', 'cases', '_fixtures');
 const sourceName = process.argv[2];
 
-if (!sourceName) {
+if (!sourceName || !/^[a-z0-9][a-z0-9-]*$/.test(sourceName)) {
   console.error('Usage: node tests/markdown-conformance/scripts/validate.mjs <source-name>');
   process.exitCode = 2;
 } else {
@@ -17,6 +17,9 @@ if (!sourceName) {
 
 async function validate(name) {
   const fixtureDirectory = path.join(FIXTURES_ROOT, name);
+  const sourceConfig = JSON.parse(
+    await readFile(path.join(SUITE_ROOT, 'config', 'sources', `${name}.json`), 'utf8')
+  );
   const casesText = await readFile(path.join(fixtureDirectory, 'cases.json'), 'utf8');
   const version = JSON.parse(await readFile(path.join(fixtureDirectory, 'version.json'), 'utf8'));
   const document = JSON.parse(casesText);
@@ -24,22 +27,52 @@ async function validate(name) {
   assert(document.schemaVersion === 1, 'unsupported cases schema version');
   assert(document.source === name, 'cases source name mismatch');
   assert(document.source === version.source, 'cases/version source mismatch');
+  assert(document.profile === sourceConfig.profile, 'cases profile mismatch');
   assert(Array.isArray(document.cases), 'cases.json must contain a cases array');
   assert(document.cases.length === version.caseCount, 'case count does not match version.json');
   assert(document.cases.length > 0, 'no cases were imported');
+  assert(version.repository === sourceConfig.repository, 'source repository mismatch');
+  assert(version.version === sourceConfig.version, 'source version mismatch');
+  assert(version.commit === sourceConfig.revision, 'configured source commit mismatch');
+  const configuredPaths = (sourceConfig.inputs ?? [{ path: sourceConfig.input }]).map(
+    input => input.path
+  );
+  const versionFixtures = version.fixtures ?? [
+    { path: version.fixture, sourceSha256: version.sourceSha256, caseCount: version.caseCount },
+  ];
+  assert(
+    JSON.stringify(versionFixtures.map(fixture => fixture.path)) === JSON.stringify(configuredPaths),
+    'configured fixture paths mismatch'
+  );
+  for (const fixture of versionFixtures) {
+    assert(/^[0-9a-f]{64}$/.test(fixture.sourceSha256), `${fixture.path}: invalid source SHA-256`);
+    assert(Number.isInteger(fixture.caseCount) && fixture.caseCount > 0, `${fixture.path}: invalid case count`);
+  }
+  assert(version.license === sourceConfig.license, 'source license mismatch');
   assert(/^[0-9a-f]{40}$/.test(version.commit), 'version.json does not contain a full commit');
   assert(/^[0-9a-f]{64}$/.test(version.sourceSha256), 'invalid source SHA-256');
 
   const ids = new Set();
+  const upstreamIds = new Set();
   const sectionCounts = new Map();
-  for (let index = 0; index < document.cases.length; index += 1) {
-    const testCase = document.cases[index];
+  const fixtureCounts = new Map();
+  for (const testCase of document.cases) {
     assert(testCase.schemaVersion === 1, `${testCase.id}: unsupported case schema version`);
     assert(!ids.has(testCase.id), `${testCase.id}: duplicate case ID`);
     ids.add(testCase.id);
+    assert(testCase.source.name === name, `${testCase.id}: source name mismatch`);
+    assert(testCase.source.repository === version.repository, `${testCase.id}: repository mismatch`);
+    assert(testCase.source.version === version.version, `${testCase.id}: version mismatch`);
     assert(testCase.source.revision === version.commit, `${testCase.id}: source commit mismatch`);
-    assert(testCase.source.path === version.fixture, `${testCase.id}: fixture path mismatch`);
-    assert(testCase.source.upstreamId === index + 1, `${testCase.id}: upstream IDs not sequential`);
+    assert(configuredPaths.includes(testCase.source.path), `${testCase.id}: fixture path mismatch`);
+    const upstreamKey = `${testCase.source.path}\0${testCase.source.upstreamId}`;
+    assert(!upstreamIds.has(upstreamKey), `${testCase.id}: duplicate upstream ID`);
+    upstreamIds.add(upstreamKey);
+    fixtureCounts.set(
+      testCase.source.path,
+      (fixtureCounts.get(testCase.source.path) ?? 0) + 1
+    );
+    assert(testCase.profile === document.profile, `${testCase.id}: profile mismatch`);
     assert(typeof testCase.input.markdown === 'string', `${testCase.id}: missing Markdown input`);
     assert(typeof testCase.expected.html === 'string', `${testCase.id}: missing expected HTML`);
     assert(Array.isArray(testCase.expected.semanticTypes), `${testCase.id}: missing semantic types`);
@@ -53,6 +86,10 @@ async function validate(name) {
       testCase.source.section,
       (sectionCounts.get(testCase.source.section) ?? 0) + 1
     );
+  }
+
+  for (const fixture of versionFixtures) {
+    assert(fixtureCounts.get(fixture.path) === fixture.caseCount, `${fixture.path}: case count mismatch`);
   }
 
   const actualSections = Object.fromEntries(

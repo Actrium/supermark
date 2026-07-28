@@ -5,16 +5,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { importCommonMark } from '../importers/commonmark.mjs';
 
 const SUITE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPOSITORY_ROOT = path.resolve(SUITE_ROOT, '..', '..');
 const FIXTURES_ROOT = path.join(REPOSITORY_ROOT, 'tests', 'cases', '_fixtures');
-const ADAPTERS = { commonmark: importCommonMark };
 
 const { sourceName, sourceDirectory } = parseArguments(process.argv.slice(2));
-if (!sourceName || !ADAPTERS[sourceName]) {
-  console.error('Usage: node tests/markdown-conformance/scripts/import.mjs commonmark [--source-dir <repository>]');
+if (!sourceName || !/^[a-z0-9][a-z0-9-]*$/.test(sourceName)) {
+  console.error('Usage: node tests/markdown-conformance/scripts/import.mjs <source-name> [--source-dir <repository>]');
   process.exitCode = 2;
 } else {
   await run(sourceName, sourceDirectory);
@@ -24,14 +22,30 @@ async function run(name, suppliedSourceDirectory) {
   const sourceConfig = JSON.parse(
     await readFile(path.join(SUITE_ROOT, 'config', 'sources', `${name}.json`), 'utf8')
   );
+  if (sourceConfig.name !== name || !/^[a-z0-9][a-z0-9-]*$/.test(sourceConfig.importer)) {
+    throw new Error(`Invalid source configuration: ${name}`);
+  }
+  const importerModule = await import(
+    new URL(`../importers/${sourceConfig.importer}.mjs`, import.meta.url)
+  );
+  if (typeof importerModule.default !== 'function') {
+    throw new Error(`Importer ${sourceConfig.importer} must provide a default export`);
+  }
   const sourceRepository = suppliedSourceDirectory
     ? verifySuppliedRepository(suppliedSourceDirectory, sourceConfig)
     : await pullPinnedRepository(sourceConfig);
-  const sourceText = git(
-    ['-C', sourceRepository, 'show', `${sourceConfig.revision}:${sourceConfig.input}`],
-    { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }
-  );
-  const imported = ADAPTERS[name](sourceText, sourceConfig);
+  const inputConfigs = sourceConfig.inputs ?? [{ path: sourceConfig.input }];
+  if (inputConfigs.length === 0 || inputConfigs.some(input => !input.path)) {
+    throw new Error(`Source ${name} must configure at least one input path`);
+  }
+  const sourceDocuments = inputConfigs.map(inputConfig => ({
+    ...inputConfig,
+    text: git(['-C', sourceRepository, 'show', `${sourceConfig.revision}:${inputConfig.path}`], {
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+    }),
+  }));
+  const imported = importerModule.default(sourceDocuments, sourceConfig);
   const outputDirectory = path.join(FIXTURES_ROOT, name);
   const casesDocument = {
     schemaVersion: 1,
@@ -39,7 +53,7 @@ async function run(name, suppliedSourceDirectory) {
     profile: sourceConfig.profile,
     cases: imported.cases,
   };
-  const versionDocument = buildVersionDocument(sourceConfig, imported.cases, imported.sourceSha256);
+  const versionDocument = buildVersionDocument(sourceConfig, imported.cases, imported);
 
   await mkdir(outputDirectory, { recursive: true });
   await writeFile(
@@ -126,7 +140,7 @@ function verifyCommit(repositoryDirectory, revision) {
   }
 }
 
-function buildVersionDocument(sourceConfig, cases, sourceSha256) {
+function buildVersionDocument(sourceConfig, cases, imported) {
   const sectionCounts = new Map();
   for (const testCase of cases) {
     sectionCounts.set(
@@ -134,6 +148,12 @@ function buildVersionDocument(sourceConfig, cases, sourceSha256) {
       (sectionCounts.get(testCase.source.section) ?? 0) + 1
     );
   }
+  if (sourceConfig.inputs && imported.sourceFiles?.length !== sourceConfig.inputs.length) {
+    throw new Error(`Importer ${sourceConfig.importer} returned incomplete source file metadata`);
+  }
+  const fixtureMetadata = sourceConfig.inputs
+    ? { fixtures: imported.sourceFiles }
+    : { fixture: sourceConfig.input };
 
   return {
     schemaVersion: 1,
@@ -141,9 +161,9 @@ function buildVersionDocument(sourceConfig, cases, sourceSha256) {
     repository: sourceConfig.repository,
     version: sourceConfig.version,
     commit: sourceConfig.revision,
-    fixture: sourceConfig.input,
+    ...fixtureMetadata,
     license: sourceConfig.license,
-    sourceSha256,
+    sourceSha256: imported.sourceSha256,
     caseCount: cases.length,
     sections: Object.fromEntries(
       [...sectionCounts.entries()].sort(([left], [right]) => left.localeCompare(right))

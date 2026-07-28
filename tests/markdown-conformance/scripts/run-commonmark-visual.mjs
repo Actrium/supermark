@@ -1,3 +1,2 @@
-process.env.VISUAL_COMPARE = '1';
-
-await import('./run-commonmark.mjs');
+process.argv[2] ??= 'commonmark';
+await import('./run-visual.mjs');
