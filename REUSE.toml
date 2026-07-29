@@ -44,7 +44,7 @@ SPDX-License-Identifier = "Apache-2.0"
 
 # ── Lockfiles (auto-generated, no header possible) ─────────────────────
 [[annotations]]
-path = ["pnpm-lock.yaml", "bun.lock", "**/Cargo.lock"]
+path = ["**/pnpm-lock.yaml", "bun.lock", "**/Cargo.lock"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "NONE"
 SPDX-License-Identifier = "CC0-1.0"
