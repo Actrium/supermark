@@ -243,6 +243,27 @@ impl<'a, 'b> InlineState<'a, 'b> {
         self.srcmap[line].1 + (pos - self.srcmap[line].0)
     }
 
+    /// Inverse of [`Self::get_source_pos_for`]: translate a byte offset in the original
+    /// markdown source back into a byte offset in [`Self::src`].
+    ///
+    /// The two coordinate spaces are not interchangeable. `src` is the *content* the inline
+    /// parser walks, and it can be shorter than the source range it came from — a table cell
+    /// hands over `_x|y_` for the source text `_x\|y_`, because the cell scanner drops the
+    /// backslash. Mixing the two spaces silently corrupts source maps and, when the source
+    /// range is the longer one, underflows any offset arithmetic. Rules that read a byte
+    /// offset back out of a [`SourcePos`] must come through here first.
+    #[must_use]
+    pub fn get_pos_for_source(&self, source_pos: usize) -> usize {
+        let line = match self.srcmap.binary_search_by(|x| x.1.cmp(&source_pos)) {
+            Ok(x) => x,
+            Err(x) => x.saturating_sub(1),
+        };
+        let (pos, mapped_source_pos) = self.srcmap[line];
+        // `source_pos` can land inside a byte range that has no counterpart in `src` (the
+        // dropped backslash above). Saturating keeps the result monotonic instead of wrapping.
+        pos + source_pos.saturating_sub(mapped_source_pos)
+    }
+
     #[must_use]
     pub fn get_map(&self, start_pos: usize, end_pos: usize) -> Option<SourcePos> {
         debug_assert!(start_pos <= end_pos);

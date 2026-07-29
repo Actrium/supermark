@@ -82,6 +82,17 @@ pub struct EmphMarker {
     // an emphasis.
     pub open: bool,
     pub close: bool,
+
+    // Byte range of the still-unmatched part of this delimiter run, in
+    // `InlineState::src` coordinates.
+    //
+    // `Node::srcmap` cannot be reused for this: it holds offsets into the *original* markdown
+    // source, which is a different (and possibly longer) coordinate space. A table cell hands
+    // the inline parser `_x|y_` for the source text `_x\|y_`, because the cell scanner drops
+    // the backslash. Matching delimiters has to be done in `src` coordinates, and only the
+    // final span is translated to source coordinates via `InlineState::get_map`.
+    pub content_start: usize,
+    pub content_end: usize,
 }
 
 // this node is supposed to be replaced by actual emph or text node
@@ -127,19 +138,27 @@ impl<const MARKER: char, const CAN_SPLIT_WORD: bool> InlineRule
         }
 
         let scanned = state.scan_delims(state.pos, CAN_SPLIT_WORD);
+        let content_end = state.pos + scanned.length;
         let mut node = Node::new(EmphMarker {
             marker: MARKER,
             length: scanned.length,
             remaining: scanned.length,
             open: scanned.can_open,
             close: scanned.can_close,
+            content_start: state.pos,
+            content_end,
         });
-        node.srcmap = state.get_map(state.pos, state.pos + scanned.length);
-        node = scan_and_match_delimiters::<MARKER>(state, node);
-        let map = node.srcmap.unwrap().get_byte_offsets();
-        // backtrack to keep correct source maps
-        state.pos += scanned.length;
-        let token_len = map.1 - map.0;
+        node.srcmap = state.get_map(state.pos, content_end);
+        let token_start;
+        (node, token_start) = scan_and_match_delimiters::<MARKER>(state, node);
+
+        // Backtrack to keep correct source maps: `InlineParser::tokenize` overwrites the srcmap
+        // of whatever we return with `get_map(state.pos - len, state.pos)`. So `len` has to be
+        // the token's length in `state.src` coordinates, and `state.pos` has to end up just
+        // past the closing marker run.
+        state.pos = content_end;
+        debug_assert!(token_start <= state.pos);
+        let token_len = state.pos - token_start;
         state.pos -= token_len;
         Some((node, token_len))
     }
@@ -147,17 +166,24 @@ impl<const MARKER: char, const CAN_SPLIT_WORD: bool> InlineRule
 
 /// Assuming last token is a closing delimiter we just inserted,
 /// try to find opener(s). If any are found, move stuff to nested emph node.
+///
+/// Returns the token to hand back to the tokenizer, plus that token's start offset in
+/// `InlineState::src` coordinates (see [`EmphMarker::content_start`]).
 fn scan_and_match_delimiters<const MARKER: char>(
     state: &mut InlineState,
     mut closer_token: Node,
-) -> Node {
+) -> (Node, usize) {
+    let mut closer = closer_token.cast::<EmphMarker>().unwrap().clone();
+    // Start of the closer run before any of it gets matched; also the fallback token start for
+    // every path that leaves the run untouched.
+    let unmatched_token_start = closer.content_start;
+
     if state.node.children.is_empty() {
-        return closer_token;
+        return (closer_token, unmatched_token_start);
     } // must have at least opener and closer
 
-    let mut closer = closer_token.cast_mut::<EmphMarker>().unwrap().clone();
     if !closer.close {
-        return closer_token;
+        return (closer_token, unmatched_token_start);
     }
 
     // Previously calculated lower bounds (previous fails)
@@ -174,6 +200,8 @@ fn scan_and_match_delimiters<const MARKER: char>(
 
     let mut idx = state.node.children.len() - 1;
     let mut new_min_opener_idx = idx;
+    // Start of the most recently created emph node, in `state.src` coordinates.
+    let mut matched_token_start = unmatched_token_start;
     while idx > min_opener_idx {
         idx -= 1;
 
@@ -206,27 +234,27 @@ fn scan_and_match_delimiters<const MARKER: char>(
                 closer.remaining -= marker_len;
                 opener.remaining -= marker_len;
 
+                // Cut marker_len bytes off the start of the closer run ("12345" -> "345") and
+                // off the end of the opener run ("12345" -> "123"). Markers are always ASCII,
+                // so byte and char counts agree. The emph node then spans exactly the gap the
+                // two cuts opened up.
+                closer.content_start += marker_len;
+                opener.content_end -= marker_len;
+
+                // All three spans are in `state.src` coordinates and are translated to source
+                // coordinates here, exactly once. Computed before taking a mutable borrow of
+                // `state.node`.
+                let closer_map = state.get_map(closer.content_start, closer.content_end);
+                let opener_map = state.get_map(opener.content_start, opener.content_end);
+                let new_token_map = state.get_map(opener.content_end, closer.content_start);
+
+                closer_token.srcmap = closer_map;
+
                 let mut new_token = marker_fn();
                 new_token.children = state.node.children.split_off(idx + 1);
+                new_token.srcmap = new_token_map;
 
-                // cut marker_len chars from start, i.e. "12345" -> "345"
-                let mut end_map_pos = 0;
-                if let Some(map) = closer_token.srcmap {
-                    let (start, end) = map.get_byte_offsets();
-                    closer_token.srcmap = Some(SourcePos::new(start + marker_len, end));
-                    end_map_pos = start + marker_len;
-                }
-
-                // cut marker_len chars from end, i.e. "12345" -> "123"
-                let mut start_map_pos = 0;
-                let opener_token = state.node.children.last_mut().unwrap();
-                if let Some(map) = opener_token.srcmap {
-                    let (start, end) = map.get_byte_offsets();
-                    opener_token.srcmap = Some(SourcePos::new(start, end - marker_len));
-                    start_map_pos = end - marker_len;
-                }
-
-                new_token.srcmap = state.get_map(start_map_pos, end_map_pos);
+                state.node.children.last_mut().unwrap().srcmap = opener_map;
 
                 // remove empty node as a small optimization so we can do less work later
                 if opener.remaining == 0 {
@@ -234,6 +262,7 @@ fn scan_and_match_delimiters<const MARKER: char>(
                 }
 
                 new_min_opener_idx = 0;
+                matched_token_start = opener.content_end;
                 state.node.children.push(new_token);
             }
         }
@@ -260,10 +289,11 @@ fn scan_and_match_delimiters<const MARKER: char>(
 
     // remove empty node as a small optimization so we can do less work later
     if closer.remaining > 0 {
+        let token_start = closer.content_start;
         closer_token.replace(closer);
-        closer_token
+        (closer_token, token_start)
     } else {
-        state.node.children.pop().unwrap()
+        (state.node.children.pop().unwrap(), matched_token_start)
     }
 }
 
