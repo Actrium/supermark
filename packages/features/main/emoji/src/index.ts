@@ -4,7 +4,13 @@
  * @packageDocumentation
  */
 
-export { emojiFeature } from './feature.js';
+export {
+  emojiFeature,
+  type EmojiFeatureOptions,
+  type EmojiFeatureConfig,
+  createEmojiFeatureConfig,
+  getEmojiFeatureOptions,
+} from './feature.js';
 export { emojiExamples } from './examples.js';
 
 // Note: the Emoji Feature uses the standard SupramarkTextNode.
