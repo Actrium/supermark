@@ -402,6 +402,41 @@ function isDangerousHtmlAllowed(config?: SupramarkConfig): boolean {
   return config?.options?.allowDangerousHtml === true;
 }
 
+// GFM "Disallowed Raw HTML" (tagfilter): cmark-gfm escapes the opening `<` of a
+// small set of block-level raw HTML tags — `title`, `textarea`, `style`, `xmp`,
+// `iframe`, `noembed`, `noframes`, `script`, `plaintext` — to `&lt;` so they
+// render as visible text instead of being interpreted by the browser. The
+// extension is opt-in via `options.gfmTagfilter`; the conformance harness
+// enables it only for the GFM tagfilter sections, matching cmark-gfm's
+// per-extension enabling. CommonMark has no such filter and is unaffected.
+const TAGFILTER_DISALLOWED_TAGS = new Set([
+  'title',
+  'textarea',
+  'style',
+  'xmp',
+  'iframe',
+  'noembed',
+  'noframes',
+  'script',
+  'plaintext',
+]);
+
+function isTagfilterEnabled(config?: SupramarkConfig): boolean {
+  return config?.options?.gfmTagfilter === true;
+}
+
+// Replace the leading `<` of every disallowed tag (open or close,
+// case-insensitive) with `&lt;`; allowed tags and non-tag `<` pass through.
+function tagfilterEscape(html: string): string {
+  return html.replace(/<(\/?)([a-zA-Z][a-zA-Z0-9-]*)/g, (match, slash, name) =>
+    TAGFILTER_DISALLOWED_TAGS.has(name.toLowerCase()) ? `&lt;${slash}${name}` : match
+  );
+}
+
+function maybeTagfilter(value: string, config?: SupramarkConfig): string {
+  return isTagfilterEnabled(config) ? tagfilterEscape(value) : value;
+}
+
 // React's component model emits one DOM element per node, so it cannot express
 // raw HTML fragments the browser's tree-construction stage would normally own:
 // HTML comments, CDATA, processing instructions, bare open/close tags, or
@@ -462,8 +497,12 @@ function RawHtml({ value }: { value: string }): React.ReactNode {
 // host with dangerouslySetInnerHTML. Fragments fall through to null — the
 // documented React limitation (cases involving comments, declarations, or
 // split open/close tags stay unmatched in conformance runs).
-function renderRawNode(node: SupramarkRawNode, key: number): React.ReactNode {
-  const value = node.value ?? '';
+function renderRawNode(
+  node: SupramarkRawNode,
+  key: number,
+  config?: SupramarkConfig
+): React.ReactNode {
+  const value = maybeTagfilter(node.value ?? '', config);
   const tagMatch = value.match(/^<([a-zA-Z][\w-]*)/);
   if (!tagMatch) return React.createElement(RawHtml, { key, value });
   const tag = tagMatch[1].toLowerCase();
@@ -846,16 +885,13 @@ function renderNode(
               disabled
               className={classNames.taskCheckbox}
             />
-            {item.children.map((child, index) =>
-              renderNode(
-                child,
-                index,
-                classNames,
-                rendered,
-                highlighted,
-                config,
-                containerRenderers
-              )
+            {renderListItemChildren(
+              item.children,
+              classNames,
+              rendered,
+              highlighted,
+              config,
+              containerRenderers
             )}
           </li>
         );
@@ -1210,6 +1246,34 @@ function renderNode(
       // cmark-gfm emits the obsolete `align` attribute (not an inline style) so
       // the alignment survives in the DOM semantic tree.
       const alignAttr = cell.align ? { align: cell.align } : undefined;
+      // When a cell contains inline raw HTML (e.g. `<strong>hello</strong>`),
+      // emit the cell's inline run as a single raw HTML string so the browser's
+      // tree-construction owns the structure — matching cmark-gfm, which passes
+      // inline HTML through verbatim. React's one-element-per-node model would
+      // otherwise split `<strong>` and `</strong>` into an empty element plus a
+      // stray close tag, losing the wrapping. Falls back to the component model
+      // when there is no raw HTML or a child cannot be statically serialized.
+      const rawHtml = inlineNodesToHtml(cell.children, classNames, config);
+      if (rawHtml !== null) {
+        if (cell.header) {
+          return (
+            <th
+              key={key}
+              {...alignAttr}
+              className={classNames.tableHeaderCell}
+              dangerouslySetInnerHTML={{ __html: rawHtml }}
+            />
+          );
+        }
+        return (
+          <td
+            key={key}
+            {...alignAttr}
+            className={classNames.tableCell}
+            dangerouslySetInnerHTML={{ __html: rawHtml }}
+          />
+        );
+      }
       const content = renderInlineNodes(cell.children, classNames, rendered, highlighted, config);
 
       if (cell.header) {
@@ -1285,7 +1349,7 @@ function renderNode(
       // rendered, preserving the pre-raw-HTML default (no innerHTML /
       // dangerouslySetInnerHTML surface from untrusted markdown).
       if (!isDangerousHtmlAllowed(config)) return null;
-      return renderRawNode(node, key);
+      return renderRawNode(node, key, config);
     default:
       return null;
   }
@@ -1398,7 +1462,7 @@ function serializeInlineNode(
     case 'text':
       return escapeHtmlText(node.value);
     case 'raw':
-      return node.value ?? '';
+      return maybeTagfilter(node.value ?? '', config);
     case 'strong': {
       const inner = serializeInlineList(node.children, classNames, config);
       return inner === null ? null : `<strong${cls(classNames.strong)}>${inner}</strong>`;
@@ -1483,7 +1547,7 @@ function serializeBlockToHtml(
       return `<pre${preClassAttr}><code${codeClassAttr}>${escapeHtmlText(node.value)}</code></pre>\n`;
     }
     case 'raw':
-      return node.value ?? '';
+      return maybeTagfilter(node.value ?? '', config);
     case 'thematic_break':
       return '<hr />\n';
     case 'heading': {
@@ -1640,7 +1704,7 @@ function renderInlineNode(
       // rendered, preserving the pre-raw-HTML default (no innerHTML /
       // dangerouslySetInnerHTML surface from untrusted markdown).
       if (!isDangerousHtmlAllowed(config)) return null;
-      return renderRawNode(node, key);
+      return renderRawNode(node, key, config);
     default:
       return null;
   }

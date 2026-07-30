@@ -274,6 +274,25 @@ fn gfm_autolink_does_not_linkify_inside_code_span() {
 }
 
 #[test]
+fn gfm_autolink_does_not_linkify_image_alt() {
+    // cmark-gfm leaves URLs inside an image's alt text literal — the alt is
+    // collected as a plain string attribute, not rendered content. The GFM
+    // autolink postprocess must not enter image children (extensions-0019).
+    let ast = parse("![http://inline.com/image](http://inline.com/image)\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    let SupramarkNode::Image { url, alt, .. } = &children[0] else {
+        panic!("expected image, got {:?}", children[0]);
+    };
+    assert_eq!(url, "http://inline.com/image");
+    assert_eq!(alt, "http://inline.com/image");
+}
+
+#[test]
 fn gfm_autolink_option_disables_bare_url_linkification() {
     // The CommonMark conformance suite parses with the GFM autolink extension
     // disabled so bare URLs stay literal (CommonMark spec has no bare-URL

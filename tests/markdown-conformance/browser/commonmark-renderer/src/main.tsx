@@ -6,6 +6,7 @@ type RenderRequest = {
   id: string;
   markdown: string;
   ast: unknown;
+  gfmTagfilter?: boolean;
 };
 
 type RenderResponse = {
@@ -66,7 +67,12 @@ function RenderCase({
       markdown={request.markdown}
       ast={request.ast as never}
       classNames={{ root: 'commonmark-production-root' }}
-      config={{ options: { allowDangerousHtml: true } }}
+      config={{
+        options: {
+          allowDangerousHtml: true,
+          ...(request.gfmTagfilter ? { gfmTagfilter: true } : {}),
+        },
+      }}
       onError={onError}
       onRenderStateChange={onRenderStateChange}
     />

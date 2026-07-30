@@ -55,9 +55,19 @@ export async function renderWithProductionWebRenderer({ cases, astById }) {
 
       const pageErrorOffset = pageErrors.length;
       try {
+        // GFM "Disallowed Raw HTML" (tagfilter) is a per-extension feature in
+        // cmark-gfm: only the spec.txt "Disallowed Raw HTML (extension)" and
+        // extensions.txt "HTML tag filter" sections are rendered with the
+        // filter on. Mirror that here so CommonMark-core raw HTML (passthrough)
+        // is unaffected.
+        const tagfilterSections = new Set([
+          'Disallowed Raw HTML (extension)',
+          'HTML tag filter',
+        ]);
+        const gfmTagfilter = tagfilterSections.has(testCase.source?.section ?? '');
         const response = await page.evaluate(
           request => window.renderSupramarkCase(request),
-          { id: testCase.id, markdown: testCase.input.markdown, ast }
+          { id: testCase.id, markdown: testCase.input.markdown, ast, gfmTagfilter }
         );
         const errors = [...response.errors, ...pageErrors.slice(pageErrorOffset)];
         if (errors.length > 0) errorsById.set(testCase.id, errors);

@@ -55,7 +55,10 @@ impl CoreRule for GfmAutolinkPostprocess {
 /// Walk the tree, linkifying text nodes that are not inside a link/image.
 fn process_node(node: &mut Node, in_link: bool, md: &MarkdownParser) {
     let is_link = node.name().ends_with("Link") || node.name().ends_with("Autolink");
-    let child_in_link = in_link || is_link;
+    // Image alt text is collected as a plain string attribute, so URLs inside
+    // it must stay literal — cmark-gfm does not linkify inside images either.
+    let is_image = node.name().ends_with("::Image");
+    let child_in_link = in_link || is_link || is_image;
     let mut i = 0;
     while i < node.children.len() {
         // Code spans/blocks hold their content as text children; cmark-gfm's

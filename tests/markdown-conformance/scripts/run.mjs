@@ -73,12 +73,18 @@ const parserBinary = path.resolve(process.env.SUPRAMARK_MARKDOWN_BIN ?? DEFAULT_
 // The GFM bare-URL/email autolink extension is gated per case:
 //  - CommonMark spec has no bare-URL autolink, so the whole commonmark source
 //    is parsed with the extension off (bare URLs stay literal).
-//  - cmark-gfm's spec.txt splits autolink cases by section: the core
-//    "Autolinks" section tests CommonMark (bare URLs literal), while
-//    "Autolinks (extension)" tests GFM linkification. Disable the extension
-//    for the core section only.
+//  - cmark-gfm ships two autolink sections. In spec.txt the core "Autolinks"
+//    section (case IDs `spec-*`) tests CommonMark and expects bare URLs to stay
+//    literal, so the extension is disabled there. The extensions.txt "Autolinks"
+//    section (case IDs `extensions-*`) and spec.txt's "Autolinks (extension)"
+//    section both exercise GFM linkification and keep the extension on.
 function parserArgsFor(testCase) {
-  if (sourceName === 'commonmark' || testCase.source?.section === 'Autolinks') {
+  if (sourceName === 'commonmark') {
+    return ['--no-gfm-autolink', '-'];
+  }
+  if (sourceName === 'cmark-gfm'
+    && testCase.source?.section === 'Autolinks'
+    && testCase.id.includes('-spec-')) {
     return ['--no-gfm-autolink', '-'];
   }
   return ['-'];
