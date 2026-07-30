@@ -1,14 +1,14 @@
-# 示例项目
+# Example Projects
 
-Supramark 的 examples 分成两类：一类是可以直接在文档站浏览的 Feature 示例库，另一类是需要在本地运行的完整宿主项目。
+Supramark's examples fall into two categories: a Feature example gallery you can browse directly on the docs site, and full host projects that need to run locally.
 
-## 站内示例
+## In-Site Examples
 
-### [实时 Feature Preview](/preview/?feature=mermaid)
+### [Live Feature Preview](/preview/?feature=mermaid)
 
-首页挂载的是同一套可交互预览页面：左侧编辑 Markdown，右侧查看实际渲染效果，页面内可以继续切换 Feature 和示例。
+The homepage hosts this same interactive preview page: edit Markdown on the left, see the actual rendered output on the right, and switch between Features and examples right on the page.
 
-本地调试时可以用命令直接打开：
+To open it locally for debugging, run:
 
 ```bash
 bun run feature:preview:web
@@ -20,27 +20,27 @@ bun run feature:preview:web diagram-echarts
 bun run feature:preview:web diagram-vega-lite
 ```
 
-### [Feature 示例库](./gallery)
+### [Feature Example Gallery](./gallery)
 
-从各个 Feature 包的 `src/examples.ts` 自动聚合，展示当前内置语法、容器和图表能力的 Markdown 输入。
+Automatically aggregated from each Feature package's `src/examples.ts`, showing Markdown input that exercises the currently built-in syntax, container, and diagram capabilities.
 
-## 可运行项目
+## Runnable Projects
 
-### [React Web CSR 示例](./react-web-csr)
+### [React Web CSR Example](./react-web-csr)
 
-Vite + React 的浏览器端实时 Markdown 编辑器示例。
+Browser-based live Markdown editor example built with Vite + React.
 
-### [React Native 示例](./react-native)
+### [React Native Example](./react-native)
 
-Expo / React Native 环境下的 Markdown 与图表渲染示例。
+Markdown and diagram rendering example for the Expo / React Native environment.
 
-### [构建配置示例](./config-examples)
+### [Build Configuration Examples](./config-examples)
 
-在 Vite / Webpack 等构建工具中集成 Supramark 的配置参考。
+Configuration reference for integrating Supramark into build tools such as Vite / Webpack.
 
-## 运行示例
+## Running the Examples
 
-所有示例项目都可以直接克隆并运行：
+All example projects can be cloned and run directly:
 
 ```bash
 git clone https://github.com/Actrium/supramark.git
@@ -50,8 +50,8 @@ cd examples/react-web-csr
 bun run dev
 ```
 
-## 相关资源
+## Related Resources
 
-- [快速开始](/guide/getting-started)
-- [API 参考](/api/)
+- [Getting Started](/guide/getting-started)
+- [API Reference](/api/)
 - [Features](/features/)

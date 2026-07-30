@@ -1,10 +1,10 @@
-# Feature 示例库
+# Feature Example Gallery
 
-本页从各个 Feature 包的 `src/examples.ts` 自动聚合，当前包含 **21 个 Feature**、**33 个示例**。
+This page is automatically aggregated from each Feature package's `src/examples.ts`, currently covering **21 Features** and **33 examples**.
 
-这些示例展示的是 Markdown 输入本身；完整实时预览请打开 [首页预览](/preview/?feature=mermaid)，或运行 `bun run feature:preview:web`。
+These examples show the raw Markdown input; for the full live preview, open the [homepage preview](/preview/?feature=mermaid) or run `bun run feature:preview:web`.
 
-## 目录
+## Table of Contents
 
 - [Admonition](#admonition) (1)
 - [Card Vison](#card-vison) (2)
@@ -30,29 +30,29 @@
 
 ## Admonition
 
-包：`@supramark/feature-admonition`  
-路径：`packages/features/containers/admonition`
+Package: `@supramark/feature-admonition`  
+Path: `packages/features/containers/admonition`
 
-### 提示框（Admonition）
+### Tip box (Admonition)
 
-展示 ::: note / ::: warning 等容器块的解析与渲染效果。
+Shows parsing and rendering of ::: note / ::: warning etc. container blocks.
 
 ```markdown
-# 提示框示例
+# Tip box example
 
-::: note 提示
-这是一个普通提示框，用于展示一般性说明。
+::: note Tip
+This is a plain tip box, used for general-purpose notes.
 :::
 
-::: warning 警告
-请勿在生产环境中直接使用测试密钥。
+::: warning Warning
+Do not use test keys directly in production.
 :::
 ```
 
 ## Card Vison
 
-包：`@supramark/feature-card-vison`  
-路径：`packages/features/cards/vison`
+Package: `@supramark/feature-card-vison`  
+Path: `packages/features/cards/vison`
 
 ### Hello card
 
@@ -61,25 +61,25 @@ Minimal Vison card with a single text block.
 ```markdown
 :::vison
 {
-"version": "1",
-"type": "container",
-"style": {
-"padding": 12,
-"backgroundColor": "#F5F5F5",
-"borderRadius": 8
-},
-"children": [
-{
-"type": "text",
-"props": {
-"text": "Hello Vison"
-},
-"style": {
-"fontSize": 16,
-"fontWeight": "bold"
-}
-}
-]
+  "version": "1",
+  "type": "container",
+  "style": {
+    "padding": 12,
+    "backgroundColor": "#F5F5F5",
+    "borderRadius": 8
+  },
+  "children": [
+    {
+      "type": "text",
+      "props": {
+        "text": "Hello Vison"
+      },
+      "style": {
+        "fontSize": 16,
+        "fontWeight": "bold"
+      }
+    }
+  ]
 }
 :::
 ```
@@ -91,78 +91,78 @@ Realistic AI chat assistant card with avatar, divider, markdown body, and image.
 ```markdown
 :::vison
 {
-"version": "1",
-"type": "container",
-"style": {
-"padding": 16,
-"backgroundColor": "#FFFFFF",
-"borderRadius": 12,
-"width": 340,
-"gap": 12,
-"borderWidth": 1,
-"borderColor": "#E5E5E5"
-},
-"children": [
-{
-"type": "container",
-"style": {
-"flexDirection": "row",
-"alignItems": "center",
-"gap": 8
-},
-"children": [
-{
-"type": "image",
-"props": {
-"src": "https://api.dicebear.com/7.x/bottts/svg?seed=vison",
-"width": 40,
-"aspectRatio": 1
-},
-"style": {
-"borderRadius": 20,
-"width": 40,
-"height": 40
-}
-},
-{
-"type": "text",
-"props": {
-"text": "Vison Assistant"
-},
-"style": {
-"fontSize": 16,
-"fontWeight": "600",
-"color": "#1A1A1A"
-}
-}
-]
-},
-{
-"type": "divider",
-"style": {
-"margin": 4,
-"borderColor": "#F0F0F0"
-}
-},
-{
-"type": "markdown",
-"props": {
-"content": "### Deployment report\nService is live. Highlights:\n- **Performance**: +20%\n- **Security**: XSS hotfix shipped"
-},
-"style": {
-"fontSize": 14,
-"color": "#4A4A4A"
-}
-}
-]
+  "version": "1",
+  "type": "container",
+  "style": {
+    "padding": 16,
+    "backgroundColor": "#FFFFFF",
+    "borderRadius": 12,
+    "width": 340,
+    "gap": 12,
+    "borderWidth": 1,
+    "borderColor": "#E5E5E5"
+  },
+  "children": [
+    {
+      "type": "container",
+      "style": {
+        "flexDirection": "row",
+        "alignItems": "center",
+        "gap": 8
+      },
+      "children": [
+        {
+          "type": "image",
+          "props": {
+            "src": "https://api.dicebear.com/7.x/bottts/svg?seed=vison",
+            "width": 40,
+            "aspectRatio": 1
+          },
+          "style": {
+            "borderRadius": 20,
+            "width": 40,
+            "height": 40
+          }
+        },
+        {
+          "type": "text",
+          "props": {
+            "text": "Vison Assistant"
+          },
+          "style": {
+            "fontSize": 16,
+            "fontWeight": "600",
+            "color": "#1A1A1A"
+          }
+        }
+      ]
+    },
+    {
+      "type": "divider",
+      "style": {
+        "margin": 4,
+        "borderColor": "#F0F0F0"
+      }
+    },
+    {
+      "type": "markdown",
+      "props": {
+        "content": "### Deployment report\nService is live. Highlights:\n- **Performance**: +20%\n- **Security**: XSS hotfix shipped"
+      },
+      "style": {
+        "fontSize": 14,
+        "color": "#4A4A4A"
+      }
+    }
+  ]
 }
 :::
 ```
 
 ## Code Highlight
 
-包：`@supramark/feature-code-highlight`  
-路径：`packages/features/main/code-highlight`
+Package: `@supramark/feature-code-highlight`  
+Path: `packages/features/main/code-highlight`
 
 ### TypeScript code fence
 
@@ -170,14 +170,14 @@ A normal code fence that can be highlighted when language assets are compiled.
 
 ````markdown
 ```ts
-const message: string = 'hello';
+const message: string = "hello";
 ```
 ````
 
 ## Code Highlight Preset DEV
 
-包：`@supramark/feature-code-highlight-preset-dev`  
-路径：`packages/features/main/code-highlight-preset-dev`
+Package: `@supramark/feature-code-highlight-preset-dev`  
+Path: `packages/features/main/code-highlight-preset-dev`
 
 ### Dev preset
 
@@ -191,8 +191,8 @@ fn main() { println!("hi"); }
 
 ## Code Highlight Preset Docs
 
-包：`@supramark/feature-code-highlight-preset-docs`  
-路径：`packages/features/main/code-highlight-preset-docs`
+Package: `@supramark/feature-code-highlight-preset-docs`  
+Path: `packages/features/main/code-highlight-preset-docs`
 
 ### Docs preset
 
@@ -206,8 +206,8 @@ Highlights common documentation and config snippets.
 
 ## Code Highlight Preset Full
 
-包：`@supramark/feature-code-highlight-preset-full`  
-路径：`packages/features/main/code-highlight-preset-full`
+Package: `@supramark/feature-code-highlight-preset-full`  
+Path: `packages/features/main/code-highlight-preset-full`
 
 ### Full preset
 
@@ -221,83 +221,83 @@ const std = @import("std");
 
 ## Core Markdown
 
-包：`@supramark/feature-core-markdown`  
-路径：`packages/features/core-markdown`
+Package: `@supramark/feature-core-markdown`  
+Path: `packages/features/core-markdown`
 
-### 基础文本 / 段落
+### Basic text / paragraphs
 
-展示最基础的段落与换行渲染效果。
-
-```markdown
-# supramark 示例
-
-这是一个基础示例，用来演示多行文本、段落之间的间距等。
-
-你可以切换不同类型的示例来查看更多功能。
-```
-
-### 标题层级
-
-展示 H1-H4 的渲染样式。
+Shows the most basic paragraph and line-break rendering.
 
 ```markdown
-# 一级标题 H1
+# supramark example
 
-一些说明文字。
+This is a basic example demonstrating multi-line text, spacing between paragraphs, etc.
 
-## 二级标题 H2
-
-更多说明。
-
-### 三级标题 H3
-
-再多一点说明。
-
-#### 四级标题 H4
-
-最后一段说明。
+You can switch between different example types to see more features.
 ```
 
-### 列表
+### Heading levels
 
-展示无序和有序列表。
+Shows the rendering style of H1-H4.
 
 ```markdown
-# 列表示例
+# Level-1 heading H1
 
-- 无序列表项 1
-- 无序列表项 2
+Some explanatory text.
 
-1. 有序列表项 1
-2. 有序列表项 2
+## Level-2 heading H2
+
+More explanation.
+
+### Level-3 heading H3
+
+Even more explanation.
+
+#### Level-4 heading H4
+
+The last bit of explanation.
 ```
 
-### 代码块
+### Lists
 
-展示普通代码块的渲染效果。
+Shows unordered and ordered lists.
+
+```markdown
+# List example
+
+- Unordered list item 1
+- Unordered list item 2
+
+1. Ordered list item 1
+2. Ordered list item 2
+```
+
+### Code block
+
+Shows the rendering of a plain code block.
 
 ````markdown
-# 代码块示例
+# Code block example
 
-下面是一段 JavaScript 代码：
+Here is a snippet of JavaScript code:
 
 ```js
 function hello(name) {
-  console.log('Hello, ' + name);
+  console.log('Hello, ' + name)
 }
 
-hello('supramark');
+hello('supramark')
 ```
 ````
 
 ## D2
 
-包：`@supramark/feature-d2`  
-路径：`packages/features/diagrams/d2`
+Package: `@supramark/feature-d2`  
+Path: `packages/features/diagrams/d2`
 
-### 最简流程
+### Minimal flow
 
-使用 ```d2 围栏定义一条最小的节点连线。
+Uses a ```d2 fence to define the simplest possible node edge.
 
 ````markdown
 # D2 minimal flow
@@ -307,9 +307,9 @@ a -> b
 ```
 ````
 
-### 带标签连线
+### Labeled edge
 
-展示 D2 连线标签语法。
+Shows D2 edge label syntax.
 
 ````markdown
 # D2 labeled edges
@@ -320,9 +320,9 @@ database -> user: rows
 ```
 ````
 
-### 容器 / 分组
+### Container / grouping
 
-展示 D2 的容器（container）语法，把多个节点组织为一个子图。
+Shows D2 container syntax, grouping multiple nodes into a subgraph.
 
 ````markdown
 # D2 container
@@ -337,35 +337,35 @@ customers: {
 
 ## Definition List
 
-包：`@supramark/feature-definition-list`  
-路径：`packages/features/main/definition-list`
+Package: `@supramark/feature-definition-list`  
+Path: `packages/features/main/definition-list`
 
-### 定义列表（Definition List）
+### Definition List
 
-展示术语 + 多段描述的定义列表语法。
+Shows the term + multi-paragraph description syntax for definition lists.
 
 ```markdown
-# 定义列表示例
+# Definition List Example
 
 HTTP
-: 一种应用层协议，用于超文本传输。
-: 目前最常见的 Web 协议。
+:   An application-layer protocol used for hypertext transfer.
+:   Currently the most common Web protocol.
 
 HTTPS
-: 在 HTTP 之上加入 TLS 加密的安全协议。
+:   A secure protocol that adds TLS encryption on top of HTTP.
 ```
 
 ## Diagram DOT
 
-包：`@supramark/feature-diagram-dot`  
-路径：`packages/features/diagrams/dot`
+Package: `@supramark/feature-diagram-dot`  
+Path: `packages/features/diagrams/dot`
 
-### 有向图示例
+### Directed graph example
 
-使用 ```dot 围栏代码块定义一个简单有向图。
+Uses a ```dot fenced code block to define a simple directed graph.
 
 ````markdown
-# DOT / Graphviz diagram 示例
+# DOT / Graphviz diagram example
 
 ```dot
 digraph G {
@@ -377,15 +377,15 @@ digraph G {
 
 ## Diagram Echarts
 
-包：`@supramark/feature-diagram-echarts`  
-路径：`packages/features/diagrams/echarts`
+Package: `@supramark/feature-diagram-echarts`  
+Path: `packages/features/diagrams/echarts`
 
-### ECharts 折线图
+### ECharts line chart
 
-使用 ```echarts 围栏代码块定义一个简单折线图 option。
+Uses a ```echarts fenced code block to define a simple line-chart option.
 
 ````markdown
-# ECharts diagram 示例
+# ECharts diagram example
 
 ```echarts
 {
@@ -400,17 +400,17 @@ digraph G {
 
 ## Diagram Vega Lite
 
-包：`@supramark/feature-diagram-vega-lite`  
-路径：`packages/features/diagrams/vega-lite`
+Package: `@supramark/feature-diagram-vega-lite`  
+Path: `packages/features/diagrams/vega-lite`
 
-### Vega-Lite 柱状图
+### Vega-Lite bar chart
 
-使用 ```vega-lite 围栏代码块定义一个最小可用的 Vega-Lite 柱状图。
+Uses a ```vega-lite fenced code block to define a minimal working Vega-Lite bar chart.
 
 ````markdown
-# Vega-Lite diagram 示例
+# Vega-Lite diagram example
 
-下面的围栏代码块会被 supramark 识别为 `diagram` 节点（engine = "vega-lite"）：
+The fenced code block below is recognized by supramark as a `diagram` node (engine = "vega-lite"):
 
 ```vega-lite
 {
@@ -431,117 +431,116 @@ digraph G {
 
 ## Emoji
 
-包：`@supramark/feature-emoji`  
-路径：`packages/features/main/emoji`
+Package: `@supramark/feature-emoji`  
+Path: `packages/features/main/emoji`
 
-### Emoji / 短代码
+### Emoji / shortcode
 
-展示 :smile: / :rocket: 等 Emoji 短代码的解析效果。
+Shows how Emoji shortcodes such as :smile: / :rocket: are parsed.
 
 ```markdown
-# Emoji 示例
+# Emoji Example
 
-支持 GitHub 风格短代码：
+GitHub-style shortcodes are supported:
 
 - :smile: :joy: :wink:
 - :rocket: :tada: :warning:
 
-也可以直接输入原生 Emoji 😄🚀🎉。
+Native Emoji characters 😄🚀🎉 can also be typed directly.
 ```
 
 ## Footnote
 
-包：`@supramark/feature-footnote`  
-路径：`packages/features/main/footnote`
+Package: `@supramark/feature-footnote`  
+Path: `packages/features/main/footnote`
 
-### 脚注（Footnote）
+### Footnote
 
-展示脚注的引用和定义语法。
+Shows the reference and definition syntax for footnotes.
 
 ```markdown
-# 脚注示例
+# Footnote Example
 
-这是一段包含脚注的文本[^1]。你可以在同一段落中添加多个脚注[^2]。
+This is a paragraph of text with a footnote[^1]. You can add multiple footnotes in the same paragraph[^2].
 
-脚注可以让你添加补充说明而不打断正文流程[^note]。
+Footnotes let you add supplementary notes without interrupting the flow of the main text[^note].
 
-[^1]: 这是第一个脚注的内容。
+[^1]: This is the content of the first footnote.
 
-[^2]: 这是第二个脚注，可以包含更详细的解释。
+[^2]: This is the second footnote, which can contain a more detailed explanation.
 
-[^note]: 脚注标识符可以是数字或文本。
+[^note]: A footnote identifier can be a number or text.
 ```
 
 ## GFM
 
-包：`@supramark/feature-gfm`  
-路径：`packages/features/main/gfm`
+Package: `@supramark/feature-gfm`  
+Path: `packages/features/main/gfm`
 
-### GFM 扩展功能
+### GFM extensions
 
-展示 GitHub Flavored Markdown 扩展功能，如删除线、任务列表、表格。
+Shows GitHub Flavored Markdown extensions such as strikethrough, task lists, and tables.
 
 ```markdown
-# GFM 功能示例
+# GFM feature examples
 
-## 删除线
+## Strikethrough
 
-使用 `~~文本~~` 语法来创建~~删除线~~效果。
+Use the `~~text~~` syntax to create ~~strikethrough~~ text.
 
-例如：这是一段~~错误的~~正确的文本。
+For example: this is a piece of ~~wrong~~ correct text.
 
-## 任务列表
+## Task lists
 
-使用 `- [ ]` 和 `- [x]` 来创建任务列表：
+Use `- [ ]` and `- [x]` to create a task list:
 
-- [x] 已完成的任务
-- [ ] 未完成的任务
-- [x] 另一个已完成的任务
-- [ ] 待办事项
+- [x] Completed task
+- [ ] Incomplete task
+- [x] Another completed task
+- [ ] A to-do item
 
-## 组合使用
+## Combining formats
 
-你可以将删除线与其他格式组合使用：
+You can combine strikethrough with other formatting:
 
-- **粗体**和~~删除线~~
-- *斜体*和~~删除线~~
-- `代码`和~~删除线~~
+- **bold** and ~~strikethrough~~
+- *italic* and ~~strikethrough~~
+- `code` and ~~strikethrough~~
 
-~~**整段粗体删除线**~~
+~~**Bold strikethrough for a whole sentence**~~
 
-## 表格
+## Tables
 
-使用 GFM 表格语法创建表格，支持列对齐：
+Use GFM table syntax to create tables, with support for column alignment:
 
-| 功能     | 状态 |                 说明 |
-| -------- | :--: | -------------------: |
-| 删除线   |  ✅  |       使用 `~~` 语法 |
-| 任务列表 |  ✅  |  使用 `[ ]` 和 `[x]` |
-| 表格     |  ✅  |        标准 GFM 表格 |
-| 对齐方式 |  ✅  | 左对齐、居中、右对齐 |
+| Feature | Status | Notes |
+| --- | :---: | ---: |
+| Strikethrough | ✅ | Uses `~~` syntax |
+| Task list | ✅ | Uses `[ ]` and `[x]` |
+| Table | ✅ | Standard GFM table |
+| Alignment | ✅ | Left, center, right |
 ```
 
 ## Html Page
 
-包：`@supramark/feature-html-page`  
-路径：`packages/features/containers/html-page`
+Package: `@supramark/feature-html-page`  
+Path: `packages/features/containers/html-page`
 
-### HTML Page 卡片
+### HTML Page card
 
-使用 :::html 容器定义独立 HTML 页面，在 Markdown 中以卡片形式呈现。
+Defines a standalone HTML page using the :::html container, rendered as a card in Markdown.
 
 ```markdown
-# HTML Page 示例
+# HTML Page example
 
-下面的容器会被识别为一个 html_page 节点，并在主文档中渲染为「HTML Page 卡片」：
+The container below is recognized as an html_page node, and rendered in the main document as an "HTML Page card":
 
 :::html
-
 <!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>HTML Page 示例</title>
+    <title>HTML Page example</title>
     <style>
       body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px; }
       h1 { color: #2f54eb; }
@@ -549,8 +548,8 @@ digraph G {
     </style>
   </head>
   <body>
-    <h1>这是一个独立 HTML 页面</h1>
-    <p>它可以包含自己的 CSS 和 JS，在宿主提供的隔离页面或 ShadowDOM 容器中单独运行。</p>
+    <h1>This is a standalone HTML page</h1>
+    <p>It can include its own CSS and JS, running independently inside an isolated page or ShadowDOM container provided by the host.</p>
   </body>
 </html>
 :::
@@ -558,30 +557,30 @@ digraph G {
 
 ## MAP
 
-包：`@supramark/feature-map`  
-路径：`packages/features/containers/map`
+Package: `@supramark/feature-map`  
+Path: `packages/features/containers/map`
 
-### 基本地图卡片
+### Basic map card
 
-使用 :::map 定义一个带中心点与标记点的地图卡片。
+Use :::map to define a map card with a center point and a marker.
 
 ```markdown
-# 地图示例（Map）
+# Map example
 
-下面的容器会被识别为一个 map 节点，并在主文档中渲染为「地图卡片」：
+The container below is recognized as a map node and rendered as a "map card" in the main document:
 
 :::map
 center: [34.05, -118.24]
 zoom: 12
 marker:
-lat: 34.05
-lng: -118.24
+  lat: 34.05
+  lng: -118.24
 :::
 ```
 
-### 仅指定中心点的地图
+### Map with only a center point
 
-只提供 center，不指定 marker，用于展示某个区域概览。
+Provide only center, without a marker, to show an overview of an area.
 
 ```markdown
 :::map
@@ -592,38 +591,38 @@ zoom: 10
 
 ## Math
 
-包：`@supramark/feature-math`  
-路径：`packages/features/main/math`
+Package: `@supramark/feature-math`  
+Path: `packages/features/main/math`
 
-### 数学公式（Math / LaTeX）
+### Math formulas (Math / LaTeX)
 
-展示行内 `$...$` 与块级 `$$...$$` 数学公式的 AST 与基础渲染效果。
+Shows the AST and basic rendering of inline `$...$` and block `$$...$$` math formulas.
 
 ```markdown
-# 数学公式示例
+# Math Formula Example
 
-supramark 会识别行内公式 $E = mc^2$，并在 AST 中生成 `math_inline` 节点。
+supramark recognizes the inline formula $E = mc^2$ and generates a `math_inline` node in the AST.
 
-下面是一个块级公式（`math_block`）：
+Below is a block formula (`math_block`):
 
 $$
 \frac{1}{\sqrt{2\pi\sigma^2}} e^{-\frac{(x - \mu)^2}{2\sigma^2}}
 $$
 
-当前阶段，这些公式会以「代码样式的 TeX 文本」渲染，后续会通过 KaTeX 等方式升级为真正的公式渲染。
+At the current stage, these formulas are rendered as "code-styled TeX text"; they will later be upgraded to real formula rendering via KaTeX and similar tools.
 ```
 
 ## Mermaid
 
-包：`@supramark/feature-mermaid`  
-路径：`packages/features/diagrams/mermaid`
+Package: `@supramark/feature-mermaid`  
+Path: `packages/features/diagrams/mermaid`
 
-### 流程图示例
+### Flowchart example
 
-使用 ```mermaid 围栏代码块定义一个简单流程图。
+Uses a ```mermaid fenced code block to define a simple flowchart.
 
 ````markdown
-# Mermaid diagram 示例
+# Mermaid diagram example
 
 ```mermaid
 graph TD
@@ -635,12 +634,12 @@ graph TD
 
 ## Plantuml
 
-包：`@supramark/feature-plantuml`  
-路径：`packages/features/diagrams/plantuml`
+Package: `@supramark/feature-plantuml`  
+Path: `packages/features/diagrams/plantuml`
 
-### 时序图示例
+### Sequence diagram example
 
-使用 ```plantuml 围栏定义一个最小的时序图。
+Uses a ```plantuml fence to define a minimal sequence diagram.
 
 ````markdown
 # PlantUML sequence diagram
@@ -653,9 +652,9 @@ Alice -> Bob : hi
 ```
 ````
 
-### 类图示例
+### Class diagram example
 
-展示 PlantUML 类图语法。
+Shows PlantUML class diagram syntax.
 
 ````markdown
 # PlantUML class diagram
@@ -673,9 +672,9 @@ class Dog extends Animal {
 ```
 ````
 
-### 活动图示例
+### Activity diagram example
 
-展示 PlantUML 活动图语法。
+Shows PlantUML activity diagram syntax.
 
 ````markdown
 # PlantUML activity diagram
@@ -696,12 +695,12 @@ stop
 
 ## Weather
 
-包：`@supramark/feature-weather`  
-路径：`packages/features/containers/weather`
+Package: `@supramark/feature-weather`  
+Path: `packages/features/containers/weather`
 
-### 天气卡片 - YAML 格式
+### Weather card - YAML format
 
-使用 YAML 格式配置天气卡片（默认格式）
+Configure a weather card using YAML format (the default)
 
 ```markdown
 :::weather yaml
@@ -710,22 +709,22 @@ units: metric
 :::
 ```
 
-### 天气卡片 - JSON 格式
+### Weather card - JSON format
 
-使用 JSON 格式配置天气卡片
+Configure a weather card using JSON format
 
 ```markdown
 :::weather json
 {
-"location": "Tokyo",
-"units": "metric"
+  "location": "Tokyo",
+  "units": "metric"
 }
 :::
 ```
 
-### 天气卡片 - TOON 格式
+### Weather card - TOON format
 
-使用 TOON 紧凑表格式格式配置天气卡片
+Configure a weather card using the compact TOON tabular format
 
 ```markdown
 :::weather toon
@@ -734,9 +733,9 @@ units: imperial
 :::
 ```
 
-### 多个天气卡片
+### Multiple weather cards
 
-展示不同城市的天气
+Show weather for several cities
 
 ```markdown
 :::weather yaml
@@ -756,5 +755,4 @@ units: metric
 ```
 
 ---
-
-_此文档由 scripts/doc-gen-example.ts 自动生成_
+*This document is auto-generated by scripts/doc-gen-example.ts*
