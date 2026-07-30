@@ -83,6 +83,8 @@ impl InlineRule for StrikethroughScanner {
                 remaining: scanned.length,
                 open: scanned.can_open,
                 close: scanned.can_close,
+                content_start: state.pos,
+                content_end: state.pos + scanned.length,
             });
             marker.srcmap = state.get_map(state.pos, state.pos + scanned.length);
             scan_and_match(state, marker)

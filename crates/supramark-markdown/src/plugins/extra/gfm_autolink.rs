@@ -58,7 +58,11 @@ fn process_node(node: &mut Node, in_link: bool, md: &MarkdownParser) {
     let child_in_link = in_link || is_link;
     let mut i = 0;
     while i < node.children.len() {
-        if !child_in_link {
+        // Code spans/blocks hold their content as text children; cmark-gfm's
+        // autolink postprocess only walks CMARK_NODE_TEXT, so it never enters a
+        // code node. Mirror that here to keep bare URLs inside `...` literal.
+        let is_code = is_code_node(&node.children[i]);
+        if !child_in_link && !is_code {
             if let Some(text) = node.children[i].cast::<Text>() {
                 let content = text.content.clone();
                 if let Some(splice) = autolink_split(&content, md) {
@@ -69,9 +73,16 @@ fn process_node(node: &mut Node, in_link: bool, md: &MarkdownParser) {
                 }
             }
         }
-        process_node(&mut node.children[i], child_in_link, md);
+        if !is_code {
+            process_node(&mut node.children[i], child_in_link, md);
+        }
         i += 1;
     }
+}
+
+fn is_code_node(node: &Node) -> bool {
+    let name = node.name();
+    name.ends_with("CodeInline") || name.ends_with("CodeBlock") || name.ends_with("CodeFence")
 }
 
 /// Outcome of scanning one text node: a list of replacement nodes (text +

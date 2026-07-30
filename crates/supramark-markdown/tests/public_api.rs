@@ -252,6 +252,24 @@ fn gfm_autolink_does_not_linkify_inside_link() {
     )));
 }
 
+#[test]
+fn gfm_autolink_does_not_linkify_inside_code_span() {
+    // cmark-gfm's autolink postprocess only walks text nodes, never the
+    // content of a code span. `` `<http://foo.bar.`baz>` `` keeps the URL
+    // literal inside the code span (spec-0355).
+    let ast = parse("`<http://foo.bar.`baz>`\n");
+    let para = paragraph_children(ast);
+    let SupramarkNode::InlineCode { value, .. } = &para[0] else {
+        panic!("expected inline code, got {:?}", para[0]);
+    };
+    assert_eq!(value, "<http://foo.bar.");
+    // Trailing literal text is also untouched.
+    let SupramarkNode::Text { value, .. } = &para[1] else {
+        panic!("expected trailing text, got {:?}", para[1]);
+    };
+    assert_eq!(value, "baz>`");
+}
+
 // GFM strikethrough (cmark-gfm 0.29 conformance, extensions-0018). Both `~x~`
 // and `~~x~~` produce a single <del>; runs of 3+ tildes and mismatched lengths
 // stay literal. See issue #144.
