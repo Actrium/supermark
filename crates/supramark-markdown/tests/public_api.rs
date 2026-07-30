@@ -947,6 +947,54 @@ fn nests_footnote_definition_inside_blockquote() {
 }
 
 #[test]
+fn footnote_definition_absorbs_indented_continuation() {
+    // cmark-gfm footnote definitions are containers: lines indented >= 4 past
+    // the definition base become block children (blockquote, indented code,
+    // paragraph). Regression guard for cmark-gfm extensions-0023.
+    let src = "[^a]:\n    > quoted.\n\n        code line\n\n    para line.\n";
+    let ast = parse(src);
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::FootnoteDefinition { children, label, .. } = &children[0] else {
+        panic!("expected footnote definition, got {:?}", &children[0]);
+    };
+    assert_eq!(label, "a");
+    // blockquote, code, paragraph — in source order.
+    assert!(matches!(children[0], SupramarkNode::Blockquote { .. }));
+    assert!(matches!(children[1], SupramarkNode::Code { .. }));
+    assert!(matches!(children[2], SupramarkNode::Paragraph { .. }));
+    if let SupramarkNode::Code { value, .. } = &children[1] {
+        assert_eq!(value, "code line\n");
+    }
+    // The indented continuation must NOT leak as a root-level code block.
+    assert!(
+        children.len() == 3,
+        "footnote def should own all continuation, got {children:?}"
+    );
+}
+
+#[test]
+fn footnote_definition_continuation_ends_at_new_block() {
+    // A non-indented line that opens a new block (another definition) ends the
+    // current definition's continuation; it is not absorbed.
+    let ast = parse("[^a]: first\n\n[^b]: second.\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::FootnoteDefinition { label: a, children: a_children, .. } = &children[0]
+    else {
+        panic!("expected first definition, got {:?}", &children[0]);
+    };
+    assert_eq!(a, "a");
+    assert_eq!(a_children.len(), 1, "first def should have one paragraph child");
+    let SupramarkNode::FootnoteDefinition { label: b, .. } = &children[1] else {
+        panic!("expected second definition, got {:?}", &children[1]);
+    };
+    assert_eq!(b, "b");
+}
+
+#[test]
 fn public_api_maps_emphasis_spanning_an_escape_inside_a_table_cell() {
     // The table cell scanner hands the inline parser the *unescaped* cell content (`_x|y_`),
     // which is shorter than the source range it came from (`_x\|y_`). Emphasis matching used to
