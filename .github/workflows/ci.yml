@@ -90,6 +90,18 @@ jobs:
       - name: ESLint + feature linter
         run: bun run lint
 
+      # Deliberately its own step rather than only riding inside `bun run lint`,
+      # so a language violation is named in the check list instead of being
+      # reported as a generic lint failure. It also still runs when eslint is
+      # what failed, which `&&` in the lint script would prevent.
+      #
+      # This lives in the Lint job on purpose: Lint is one of the required
+      # status checks on main, so the gate blocks a merge without needing the
+      # branch ruleset to be edited.
+      - name: English-only source (no CJK)
+        if: always()
+        run: node scripts/check-cjk.mjs
+
   # Code quality checks and tests
   test:
     name: Test & Build
