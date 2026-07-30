@@ -66,6 +66,11 @@ const DEFAULT_BINARY = path.join(
 );
 const parserBinary = path.resolve(process.env.SUPRAMARK_MARKDOWN_BIN ?? DEFAULT_BINARY);
 const failOnFailures = process.env.FAIL_ON_FAILURES !== '0';
+// Gate mode decides what a non-zero exit means (see buildGate below).
+// 'regression' (default) fails only on movement away from the recorded
+// baseline; 'absolute' fails on any not-passing case, which is what every
+// run did before a source with a standing failure set existed.
+const gateMode = process.env.CONFORMANCE_GATE === 'absolute' ? 'absolute' : 'regression';
 const visualEnabled = process.env.VISUAL_COMPARE === '1';
 const parserProfile = 'supramark-default';
 const filter = process.env.CASE_IDS
@@ -202,6 +207,14 @@ const summary = {
   failureGroups,
   locale: 'zh-CN',
   result: notPassed.length === 0 && visualExecution.notPassed === 0 ? '通过' : '失败',
+  gate: buildGate({
+    mode: gateMode,
+    baseline,
+    // Union, not a sum: a case can fail both comparisons and must count once.
+    notPassedCount: overallNotPassedCases.size,
+    semanticErrorCount: errors.length,
+    visualErrorCount: visualExecution.errors,
+  }),
   source: sourceConfig.name,
   sourceDisplayName: sourceConfig.displayName ?? sourceConfig.name,
   profile: parserProfile,
@@ -292,7 +305,68 @@ if (summary.visual.enabled) {
 console.log(`中文总结：${path.join(artifactDirectory, 'summary.md')}`);
 console.log(`HTML 可视化报告：${path.join(artifactDirectory, 'report.html')}`);
 if (summary.result === '失败') console.log(`Issue 内容：${issuePath}`);
-if (summary.result === '失败' && failOnFailures) process.exitCode = 1;
+console.log(`gate[${summary.gate.mode}]: ${summary.gate.failed ? 'FAIL' : 'PASS'} - ${summary.gate.reason}`);
+if (summary.gate.failed && failOnFailures) process.exitCode = 1;
+
+// Decide whether this run should fail the workflow, and say why in one place.
+//
+// A source is allowed to carry a standing set of known-failing cases (cmark-gfm
+// starts at 58 semantic / 29 visual), so "any case failed" is the wrong gate:
+// it makes main permanently red and tells a PR nothing about whether it made
+// things worse. The gate that carries information is movement away from the
+// recorded baseline.
+//
+// Two things still fail regardless of the baseline:
+//   - execution errors, which mean the parser or the harness broke rather than
+//     a case merely disagreeing. A panic must never be absorbed as "expected".
+//   - an unusable baseline. Without one there is nothing to compare against, so
+//     staying quiet would report a green run that checked nothing. This is also
+//     what makes RUN_VISUAL=false loud instead of silently ungated: the visual
+//     run and the baseline are keyed to production-web-renderer-dom, so a
+//     semantic-only run lands on baseline-target-mismatch and fails here.
+function buildGate({ mode, baseline, notPassedCount, semanticErrorCount, visualErrorCount }) {
+  const errorCount = semanticErrorCount + visualErrorCount;
+  if (errorCount > 0) {
+    return {
+      mode,
+      failed: true,
+      kind: 'execution-errors',
+      reason: `${errorCount} execution error(s): parser or harness failure, not a case disagreement`,
+      errorCount,
+    };
+  }
+  if (mode === 'absolute') {
+    return {
+      mode,
+      failed: notPassedCount > 0,
+      kind: 'absolute',
+      reason: `${notPassedCount} not-passing case(s) under absolute mode`,
+      notPassedCount,
+    };
+  }
+  if (!baseline.configured) {
+    return {
+      mode,
+      failed: true,
+      kind: 'baseline-unusable',
+      reason: `cannot gate on regressions: baseline ${baseline.reason} (${baseline.path})`,
+      baselineReason: baseline.reason,
+    };
+  }
+  const added = baseline.overall.added;
+  const resolved = baseline.overall.resolved;
+  return {
+    mode,
+    failed: added.length > 0,
+    kind: 'regression',
+    reason: added.length > 0
+      ? `${added.length} case(s) regressed against baseline: ${added.slice(0, 5).join(', ')}${added.length > 5 ? ', ...' : ''}`
+      : `no regression against baseline (${resolved.length} resolved, ${baseline.overall.persistent.length} still failing)`,
+    added,
+    resolved,
+    scope: baseline.scope,
+  };
+}
 
 function runCase(testCase) {
   const parsed = spawnSync(parserBinary, ['-'], {

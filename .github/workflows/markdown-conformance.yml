@@ -20,6 +20,11 @@ on:
         description: "存在未通过用例时将工作流标记为失败"
         type: boolean
         default: true
+      gate_mode:
+        description: "Gate: regression (fail only on new failures vs baseline) or absolute (fail on any)"
+        type: choice
+        options: [regression, absolute]
+        default: regression
       issue_repository:
         description: "Issue 目标仓库（owner/repo，留空使用当前仓库）"
         type: string
@@ -98,6 +103,7 @@ jobs:
       RUN_VISUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.run_visual || (github.event_name != 'workflow_dispatch' && vars.MARKDOWN_CONFORMANCE_RUN_VISUAL != 'false' && vars.COMMONMARK_RUN_VISUAL != 'false') }}
       FAIL_WORKFLOW: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_workflow || (github.event_name != 'workflow_dispatch' && vars.MARKDOWN_CONFORMANCE_FAIL_WORKFLOW != 'false' && vars.COMMONMARK_FAIL_WORKFLOW != 'false') }}
       ISSUE_REPOSITORY: ${{ inputs.issue_repository || vars.MARKDOWN_CONFORMANCE_ISSUE_REPOSITORY || vars.COMMONMARK_ISSUE_REPOSITORY || github.repository }}
+      CONFORMANCE_GATE: ${{ github.event_name == 'workflow_dispatch' && inputs.gate_mode || 'regression' }}
 
     steps:
       - name: 显示运行配置
@@ -107,6 +113,7 @@ jobs:
           echo "run_visual=$RUN_VISUAL"
           echo "fail_workflow=$FAIL_WORKFLOW"
           echo "issue_repository=$ISSUE_REPOSITORY"
+          echo "gate=$CONFORMANCE_GATE"
 
       - name: 检出代码
         uses: actions/checkout@v4

@@ -121,7 +121,8 @@ Issue 标题格式为 `[<数据源显示名>] 验证结果问题：存在未通�
 - `sources`：执行的数据源；支持单个名称、逗号分隔的多个名称或 `all`。例如 `commonmark`、`cmark-gfm`、`commonmark,cmark-gfm`。
 - `create_issue`：失败后是否创建或更新聚合 Issue，默认开启。
 - `run_visual`：是否执行浏览器视觉对照；关闭时只运行语义对照，默认开启。
-- `fail_workflow`：存在未通过用例时是否将工作流标记为失败，默认开启。
+- `fail_workflow`：判定失败时是否将工作流标记为失败，默认开启。
+- `gate_mode`：失败判定方式，`regression`（仅新增失败判失败，默认）或 `absolute`（存在未通过用例即判失败）；详见「失败判定」。
 - `issue_repository`：Issue 目标仓库，格式为 `owner/repo`；留空时使用当前仓库。
 
 push 使用仓库 Actions Variables 控制相同行为：
@@ -142,10 +143,24 @@ Pull Request 始终不会自动创建 Issue，即使 `COMMONMARK_AUTO_ISSUE=true
 
 ## 批准基线
 
-批准基线按数据源位于 `tests/markdown-conformance/baselines/<source-name>.json`，用于在 Issue 中区分新增失败、已恢复和持续失败。只有完整运行该数据源的全部用例、视觉测试已执行且语义与视觉执行错误均为 0 时，才允许更新：
+批准基线按数据源位于 `tests/markdown-conformance/baselines/<source-name>.json`，用于在 Issue 中区分新增失败、已恢复和持续失败，同时决定运行的退出码（见下节「失败判定」）。只有完整运行该数据源的全部用例、视觉测试已执行且语义与视觉执行错误均为 0 时，才允许更新：
 
 ```powershell
 node tests/markdown-conformance/scripts/update-baseline.mjs <source-name>
 ```
 
 原有 `update-commonmark-baseline.mjs` 保留为兼容入口。基线更新属于人工批准动作，不应在普通 Actions 运行中自动执行。
+
+## 失败判定
+
+退出码由「相对基线是否退步」决定，而不是「是否存在未通过用例」。数据源允许携带一批已知失败（cmark-gfm 起始为语义 58、视觉 29），若按绝对数量判定，main 会长期标红，而 PR 又无法得知自己是否让情况变坏。
+
+默认 `regression` 模式下，以下三种情况判定为失败：
+
+- 相对基线出现新增失败（`baseline.overall.added` 非空）；
+- 存在执行错误（语义或视觉），意味着 parser 或测试框架本身出错，而不是用例结论不一致 —— panic 绝不能被当成「已知失败」吸收；
+- 基线不可用（缺失、数据源不匹配、对照目标不匹配）。此时没有可比对的对象，静默通过等于报告了一次什么都没检查的绿色运行。这也让 `RUN_VISUAL=false` 变为显式失败：视觉运行与基线都以 `production-web-renderer-dom` 为对照目标，只跑语义会落到 `baseline-target-mismatch`。
+
+判定结果写入 `summary.json` 的 `gate` 字段，并在运行日志中输出一行 `gate[...]: PASS/FAIL - <原因>`。
+
+`workflow_dispatch` 的 `gate_mode` 输入或环境变量 `CONFORMANCE_GATE=absolute` 可切回按绝对数量判定；`FAIL_ON_FAILURES=0` 仍然是「只出报告、永不失败」的总开关。
