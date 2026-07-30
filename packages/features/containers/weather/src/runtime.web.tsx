@@ -7,6 +7,7 @@
  */
 
 import React from 'react';
+import { getMockWeather } from './mock-weather.js';
 import type { ContainerWebRenderArgs } from '@supramark/core';
 import type { WeatherData } from './feature.js';
 
@@ -52,24 +53,12 @@ function WeatherIcon({ type }: { type: 'sunny' | 'cloudy' | 'rainy' }) {
 }
 
 /**
- * Mock weather data (a real app should call a weather API)
+ * condition index → web semantic key (platform-specific, not in shared layer)
+ *
+ * Shared derivation (temp/humidity/wind/conditionIndex) lives in
+ * mock-weather.ts; this only maps the condition for this platform.
  */
-function getMockWeather(location: string, units: 'metric' | 'imperial' = 'metric') {
-  // Derive a pseudo-random temperature from the location name
-  const hash = location.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const baseTemp = 15 + (hash % 20);
-  const temp = units === 'imperial' ? Math.round(baseTemp * 1.8 + 32) : baseTemp;
-  const unit = units === 'imperial' ? '°F' : '°C';
-
-  const conditions = ['sunny', 'cloudy', 'rainy'] as const;
-  const condition = conditions[hash % 3];
-
-  const humidity = 40 + (hash % 40);
-  const wind = 5 + (hash % 20);
-  const windUnit = units === 'imperial' ? 'mph' : 'km/h';
-
-  return { temp, unit, condition, humidity, wind, windUnit };
-}
+const WEB_CONDITIONS = ['sunny', 'cloudy', 'rainy'] as const;
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -181,7 +170,7 @@ export function renderWeatherContainerWeb({
         <span style={styles.format}>{format.toUpperCase()}</span>
       </div>
       <div style={styles.main}>
-        <WeatherIcon type={weather.condition} />
+        <WeatherIcon type={WEB_CONDITIONS[weather.conditionIndex]} />
         <p style={styles.temp}>
           {weather.temp}
           <span style={{ fontSize: '24px' }}>{weather.unit}</span>
