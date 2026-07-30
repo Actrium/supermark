@@ -65,9 +65,15 @@ export async function renderWithProductionWebRenderer({ cases, astById }) {
           'HTML tag filter',
         ]);
         const gfmTagfilter = tagfilterSections.has(testCase.source?.section ?? '');
+        // GFM footnote section format (trailing <section> + backrefs) is a
+        // per-extension feature; enable it only for the cmark-gfm Footnotes
+        // family of sections. CommonMark has no footnotes extension.
+        const sectionName = testCase.source?.section ?? '';
+        const gfmFootnoteStyle =
+          testCase.id.startsWith('cmark-gfm-') && sectionName.toLowerCase().includes('footnote');
         const response = await page.evaluate(
           request => window.renderSupramarkCase(request),
-          { id: testCase.id, markdown: testCase.input.markdown, ast, gfmTagfilter }
+          { id: testCase.id, markdown: testCase.input.markdown, ast, gfmTagfilter, gfmFootnoteStyle }
         );
         const errors = [...response.errors, ...pageErrors.slice(pageErrorOffset)];
         if (errors.length > 0) errorsById.set(testCase.id, errors);

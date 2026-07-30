@@ -1,4 +1,13 @@
-import React, { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type {
   SupramarkRootNode,
   SupramarkNode,
@@ -9,6 +18,8 @@ import type {
   SupramarkDefinitionTermNode,
   SupramarkDefinitionDescriptionNode,
   SupramarkRawNode,
+  SupramarkFootnoteReferenceNode,
+  SupramarkFootnoteDefinitionNode,
   SupramarkDiagramConfig,
   SupramarkConfig,
   SupramarkCodeHighlightResult,
@@ -306,6 +317,23 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
     return containerRenderers ?? {};
   }, [containerRenderers]);
 
+  const footnoteStyle = isGfmFootnoteStyle(config);
+  const footnoteMeta = useMemo(
+    () => (footnoteStyle && parsedDocument ? buildFootnoteMeta(parsedDocument.root) : null),
+    [footnoteStyle, parsedDocument],
+  );
+  // In GFM footnote-section mode, definitions are hoisted to a trailing
+  // <section>; filter them out of the body so they don't also render in place
+  // (renderNode also returns null for them, but removing them here keeps the
+  // body clean for raw-HTML sibling merging).
+  const bodyChildren = useMemo(
+    () =>
+      footnoteStyle && parsedDocument
+        ? parsedDocument.root.children.filter(n => n.type !== 'footnote_definition')
+        : parsedDocument?.root.children ?? [],
+    [footnoteStyle, parsedDocument],
+  );
+
   if (parseError) {
     if (errorFallback) {
       return <>{errorFallback(parseError)}</>;
@@ -331,23 +359,35 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
       classNamePrefix={errorClassNamePrefix}
     >
       <SourceStateContext.Provider value={parsedDocument.sourceState}>
-        <div className={mergedClassNames.root}>
-          {mergeRawNodes(
-            parsedDocument.root.children,
-            (node, index) =>
-              renderNode(
-                node,
-                index,
-                mergedClassNames,
-                parsedDocument.rendered,
-                parsedDocument.highlighted,
-                config,
-                mergedContainerRenderers
-              ),
-            mergedClassNames,
-            config
-          )}
-        </div>
+        <FootnoteMetaContext.Provider value={footnoteMeta}>
+          <div className={mergedClassNames.root}>
+            {mergeRawNodes(
+              bodyChildren,
+              (node, index) =>
+                renderNode(
+                  node,
+                  index,
+                  mergedClassNames,
+                  parsedDocument.rendered,
+                  parsedDocument.highlighted,
+                  config,
+                  mergedContainerRenderers,
+                ),
+              mergedClassNames,
+              config,
+            )}
+            {footnoteMeta && footnoteMeta.defs.length > 0 && (
+              <FootnoteSection
+                defs={footnoteMeta.defs}
+                classNames={mergedClassNames}
+                rendered={parsedDocument.rendered}
+                highlighted={parsedDocument.highlighted}
+                config={config}
+                containerRenderers={mergedContainerRenderers}
+              />
+            )}
+          </div>
+        </FootnoteMetaContext.Provider>
       </SourceStateContext.Provider>
     </ErrorBoundary>
   );
@@ -435,6 +475,241 @@ function tagfilterEscape(html: string): string {
 
 function maybeTagfilter(value: string, config?: SupramarkConfig): string {
   return isTagfilterEnabled(config) ? tagfilterEscape(value) : value;
+}
+
+// GFM footnote section. cmark-gfm hoists footnote definitions to a trailing
+// `<section class="footnotes" data-footnotes><ol><li id="fn-N">…</li></ol></section>`,
+// renders references as `<sup class="footnote-ref"><a href="#fn-N" id="fnref-N" data-footnote-ref>N</a></sup>`,
+// and appends one backref per reference to the definition's last paragraph (or
+// after the last block when it isn't a paragraph). Unreferenced definitions are
+// dropped; references with no definition stay literal `[^label]`. The extension
+// is opt-in via `options.gfmFootnoteStyle`; the conformance harness enables it
+// only for the cmark-gfm "Footnotes" section, so the default (inline) footnote
+// rendering and CommonMark are unaffected.
+type FootnoteRefMeta = {
+  occurrence: number;
+  defIndex: number;
+  defIdentifier: string;
+};
+type FootnoteDefMeta = {
+  index: number;
+  label?: string;
+  identifier: string;
+  children: SupramarkNode[];
+  occurrences: number[];
+};
+type FootnoteMeta = {
+  refMeta: Map<SupramarkFootnoteReferenceNode, FootnoteRefMeta>;
+  defs: FootnoteDefMeta[];
+};
+
+const FootnoteMetaContext = createContext<FootnoteMeta | null>(null);
+
+function isGfmFootnoteStyle(config?: SupramarkConfig): boolean {
+  return config?.options?.gfmFootnoteStyle === true;
+}
+
+// Mirror cmark-gfm's URL-fragment escaping for footnote identifiers: keep
+// URL-safe chars (including `/`, `(`, `)`, alphanumerics) literal and
+// percent-encode the rest, so `"`, `<`, `>` become %22/%3C/%3E. `encodeURIComponent`
+// matches except it also encodes `/`, which cmark leaves literal in fragments.
+function footnoteHrefEscape(s: string): string {
+  let out = '';
+  for (const ch of s) {
+    out += ch === '/' ? ch : encodeURIComponent(ch);
+  }
+  return out;
+}
+
+function buildFootnoteMeta(root: SupramarkRootNode): FootnoteMeta {
+  const defsById = new Map<string, FootnoteDefMeta>();
+  const collectDefs = (list: SupramarkNode[]) => {
+    for (const n of list) {
+      if (n.type === 'footnote_definition') {
+        const d = n as SupramarkFootnoteDefinitionNode;
+        defsById.set(d.identifier, {
+          index: d.index,
+          label: d.label,
+          identifier: d.identifier,
+          children: d.children,
+          occurrences: [],
+        });
+      }
+      if ('children' in n && Array.isArray(n.children)) collectDefs(n.children);
+    }
+  };
+  collectDefs(root.children);
+
+  const refMeta = new Map<SupramarkFootnoteReferenceNode, FootnoteRefMeta>();
+  const occCount = new Map<string, number>();
+  const referenced = new Set<string>();
+  const walkRefs = (list: SupramarkNode[]) => {
+    for (const n of list) {
+      if (n.type === 'footnote_reference') {
+        const r = n as SupramarkFootnoteReferenceNode;
+        const def = defsById.get(r.identifier);
+        if (def) {
+          const k = (occCount.get(r.identifier) ?? 0) + 1;
+          occCount.set(r.identifier, k);
+          referenced.add(r.identifier);
+          refMeta.set(r, {
+            occurrence: k,
+            defIndex: def.index,
+            defIdentifier: def.identifier,
+          });
+        }
+      }
+      if ('children' in n && Array.isArray(n.children)) walkRefs(n.children);
+    }
+  };
+  walkRefs(root.children);
+
+  for (const def of defsById.values()) {
+    if (referenced.has(def.identifier)) {
+      def.occurrences = Array.from(
+        { length: occCount.get(def.identifier) ?? 0 },
+        (_, i) => i + 1,
+      );
+    }
+  }
+  const defs = [...defsById.values()]
+    .filter(d => referenced.has(d.identifier))
+    .sort((a, b) => a.index - b.index);
+
+  return { refMeta, defs };
+}
+
+function FootnoteRef({ node }: { node: SupramarkFootnoteReferenceNode }) {
+  const meta = useContext(FootnoteMetaContext);
+  const refMeta = meta?.refMeta.get(node);
+  if (!refMeta) {
+    // Unresolved reference (no matching definition) stays literal.
+    return <>[^{node.label ?? ''}]</>;
+  }
+  const suffix = refMeta.occurrence === 1 ? '' : `-${refMeta.occurrence}`;
+  const id = footnoteHrefEscape(refMeta.defIdentifier);
+  return (
+    <sup className="footnote-ref">
+      <a href={`#fn-${id}`} id={`fnref-${id}${suffix}`} data-footnote-ref>
+        {refMeta.defIndex}
+      </a>
+    </sup>
+  );
+}
+
+function FootnoteBackref({
+  def,
+  occurrence,
+}: {
+  def: FootnoteDefMeta;
+  occurrence: number;
+}) {
+  const suffix = occurrence === 1 ? '' : `-${occurrence}`;
+  const id = footnoteHrefEscape(def.identifier);
+  const idx = occurrence === 1 ? `${def.index}` : `${def.index}-${occurrence}`;
+  return (
+    <a
+      href={`#fnref-${id}${suffix}`}
+      className="footnote-backref"
+      data-footnote-backref
+      data-footnote-backref-idx={idx}
+      aria-label={`Back to reference ${idx}`}
+    >
+      ↩
+      {occurrence > 1 && <sup className="footnote-ref">{occurrence}</sup>}
+    </a>
+  );
+}
+
+function renderFootnoteBackrefs(def: FootnoteDefMeta): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  def.occurrences.forEach((occ, i) => {
+    if (i > 0) nodes.push(' ');
+    nodes.push(<FootnoteBackref key={occ} def={def} occurrence={occ} />);
+  });
+  return nodes;
+}
+
+function FootnoteDefLi({
+  def,
+  classNames,
+  rendered,
+  highlighted,
+  config,
+  containerRenderers,
+}: {
+  def: FootnoteDefMeta;
+  classNames: SupramarkClassNames;
+  rendered: Map<string, DiagramRenderResult>;
+  highlighted: Map<string, SupramarkCodeHighlightResult>;
+  config?: SupramarkConfig;
+  containerRenderers: Record<string, ContainerRendererWeb> | undefined;
+}) {
+  const children = def.children;
+  const last = children[children.length - 1];
+  const lastIsParagraph = last?.type === 'paragraph';
+  const backrefs = renderFootnoteBackrefs(def);
+  const blocks = children.map((child, index) => {
+    if (index === children.length - 1 && child.type === 'paragraph') {
+      const para = child as { type: 'paragraph'; children: SupramarkNode[] };
+      return (
+        <p key={index} className={classNames.paragraph}>
+          {renderInlineNodes(para.children, classNames, rendered, highlighted, config)}
+          {' '}
+          {backrefs}
+        </p>
+      );
+    }
+    return renderNode(
+      child,
+      index,
+      classNames,
+      rendered,
+      highlighted,
+      config,
+      containerRenderers,
+    );
+  });
+  return (
+    <li id={`fn-${footnoteHrefEscape(def.identifier)}`}>
+      {blocks}
+      {!lastIsParagraph && backrefs}
+    </li>
+  );
+}
+
+function FootnoteSection({
+  defs,
+  classNames,
+  rendered,
+  highlighted,
+  config,
+  containerRenderers,
+}: {
+  defs: FootnoteDefMeta[];
+  classNames: SupramarkClassNames;
+  rendered: Map<string, DiagramRenderResult>;
+  highlighted: Map<string, SupramarkCodeHighlightResult>;
+  config?: SupramarkConfig;
+  containerRenderers: Record<string, ContainerRendererWeb> | undefined;
+}) {
+  return (
+    <section className="footnotes" data-footnotes>
+      <ol>
+        {defs.map((def, index) => (
+          <FootnoteDefLi
+            key={index}
+            def={def}
+            classNames={classNames}
+            rendered={rendered}
+            highlighted={highlighted}
+            config={config}
+            containerRenderers={containerRenderers}
+          />
+        ))}
+      </ol>
+    </section>
+  );
 }
 
 // React's component model emits one DOM element per node, so it cannot express
@@ -1292,6 +1567,10 @@ function renderNode(
     }
     case 'footnote_definition': {
       const def = node;
+      // When the GFM footnote section is enabled, definitions are hoisted to a
+      // trailing `<section class="footnotes">` by FootnoteSection and must not
+      // also render at their source position.
+      if (isGfmFootnoteStyle(config)) return null;
       // def.children are block-level nodes (usually a single paragraph) and can't be
       // fed to renderInlineNodes directly.
       // Common shape `[^1]: content.` → children = [{ type: 'paragraph', children: [text] }]
@@ -1690,6 +1969,9 @@ function renderInlineNode(
     }
     case 'footnote_reference': {
       const ref = node;
+      if (isGfmFootnoteStyle(config)) {
+        return <FootnoteRef key={key} node={ref} />;
+      }
       return (
         <sup key={key} className={classNames.inlineCode}>
           <a href={`#fn-${ref.index}`} className={classNames.link}>

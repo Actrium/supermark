@@ -7,6 +7,7 @@ type RenderRequest = {
   markdown: string;
   ast: unknown;
   gfmTagfilter?: boolean;
+  gfmFootnoteStyle?: boolean;
 };
 
 type RenderResponse = {
@@ -71,6 +72,7 @@ function RenderCase({
         options: {
           allowDangerousHtml: true,
           ...(request.gfmTagfilter ? { gfmTagfilter: true } : {}),
+          ...(request.gfmFootnoteStyle ? { gfmFootnoteStyle: true } : {}),
         },
       }}
       onError={onError}

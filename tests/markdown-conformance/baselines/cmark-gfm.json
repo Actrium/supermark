@@ -25,13 +25,12 @@
   "visualFailureIds": [
     "cmark-gfm-0.29.0.gfm.13-extensions-0020",
     "cmark-gfm-0.29.0.gfm.13-extensions-0023",
-    "cmark-gfm-0.29.0.gfm.13-extensions-0024",
     "cmark-gfm-0.29.0.gfm.13-extensions-0025",
     "cmark-gfm-0.29.0.gfm.13-spec-0398",
     "cmark-gfm-0.29.0.gfm.13-spec-0652"
   ],
   "notes": {
-    "_summary": "Approved cmark-gfm 0.29.0.gfm.13 divergence baseline after issue #144. Of the 58 semantic / 29 visual failures recorded on main, the parser/renderer fixes in this change (GFM table thead/tbody + align attribute, task-list trailing-space normalization via shared list-child renderer, GFM bare-URL/email autolink postprocess with image-alt and code-node skipping, GFM single+double-tilde strikethrough, embedded-HTML-in-table-cell via coherent inline-to-HTML serialization, GFM tagfilter for the Disallowed Raw HTML / HTML tag filter sections, and per-case autolink gating for the CommonMark-core Autolinks section) resolve 44 semantic / 23 visual cases. The 14 semantic / 6 visual cases below remain and are tracked here as documented divergence rather than regressions; each is either a deliberate spec-correct stance or out-of-scope future work.",
+    "_summary": "Approved cmark-gfm 0.29.0.gfm.13 divergence baseline after issue #144. Of the 58 semantic / 29 visual failures recorded on main, the parser/renderer fixes in this change (GFM table thead/tbody + align attribute, task-list trailing-space normalization via shared list-child renderer, GFM bare-URL/email autolink postprocess with image-alt and code-node skipping, GFM single+double-tilde strikethrough, embedded-HTML-in-table-cell via coherent inline-to-HTML serialization, GFM tagfilter for the Disallowed Raw HTML / HTML tag filter sections, the GFM footnote section renderer under options.gfmFootnoteStyle, and per-case autolink gating for the CommonMark-core Autolinks section) resolve 44 semantic / 24 visual cases. The 14 semantic / 5 visual cases below remain and are tracked here as documented divergence rather than regressions; each is either a deliberate spec-correct stance, a parser-level limitation tracked as future work, or an out-of-scope rendering target.",
     "spec-0398": "Emphasis: cmark 0.29 emits flat output where the CommonMark emphasis algorithm (delimiter runs, rule of 3) mandates nesting. Supramark's parser is spec-correct; matching cmark 0.29 would require reintroducing the known cmark emphasis bug. See issue #144 (emphasis divergence).",
     "spec-0426": "Emphasis: same cmark-0.29 flat-vs-nested divergence as spec-0398; parser is spec-correct.",
     "spec-0434": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
@@ -41,10 +40,10 @@
     "spec-0474": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
     "spec-0475": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
     "spec-0477": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
-    "spec-0652": "Disallowed Raw HTML: GFM tagfilter escapes disallowed block-level tags at the point of emission, but this case requires HTML tree-construction leak-through (an unclosed disallowed tag in one block leaking into the next block's parsing). The React-based web renderer emits blocks as independent elements and cannot reproduce cmark-gfm's active-formatting-element reconstruction across block boundaries. Tracked as future work.",
+    "spec-0652": "Disallowed Raw HTML: GFM tagfilter escapes disallowed block-level tags at the point of emission, but this case additionally needs active-formatting-element reconstruction across the `</p>` boundary (the unclosed `<strong>`/`<em>` re-open around trailing content). The web renderer's raw-HTML paragraph path uses `template.innerHTML` to reproduce a different cmark leak (unclosed `<a>`), and the two behaviours conflict. Tracked as future work.",
     "extensions-0020": "Autolink crash-safety edge case `(_A_@_.A` renders as the cmark-gfm internal `<IGNORE>` sentinel. This is a cmark-gfm implementation detail, not a real rendering target; tracked as an excluded case.",
-    "extensions-0023": "Footnotes: GFM renders footnote definitions as a trailing `<section class=\"footnotes\" data-footnotes><ol><li id=\"fn-N\">...</li></ol></section>` with backrefs; Supramark currently renders them inline as `<p id=\"fn-N\">`. Tracked as future work (requires RN parity + a hoisting/backref-numbering pass over the AST).",
-    "extensions-0024": "Footnotes: multiple references should insert multiple backrefs; depends on the GFM footnote section format (extensions-0023).",
-    "extensions-0025": "Footnotes: reference-label hrefs must be percent-escaped; depends on the GFM footnote section format (extensions-0023)."
+    "extensions-0023": "Footnotes: the GFM footnote section renderer is implemented (options.gfmFootnoteStyle hoists definitions to a trailing `<section>` with backrefs), but this case additionally needs the Rust parser to capture indented continuation lines as footnote-definition children — it currently leaves them as root-level code blocks, so the definitions render empty. Tracked as future parser work.",
+    "extensions-0024": "Footnotes: the GFM footnote section renderer resolves this case visually (trailing section + three backrefs with `-2`/`-3` ref-id suffixes and `1-2`/`1-3` backref indices). It remains in the semantic failure list because the AST projection used for the semantic comparison does not hoist definitions — only the production web renderer does.",
+    "extensions-0025": "Footnotes: the GFM footnote section renderer is implemented, but this case additionally needs the Rust parser to tokenize a `[^label]` whose label contains `<` (raw HTML) as one footnote reference rather than splitting it via the inline raw-HTML rule. Tracked as future parser work."
   }
 }
