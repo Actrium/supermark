@@ -8,34 +8,34 @@ import './App.css';
 
 const INITIAL_MARKDOWN = `# Supramark Live Editor
 
-欢迎使用 **Supramark** 的实时 Markdown 编辑器！
+Welcome to the **Supramark** live Markdown editor!
 
-## 功能特性
+## Features
 
-### GFM 扩展支持
+### GFM extensions
 
-- **粗体文本**
-- *斜体文本*
-- \`内联代码\`
-- ~~删除线~~
+- **Bold text**
+- *Italic text*
+- \`Inline code\`
+- ~~Strikethrough~~
 
-### 任务列表
+### Task list
 
-- [x] 支持 GFM 任务列表
-- [x] 实时预览
-- [x] 主题切换
-- [ ] 更多功能开发中
+- [x] GFM task list support
+- [x] Live preview
+- [x] Theme switching
+- [ ] More features in progress
 
-### 表格示例
+### Table example
 
-| 功能 | 状态 | 说明 |
+| Feature | Status | Notes |
 | --- | :---: | ---: |
-| 删除线 | ✅ | 使用 \`~~\` 语法 |
-| 任务列表 | ✅ | \`[ ]\` 和 \`[x]\` |
-| 表格 | ✅ | 标准 GFM 表格 |
-| 主题系统 | ✅ | 支持自定义 className |
+| Strikethrough | ✅ | Uses \`~~\` syntax |
+| Task list | ✅ | \`[ ]\` and \`[x]\` |
+| Table | ✅ | Standard GFM table |
+| Theme system | ✅ | Supports custom className |
 
-### 代码块
+### Code block
 
 \`\`\`javascript
 function hello(name) {
@@ -45,11 +45,11 @@ function hello(name) {
 hello('Supramark');
 \`\`\`
 
-### 链接和图片
+### Links and images
 
-这是一个 [链接示例](https://github.com)
+This is a [link example](https://github.com)
 
-### Weather 卡片
+### Weather card
 
 :::weather
 location: Shanghai
@@ -57,20 +57,20 @@ condition: Cloudy
 tempC: 22
 :::
 
-### Mermaid 图表
+### Mermaid diagram
 
 \`\`\`mermaid
 graph TD
-    A[开始] --> B{是否喜欢 Supramark?}
-    B -->|是| C[继续使用]
-    B -->|否| D[再试一次]
-    C --> E[享受编写 Markdown]
+    A[Start] --> B{Do you like Supramark?}
+    B -->|Yes| C[Keep using it]
+    B -->|No| D[Give it another try]
+    C --> E[Enjoy writing Markdown]
     D --> B
 \`\`\`
 
 ---
 
-在左侧编辑 Markdown，右上角切换主题，右侧实时预览结果！
+Edit Markdown on the left, switch themes in the top right, and watch the live preview update on the right!
 `.trim();
 
 type ThemeOption = 'none' | 'tailwind' | 'minimal';
@@ -83,27 +83,27 @@ function App() {
     <div className="app-container">
       <header className="app-header">
         <h1>Supramark Live Editor</h1>
-        <p>实时 Markdown 编辑器 - CSR 示例</p>
+        <p>Live Markdown Editor - CSR Example</p>
       </header>
       <div className="editor-container">
         <div className="editor-panel">
-          <h2>Markdown 编辑器</h2>
+          <h2>Markdown Editor</h2>
           <textarea
             value={markdown}
             onChange={e => setMarkdown(e.target.value)}
             className="markdown-editor"
-            placeholder="在此输入 Markdown..."
+            placeholder="Type Markdown here..."
           />
         </div>
         <div className="preview-panel">
           <div className="preview-header">
-            <h2>实时预览</h2>
+            <h2>Live Preview</h2>
             <div className="theme-selector">
-              <label>主题：</label>
+              <label>Theme:</label>
               <select value={theme} onChange={e => setTheme(e.target.value as ThemeOption)}>
-                <option value="none">无主题</option>
+                <option value="none">No theme</option>
                 <option value="tailwind">Tailwind CSS</option>
-                <option value="minimal">极简主题</option>
+                <option value="minimal">Minimal</option>
               </select>
             </div>
           </div>

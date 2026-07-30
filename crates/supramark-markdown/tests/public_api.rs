@@ -2,6 +2,7 @@ use supramark_markdown::{parse, DiagnosticSeverity, ExtensionMode, SupramarkNode
 
 #[test]
 fn public_api_outputs_ast_v2_with_positions() {
+    // cjk-allow: multi-byte CJK + emoji source needed to exercise utf16-offset math
     let ast = parse("# 标题 😄\n\nHello **世界** and `code`.");
     let SupramarkNode::Root {
         ast_version,

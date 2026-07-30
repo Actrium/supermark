@@ -12,22 +12,22 @@ import { makeFeatureConfigHelpers } from '@supramark/core';
 /**
  * Definition List Feature
  *
- * 定义列表语法支持（Term + 多段描述）的规范定义。
+ * Canonical definition of definition-list syntax support (Term + multi-paragraph description).
  *
- * - 复用 core 中 `definition_list` / `definition_item` AST；
- * - AST v2 中 definition_item 通过 children 承载 definition_term / definition_description；
- * - 解析逻辑由 supramark-markdown AST v2 parser 实现；
- * - 渲染逻辑由 @supramark/rn / @supramark/web 负责。
+ * - Reuses the `definition_list` / `definition_item` AST in core;
+ * - In AST v2, definition_item carries definition_term / definition_description via children;
+ * - Parsing logic is implemented by the supramark-markdown AST v2 parser;
+ * - Rendering logic is handled by @supramark/rn / @supramark/web.
  *
  * @example
  * ```markdown
- * TODO: 添加 Markdown 示例
+ * TODO: add a Markdown example
  * ```
  *
- * 节点类型说明：
- * - 如果此 Feature 只处理单一节点类型（如 'diagram'），直接使用当前配置即可
- * - 如果此 Feature 需要处理多个节点类型（如 'math_inline' 和 'math_block'），
- *   请参考下面的"多节点类型处理"注释，定义具体的节点接口和 selector
+ * Node type notes:
+ * - If this Feature handles only a single node type (e.g. 'diagram'), just use the current config as-is
+ * - If this Feature needs to handle multiple node types (e.g. 'math_inline' and 'math_block'),
+ *   see the "multi node type handling" comment below for defining the concrete node interface and selector
  */
 export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode> = {
   metadata: {
@@ -35,12 +35,12 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
     name: 'Definition List',
     version: '0.1.0',
     author: 'Supramark Team',
-    description: '定义列表语法支持（Term + 多段描述）',
+    description: 'Definition-list syntax support (Term + multi-paragraph description)',
     license: 'Apache-2.0',
     tags: ['definition-list', 'dl', 'term'],
     syntaxFamily: 'main',
   },
-  // Definition List - 依赖基础 Markdown（term 和 descriptions 可以包含 inline/block 节点）
+  // Definition List - depends on base Markdown (term and descriptions can contain inline/block nodes)
   dependencies: ['@supramark/feature-core-markdown'],
 
   syntax: {
@@ -53,11 +53,11 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
         fields: {
           type: {
             type: 'string',
-            description: '节点类型，固定为 "definition_list"。',
+            description: 'Node type, always "definition_list".',
           },
           children: {
             type: 'nodes',
-            description: '定义列表条目数组，每个条目为 definition_item 节点。',
+            description: 'Array of definition-list entries, each entry a definition_item node.',
           },
         },
       },
@@ -75,62 +75,62 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
       ],
     },
 
-    // 可选：验证规则
+    // Optional: validation rules
     // validator: {
     //   validate: (node) => {
-    //     // TODO: 添加验证逻辑
+    //     // TODO: add validation logic
     //     return { valid: true, errors: [] };
     //   }
     // },
   },
 
-  // 渲染器定义
+  // Renderer definitions
   renderers: {
-    // Web 平台渲染器
+    // Web platform renderer
     web: {
       platform: 'web',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // Web 端使用语义 HTML 元素（dl / dt / dd）
+        // On Web, uses semantic HTML elements (dl / dt / dd)
         needsClientScript: false,
-        // 无需 Worker
+        // No worker needed
         needsWorker: false,
-        // 无需缓存
+        // No cache needed
         needsCache: false,
       },
 
-      // 无外部依赖（使用标准 HTML dl 元素）
+      // No external dependencies (uses standard HTML dl elements)
       dependencies: [],
     },
 
-    // React Native 平台渲染器
+    // React Native platform renderer
     rn: {
       platform: 'rn',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // RN 端使用 View + Text 组件渲染
+        // On RN, renders using View + Text components
         needsWorker: false,
-        // 无需缓存
+        // No cache needed
         needsCache: false,
       },
 
-      // 无外部依赖（使用 View / Text 组件）
+      // No external dependencies (uses View / Text components)
       dependencies: [],
     },
   },
 
-  // 使用示例
+  // Usage examples
   examples: definitionListExamples,
 
-  // 测试定义
+  // Test definitions
   testing: {
-    // Markdown → AST 语法测试
+    // Markdown → AST syntax tests
     syntaxTests: {
       cases: [
         {
-          name: '解析简单定义列表',
+          name: 'parses a simple definition list',
           input: 'Term\n:   Definition',
           expected: {
             type: 'definition_list',
@@ -141,8 +141,8 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
           },
         },
         {
-          name: '解析多个定义的术语',
-          input: 'Apple\n:   水果\n:   公司名',
+          name: 'parses a term with multiple definitions',
+          input: 'Apple\n:   Fruit\n:   Company name',
           expected: {
             type: 'definition_list',
           } as SupramarkDefinitionListNode,
@@ -151,8 +151,8 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
           },
         },
         {
-          name: '解析多个术语',
-          input: 'HTML\nCSS\n:   网页技术',
+          name: 'parses multiple terms',
+          input: 'HTML\nCSS\n:   Web technology',
           expected: {
             type: 'definition_list',
           } as SupramarkDefinitionListNode,
@@ -163,11 +163,11 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
       ],
     },
 
-    // AST → 渲染输出测试
+    // AST → render output tests
     renderTests: {
       web: [
         {
-          name: 'Web 渲染定义列表',
+          name: 'Web renders a definition list',
           input: {
             type: 'definition_list',
             children: [
@@ -197,7 +197,7 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
       ],
       rn: [
         {
-          name: 'RN 渲染定义列表',
+          name: 'RN renders a definition list',
           input: {
             type: 'definition_list',
             children: [
@@ -213,7 +213,7 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
                     children: [
                       {
                         type: 'paragraph',
-                        children: [{ type: 'text', value: '应用程序接口' }],
+                        children: [{ type: 'text', value: 'Application Programming Interface' }],
                       },
                     ],
                   },
@@ -227,12 +227,12 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
       ],
     },
 
-    // 端到端集成测试
+    // End-to-end integration tests
     integrationTests: {
       cases: [
         {
-          name: 'DefinitionList 端到端：单个定义',
-          input: 'Markdown\n:   轻量级标记语言',
+          name: 'DefinitionList end-to-end: a single definition',
+          input: 'Markdown\n:   Lightweight markup language',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -241,8 +241,8 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
           platforms: ['web', 'rn'],
         },
         {
-          name: 'DefinitionList 端到端：多个定义',
-          input: 'TypeScript\n:   强类型 JavaScript\n:   微软开发',
+          name: 'DefinitionList end-to-end: multiple definitions',
+          input: 'TypeScript\n:   Strongly-typed JavaScript\n:   Developed by Microsoft',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -261,7 +261,7 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
       ],
     },
 
-    // 覆盖率要求
+    // Coverage requirements
     coverageRequirements: {
       statements: 80,
       branches: 75,
@@ -270,62 +270,62 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
     },
   },
 
-  // 文档定义
+  // Documentation definitions
   documentation: {
     readme: `
 # Definition List Feature
 
-为 Supramark 提供定义列表支持。
+Provides definition-list support for Supramark.
 
-## 功能
+## Features
 
-- 术语定义
-- 多段描述
+- Term definitions
+- Multi-paragraph descriptions
 
-## 使用
+## Usage
 
-查看 examples 目录获取更多示例。
+See the examples directory for more examples.
     `.trim(),
 
     api: {
       interfaces: [
         {
           name: 'DefinitionListFeatureOptions',
-          description: 'Definition List Feature 的配置选项接口（当前为空，保留用于未来扩展）',
+          description: 'Configuration options interface for the Definition List Feature (currently empty, reserved for future extension)',
           fields: [],
         },
         {
           name: 'SupramarkDefinitionListNode',
-          description: '定义列表 AST 节点接口，用于表示术语及其定义的列表',
+          description: 'AST node interface for a definition list, representing a list of terms and their definitions',
           fields: [
             {
               name: 'type',
               type: "'definition_list'",
-              description: '节点类型标识，固定为 "definition_list"',
+              description: 'Node type identifier, always "definition_list"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkDefinitionItemNode[]',
-              description: '定义列表条目数组，每个条目为一个术语及其定义',
+              description: 'Array of definition-list entries, each entry a term and its definition',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkDefinitionItemNode',
-          description: '定义列表项 AST 节点接口，通过 children 包含术语和定义描述',
+          description: 'AST node interface for a definition-list item, containing the term and definition description via children',
           fields: [
             {
               name: 'type',
               type: "'definition_item'",
-              description: '节点类型标识，固定为 "definition_item"',
+              description: 'Node type identifier, always "definition_item"',
               required: true,
             },
             {
               name: 'children',
               type: 'Array<SupramarkDefinitionTermNode | SupramarkDefinitionDescriptionNode>',
-              description: '按源码顺序排列的 definition_term 与 definition_description 子节点',
+              description: 'definition_term and definition_description child nodes, in source order',
               required: true,
             },
           ],
@@ -336,18 +336,18 @@ export const definitionListFeature: SupramarkFeature<SupramarkDefinitionListNode
         {
           name: 'createDefinitionListFeatureConfig',
           description:
-            '创建 Definition List Feature 配置对象，用于在 SupramarkConfig 中启用定义列表支持',
+            'Creates a Definition List Feature config object, used to enable definition-list support in SupramarkConfig',
           parameters: [
             {
               name: 'enabled',
               type: 'boolean',
-              description: '是否启用 Definition List Feature',
+              description: 'Whether to enable the Definition List Feature',
               optional: false,
             },
             {
               name: 'options',
               type: 'DefinitionListFeatureOptions',
-              description: 'Definition List Feature 配置选项（当前为空对象）',
+              description: 'Definition List Feature configuration options (currently an empty object)',
               optional: true,
             },
           ],
@@ -364,12 +364,12 @@ const config = {
         },
         {
           name: 'getDefinitionListFeatureOptions',
-          description: '从 SupramarkConfig 中提取 Definition List Feature 的配置选项',
+          description: 'Extracts the Definition List Feature configuration options from a SupramarkConfig',
           parameters: [
             {
               name: 'config',
               type: 'SupramarkConfig',
-              description: 'Supramark 配置对象',
+              description: 'The Supramark configuration object',
               optional: true,
             },
           ],
@@ -386,7 +386,7 @@ const options = getDefinitionListFeatureOptions(config);`,
         {
           name: 'DefinitionListFeatureConfig',
           description:
-            'Definition List Feature 配置类型，是 FeatureConfigWithOptions<DefinitionListFeatureOptions> 的类型别名',
+            'Definition List Feature configuration type, a type alias for FeatureConfigWithOptions<DefinitionListFeatureOptions>',
           definition:
             'type DefinitionListFeatureConfig = FeatureConfigWithOptions<DefinitionListFeatureOptions>',
         },
@@ -394,36 +394,36 @@ const options = getDefinitionListFeatureOptions(config);`,
     },
 
     bestPractices: [
-      '术语单独占一行，定义以 :   开头（冒号后至少 3 个空格或 1 个 tab）',
-      '一个术语可以有多个定义，每个定义单独一行并以 :   开头',
-      '多个术语可以共享同一个定义',
-      '定义内容支持多段落，使用缩进保持结构',
+      'Put the term on its own line; start the definition with :   (at least 3 spaces or 1 tab after the colon)',
+      'A term can have multiple definitions; each definition goes on its own line starting with :  ',
+      'Multiple terms can share the same definition',
+      'Definition content supports multiple paragraphs; use indentation to preserve structure',
     ],
 
     faq: [
       {
-        question: '定义列表的语法格式是什么？',
+        question: 'What is the definition-list syntax format?',
         answer:
-          '术语单独一行，定义以 :   开头（冒号后至少 3 个空格或 1 个 tab）。例如：Term\\n:   Definition',
+          'The term is on its own line; the definition starts with :   (at least 3 spaces or 1 tab after the colon). For example: Term\\n:   Definition',
       },
       {
-        question: '一个术语可以有多个定义吗？',
+        question: 'Can a term have multiple definitions?',
         answer:
-          '可以。每个定义单独一行并以 :   开头即可，例如：Term\\n:   Definition 1\\n:   Definition 2',
+          'Yes. Each definition just needs its own line starting with :  , for example: Term\\n:   Definition 1\\n:   Definition 2',
       },
       {
-        question: '多个术语可以共享定义吗？',
-        answer: '可以。连续写多个术语，然后写一个定义，这些术语将共享该定义。',
+        question: 'Can multiple terms share a definition?',
+        answer: 'Yes. Write several consecutive terms followed by one definition, and those terms will share that definition.',
       },
     ],
   },
 };
 
 /**
- * Definition List Feature 的配置项。
+ * Configuration options for the Definition List Feature.
  */
 export interface DefinitionListFeatureOptions {
-  // 当前为空，保留用于未来扩展
+  // Currently empty, reserved for future extension
 }
 
 export type DefinitionListFeatureConfig = FeatureConfigWithOptions<DefinitionListFeatureOptions>;

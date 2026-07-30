@@ -49,7 +49,7 @@ class SelectableRichTextShadowNode
     return traits;
   }
 
-  // setTextLayoutManager 注入 RN TextLayoutManager，用于测量、baseline 和 ParagraphState。
+  // setTextLayoutManager injects the RN TextLayoutManager, used for measurement, baseline, and ParagraphState.
   void setTextLayoutManager(std::shared_ptr<const TextLayoutManager> textLayoutManager);
 
   void layout(LayoutContext layoutContext) override;

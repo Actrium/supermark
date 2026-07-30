@@ -1,14 +1,15 @@
 /**
- * Supramark RN 样式系统
+ * Supramark RN style system
  *
- * 此文件定义了 Supramark React Native 组件的样式类型和默认样式。
- * 用户可以通过传入 styles prop 来覆盖默认样式。
+ * This file defines the style types and default styles for the Supramark
+ * React Native components. Users can override the default styles by passing
+ * the styles prop.
  */
 
 import { StyleSheet, type TextStyle, type ViewStyle } from 'react-native';
 
 /**
- * Supramark 可自定义的样式键
+ * Supramark's customizable style keys
  */
 export interface SupramarkStyles {
   // Block elements
@@ -78,7 +79,7 @@ export interface SupramarkStyles {
 }
 
 /**
- * 默认样式
+ * Default styles
  */
 export const defaultStyles = StyleSheet.create({
   paragraph: {
@@ -312,24 +313,24 @@ export const defaultStyles = StyleSheet.create({
 });
 
 /**
- * 合并用户样式和默认样式
- * @param customStyles 用户自定义样式
- * @returns 合并后的样式
+ * Merges user styles with the default styles
+ * @param customStyles user-supplied custom styles
+ * @returns the merged styles
  */
 export function mergeStyles(customStyles?: SupramarkStyles): typeof defaultStyles {
   if (!customStyles) {
     return defaultStyles;
   }
 
-  // 创建一个新对象,避免修改defaultStyles
+  // Create a new object to avoid mutating defaultStyles
   const merged: Record<string, TextStyle | ViewStyle> = {};
 
-  // 先复制所有默认样式
+  // First copy all default styles
   Object.keys(defaultStyles).forEach(key => {
     merged[key] = defaultStyles[key as keyof typeof defaultStyles];
   });
 
-  // 然后合并用户样式
+  // Then merge in the user styles
   Object.keys(customStyles).forEach(key => {
     const customStyle = customStyles[key as keyof SupramarkStyles];
     if (customStyle) {
@@ -342,7 +343,7 @@ export function mergeStyles(customStyles?: SupramarkStyles): typeof defaultStyle
 }
 
 /**
- * Dark 主题样式
+ * Dark theme styles
  */
 export const darkThemeStyles: SupramarkStyles = {
   paragraph: {
@@ -423,15 +424,18 @@ export const darkThemeStyles: SupramarkStyles = {
 };
 
 /**
- * 与内置主题前景色配套的推荐画布背景色。
+ * Recommended canvas background colors that pair with the built-in theme
+ * foreground colors.
  *
- * 组件自身不在 root 上绘制背景 —— 画布由宿主提供。为保证前景文字可读，
- * 宿主渲染容器应使用与所选 theme 明暗配套的背景色（可用此常量）：
+ * The component itself does not paint a background on root — the canvas is
+ * provided by the host. To keep foreground text readable, the host's
+ * rendering container should use a background color matching the chosen
+ * theme's brightness (this constant may be used for that):
  *
  * - theme="dark"  → themeBackground.dark  (#0d1117)
  * - theme="light" → themeBackground.light (#ffffff)
  *
- * 宿主也可使用自有画布颜色，只要明暗与 theme 一致即可。
+ * The host may also use its own canvas color, as long as its brightness matches the theme.
  */
 export const themeBackground = {
   light: '#ffffff',

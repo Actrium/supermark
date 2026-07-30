@@ -9,13 +9,14 @@ echo "🔍 Step 2: Validating example.vison.json..."
 ./vison-core/target/debug/vison example.vison.json
 
 echo "🌐 Step 3: Launching Preview in Browser..."
-# 这里我们直接使用 python 起一个简单的 server 来解决 fetch 跨域问题
-# 如果没有 python，也可以尝试直接用 google-chrome --allow-file-access-from-files
+# We just spin up a simple python server here to work around the fetch
+# cross-origin issue. If python isn't available, you can also try
+# google-chrome --allow-file-access-from-files directly.
 python3 -m http.server 8080 > /dev/null 2>&1 &
 SERVER_PID=$!
 
 echo "Previewing at http://localhost:8080/playground.html"
-# 自动打开浏览器
+# Automatically open the browser
 if command -v xdg-open > /dev/null; then
     xdg-open "http://localhost:8080/playground.html"
 elif command -v open > /dev/null; then

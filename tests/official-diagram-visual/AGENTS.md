@@ -1,5 +1,7 @@
 # AGENTS.md
 
+<!-- cjk-allow-file: directory-scoped agent instructions; the filename is fixed by the tooling that loads it, so it cannot be renamed to .zh.md -->
+
 本文件仅适用于 `tests/official-diagram-visual/` 目录下的官方图表视觉回归测试工具。
 
 ## 目录定位

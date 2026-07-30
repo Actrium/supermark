@@ -1,33 +1,33 @@
 import { LRUCache, createCacheKey, simpleHash } from '../src/cache';
 
 describe('LRUCache', () => {
-  describe('基础功能', () => {
-    it('应该能够设置和获取值', () => {
+  describe('basic functionality', () => {
+    it('can set and get a value', () => {
       const cache = new LRUCache<string>({ maxSize: 10 });
       cache.set('key1', 'value1');
       expect(cache.get('key1')).toBe('value1');
     });
 
-    it('应该在键不存在时返回 undefined', () => {
+    it('returns undefined when the key does not exist', () => {
       const cache = new LRUCache<string>({ maxSize: 10 });
       expect(cache.get('nonexistent')).toBeUndefined();
     });
 
-    it('应该能够检查键是否存在', () => {
+    it('can check whether a key exists', () => {
       const cache = new LRUCache<string>({ maxSize: 10 });
       cache.set('key1', 'value1');
       expect(cache.has('key1')).toBe(true);
       expect(cache.has('key2')).toBe(false);
     });
 
-    it('应该能够删除键', () => {
+    it('can delete a key', () => {
       const cache = new LRUCache<string>({ maxSize: 10 });
       cache.set('key1', 'value1');
       expect(cache.delete('key1')).toBe(true);
       expect(cache.get('key1')).toBeUndefined();
     });
 
-    it('应该能够清空所有缓存', () => {
+    it('can clear the entire cache', () => {
       const cache = new LRUCache<string>({ maxSize: 10 });
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
@@ -37,13 +37,13 @@ describe('LRUCache', () => {
     });
   });
 
-  describe('LRU 淘汰策略', () => {
-    it('应该在超过最大容量时淘汰最旧的条目', () => {
+  describe('LRU eviction policy', () => {
+    it('evicts the oldest entry once capacity is exceeded', () => {
       const cache = new LRUCache<string>({ maxSize: 3 });
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
       cache.set('key3', 'value3');
-      cache.set('key4', 'value4'); // 应该淘汰 key1
+      cache.set('key4', 'value4'); // should evict key1
 
       expect(cache.get('key1')).toBeUndefined();
       expect(cache.get('key2')).toBe('value2');
@@ -51,16 +51,16 @@ describe('LRUCache', () => {
       expect(cache.get('key4')).toBe('value4');
     });
 
-    it('访问条目应该更新其位置（LRU）', () => {
+    it('accessing an entry updates its position (LRU)', () => {
       const cache = new LRUCache<string>({ maxSize: 3 });
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
       cache.set('key3', 'value3');
 
-      // 访问 key1，使其成为最新的
+      // Access key1, making it the most recently used
       cache.get('key1');
 
-      // 添加 key4，应该淘汰 key2（最旧的未访问）
+      // Add key4, which should evict key2 (the oldest unaccessed entry)
       cache.set('key4', 'value4');
 
       expect(cache.get('key1')).toBe('value1');
@@ -70,20 +70,20 @@ describe('LRUCache', () => {
     });
   });
 
-  describe('TTL 过期', () => {
-    it('应该在 TTL 过期后返回 undefined', async () => {
+  describe('TTL expiration', () => {
+    it('returns undefined once the TTL has expired', async () => {
       const cache = new LRUCache<string>({ maxSize: 10, ttl: 50 }); // 50ms TTL
       cache.set('key1', 'value1');
 
       expect(cache.get('key1')).toBe('value1');
 
-      // 等待 TTL 过期
+      // Wait for the TTL to expire
       await new Promise(resolve => setTimeout(resolve, 100));
 
       expect(cache.get('key1')).toBeUndefined();
     });
 
-    it('应该能够清理过期的条目', async () => {
+    it('can purge expired entries', async () => {
       const cache = new LRUCache<string>({ maxSize: 10, ttl: 50 });
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
@@ -96,8 +96,8 @@ describe('LRUCache', () => {
     });
   });
 
-  describe('统计信息', () => {
-    it('应该返回正确的统计信息', () => {
+  describe('statistics', () => {
+    it('returns the correct statistics', () => {
       const cache = new LRUCache<string>({ maxSize: 10, ttl: 1000 });
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
@@ -112,31 +112,31 @@ describe('LRUCache', () => {
 });
 
 describe('createCacheKey', () => {
-  it('应该创建正确的缓存键', () => {
+  it('creates the correct cache key', () => {
     expect(createCacheKey('mermaid', 'abc123')).toBe('mermaid:abc123');
     expect(createCacheKey('math', 'formula', 'inline')).toBe('math:formula:inline');
   });
 
-  it('应该过滤 null 和 undefined 值', () => {
+  it('filters out null and undefined values', () => {
     expect(createCacheKey('mermaid', null, 'abc123')).toBe('mermaid:abc123');
     expect(createCacheKey('mermaid', undefined, 'abc123')).toBe('mermaid:abc123');
   });
 });
 
 describe('simpleHash', () => {
-  it('应该为相同的字符串生成相同的哈希', () => {
+  it('generates the same hash for the same string', () => {
     const hash1 = simpleHash('test string');
     const hash2 = simpleHash('test string');
     expect(hash1).toBe(hash2);
   });
 
-  it('应该为不同的字符串生成不同的哈希', () => {
+  it('generates different hashes for different strings', () => {
     const hash1 = simpleHash('test string 1');
     const hash2 = simpleHash('test string 2');
     expect(hash1).not.toBe(hash2);
   });
 
-  it('应该返回字符串类型的哈希', () => {
+  it('returns a hash of type string', () => {
     const hash = simpleHash('test');
     expect(typeof hash).toBe('string');
   });

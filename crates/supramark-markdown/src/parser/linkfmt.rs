@@ -106,6 +106,7 @@ mod tests {
         let fmt = MDLinkFormatter::new();
 
         assert_eq!(
+            // cjk-allow: real UTF-8 percent-encoding roundtrip test input
             fmt.normalize_link("https://example.org/a b?x=你好"),
             "https://example.org/a%20b?x=%E4%BD%A0%E5%A5%BD"
         );

@@ -1,8 +1,8 @@
 #!/usr/bin/env tsx
 /**
- * features:lint - 检查所有 Features + 全局唯一性
+ * features:lint - checks all Features + global uniqueness
  *
- * 用法：bun run features:lint
+ * Usage: bun run features:lint
  *
  * @packageDocumentation
  */
@@ -12,7 +12,7 @@ import * as path from 'path';
 import { discoverFeaturePackages, type FeaturePackageInfo } from './lib-feature-layout.ts';
 
 // ============================================================================
-// 颜色输出
+// Colored output
 // ============================================================================
 
 const colors = {
@@ -30,14 +30,14 @@ function log(msg: string, color: keyof typeof colors = 'reset'): void {
 }
 
 // ============================================================================
-// ContainerNames 提取与唯一性检查
+// ContainerNames extraction and uniqueness check
 // ============================================================================
 
 /**
- * 从 feature.ts 源码中提取 containerNames
+ * Extract containerNames from feature.ts source code
  */
 function extractContainerNames(sourceCode: string): string[] {
-  // 优先匹配 XXX_CONTAINER_NAMES = ['a', 'b'] as const（唯一事实来源）
+  // Prefer XXX_CONTAINER_NAMES = ['a', 'b'] as const (the single source of truth)
   const constPattern = /\w+_CONTAINER_NAMES\s*=\s*\[([^\]]+)\]\s*as\s*const/;
   const constMatch = sourceCode.match(constPattern);
   if (constMatch) {
@@ -49,12 +49,12 @@ function extractContainerNames(sourceCode: string): string[] {
     if (names.length > 0) return names;
   }
 
-  // 备选：匹配直接的 containerNames: ['a', 'b']（不含 spread）
+  // Fallback: match a direct containerNames: ['a', 'b'] (no spread)
   const directPattern = /containerNames:\s*\[([^\]]+)\]/;
   const directMatch = sourceCode.match(directPattern);
   if (directMatch) {
     const content = directMatch[1];
-    // 跳过 spread 语法（...XXX）
+    // Skip spread syntax (...XXX)
     if (content.includes('...')) return [];
     const names = content
       .split(',')
@@ -67,7 +67,7 @@ function extractContainerNames(sourceCode: string): string[] {
 }
 
 /**
- * 检查所有 features 的 containerNames 全局唯一性
+ * Check global uniqueness of containerNames across all features
  */
 function checkContainerNamesUniqueness(features: FeaturePackageInfo[]): {
   passed: boolean;
@@ -110,7 +110,7 @@ function checkContainerNamesUniqueness(features: FeaturePackageInfo[]): {
 }
 
 // ============================================================================
-// 单个 Feature Lint（简化版，只检查关键项）
+// Single-feature lint (simplified: checks only the key items)
 // ============================================================================
 
 interface LintResult {
@@ -133,90 +133,90 @@ function lintFeature(feature: FeaturePackageInfo): LintResult {
 
   const featureFile = path.join(feature.dir, 'src/feature.ts');
 
-  // ========== 通用检查（所有类型） ==========
+  // ========== Common checks (all kinds) ==========
 
-  // 检查 feature.ts 存在
+  // Check that feature.ts exists
   if (!fs.existsSync(featureFile)) {
-    result.errors.push('缺少 src/feature.ts');
+    result.errors.push('Missing src/feature.ts');
     result.passed = false;
     return result;
   }
 
   const sourceCode = fs.readFileSync(featureFile, 'utf-8');
 
-  // 检查 examples.ts 存在
+  // Check that examples.ts exists
   const examplesFile = path.join(feature.dir, 'src/examples.ts');
   if (!fs.existsSync(examplesFile)) {
-    result.warnings.push('缺少 src/examples.ts');
+    result.warnings.push('Missing src/examples.ts');
   }
 
-  // 检查 README.md 存在
+  // Check that README.md exists
   const readmeFile = path.join(feature.dir, 'README.md');
   if (!fs.existsSync(readmeFile)) {
-    result.warnings.push('缺少 README.md');
+    result.warnings.push('Missing README.md');
   }
 
-  // ========== Container 类型专属检查 ==========
+  // ========== Container-kind-specific checks ==========
   if (kind === 'container') {
-    // 必须有 registerParser
+    // Must have registerParser
     if (!sourceCode.includes('registerParser:') && !sourceCode.includes('registerParser()')) {
-      result.errors.push('ContainerFeature 缺少 registerParser');
+      result.errors.push('ContainerFeature is missing registerParser');
       result.passed = false;
     }
 
-    // 检查必填字段
+    // Check required fields
     const requiredFields = ['id:', 'name:', 'version:', 'containerNames:'];
     for (const field of requiredFields) {
       if (!sourceCode.includes(field)) {
-        result.errors.push(`缺少必填字段: ${field.replace(':', '')}`);
+        result.errors.push(`Missing required field: ${field.replace(':', '')}`);
         result.passed = false;
       }
     }
 
-    // Container 类型必须有渲染器
+    // Container kind must have a renderer
     const webRenderer = path.join(feature.dir, 'src/runtime.web.tsx');
     const rnRenderer = path.join(feature.dir, 'src/runtime.rn.tsx');
 
     if (!fs.existsSync(webRenderer)) {
-      result.errors.push('Container 类型必须有 runtime.web.tsx');
+      result.errors.push('Container kind must have runtime.web.tsx');
       result.passed = false;
     }
     if (!fs.existsSync(rnRenderer)) {
-      result.errors.push('Container 类型必须有 runtime.rn.tsx');
+      result.errors.push('Container kind must have runtime.rn.tsx');
       result.passed = false;
     }
   }
 
-  // ========== Input 类型专属检查 ==========
+  // ========== Input-kind-specific checks ==========
   if (kind === 'input') {
-    // 检查必填字段
+    // Check required fields
     const requiredFields = ['id:', 'name:', 'version:', 'inputNames:'];
     for (const field of requiredFields) {
       if (!sourceCode.includes(field)) {
-        result.errors.push(`缺少必填字段: ${field.replace(':', '')}`);
+        result.errors.push(`Missing required field: ${field.replace(':', '')}`);
         result.passed = false;
       }
     }
 
-    // Input 类型必须有渲染器
+    // Input kind must have a renderer
     const webRenderer = path.join(feature.dir, 'src/runtime.web.tsx');
     const rnRenderer = path.join(feature.dir, 'src/runtime.rn.tsx');
 
     if (!fs.existsSync(webRenderer)) {
-      result.errors.push('Input 类型必须有 runtime.web.tsx');
+      result.errors.push('Input kind must have runtime.web.tsx');
       result.passed = false;
     }
     if (!fs.existsSync(rnRenderer)) {
-      result.errors.push('Input 类型必须有 runtime.rn.tsx');
+      result.errors.push('Input kind must have runtime.rn.tsx');
       result.passed = false;
     }
   }
 
-  // ========== Basic 类型检查 ==========
+  // ========== Basic-kind checks ==========
   if (kind === 'basic') {
-    // 旧结构检查 metadata
+    // Old structure: check for metadata
     if (!sourceCode.includes('metadata:')) {
-      result.warnings.push('建议迁移到新的 Feature 接口');
+      result.warnings.push('Consider migrating to the new Feature interface');
     }
   }
 
@@ -228,12 +228,12 @@ function lintFeature(feature: FeaturePackageInfo): LintResult {
 // ============================================================================
 
 /**
- * Feature 类型
+ * Feature kind
  */
 type FeatureKind = 'container' | 'input' | 'basic';
 
 /**
- * 检测 feature 的类型
+ * Detect the kind of a feature
  */
 function detectFeatureKind(feature: FeaturePackageInfo): FeatureKind {
   const featureFile = path.join(feature.dir, 'src/feature.ts');
@@ -257,13 +257,13 @@ async function main(): Promise<void> {
   const allFeatures = discoverFeaturePackages();
 
   if (allFeatures.length === 0) {
-    log('未找到任何 Feature 包\n', 'yellow');
+    log('No Feature packages found\n', 'yellow');
     process.exit(1);
   }
 
-  log(`找到 ${allFeatures.length} 个 Feature 包\n`, 'gray');
+  log(`Found ${allFeatures.length} Feature package(s)\n`, 'gray');
 
-  // 1. Lint 每个 feature
+  // 1. Lint each feature
   const results: LintResult[] = [];
   let allPassed = true;
 
@@ -273,7 +273,7 @@ async function main(): Promise<void> {
     if (!result.passed) allPassed = false;
   }
 
-  // 按类型分组输出
+  // Group output by kind
   const kindLabels: Record<FeatureKind, string> = {
     container: 'Container',
     input: 'Input',
@@ -301,16 +301,16 @@ async function main(): Promise<void> {
     }
   }
 
-  // 2. 检查 containerNames 全局唯一性（只针对 Container 类型）
+  // 2. Check containerNames global uniqueness (Container kind only)
   const containerFeatures = allFeatures.filter(f => detectFeatureKind(f) === 'container');
 
   if (containerFeatures.length > 0) {
-    log('\n检查 containerNames 全局唯一性...\n', 'blue');
+    log('\nChecking containerNames global uniqueness...\n', 'blue');
 
     const { passed: uniquenessPassed, conflicts, featureContainers } =
       checkContainerNamesUniqueness(containerFeatures);
 
-    // 显示每个 feature 注册的 containerNames
+    // Show each feature's registered containerNames
     for (const [featureName, containers] of featureContainers) {
       log(`  ${featureName}: ${containers.join(', ')}`, 'gray');
     }
@@ -318,26 +318,26 @@ async function main(): Promise<void> {
     log('');
 
     if (uniquenessPassed) {
-      log('  ✓ 所有 containerNames 全局唯一\n', 'green');
+      log('  ✓ All containerNames are globally unique\n', 'green');
     } else {
       allPassed = false;
-      log('  ❌ containerNames 冲突检测到：\n', 'red');
+      log('  ❌ containerNames conflicts detected:\n', 'red');
       for (const [name, features] of conflicts) {
-        log(`     "${name}" 被多个 Feature 使用: ${features.join(', ')}`, 'red');
+        log(`     "${name}" is used by multiple Features: ${features.join(', ')}`, 'red');
       }
       log('');
     }
   }
 
-  // 3. 总结
+  // 3. Summary
   log('═'.repeat(60), 'blue');
   const passedCount = results.filter(r => r.passed).length;
-  log(`结果: ${passedCount}/${results.length} Features 通过`, allPassed ? 'green' : 'yellow');
+  log(`Result: ${passedCount}/${results.length} Features passed`, allPassed ? 'green' : 'yellow');
 
   if (allPassed) {
-    log('✅ 所有检查通过！', 'green');
+    log('✅ All checks passed!', 'green');
   } else {
-    log('❌ 存在检查失败项', 'red');
+    log('❌ Some checks failed', 'red');
   }
   log('═'.repeat(60) + '\n', 'blue');
 

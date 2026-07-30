@@ -14,34 +14,38 @@ export interface SelectableRichTextMenuActionEvent {
   selectionEnd: number;
 }
 
-// SelectableRichTextLongPressEvent 是原生长按命中段落时回传给宿主的事件，宿主据此弹业务菜单。
+// SelectableRichTextLongPressEvent is the event reported back to the host when a native long
+// press hits a paragraph; the host shows its business menu based on it.
 export interface SelectableRichTextLongPressEvent {
   paragraphText: string;
   selectionStart: number;
   selectionEnd: number;
-  // locationX/locationY 是长按相对 SelectableRichText 左上角的本地坐标。
+  // locationX/locationY are the long press's local coordinates relative to SelectableRichText's top-left corner.
   locationX: number;
   locationY: number;
-  // pageX/pageY 是长按在屏幕坐标系的位置，用于业务菜单定位。
+  // pageX/pageY are the long press's position in screen coordinates, used for positioning the business menu.
   pageX: number;
   pageY: number;
 }
 
 export interface SelectableRichTextRef {
-  // selectRange 选中指定的 UTF-16 字符范围，并弹出系统选区菜单。
+  // selectRange selects the given UTF-16 character range and shows the system selection menu.
   selectRange: (start: number, end: number) => void;
-  // selectParagraphAt 根据宿主传入的本地坐标（相对 SelectableRichText 左上角），
-  // 命中长按所在段落并选中，再弹出系统选区菜单。用于宿主控制长按入口的场景。
+  // selectParagraphAt hit-tests the paragraph at the local coordinates passed in by the host
+  // (relative to SelectableRichText's top-left corner), selects it, then shows the system
+  // selection menu. Used when the host controls the long-press entry point itself.
   selectParagraphAt: (x: number, y: number) => void;
-  // clearSelection 清理当前原生文本选区并关闭选区交互状态。
+  // clearSelection clears the current native text selection and closes the selection interaction state.
   clearSelection: () => void;
-  // copyRange 复制指定 UTF-16 字符范围到系统剪贴板。
+  // copyRange copies the given UTF-16 character range to the system clipboard.
   copyRange: (start: number, end: number) => void;
 }
 
 export interface SelectableRichTextProps {
-  // selectable 默认 false：避免 UITextView/TextView 自带长按选词与宿主长按手势冲突。
-  // 宿主通过 ref.selectParagraphAt / selectRange 命令触发选取时，原生会临时开启选取能力。
+  // selectable defaults to false: avoids UITextView/TextView's built-in long-press word selection
+  // conflicting with the host's long-press gesture.
+  // The native side temporarily enables selection when the host triggers it via the
+  // ref.selectParagraphAt / selectRange commands.
   selectable?: boolean;
   style?: StyleProp<TextStyle>;
   children?: React.ReactNode;
@@ -51,8 +55,10 @@ export interface SelectableRichTextProps {
   onMenuAction?: (
     event: NativeSyntheticEvent<SelectableRichTextMenuActionEvent>
   ) => void;
-  // onTextLongPress 由原生长按 gesture 触发，回传命中的段落 range 和菜单锚点。
-  // 宿主在回调里弹业务菜单，再通过 ref.selectRange / copyRange 执行选取动作。
+  // onTextLongPress is triggered by the native long-press gesture, reporting back the hit
+  // paragraph's range and menu anchor.
+  // The host shows its business menu in the callback, then performs the selection action via
+  // ref.selectRange / copyRange.
   onTextLongPress?: (
     event: NativeSyntheticEvent<SelectableRichTextLongPressEvent>
   ) => void;

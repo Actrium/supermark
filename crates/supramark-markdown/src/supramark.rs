@@ -1532,6 +1532,7 @@ mod tests {
 
     #[test]
     fn parses_inline_positions_with_utf16_offsets() {
+        // cjk-allow: multi-byte CJK + emoji source needed to exercise utf16-offset math
         let ast = parse("# 标题 😄\n\nHello **世界** and `code`.");
         let SupramarkNode::Root { children, .. } = ast else {
             panic!("expected root");

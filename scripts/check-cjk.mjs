@@ -53,6 +53,23 @@ const ALLOWED_DIRS = [
   'tests/cases/_fixtures/',
 ];
 
+// Committed build output. Its comments are a transpiled copy of the source that
+// was already checked, so flagging it would ask for the same text to be fixed
+// twice - and the second copy cannot be hand-fixed safely, because editing it
+// shifts the line numbers its .js.map is keyed to.
+//
+// These are react-native-builder-bob's target directories and the usual bundler
+// output names, matched specifically rather than as a bare "lib/": this repo has
+// hand-written source under tests/markdown-conformance/lib/, which must stay
+// covered by the check.
+const BUILD_OUTPUT_DIRS = [
+  'lib/commonjs/',
+  'lib/module/',
+  'lib/typescript/',
+  'dist/',
+  'build/',
+];
+
 // Extensions that are reviewed as source. Everything else (.svg, .png, .mmd,
 // .d2, .json data) is left alone: diagram sources and captured fixtures carry
 // CJK as subject matter, not as prose a reviewer has to read.
@@ -79,7 +96,7 @@ if (tracked.status !== 0) {
 }
 
 const findings = [];
-const skipped = { allowedLocation: 0, notSource: 0, pragmaFile: 0, binary: 0 };
+const skipped = { allowedLocation: 0, buildOutput: 0, notSource: 0, pragmaFile: 0, binary: 0 };
 
 for (const file of tracked.stdout.split('\0').filter(Boolean)) {
   const posix = file.split(path.sep).join('/');
@@ -90,6 +107,10 @@ for (const file of tracked.stdout.split('\0').filter(Boolean)) {
   }
   if (posix.endsWith('.zh.md')) {
     skipped.allowedLocation += 1;
+    continue;
+  }
+  if (BUILD_OUTPUT_DIRS.some(dir => posix.includes(dir))) {
+    skipped.buildOutput += 1;
     continue;
   }
 
@@ -201,8 +222,8 @@ if (!asJson) {
   }
 
   console.log(
-    `\nskipped: ${skipped.allowedLocation} allowed location, ${skipped.notSource} not source, ` +
-    `${skipped.pragmaFile} file pragma, ${skipped.binary} binary`
+    `\nskipped: ${skipped.allowedLocation} allowed location, ${skipped.buildOutput} build output, ` +
+    `${skipped.notSource} not source, ${skipped.pragmaFile} file pragma, ${skipped.binary} binary`
   );
 
   process.exitCode = exitCode;

@@ -11,7 +11,8 @@ namespace facebook::react {
 
 void fromRawValue(const PropsParserContext &context, const RawValue &value, SelectableRichTextMenuItem &result)
 {
-  // 非 object 的 menu item 不能安全解析，保持默认空 id/title 交给平台层过滤。
+  // A menu item that isn't an object can't be safely parsed; keep the default empty id/title and
+  // let the platform layer filter it out.
   if (!value.hasType<std::unordered_map<std::string, RawValue>>()) {
     result = {};
     return;
@@ -21,12 +22,12 @@ void fromRawValue(const PropsParserContext &context, const RawValue &value, Sele
   auto id = map.find("id");
   auto title = map.find("title");
 
-  // id 必须是字符串才能作为 JS 菜单动作标识。
+  // id must be a string to serve as the JS menu action identifier.
   if (id != map.end() && id->second.hasType<std::string>()) {
     result.id = (std::string)id->second;
   }
 
-  // title 必须是字符串才能展示到原生菜单。
+  // title must be a string to be shown in the native menu.
   if (title != map.end() && title->second.hasType<std::string>()) {
     result.title = (std::string)title->second;
   }
@@ -103,7 +104,7 @@ folly::dynamic SelectableRichTextProps::getDiffProps(const Props *prevProps) con
 
   folly::dynamic result = ParagraphProps::getDiffProps(oldProps);
 
-  // menuItems 改变时要把新的自定义菜单完整传给平台层。
+  // When menuItems changes, the new custom menu needs to be passed to the platform layer in full.
   if (menuItems != oldProps->menuItems) {
     folly::dynamic items = folly::dynamic::array;
     for (const auto &item : menuItems) {
@@ -112,12 +113,13 @@ folly::dynamic SelectableRichTextProps::getDiffProps(const Props *prevProps) con
     result["menuItems"] = items;
   }
 
-  // showSystemMenuItems 改变时平台层需要刷新当前系统菜单。
+  // When showSystemMenuItems changes, the platform layer needs to refresh the current system menu.
   if (showSystemMenuItems != oldProps->showSystemMenuItems) {
     result["showSystemMenuItems"] = showSystemMenuItems;
   }
 
-  // clearSelectionOnMenuAction 改变时平台层要更新菜单点击后的选区策略。
+  // When clearSelectionOnMenuAction changes, the platform layer needs to update the
+  // post-menu-tap selection policy.
   if (clearSelectionOnMenuAction != oldProps->clearSelectionOnMenuAction) {
     result["clearSelectionOnMenuAction"] = clearSelectionOnMenuAction;
   }

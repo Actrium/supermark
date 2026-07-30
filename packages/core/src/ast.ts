@@ -76,10 +76,10 @@ export interface SupramarkTextNode extends SupramarkBaseNode {
 }
 
 /**
- * Diagram 引擎标识符
+ * Diagram engine identifiers.
  *
- * - 与 parse() 中 isDiagramLanguage() 的列表保持一致；
- * - 允许扩展字符串，方便宿主添加自定义引擎。
+ * - Kept in sync with the list used by isDiagramLanguage() in parse();
+ * - Allows arbitrary strings so hosts can add custom engines.
  */
 export const BUILT_IN_DIAGRAM_ENGINES = [
   'mermaid',
@@ -110,7 +110,7 @@ export interface SupramarkDiagramNode extends SupramarkBaseNode {
 }
 
 /**
- * 地图标记点类型（供 :::map 容器的 data 字段使用）
+ * Map marker type (used by the data field of the :::map container).
  */
 export interface SupramarkMapMarker {
   lat: number;
@@ -123,14 +123,15 @@ export interface SupramarkMapMarker {
 export type SupramarkExtensionMode = 'transparent' | 'opaque';
 
 /**
- * 通用容器节点（统一表达 :::xxx）
+ * A generic container node (uniformly represents :::xxx).
  *
- * - type 固定为 'container'
- * - name 为容器语义名（例如 'map' / 'html' / 'note' / 'weather' 等）
- * - params 为容器的参数字符串（例如 "note title..." 或 "id=1"），由具体扩展自行解释
- * - data 为扩展自定义结构化数据（可选）
+ * - type is always 'container'
+ * - name is the container's semantic name (e.g. 'map' / 'html' / 'note' / 'weather')
+ * - params is the container's parameter string (e.g. "note title..." or "id=1"),
+ *   interpreted by the specific extension
+ * - data holds the extension's custom structured data (optional)
  *
- * 所有 ::: 语法的扩展都生成此节点类型，通过 name 字段区分具体扩展。
+ * Every ::: syntax extension produces this node type, distinguished by the name field.
  */
 export interface SupramarkContainerNode extends SupramarkParentNode {
   type: 'container';
@@ -142,14 +143,16 @@ export interface SupramarkContainerNode extends SupramarkParentNode {
 }
 
 /**
- * 输入块节点（统一表达 %%%xxx）
+ * An input block node (uniformly represents %%%xxx).
  *
- * - type 固定为 'input'
- * - name 为输入块语义名（例如 'form' / 'survey' 等）
- * - params 为输入块的参数字符串，由具体扩展自行解释
- * - data 为扩展自定义结构化数据（可选）
+ * - type is always 'input'
+ * - name is the input block's semantic name (e.g. 'form' / 'survey')
+ * - params is the input block's parameter string, interpreted by the specific
+ *   extension
+ * - data holds the extension's custom structured data (optional)
  *
- * 所有 %%% 语法的扩展都生成此节点类型，通过 name 字段区分具体扩展。
+ * Every %%% syntax extension produces this node type, distinguished by the name
+ * field.
  */
 export interface SupramarkInputNode extends SupramarkParentNode {
   type: 'input';
@@ -161,26 +164,27 @@ export interface SupramarkInputNode extends SupramarkParentNode {
 }
 
 /**
- * 单个 Diagram 引擎的配置
+ * Configuration for a single Diagram engine.
  */
 export interface SupramarkDiagramEngineConfig {
-  /** 是否启用此引擎（可选，默认由 Feature 决定） */
+  /** Whether this engine is enabled (optional; defaults to the Feature's decision) */
   enabled?: boolean;
 
-  /** 渲染超时时间（毫秒），优先于全局 defaultTimeoutMs */
+  /** Render timeout (milliseconds), takes precedence over the global defaultTimeoutMs */
   timeoutMs?: number;
 
-  /** 可选：特定引擎的服务端地址（例如 PlantUML server） */
+  /** Optional: the server address for a specific engine (e.g. a PlantUML server) */
   server?: string;
 
   /**
-   * 可选：开启 mermaid 边标签去聚簇（#93）。仅 mermaid 引擎消费；
-   * off 时与上游 `mermaid@11.14.0` 字节精确一致，on 时推开重叠的边标签框
-   * 并为 CJK 标签预留真实渲染宽度。其它引擎忽略此字段。
+   * Optional: enable mermaid edge-label decluster (#93). Consumed only by the mermaid
+   * engine; when off, output is byte-exact with upstream `mermaid@11.14.0`, when on it
+   * pushes apart overlapping edge-label boxes and reserves realistic rendering width
+   * for CJK (Chinese/Japanese/Korean) labels. Other engines ignore this field.
    */
   edgeLabelDecluster?: boolean;
 
-  /** 缓存配置（仅作为上层参考，具体实现由运行时决定） */
+  /** Cache configuration (informational for upstream layers only; the actual implementation is decided by the runtime) */
   cache?: {
     enabled?: boolean;
     maxSize?: number;
@@ -189,17 +193,17 @@ export interface SupramarkDiagramEngineConfig {
 }
 
 /**
- * Diagram 全局配置
+ * Global Diagram configuration.
  *
- * 由运行时（@supramark/rn / @supramark/web）消费，用于：
- * - 设置默认超时与缓存策略；
- * - 为各个引擎提供附加选项（如 PlantUML server）。
+ * Consumed by the runtime (@supramark/rn / @supramark/web) to:
+ * - set the default timeout and caching policy;
+ * - provide extra options for individual engines (e.g. the PlantUML server).
  */
 export interface SupramarkDiagramConfig {
-  /** 默认超时时间（毫秒），用于未单独配置的引擎 */
+  /** Default timeout (milliseconds), used for engines without their own config */
   defaultTimeoutMs?: number;
 
-  /** 默认缓存配置 */
+  /** Default cache configuration */
   defaultCache?: {
     enabled?: boolean;
     maxSize?: number;
@@ -207,10 +211,10 @@ export interface SupramarkDiagramConfig {
   };
 
   /**
-   * 各个引擎的配置
+   * Per-engine configuration.
    *
-   * - 对常见内置引擎提供显式字段，方便补全；
-   * - 同时保留索引签名以支持自定义引擎。
+   * - Explicit fields are provided for common built-in engines, for autocompletion;
+   * - An index signature is also kept to support custom engines.
    */
   engines?: {
     mermaid?: SupramarkDiagramEngineConfig;
@@ -228,23 +232,25 @@ export interface SupramarkDiagramConfig {
 }
 
 /**
- * 判断给定 engine 是否为内置图表引擎。
+ * Determine whether the given engine is a built-in diagram engine.
  */
 export function isBuiltInDiagramEngine(
   engine: SupramarkDiagramEngineId
 ): engine is BuiltInDiagramEngineId {
   const normalized = String(engine).toLowerCase();
-  // 这里的类型断言仅用于通过 TS 检查，运行时仍然按字符串比较。
+  // The type assertion here is only to satisfy the TS check; the runtime comparison
+  // is still a plain string comparison.
   return BUILT_IN_DIAGRAM_ENGINES.includes(normalized as BuiltInDiagramEngineId);
 }
 
 const warnedDiagramEngines = new Set<string>();
 
 /**
- * 当使用非内置 diagram engine 时给出一次性告警。
+ * Emit a one-time warning when a non-built-in diagram engine is used.
  *
- * - 不阻止自定义引擎，仅在第一次遇到未知 engine 时通过 console.warn 提示；
- * - 方便在调试阶段发现拼写错误或未声明的引擎。
+ * - Does not block custom engines; only prints via console.warn the first time an
+ *   unknown engine is encountered;
+ * - Makes it easier to spot typos or undeclared engines while debugging.
  */
 export function warnIfUnknownDiagramEngine(
   engine: SupramarkDiagramEngineId,
@@ -258,12 +264,12 @@ export function warnIfUnknownDiagramEngine(
 
   // eslint-disable-next-line no-console
   if (typeof console !== 'undefined' && typeof console.warn === 'function') {
-    const details = context ? `（${context}）` : '';
+    const details = context ? ` (${context})` : '';
     console.warn(
-      `[supramark] 未知 diagram engine "${engine}"${details}。` +
-        '如果这是自定义引擎，请确保：' +
-        '1) 在解析层将其识别为 diagram；' +
-        '2) 为其定义对应的 Feature 与渲染实现。'
+      `[supramark] Unknown diagram engine "${engine}"${details}. ` +
+        'If this is a custom engine, make sure to: ' +
+        '1) recognize it as a diagram node in the parsing layer; ' +
+        '2) define a corresponding Feature and rendering implementation for it.'
     );
   }
 }
@@ -337,9 +343,9 @@ export interface SupramarkInlineCodeNode extends SupramarkBaseNode {
 }
 
 /**
- * 行内数学公式节点（对应 $...$）
+ * Inline math formula node (matches `$...$`).
  *
- * 与块级 Math 一样，仅保存原始 TeX 文本。
+ * Like block-level Math, it only stores the raw TeX text.
  */
 export interface SupramarkMathInlineNode extends SupramarkBaseNode {
   type: 'math_inline';
@@ -347,46 +353,52 @@ export interface SupramarkMathInlineNode extends SupramarkBaseNode {
 }
 
 /**
- * 脚注引用节点，例如正文中的 `[^1]` 或 `^[inline]`。
+ * Footnote reference node, e.g. `[^1]` or `^[inline]` within the body text.
  *
- * - index：用于展示给用户看的编号（从 1 开始）
- * - label：原始 label（如 `1` 或 `note`），内联脚注可能为空
- * - subId：同一脚注被多次引用时的子编号（从 0 开始）
+ * - index: the number shown to the user (starting from 1)
+ * - label: the raw label (e.g. `1` or `note`); may be empty for inline footnotes
+ * - subId: the sub-index when the same footnote is referenced multiple times
+ *   (starting from 0)
  */
 export interface SupramarkFootnoteReferenceNode extends SupramarkBaseNode {
   type: 'footnote_reference';
   index: number;
   label?: string;
-  /** 规范化后的引用 key（去首尾空白、内部空白折叠为单空格、转小写），用于 ref↔def 关联。 */
+  /** The normalized reference key (leading/trailing whitespace trimmed, internal
+   * whitespace collapsed to a single space, lowercased), used to associate refs with
+   * defs. */
   identifier: string;
   subId?: number;
 }
 
 /**
- * 脚注定义节点，对应形如：
+ * Footnote definition node, matching a form like:
  *
  * ```markdown
- * 这是正文[^1]
+ * This is body text[^1]
  *
- * [^1]: 这里是脚注内容
+ * [^1]: This is the footnote content
  * ```
  *
- * 所有脚注定义会被追加到文档末尾（root.children 的后部）。
+ * All footnote definitions are appended to the end of the document (the tail of
+ * root.children).
  */
 export interface SupramarkFootnoteDefinitionNode extends SupramarkParentNode {
   type: 'footnote_definition';
   index: number;
   label?: string;
-  /** 规范化后的引用 key（去首尾空白、内部空白折叠为单空格、转小写），用于 ref↔def 关联。 */
+  /** The normalized reference key (leading/trailing whitespace trimmed, internal
+   * whitespace collapsed to a single space, lowercased), used to associate refs with
+   * defs. */
   identifier: string;
 }
 
 /**
- * 定义列表（definition list），对应 Markdown Extra / Pandoc 风格：
+ * Definition list, matching the Markdown Extra / Pandoc style:
  *
  * Term
- * :   描述一
- * :   描述二
+ * :   Description one
+ * :   Description two
  */
 export interface SupramarkDefinitionListNode extends SupramarkParentNode {
   type: 'definition_list';
@@ -407,10 +419,10 @@ export interface SupramarkDefinitionDescriptionNode extends SupramarkParentNode 
 }
 
 /**
- * Admonition 类型常量（供 :::note, :::warning 等容器扩展使用）
+ * Admonition kind constants (used by container extensions like :::note, :::warning).
  *
- * 注意：Admonition 现在统一使用 SupramarkContainerNode，
- * 通过 name 字段区分类型（'note', 'tip', 'warning' 等）。
+ * Note: Admonition now uniformly uses SupramarkContainerNode, distinguished by the
+ * name field ('note', 'tip', 'warning', etc.).
  */
 export const SUPRAMARK_ADMONITION_KINDS = ['note', 'tip', 'info', 'warning', 'danger'] as const;
 

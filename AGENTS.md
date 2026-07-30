@@ -1,5 +1,7 @@
 # AGENTS.md
 
+<!-- cjk-allow-file: agent instructions, written in the language the maintainer works in; the filename is fixed by the Codex tooling that loads it, so it cannot be renamed to .zh.md -->
+
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## 仓库概览

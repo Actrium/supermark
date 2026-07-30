@@ -477,22 +477,24 @@ export async function renderMermaidSvg(
 import type { RenderOptions } from '../types.js';
 import { DiagramRenderError } from '../types.js';
 
-/** Mermaid engine 的渲染选项。 */
+/** Render options for the Mermaid engine. */
 export interface Options extends RenderOptions {
-  /** Mermaid 主题（mermaid 自家枚举），默认 'default' */
+  /** Mermaid theme (mermaid's own enum), defaults to 'default' */
   mermaidTheme?: 'default' | 'dark' | 'neutral' | 'forest';
   /**
-   * 开启边标签去聚簇（#93）。off 时与上游 `mermaid@11.14.0` 字节精确一致；
-   * on 时在布局阶段为 CJK 标签预留真实宽度，并在渲染阶段把仍重叠的标签框推开。
-   * 默认 off。仅 web 绑定生效；RN 暂未接通。
+   * Enable edge-label decluster (#93). When off, output is byte-exact with
+   * upstream `mermaid@11.14.0`; when on, the layout stage reserves real width
+   * for CJK labels, and the render stage pushes apart any label boxes that
+   * still overlap.
+   * Defaults to off. Only wired up on the web binding; RN is not yet connected.
    */
   edgeLabelDecluster?: boolean;
-  /** 传给 mermaid 的其它 style/theme 变量（如 fontFamily, primaryColor 等） */
+  /** Other style/theme variables passed through to mermaid (e.g. fontFamily, primaryColor) */
   [key: string]: unknown;
 }
 
 /**
- * Mermaid engine 工厂。Mermaid 无装配期依赖，`modules` 保留为占位让形态统一。
+ * Mermaid engine factory. Mermaid has no assembly-time dependencies; `modules` is kept as a placeholder to keep the shape uniform.
  *
  * @example
  * ```ts

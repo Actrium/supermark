@@ -3,23 +3,24 @@ package com.selectableapp.selectabletext
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.uimanager.events.Event
 
-// TextLongPressEvent 是 Fabric 事件通道里的长按段落事件，对应 iOS 的 UILongPressGestureRecognizer。
+// TextLongPressEvent is the long-press-on-paragraph event sent through the Fabric event channel,
+// corresponding to iOS's UILongPressGestureRecognizer.
 class SelectableRichTextTextLongPressEvent(
     surfaceId: Int,
     viewId: Int,
     private val payload: WritableMap
 ) : Event<SelectableRichTextTextLongPressEvent>(surfaceId, viewId) {
-  // getEventName 返回 Codegen view config 识别的 top-level event 名称。
+  // getEventName returns the top-level event name recognized by the Codegen view config.
   override fun getEventName(): String = EVENT_NAME
 
-  // canCoalesce=false 保证每一次长按都独立送达 JS。
+  // canCoalesce=false ensures every single long press is delivered to JS independently.
   override fun canCoalesce(): Boolean = false
 
-  // getEventData 返回原生视图构造好的段落 payload。
+  // getEventData returns the paragraph payload built by the native view.
   override fun getEventData(): WritableMap = payload
 
   companion object {
-    // EVENT_NAME 对应 JS prop onTextLongPress。
+    // EVENT_NAME corresponds to the JS prop onTextLongPress.
     const val EVENT_NAME = "topTextLongPress"
   }
 }

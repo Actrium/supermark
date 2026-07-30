@@ -1,23 +1,23 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * HTML Page Feature 示例
+ * HTML Page Feature usage examples
  */
 export const htmlPageExamples: ExampleDefinition[] = [
   {
-    name: 'HTML Page 卡片',
-    description: '使用 :::html 容器定义独立 HTML 页面，在 Markdown 中以卡片形式呈现。',
+    name: 'HTML Page card',
+    description: 'Defines a standalone HTML page using the :::html container, rendered as a card in Markdown.',
     markdown: `
-# HTML Page 示例
+# HTML Page example
 
-下面的容器会被识别为一个 html_page 节点，并在主文档中渲染为「HTML Page 卡片」：
+The container below is recognized as an html_page node, and rendered in the main document as an "HTML Page card":
 
 :::html
 <!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>HTML Page 示例</title>
+    <title>HTML Page example</title>
     <style>
       body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px; }
       h1 { color: #2f54eb; }
@@ -25,8 +25,8 @@ export const htmlPageExamples: ExampleDefinition[] = [
     </style>
   </head>
   <body>
-    <h1>这是一个独立 HTML 页面</h1>
-    <p>它可以包含自己的 CSS 和 JS，在宿主提供的隔离页面或 ShadowDOM 容器中单独运行。</p>
+    <h1>This is a standalone HTML page</h1>
+    <p>It can include its own CSS and JS, running independently inside an isolated page or ShadowDOM container provided by the host.</p>
   </body>
 </html>
 :::

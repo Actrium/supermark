@@ -1,50 +1,50 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * GFM Feature 使用示例
+ * GFM Feature usage examples
  */
 export const gfmExamples: ExampleDefinition[] = [
   {
-    name: 'GFM 扩展功能',
-    description: '展示 GitHub Flavored Markdown 扩展功能，如删除线、任务列表、表格。',
+    name: 'GFM extensions',
+    description: 'Shows GitHub Flavored Markdown extensions such as strikethrough, task lists, and tables.',
     markdown: `
-# GFM 功能示例
+# GFM feature examples
 
-## 删除线
+## Strikethrough
 
-使用 \`~~文本~~\` 语法来创建~~删除线~~效果。
+Use the \`~~text~~\` syntax to create ~~strikethrough~~ text.
 
-例如：这是一段~~错误的~~正确的文本。
+For example: this is a piece of ~~wrong~~ correct text.
 
-## 任务列表
+## Task lists
 
-使用 \`- [ ]\` 和 \`- [x]\` 来创建任务列表：
+Use \`- [ ]\` and \`- [x]\` to create a task list:
 
-- [x] 已完成的任务
-- [ ] 未完成的任务
-- [x] 另一个已完成的任务
-- [ ] 待办事项
+- [x] Completed task
+- [ ] Incomplete task
+- [x] Another completed task
+- [ ] A to-do item
 
-## 组合使用
+## Combining formats
 
-你可以将删除线与其他格式组合使用：
+You can combine strikethrough with other formatting:
 
-- **粗体**和~~删除线~~
-- *斜体*和~~删除线~~
-- \`代码\`和~~删除线~~
+- **bold** and ~~strikethrough~~
+- *italic* and ~~strikethrough~~
+- \`code\` and ~~strikethrough~~
 
-~~**整段粗体删除线**~~
+~~**Bold strikethrough for a whole sentence**~~
 
-## 表格
+## Tables
 
-使用 GFM 表格语法创建表格，支持列对齐：
+Use GFM table syntax to create tables, with support for column alignment:
 
-| 功能 | 状态 | 说明 |
+| Feature | Status | Notes |
 | --- | :---: | ---: |
-| 删除线 | ✅ | 使用 \`~~\` 语法 |
-| 任务列表 | ✅ | 使用 \`[ ]\` 和 \`[x]\` |
-| 表格 | ✅ | 标准 GFM 表格 |
-| 对齐方式 | ✅ | 左对齐、居中、右对齐 |
+| Strikethrough | ✅ | Uses \`~~\` syntax |
+| Task list | ✅ | Uses \`[ ]\` and \`[x]\` |
+| Table | ✅ | Standard GFM table |
+| Alignment | ✅ | Left, center, right |
     `.trim(),
   },
 ];

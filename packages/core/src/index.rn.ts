@@ -1,16 +1,16 @@
 /**
- * @supramark/core - React Native 专用入口
+ * @supramark/core - React Native-only entry point.
  *
- * 此入口只暴露 AST v2 parser facade 与跨平台类型。
+ * This entry point only exposes the AST v2 parser facade and cross-platform types.
  */
 
-// AST 类型定义
+// AST type definitions
 export * from './ast.js';
 
 // Shared diagram streaming state used by React Native renderers.
 export * from './diagram-render-state.js';
 
-// 插件系统类型
+// Plugin system types
 export type {
   SupramarkParseContext,
   SupramarkPlugin,
@@ -18,17 +18,18 @@ export type {
   SupramarkPreset,
 } from './plugin.js';
 
-// Feature Interface - 功能扩展接口系统
+// Feature Interface - the feature extension interface system
 export * from './feature.js';
 
-// Diagram Feature 工厂(diagram features 用 defineDiagramFeature(...) 注册;
-// 跨平台,与 web 入口保持一致)
+// Diagram Feature factory (diagram features register via defineDiagramFeature(...);
+// cross-platform, kept consistent with the web entry point)
 export * from './diagram-feature.js';
 
-// Container 扩展接口(features/containers/* 在 web + RN 都用 :::container 语法)
+// Container extension interface (features/containers/* use the :::container syntax
+// on both web and RN)
 export * from './container-extension.js';
 
-// 语法家族运行时 hook(供 Feature 使用)
+// Syntax family runtime hooks (for use by Features)
 export {
   type ContainerProcessorContext,
   type ContainerHookContext,
@@ -36,10 +37,11 @@ export {
   registerContainerHook,
 } from './syntax/container.js';
 
-// Native parser adapter registry —— 供 RN native wrapper 包
-// (如 `@supramark/markdown-native-rn`) side-effect 注册。
-// Web / Node 不会注册，plugin.ts 自动回退到 wasm。
-// 仅从 RN 入口导出（不污染 web 入口），模式对齐 `@supramark/engines/rn`。
+// Native parser adapter registry —— for RN native wrapper packages
+// (e.g. `@supramark/markdown-native-rn`) to register via a side effect.
+// Web / Node never register one; plugin.ts falls back to wasm automatically.
+// Exported only from the RN entry point (kept out of the web entry point), mirroring
+// the `@supramark/engines/rn` pattern.
 export {
   type NativeParseJsonFn,
   type NativeParserAdapter,
@@ -52,32 +54,34 @@ export {
 /**
  * AST v2 parser facade.
  *
- * 内部使用 Rust `supramark-markdown` parser。RN 生产入口后续可接 native/TurboModule
- * binding，公开合同保持 `source -> SupramarkRootNode`。
+ * Internally uses the Rust `supramark-markdown` parser. The RN production entry
+ * point may later wire in a native/TurboModule binding; the public contract stays
+ * `source -> SupramarkRootNode`.
  *
- * @param source - Markdown 源文本
- * @param options - 解析选项(可选 AST 后处理插件)
+ * @param source - the Markdown source text
+ * @param options - parse options (optional AST post-processing plugins)
  * @returns Supramark AST v2
  */
 export { parse, expandOpaqueContainers } from './plugin.js';
 
 /**
- * 预设(Presets)
+ * Presets.
  *
- * 预设是预配置的选项组合,用于快速设置常见的解析配置。
+ * A preset is a pre-configured bundle of options, used to quickly set up a common
+ * parsing configuration.
  */
 export { presetDefault, presetGFM } from './plugin.js';
 
 /**
- * 缓存工具
+ * Cache utilities.
  *
- * RN renderer 通过 Metro 的 react-native 条件加载本入口，因此这里必须与
- * 默认入口保持缓存公共 API 一致。
+ * The RN renderer loads this entry point via Metro's react-native condition, so it
+ * must keep the same cache public API as the default entry point.
  */
 export { LRUCache, createCacheKey, simpleHash, type LRUCacheOptions } from './cache.js';
 
 /**
- * Feature 相关工具函数
+ * Feature-related utility functions.
  */
 export {
   isFeatureEnabled,

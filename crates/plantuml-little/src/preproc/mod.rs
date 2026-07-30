@@ -1628,10 +1628,12 @@ impl Context {
         result = self.expand_context_builtins(&result);
 
         // Expand stateless built-in functions BEFORE variable/define substitution.
-        // 这与 Java applyFunctionsAndVariables 的单次扫描语义对齐：Java 在替换
-        // 变量时只推进输入串的指针，替换进来的值不会被再次扫描。所以源码里
-        // 写的 `%n()` 会被展开，而来自引号字符串字面量的变量值里保留的
-        // `%n()` 字面量会被原样保留下来。
+        // This matches the single-pass scan semantics of Java's
+        // applyFunctionsAndVariables: when Java substitutes a variable it only
+        // advances the input string's cursor — the substituted-in value is
+        // never rescanned. So a `%n()` written directly in the source gets
+        // expanded, while a `%n()` literal that comes from a quoted string
+        // literal's stored variable value is left untouched.
         //
         // Example: `!t="a%n()b"` stores literal `a%n()b` as the value. Then
         // `while (t)` becomes `while (a%n()b)` after substitution and the

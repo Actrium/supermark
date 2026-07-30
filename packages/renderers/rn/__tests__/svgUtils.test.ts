@@ -2,30 +2,30 @@ import { describe, test, expect } from 'bun:test';
 import { normalizeSvg, normalizeSvgLight, stripRootSvgSize } from '../src/svgUtils';
 
 // ============================================================================
-// normalizeSvgLight — 轻量清理（用于 MathJax 这类已内联样式的 SVG）
+// normalizeSvgLight — lightweight cleanup (for already style-inlined SVG such as MathJax)
 // ============================================================================
 
-test('normalizeSvgLight 删除 xml 头 / 注释 / style / title / desc / metadata', () => {
+test('normalizeSvgLight removes xml header / comments / style / title / desc / metadata', () => {
   const input =
     '<?xml version="1.0"?><!doctype svg><!-- c -->' +
     '<svg xmlns="x"><title>t</title><desc>d</desc><metadata>m</metadata>' +
     '<style>.a{fill:red}</style><rect/></svg>';
   const out = normalizeSvgLight(input);
-  // 标签内属性空格保留，标签间空白被压缩
+  // Spaces inside tag attributes are preserved; whitespace between tags is collapsed
   expect(out).toBe('<svg xmlns="x"><rect/></svg>');
   expect(out).not.toMatch(/<\?xml|<!--|<style|<title|<desc|<metadata|<!doctype/i);
 });
 
-test('normalizeSvgLight 压缩标签间空白', () => {
+test('normalizeSvgLight collapses whitespace between tags', () => {
   expect(normalizeSvgLight('<svg>\n  <rect/>\n</svg>')).toBe('<svg><rect/></svg>');
 });
 
 // ============================================================================
-// normalizeSvg — mermaid 颜色内联
+// normalizeSvg — mermaid color inlining
 // ============================================================================
 
-test('normalizeSvg 把 scoped CSS class 选择器的颜色内联到 rect 属性', () => {
-  // 模拟 mermaid 真实结构：rect 无 fill（靠 #id .node rect { fill:..; stroke:.. }）
+test('normalizeSvg inlines a scoped CSS class selector color onto the rect attribute', () => {
+  // Simulate mermaid's real structure: rect has no fill (relies on #id .node rect { fill:..; stroke:.. })
   const input =
     '<svg id="m1" viewBox="0 0 100 100">' +
     '<style>#m1 .node rect{fill:#ECECFF;stroke:#9370DB;stroke-width:1px}</style>' +
@@ -39,7 +39,7 @@ test('normalizeSvg 把 scoped CSS class 选择器的颜色内联到 rect 属性'
   expect(out).not.toContain('<style');
 });
 
-test('normalizeSvg 元素已有 fill 属性时不覆盖', () => {
+test('normalizeSvg does not overwrite an element that already has a fill attribute', () => {
   const input =
     '<svg><style>.node rect{fill:#ECECFF}</style>' +
     '<rect class="node" fill="#FF0000" width="1" height="1"/></svg>';
@@ -49,8 +49,8 @@ test('normalizeSvg 元素已有 fill 属性时不覆盖', () => {
   expect(rect).not.toMatch(/fill="#ECECFF"/);
 });
 
-test('normalizeSvg 没有 <style> 的 SVG 不补默认色到 rect（保持原样）', () => {
-  // 无 CSS 时 inlineColors 找不到匹配的规则，rect 维持输入形态（不强行补色）
+test('normalizeSvg leaves rect untouched when the SVG has no <style> (no default color added)', () => {
+  // With no CSS, inlineColors finds no matching rule, so rect stays in its input shape (color is never forced)
   const input = '<svg><rect class="x" width="1" height="1"/></svg>';
   const out = normalizeSvg(input);
   const rect = out.match(/<rect[^>]*>/)?.[0] ?? '';
@@ -58,11 +58,11 @@ test('normalizeSvg 没有 <style> 的 SVG 不补默认色到 rect（保持原样
 });
 
 // ============================================================================
-// normalizeSvg — foreignObject → text 转换（mermaid 文字）
+// normalizeSvg — foreignObject → text conversion (mermaid text)
 // ============================================================================
 
-test('normalizeSvg 把含文本的 foreignObject 转成 <text>', () => {
-  // 模拟 mermaid 节点标签结构：foreignObject 内 div/span/p 文本
+test('normalizeSvg converts a foreignObject containing text into <text>', () => {
+  // Simulate mermaid's node label structure: div/span/p text inside a foreignObject
   const input =
     '<svg viewBox="0 0 100 100">' +
     '<g transform="translate(50,50)">' +
@@ -73,14 +73,14 @@ test('normalizeSvg 把含文本的 foreignObject 转成 <text>', () => {
   const out = normalizeSvg(input);
   expect(out).not.toContain('<foreignObject');
   expect(out).toContain('>Start<');
-  // 转换出的 text 用 foreignObject width 居中（x=20）、height*0.7 近似基线（y≈11.2）
+  // The converted text is centered using the foreignObject width (x=20), with height*0.7 as an approximate baseline (y≈11.2)
   const text = out.match(/<text[^>]*>Start<\/text>/)?.[0] ?? '';
   expect(text).toMatch(/x="20"/);
   expect(text).toMatch(/text-anchor="middle"/);
   expect(text).toMatch(/fill: #333/);
 });
 
-test('normalizeSvg 把空 foreignObject（width=0 或无文本）删除', () => {
+test('normalizeSvg removes an empty foreignObject (width=0 or no text)', () => {
   const input =
     '<svg><g>' +
     '<foreignObject width="0" height="16"><div><span class="edgeLabel"></span></div></foreignObject>' +
@@ -91,7 +91,7 @@ test('normalizeSvg 把空 foreignObject（width=0 或无文本）删除', () => 
   expect(out).not.toContain('<text');
 });
 
-test('normalizeSvg foreignObject 多个 <p> 文本拼接为单个 text', () => {
+test('normalizeSvg joins multiple <p> texts inside a foreignObject into a single text', () => {
   const input =
     '<svg><foreignObject width="20" height="16">' +
     '<div><p>line1</p><p>line2</p></div>' +
@@ -101,11 +101,11 @@ test('normalizeSvg foreignObject 多个 <p> 文本拼接为单个 text', () => {
 });
 
 // ============================================================================
-// normalizeSvg — d2 text 补色 + font-family 引号转义
+// normalizeSvg — d2 text default color + font-family quote escaping
 // ============================================================================
 
-test('normalizeSvg 给无 fill 的 <text style> 补默认色', () => {
-  // d2 text 真实结构：style 含 text-anchor/font-size 但无 fill，也无 fill 属性
+test('normalizeSvg adds a default color to a <text style> without fill', () => {
+  // d2 text's real structure: style has text-anchor/font-size but no fill, and no fill attribute either
   const input =
     '<svg><text x="1" y="2" class="text-bold" style="text-anchor:middle;font-size:16px">a</text></svg>';
   const out = normalizeSvg(input);
@@ -114,9 +114,11 @@ test('normalizeSvg 给无 fill 的 <text style> 补默认色', () => {
   expect(text).toMatch(/font-family:/);
 });
 
-test('normalizeSvg text 已有 fill 属性时不补默认色（不覆盖 step-2 内联）', () => {
-  // step-2 把 class 的 fill 内联成属性后，step-3 不能再往 style 补 #333——style 优先级
-  // 高于属性，会覆盖掉正确颜色。这是 review 问题 6/8 的回归防护。
+test('normalizeSvg does not add a default color when text already has a fill attribute (does not overwrite step-2 inlining)', () => {
+  // Once step 2 has inlined the class's fill into an attribute, step 3 must
+  // not add #333 to style — style has higher priority than attributes and
+  // would override the correct color. This is regression protection for
+  // review issues 6/8.
   const input =
     '<svg><style>.title{fill:#ff0000}</style><text class="title" style="font-size:20px">Hi</text></svg>';
   const out = normalizeSvg(input);
@@ -125,58 +127,60 @@ test('normalizeSvg text 已有 fill 属性时不补默认色（不覆盖 step-2 
   expect(text).not.toMatch(/fill:\s*#333/);
 });
 
-test('normalizeSvg inlineColors 把 CSS 值里的双引号转单引号（防属性嵌套）', () => {
-  // 若 CSS 的 fill/stroke 值带双引号（少见但可能），拼进 <rect fill="..."> 会嵌套。
-  // sanitizeCssValue 把双引号转单引号，保证属性合法、SvgXml 能解析。
+test('normalizeSvg inlineColors converts double quotes in CSS values to single quotes (prevents attribute nesting)', () => {
+  // If a CSS fill/stroke value contains double quotes (rare but possible),
+  // splicing it into <rect fill="..."> would nest quotes.
+  // sanitizeCssValue converts double quotes to single quotes so the
+  // attribute stays valid and SvgXml can parse it.
   const input =
     '<svg><style>.x{fill:"weird value"}</style><rect class="x" width="1" height="1"/></svg>';
   const out = normalizeSvg(input);
   const rect = out.match(/<rect[^>]*>/)?.[0] ?? '';
   expect(rect).toMatch(/fill="'weird value'"/);
-  // 整个 rect 标签不出现 "..." 内嵌 "..."（嵌套双引号会让属性提前关闭）
+  // The whole rect tag must not contain "..." nested inside "..." (nested double quotes would close the attribute early)
   expect(rect).not.toMatch(/fill="[^"]*"[^"]+"/);
 });
 
 // ============================================================================
-// normalizeSvg — 不破坏既有结构
+// normalizeSvg — doesn't break existing structure
 // ============================================================================
 
-test('normalizeSvg 不误删 rect 的 class/style 属性（安全正则回归）', () => {
-  // 原版 />[^<]+</ 会把 rect 的 class 属性串当裸文本破坏，导致按 class 匹配 CSS 失效。
+test('normalizeSvg does not accidentally strip a rect\'s class/style attributes (safe-regex regression)', () => {
+  // The original />[^<]+</ regex would treat rect's class attribute string as raw text and corrupt it, breaking class-based CSS matching.
   const input =
     '<svg><style>.label-container{fill:#ECECFF}</style>' +
     '<rect class="basic label-container" style="" width="1" height="1"/></svg>';
   const out = normalizeSvg(input);
   const rect = out.match(/<rect[^>]*>/)?.[0] ?? '';
-  // class 被保留才能让 inlineColors 匹配上 CSS、补出 fill
+  // class must be preserved for inlineColors to match the CSS and produce the fill
   expect(rect).toMatch(/class="basic label-container"/);
   expect(rect).toMatch(/fill="#ECECFF"/);
 });
 
-test('normalizeSvg 保护 <text> 内的裸文本不被删', () => {
+test('normalizeSvg protects raw text inside <text> from being removed', () => {
   const input = '<svg><text x="0" y="0">Hello World</text></svg>';
   const out = normalizeSvg(input);
   expect(out).toContain('>Hello World<');
 });
 
 // ============================================================================
-// normalizeSvg — well-formedness 与真实多规则回归（覆盖 review 阻断缺陷）
+// normalizeSvg — well-formedness and real multi-rule regressions (covers review blocker defects)
 // ============================================================================
 
-// 自闭合形状补色后必须仍以 /> 结尾——/ 落在属性中间会让 react-native-svg 解析抛错整图空白。
-test('normalizeSvg 自闭合 rect 补色后保持 /> 结尾（阻断 1 回归）', () => {
+// A self-closing shape must still end with /> after color is added — a / landing mid-attribute makes react-native-svg's parser throw, leaving the whole image blank.
+test('normalizeSvg keeps a self-closing rect />-terminated after color is added (blocker 1 regression)', () => {
   const input =
     '<svg><style>.node rect{fill:#ECECFF;stroke:#9370DB}</style>' +
     '<g class="node"><rect class="basic label-container" width="10" height="10"/></g></svg>';
   const out = normalizeSvg(input);
-  // 任何开标签都不能出现「/ 后跟属性」的畸形（阻断 1 的特征）
+  // No opening tag may show the "/ followed by an attribute" malformation (the signature of blocker 1)
   expect(out).not.toMatch(/\/\s+\w+="[^"]*"/);
   const rect = out.match(/<rect[^>]*>/)?.[0] ?? '';
   expect(rect).toMatch(/fill="#ECECFF".*\/>$/);
 });
 
-// .node rect 与 .cluster rect 末段都塌缩成 rect 时不能互相覆盖——按祖先链区分。
-test('normalizeSvg .node rect 与 .cluster rect 按祖先链分别上色（阻断 2 回归）', () => {
+// When .node rect and .cluster rect both collapse to rect at their last segment, they must not overwrite each other — they're distinguished by the ancestor chain.
+test('normalizeSvg colors .node rect and .cluster rect separately via the ancestor chain (blocker 2 regression)', () => {
   const input =
     '<svg id="m1">' +
     '<style>' +
@@ -195,8 +199,8 @@ test('normalizeSvg .node rect 与 .cluster rect 按祖先链分别上色（阻�
   expect(clusterRect).toMatch(/fill="#ffffde"/);
 });
 
-// !important 必须剥离——内联成属性值后是非法语法（fill="#333 !important" 会失效变黑）。
-test('normalizeSvg 剥离 CSS 值里的 !important', () => {
+// !important must be stripped — once inlined into an attribute value it's invalid syntax (fill="#333 !important" fails and renders black).
+test('normalizeSvg strips !important from CSS values', () => {
   const input =
     '<svg><style>.root .anchor path{fill:#333 !important}</style>' +
     '<g class="root"><g class="anchor"><path class="anchor" d="M0 0"/></g></g></svg>';
@@ -205,8 +209,8 @@ test('normalizeSvg 剥离 CSS 值里的 !important', () => {
   expect(out).toMatch(/fill="#333"/);
 });
 
-// foreignObject 内只有 <span> 无 <p>（venn 标签）也要提取文本，不能整段删除。
-test('normalizeSvg foreignObject 内 <span> 文本也被提取', () => {
+// A foreignObject with only a <span> and no <p> (venn labels) must also have its text extracted, not have the whole block deleted.
+test('normalizeSvg also extracts <span> text inside a foreignObject', () => {
   const input =
     '<svg><g transform="translate(10,10)">' +
     '<foreignObject width="40" height="16"><div xmlns="x"><span class="nodeLabel">vennLabel</span></div></foreignObject>' +
@@ -215,8 +219,8 @@ test('normalizeSvg foreignObject 内 <span> 文本也被提取', () => {
   expect(out).toContain('>vennLabel<');
 });
 
-// <br/> 是行边界，剥标签前必须转空格，否则 Line1<br/>Line2 粘成 Line1Line2。
-test('normalizeSvg foreignObject 内 <br/> 转空格避免行粘连', () => {
+// <br/> is a line boundary; it must be converted to a space before tags are stripped, otherwise Line1<br/>Line2 becomes Line1Line2.
+test('normalizeSvg converts <br/> inside a foreignObject to a space to avoid lines running together', () => {
   const input =
     '<svg><foreignObject width="40" height="32">' +
     '<div xmlns="x"><span class="nodeLabel"><p>Line1<br/>Line2</p></span></div></foreignObject></svg>';
@@ -225,25 +229,25 @@ test('normalizeSvg foreignObject 内 <br/> 转空格避免行粘连', () => {
   expect(out).not.toContain('>Line1Line2<');
 });
 
-// d2 裸 <text>（无 style 无 fill）也要兜底默认色，否则默认黑。
-test('normalizeSvg 无 style 的裸 <text> 补默认 fill', () => {
+// A bare d2 <text> (no style, no fill) must also get a default color fallback, otherwise it defaults to black.
+test('normalizeSvg adds a default fill to a bare <text> with no style', () => {
   const input = '<svg><text class="text-mono" x="0" y="10">code</text></svg>';
   const out = normalizeSvg(input);
   const text = out.match(/<text[^>]*>/)?.[0] ?? '';
   expect(text).toMatch(/fill:\s*#333|fill="#333"/);
 });
 
-// 复合选择器 rect.divider 必须命中（tag + class 同段），不能把整段当 key 永不匹配。
-test('normalizeSvg 复合选择器 rect.divider 命中', () => {
+// A compound selector rect.divider must match (tag + class in the same segment); the whole segment must not be treated as a key that never matches.
+test('normalizeSvg matches the compound selector rect.divider', () => {
   const input =
     '<svg><style>rect.divider{stroke:#999}</style><rect class="divider" width="1" height="1"/></svg>';
   const out = normalizeSvg(input);
   expect(out).toMatch(/stroke="#999"/);
 });
 
-// color: 在 CSS 语义里只设置文本颜色，对 rect 的 fill 无影响。
-// .box{fill:blue;color:red} 对 rect 应产出 fill=blue，不能被 color:red 覆盖。
-test('normalizeSvg color: 不影响 rect 的 fill（仅对 text 生效）', () => {
+// color: only sets the text color in CSS semantics and has no effect on a rect's fill.
+// .box{fill:blue;color:red} should produce fill=blue for a rect and must not be overridden by color:red.
+test('normalizeSvg color: does not affect a rect\'s fill (only applies to text)', () => {
   const input =
     '<svg><style>.box{fill:blue;color:red}</style><rect class="box" width="1" height="1"/></svg>';
   const out = normalizeSvg(input);
@@ -251,8 +255,8 @@ test('normalizeSvg color: 不影响 rect 的 fill（仅对 text 生效）', () =
   expect(out).not.toMatch(/fill="red"/);
 });
 
-// color: 对 text 是 fill 候选（radar 标题等用 color: 上色）。
-test('normalizeSvg color: 作为 text 的 fill 候选', () => {
+// color: is a fill candidate for text (e.g. radar titles are colored via color:).
+test('normalizeSvg color: acts as a fill candidate for text', () => {
   const input =
     '<svg><style>.title{color:#ff6600}</style><text class="title" x="0" y="0">radar</text></svg>';
   const out = normalizeSvg(input);
@@ -260,8 +264,8 @@ test('normalizeSvg color: 作为 text 的 fill 候选', () => {
   expect(text).toMatch(/fill="#ff6600"/);
 });
 
-// 整体 well-formedness：所有开标签以 > 或 /> 结尾，不残留畸形 / 在属性中间。
-test('normalizeSvg 输出所有标签 well-formed', () => {
+// Overall well-formedness: every opening tag ends with > or />, with no malformed / left in the middle of attributes.
+test('normalizeSvg outputs all tags well-formed', () => {
   const input =
     '<svg id="m1"><style>.node rect{fill:#ECECFF}.cluster rect{fill:#ffffde}</style>' +
     '<g class="cluster"><rect class="cluster" width="10" height="10"/></g>' +
@@ -269,21 +273,23 @@ test('normalizeSvg 输出所有标签 well-formed', () => {
     '<g class="node"><foreignObject width="40" height="16"><div><p>label</p></div></foreignObject></g>' +
     '<text x="0" y="0">t</text></svg>';
   const out = normalizeSvg(input);
-  // 不允许「/ 后跟属性」的畸形标签（阻断 1 特征）
+  // Malformed tags with "/ followed by an attribute" are not allowed (blocker 1 signature)
   expect(out).not.toMatch(/\/\s+\w+="[^"]*"/);
-  // 不允许属性值里残留 !important
+  // No leftover !important in attribute values
   expect(out).not.toContain('!important');
-  // 不残留 <style>
+  // No leftover <style>
   expect(out).not.toMatch(/<style/i);
 });
 
 // ============================================================================
-// 祖先 class 按词精确匹配（防子串误命中，对抗探针）
+// Ancestor classes match by exact word (guards against substring false positives)
 // ============================================================================
 
-// 祖先段必须按词精确匹配，不能用字符串子串：.node 选择器不能命中 class="nodes"
-//（复数）的祖先。mermaid 里 node/nodes、cluster/clusters 成对共存，子串匹配会染错色。
-test('normalizeSvg .node 不子串命中 class="nodes" 祖先', () => {
+// Ancestor segments must match by exact word, not string substring: the
+// .node selector must not match an ancestor with class="nodes" (plural).
+// mermaid has node/nodes and cluster/clusters coexisting in pairs; substring
+// matching would color the wrong element.
+test('normalizeSvg does not substring-match .node against a class="nodes" ancestor', () => {
   const input =
     '<svg><style>.node rect{fill:#9370DB}</style>' +
     '<g class="nodes"><rect class="basic" width="10" height="10"/></g></svg>';
@@ -291,8 +297,8 @@ test('normalizeSvg .node 不子串命中 class="nodes" 祖先', () => {
   expect(out).not.toMatch(/fill="#9370DB"/);
 });
 
-// .label 选择器不能命中 class="edgeLabel"/"nodeLabel" 等子串祖先。
-test('normalizeSvg .label 不子串命中 class="edgeLabel" 祖先', () => {
+// The .label selector must not match substring ancestors like class="edgeLabel"/"nodeLabel".
+test('normalizeSvg does not substring-match .label against a class="edgeLabel" ancestor', () => {
   const input =
     '<svg><style>.label rect{fill:#ffffde}</style>' +
     '<g class="edgeLabel"><rect class="basic" width="10" height="10"/></g></svg>';
@@ -300,10 +306,12 @@ test('normalizeSvg .label 不子串命中 class="edgeLabel" 祖先', () => {
   expect(out).not.toMatch(/fill="#ffffde"/);
 });
 
-// 自闭合 <g class="x"/> 无 </g>，其 class 不应入栈泄漏给后续兄弟元素。
-test('normalizeSvg 自闭合 <g/> 的 class 不泄漏给兄弟元素', () => {
-  // 自闭合 g 带 class="node"，紧随其后的 rect 在另一个 g 里（class 为空）。
-  // 若自闭合 g 错误入栈，rect 会被误认为有 node 祖先而染上 #9370DB。
+// A self-closing <g class="x"/> has no </g>, so its class must not be pushed onto the stack and leak to later sibling elements.
+test('normalizeSvg does not leak a self-closing <g/>\'s class to sibling elements', () => {
+  // The self-closing g carries class="node"; the rect right after it sits in
+  // a different g (with an empty class).
+  // If the self-closing g were mistakenly pushed onto the stack, the rect
+  // would be wrongly treated as having a node ancestor and colored #9370DB.
   const input =
     '<svg><style>.node rect{fill:#9370DB}</style>' +
     '<g class="node"/><g><rect class="basic" width="10" height="10"/></g></svg>';
@@ -435,11 +443,11 @@ test('normalizeSvg foreignObject color drops a trailing !important', () => {
 });
 
 // ============================================================================
-// stripRootSvgSize — 精确删除根 <svg> 的 width/height（来自 upstream/main）
+// stripRootSvgSize — precisely removes the root <svg>'s width/height (from upstream/main)
 // ============================================================================
 
 describe('stripRootSvgSize', () => {
-  test('d2 双层嵌套：外层无 width/height 时原样返回，内层 viewport 保留', () => {
+  test('d2 double nesting: returns unchanged when the outer has no width/height, inner viewport preserved', () => {
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg">' +
       '<svg class="d2-svg" width="350" height="400" viewBox="-1 -1 350 400">' +
@@ -447,7 +455,7 @@ describe('stripRootSvgSize', () => {
     expect(stripRootSvgSize(svg)).toBe(svg);
   });
 
-  test('d2 + scale：外层 width/height 被删，内层 d2-svg 完整保留', () => {
+  test('d2 + scale: outer width/height is removed, inner d2-svg fully preserved', () => {
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" width="700" height="800">' +
       '<svg class="d2-svg" width="350" height="400" viewBox="-1 -1 350 400">' +
@@ -460,7 +468,7 @@ describe('stripRootSvgSize', () => {
     );
   });
 
-  test('mermaid：根 width="100%" 被删且不留双空格，viewBox 与 id 保留', () => {
+  test('mermaid: root width="100%" is removed with no leftover double space, viewBox and id preserved', () => {
     const svg =
       '<svg id="mermaid-abc123" width="100%" viewBox="0 0 100 50" xmlns="http://www.w3.org/2000/svg">' +
       '<g/></svg>';
@@ -471,7 +479,7 @@ describe('stripRootSvgSize', () => {
     expect(result).not.toContain('"  ');
   });
 
-  test('根属性含 $ 模式字符：函数式 replacement 不被替换模式吃掉', () => {
+  test('root attribute containing a $ pattern character: the function-form replacement is not swallowed by a replacement pattern', () => {
     const svg = '<svg width="100%" height="50" data-token="$&amp;bar"><g/></svg>';
     const result = stripRootSvgSize(svg);
     expect(result).toContain('data-token="$&amp;bar"');

@@ -45,6 +45,6 @@ describe('Footnote Feature', () => {
     });
   });
 
-  // TODO: 添加渲染测试
-  // TODO: 添加集成测试
+  // TODO: add render tests
+  // TODO: add integration tests
 });

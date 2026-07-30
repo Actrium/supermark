@@ -128,7 +128,7 @@ fn elk_bridge_issue34_vertical_edges() {
     assert_eq!(paths, 6, "expected 6 connection paths, got {paths}");
 
     // The official d2 elk rendering routes edges as vertical segments
-    // (issue #34: "官方的连接线是竖着的"). Assert each connection path
+    // (issue #34: "the official connection lines are vertical"). Assert each connection path
     // contains at least one vertical `L x y` segment (x constant, y varies).
     for elem in svg.split("<path ").skip(1) {
         // Only connection edge paths (skip arrowhead markers / sketch paths).

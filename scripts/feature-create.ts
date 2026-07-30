@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * Supramark Feature 脚手架工具 (v2)
+ * Supramark Feature Scaffolding Tool (v2)
  *
- * 简化版：仅支持两种扩展类型
- * - Container (:::) - 块级容器扩展
- * - Input (%%%) - 输入块扩展
+ * Simplified version: supports only two extension types
+ * - Container (:::) - block-level container extension
+ * - Input (%%%) - input block extension
  *
- * 用法：
+ * Usage:
  *   bun run feature:create
  */
 
@@ -40,14 +40,14 @@ interface ExtensionTypeConfig {
 const EXTENSION_TYPES: Record<string, ExtensionTypeConfig> = {
   container: {
     label: 'Container (:::)',
-    description: '块级容器扩展，如 :::map, :::note, :::html',
+    description: 'Block-level container extension, e.g. :::map, :::note, :::html',
     syntax: ':::',
     astType: 'container',
     syntaxFamily: 'container',
   },
   input: {
     label: 'Input (%%%)',
-    description: '输入块扩展，如 %%%form, %%%survey（开发中）',
+    description: 'Input block extension, e.g. %%%form, %%%survey (in development)',
     syntax: '%%%',
     astType: 'input',
     syntaxFamily: 'input',
@@ -66,9 +66,9 @@ interface CreateConfig {
 }
 
 /**
- * 生成合并后的 feature.ts（实现 ContainerFeature 接口）
+ * Generates the merged feature.ts (implements the ContainerFeature interface)
  *
- * 合并了原来的 feature.ts + extension.ts + syntax.ts
+ * Merges the former feature.ts + extension.ts + syntax.ts
  */
 function generateContainerFeatureTemplate(config: CreateConfig): string {
   const { id, name, version, description, containerName, extensionType } = config;
@@ -77,13 +77,14 @@ function generateContainerFeatureTemplate(config: CreateConfig): string {
   const extConfig = EXTENSION_TYPES[extensionType]!;
 
   return `/**
- * ${name} Feature 定义
+ * ${name} Feature definition
  *
- * 实现 ContainerFeature 接口，合并了元数据、容器定义和解析器注册。
+ * Implements the ContainerFeature interface, merging metadata, container
+ * definition, and parser registration.
  *
  * @example
  * \`\`\`markdown
- * :::${containerName} 标题
+ * :::${containerName} title
  * key: value
  * :::
  * \`\`\`
@@ -99,20 +100,20 @@ import {
 } from '@supramark/core';
 
 // ============================================================================
-// 容器名称定义（唯一事实来源）
+// Container name definition (single source of truth)
 // ============================================================================
 
 /**
- * ${name} 支持的容器名称
+ * Container names supported by ${name}
  *
- * 全局唯一，不能与其他 Feature 冲突。
+ * Globally unique; must not conflict with other Features.
  */
 export const ${camelName.toUpperCase()}_CONTAINER_NAMES = ['${containerName}'] as const;
 
 export type ${pascalName}ContainerName = (typeof ${camelName.toUpperCase()}_CONTAINER_NAMES)[number];
 
 // ============================================================================
-// 解析逻辑
+// Parsing logic
 // ============================================================================
 
 function parse${pascalName}Params(info: string): { title?: string } {
@@ -137,7 +138,7 @@ function create${pascalName}ContainerHook(name: string): ContainerHook {
         params: token.info ? String(token.info) : undefined,
         data: {
           title,
-          // TODO: 添加更多解析逻辑
+          // TODO: add more parsing logic
         },
         children: [],
       };
@@ -156,9 +157,9 @@ function create${pascalName}ContainerHook(name: string): ContainerHook {
 }
 
 /**
- * 注册 ${name} 解析器
+ * Registers the ${name} parser
  *
- * 为所有 containerNames 注册解析 hook。
+ * Registers a parse hook for every containerName.
  */
 function register${pascalName}Parser(): void {
   for (const name of ${camelName.toUpperCase()}_CONTAINER_NAMES) {
@@ -167,28 +168,28 @@ function register${pascalName}Parser(): void {
 }
 
 // ============================================================================
-// Feature 定义（实现 ContainerFeature 接口）
+// Feature definition (implements the ContainerFeature interface)
 // ============================================================================
 
 /**
  * ${name} Feature
  *
- * ${description || `${extConfig.syntax}${containerName} 容器扩展`}
+ * ${description || `${extConfig.syntax}${containerName} container extension`}
  */
 export const ${camelName}Feature: ContainerFeature = {
-  // 元数据
+  // Metadata
   id: '${id}',
   name: '${name}',
   version: '${version}',
-  description: '${description || `${extConfig.syntax}${containerName} 容器扩展`}',
+  description: '${description || `${extConfig.syntax}${containerName} container extension`}',
 
-  // 容器定义
+  // Container definition
   containerNames: [...${camelName.toUpperCase()}_CONTAINER_NAMES],
 
-  // 解析器注册
+  // Parser registration
   registerParser: register${pascalName}Parser,
 
-  // 渲染器导出名
+  // Renderer export names
   webRendererExport: 'render${pascalName}ContainerWeb',
   rnRendererExport: 'render${pascalName}ContainerRN',
 };
@@ -404,9 +405,9 @@ function generateContainerRuntimeWebTemplate(config: CreateConfig): string {
   const pascalName = capitalize(toCamelCase(name));
 
   return `/**
- * ${name} Web 渲染器
+ * ${name} Web renderer
  *
- * 实现 ContainerWebRenderer 接口
+ * Implements the ContainerWebRenderer interface
  *
  * @packageDocumentation
  */
@@ -415,7 +416,7 @@ import React from 'react';
 import type { ContainerWebRenderArgs } from '@supramark/core';
 
 /**
- * Web 渲染器 for :::${containerName}
+ * Web renderer for :::${containerName}
  */
 export function render${pascalName}ContainerWeb({
   node,
@@ -450,9 +451,9 @@ function generateContainerRuntimeRNTemplate(config: CreateConfig): string {
   const pascalName = capitalize(toCamelCase(name));
 
   return `/**
- * ${name} React Native 渲染器
+ * ${name} React Native renderer
  *
- * 实现 ContainerRNRenderer 接口
+ * Implements the ContainerRNRenderer interface
  *
  * @packageDocumentation
  */
@@ -462,7 +463,7 @@ import { View, Text } from 'react-native';
 import type { ContainerRNRenderArgs } from '@supramark/core';
 
 /**
- * RN 渲染器 for :::${containerName}
+ * RN renderer for :::${containerName}
  */
 export function render${pascalName}ContainerRN({
   node,
@@ -493,17 +494,17 @@ function generateIndexFile(config: CreateConfig): string {
  * @packageDocumentation
  */
 
-// Feature 定义（主导出）
+// Feature definition (main export)
 export {
   ${camelName}Feature,
   ${camelName.toUpperCase()}_CONTAINER_NAMES,
   type ${pascalName}ContainerName,
 } from './feature.js';
 
-// 示例
+// Examples
 export { ${camelName}Examples } from './examples.js';
 
-// 渲染器（供 registry 使用）
+// Renderers (for registry use)
 export { render${pascalName}ContainerWeb } from './runtime.web.js';
 export { render${pascalName}ContainerRN } from './runtime.rn.js';
 `;
@@ -512,14 +513,14 @@ export { render${pascalName}ContainerRN } from './runtime.rn.js';
 function generateJestConfig(jestPresetPath: string): string {
   return `/** @type {import('jest').Config} */
 module.exports = {
-  // 使用 Supramark 共享的 Jest preset
-  // 与 @supramark/core 的测试配置保持一致
+  // Uses the shared Supramark Jest preset
+  // Keeps test configuration consistent with @supramark/core
   ...require('${jestPresetPath}'),
 
-  // Feature 包特定的配置可以在这里覆盖
-  // 例如：
-  // testEnvironment: 'jsdom', // 如果需要 DOM 环境
-  // collectCoverage: true,     // 启用覆盖率收集
+  // Feature-package-specific config can be overridden here
+  // For example:
+  // testEnvironment: 'jsdom', // if a DOM environment is needed
+  // collectCoverage: true,     // enable coverage collection
 };
 `;
 }
@@ -615,35 +616,35 @@ function parseArgs(): CliOptions {
 
 function showHelp(): void {
   console.log(`
-${colors.bright}Supramark Feature 脚手架工具 v2${colors.reset}
+${colors.bright}Supramark Feature Scaffolding Tool v2${colors.reset}
 
-${colors.blue}用法：${colors.reset}
-  bun run feature:create [选项]
+${colors.blue}Usage:${colors.reset}
+  bun run feature:create [options]
 
-${colors.blue}选项：${colors.reset}
-  -n, --name <name>          Feature 名称 (如 "Weather")
-  -c, --container <name>     容器/输入块名称 (如 "weather", 用于 :::weather)
-  -t, --type <type>          扩展类型: container | input (默认: container)
-  -v, --version <version>    版本号 (默认: "0.1.0")
-  -a, --author <author>      作者 (默认: "Supramark Team")
-  -d, --description <desc>   简短描述
-  --dry-run                  仅打印将生成的文件列表，不写入磁盘
-  -o, --output-dir <dir>     输出目录（覆盖默认位置）
-  -h, --help                 显示此帮助信息
+${colors.blue}Options:${colors.reset}
+  -n, --name <name>          Feature name (e.g. "Weather")
+  -c, --container <name>     Container/input block name (e.g. "weather", used as :::weather)
+  -t, --type <type>          Extension type: container | input (default: container)
+  -v, --version <version>    Version number (default: "0.1.0")
+  -a, --author <author>      Author (default: "Supramark Team")
+  -d, --description <desc>   Short description
+  --dry-run                  Only print the list of files to be generated, without writing to disk
+  -o, --output-dir <dir>     Output directory (overrides the default location)
+  -h, --help                 Show this help message
 
-${colors.blue}扩展类型：${colors.reset}
-  ${colors.green}container${colors.reset}  块级容器 (:::)  如 :::map, :::note, :::weather
-  ${colors.yellow}input${colors.reset}      输入块 (%%%)    如 %%%form, %%%survey (开发中)
+${colors.blue}Extension types:${colors.reset}
+  ${colors.green}container${colors.reset}  block-level container (:::)  e.g. :::map, :::note, :::weather
+  ${colors.yellow}input${colors.reset}      input block (%%%)            e.g. %%%form, %%%survey (in development)
 
-${colors.blue}示例：${colors.reset}
-  ${colors.gray}# 交互式创建${colors.reset}
+${colors.blue}Examples:${colors.reset}
+  ${colors.gray}# Interactive creation${colors.reset}
   bun run feature:create
 
-  ${colors.gray}# 通过参数创建 Container 扩展${colors.reset}
-  bun run feature:create -- -n "Weather" -c "weather" -d "天气卡片"
+  ${colors.gray}# Create a Container extension via arguments${colors.reset}
+  bun run feature:create -- -n "Weather" -c "weather" -d "Weather card"
 
-  ${colors.gray}# 创建 Input 扩展${colors.reset}
-  bun run feature:create -- -n "Survey" -c "survey" -t input -d "问卷调查"
+  ${colors.gray}# Create an Input extension${colors.reset}
+  bun run feature:create -- -n "Survey" -c "survey" -t input -d "Survey questionnaire"
 `);
 }
 
@@ -654,7 +655,7 @@ interface FileToWrite {
 }
 
 async function main(): Promise<void> {
-  log('\n🚀 Supramark Feature 脚手架工具 v2\n', 'bright');
+  log('\n🚀 Supramark Feature Scaffolding Tool v2\n', 'bright');
 
   try {
     const cliOptions = parseArgs();
@@ -676,73 +677,73 @@ async function main(): Promise<void> {
           {
             value: 'container',
             label: 'Container (:::)',
-            description: '块级容器扩展，如 :::map, :::note, :::weather',
+            description: 'Block-level container extension, e.g. :::map, :::note, :::weather',
           },
           {
             value: 'input',
             label: 'Input (%%%)',
-            description: '输入块扩展，如 %%%form, %%%survey（开发中）',
+            description: 'Input block extension, e.g. %%%form, %%%survey (in development)',
           },
         ];
-        const selected = await selectMenu('选择扩展类型:', options);
+        const selected = await selectMenu('Select extension type:', options);
         extensionType = selected || options[0].value;
       }
 
       const extConfig = EXTENSION_TYPES[extensionType]!;
-      log(`\n已选择: ${colors.green}${extConfig.label}${colors.reset}\n`, 'reset');
+      log(`\nSelected: ${colors.green}${extConfig.label}${colors.reset}\n`, 'reset');
 
       if (!containerName) {
         containerName = await question(
-          `${extensionType === 'container' ? '容器' : '输入块'}名称 (用于 ${extConfig.syntax}xxx，如 "weather"): `
+          `${extensionType === 'container' ? 'Container' : 'Input block'} name (used as ${extConfig.syntax}xxx, e.g. "weather"): `
         );
         if (!containerName) {
-          throw new Error('名称不能为空');
+          throw new Error('Name cannot be empty');
         }
       }
 
       if (!validateContainerName(containerName)) {
         throw new Error(
-          `名称 "${containerName}" 无效。必须以小写字母开头，只能包含小写字母、数字、下划线和连字符。`
+          `Name "${containerName}" is invalid. It must start with a lowercase letter and contain only lowercase letters, digits, underscores, and hyphens.`
         );
       }
 
       if (!name) {
         const defaultName = capitalize(containerName);
-        const inputName = await question(`Feature 名称 [${defaultName}]: `);
+        const inputName = await question(`Feature name [${defaultName}]: `);
         name = inputName || defaultName;
       }
 
       if (!description) {
-        description = await question('简短描述 (可选): ');
+        description = await question('Short description (optional): ');
       }
 
       const id = `@supramark/feature-${toKebabCase(name)}`;
-      log('\n📋 确认信息：', 'bright');
-      log(`  扩展类型:   ${colors.green}${extConfig.label}${colors.reset}`, 'reset');
+      log('\n📋 Confirm details:', 'bright');
+      log(`  Extension type:   ${colors.green}${extConfig.label}${colors.reset}`, 'reset');
       log(
-        `  语法:       ${colors.blue}${extConfig.syntax}${containerName}${colors.reset}`,
+        `  Syntax:           ${colors.blue}${extConfig.syntax}${containerName}${colors.reset}`,
         'reset'
       );
       log(`  Feature:    ${colors.blue}${name}${colors.reset}`, 'reset');
       log(`  Package ID: ${colors.gray}${id}${colors.reset}`, 'reset');
       if (description) {
-        log(`  描述:       ${colors.gray}${description}${colors.reset}`, 'reset');
+        log(`  Description:      ${colors.gray}${description}${colors.reset}`, 'reset');
       }
       log('');
 
-      const confirm = await question('确认创建? (Y/n): ');
+      const confirm = await question('Create it? (Y/n): ');
       if (confirm.toLowerCase() === 'n') {
-        log('\n已取消。\n', 'yellow');
+        log('\nCancelled.\n', 'yellow');
         return;
       }
     } else {
       extensionType = extensionType || 'container';
       if (!EXTENSION_TYPES[extensionType]) {
-        throw new Error(`无效的扩展类型: ${extensionType}。可选: container, input`);
+        throw new Error(`Invalid extension type: ${extensionType}. Options: container, input`);
       }
       if (!validateContainerName(containerName)) {
         throw new Error(
-          `名称 "${containerName}" 无效。必须以小写字母开头，只能包含小写字母、数字、下划线和连字符。`
+          `Name "${containerName}" is invalid. It must start with a lowercase letter and contain only lowercase letters, digits, underscores, and hyphens.`
         );
       }
     }
@@ -759,11 +760,11 @@ async function main(): Promise<void> {
 
     if (!dryRun && fs.existsSync(basePath)) {
       throw new Error(
-        `Feature 目录已存在: ${path.relative(process.cwd(), basePath)}\n请选择其他名称或删除现有目录`
+        `Feature directory already exists: ${path.relative(process.cwd(), basePath)}\nPlease choose a different name or delete the existing directory`
       );
     }
 
-    log(`\n📁 创建目录结构${dryRun ? ' (dry-run)' : ''}...\n`, 'gray');
+    log(`\n📁 Creating directory structure${dryRun ? ' (dry-run)' : ''}...\n`, 'gray');
     const dirs = [basePath, path.join(basePath, 'src'), path.join(basePath, '__tests__')];
 
     if (!dryRun) {
@@ -847,7 +848,7 @@ async function main(): Promise<void> {
       },
     ];
 
-    log(`\n📝 生成文件${dryRun ? ' (dry-run)' : ''}...\n`, 'gray');
+    log(`\n📝 Generating files${dryRun ? ' (dry-run)' : ''}...\n`, 'gray');
     files.forEach(file => {
       if (!dryRun) {
         fs.writeFileSync(file.path, file.content, 'utf-8');
@@ -858,29 +859,29 @@ async function main(): Promise<void> {
     });
 
     if (dryRun) {
-      log('\n(dry-run) 未写入任何文件。\n', 'yellow');
+      log('\n(dry-run) No files were written.\n', 'yellow');
       return;
     }
 
-    log('\n📝 提示：', 'yellow');
-    log('  如需将新 Feature 集成到项目中，请运行：', 'reset');
+    log('\n📝 Tip:', 'yellow');
+    log('  To integrate the new Feature into the project, run:', 'reset');
     log(`  ${colors.green}bun run features:sync${colors.reset}`, 'reset');
 
     const extConfig = EXTENSION_TYPES[extensionType]!;
-    log('\n✨ Feature 创建完成！\n', 'bright');
-    log('📦 生成的包：', 'yellow');
+    log('\n✨ Feature created successfully!\n', 'bright');
+    log('📦 Generated package:', 'yellow');
     log(`  ${colors.blue}${id}${colors.reset}`, 'reset');
-    log(`  位置: ${colors.gray}${relativeDir}${colors.reset}`, 'reset');
-    log(`  语法: ${colors.green}${extConfig.syntax}${containerName}${colors.reset}\n`, 'reset');
+    log(`  Location: ${colors.gray}${relativeDir}${colors.reset}`, 'reset');
+    log(`  Syntax: ${colors.green}${extConfig.syntax}${containerName}${colors.reset}\n`, 'reset');
 
-    log('📝 下一步：', 'yellow');
-    log(`  1. 编辑 ${colors.blue}src/feature.ts${colors.reset} 完善解析逻辑`, 'reset');
-    log(`  2. 编辑 ${colors.blue}src/runtime.web.tsx${colors.reset} 实现 Web 渲染`, 'reset');
-    log(`  3. 编辑 ${colors.blue}src/runtime.rn.tsx${colors.reset} 实现 RN 渲染`, 'reset');
-    log(`  4. 运行 ${colors.green}bun run build${colors.reset} 编译`, 'reset');
-    log(`  5. 运行 ${colors.green}bun run feature:lint${colors.reset} 检查\n`, 'reset');
+    log('📝 Next steps:', 'yellow');
+    log(`  1. Edit ${colors.blue}src/feature.ts${colors.reset} to complete the parsing logic`, 'reset');
+    log(`  2. Edit ${colors.blue}src/runtime.web.tsx${colors.reset} to implement Web rendering`, 'reset');
+    log(`  3. Edit ${colors.blue}src/runtime.rn.tsx${colors.reset} to implement RN rendering`, 'reset');
+    log(`  4. Run ${colors.green}bun run build${colors.reset} to compile`, 'reset');
+    log(`  5. Run ${colors.green}bun run feature:lint${colors.reset} to check\n`, 'reset');
   } catch (error) {
-    log(`\n❌ 错误: ${error instanceof Error ? error.message : String(error)}\n`, 'red');
+    log(`\n❌ Error: ${error instanceof Error ? error.message : String(error)}\n`, 'red');
   } finally {
     closeRL();
   }

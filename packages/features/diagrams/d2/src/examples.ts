@@ -1,19 +1,19 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * D2 Feature 使用示例
+ * D2 Feature usage examples
  *
- * 每个示例都尽量简短，方便在 preview 应用里快速渲染。示例覆盖：
- *  - 最简连线（a -> b）
- *  - 带标签的连线
- *  - 容器 / 分组（customers: { ... }）
+ * Each example is kept as short as possible for fast rendering in the preview app. Examples cover:
+ *  - The simplest edge (a -> b)
+ *  - A labeled edge
+ *  - Containers / grouping (customers: { ... })
  *
- * 语法参考：https://d2lang.com/
+ * Syntax reference: https://d2lang.com/
  */
 export const d2Examples: ExampleDefinition[] = [
   {
-    name: '最简流程',
-    description: '使用 ```d2 围栏定义一条最小的节点连线。',
+    name: 'Minimal flow',
+    description: 'Uses a ```d2 fence to define the simplest possible node edge.',
     markdown: `
 # D2 minimal flow
 
@@ -23,8 +23,8 @@ a -> b
     `.trim(),
   },
   {
-    name: '带标签连线',
-    description: '展示 D2 连线标签语法。',
+    name: 'Labeled edge',
+    description: 'Shows D2 edge label syntax.',
     markdown: `
 # D2 labeled edges
 
@@ -35,8 +35,8 @@ database -> user: rows
     `.trim(),
   },
   {
-    name: '容器 / 分组',
-    description: '展示 D2 的容器（container）语法，把多个节点组织为一个子图。',
+    name: 'Container / grouping',
+    description: 'Shows D2 container syntax, grouping multiple nodes into a subgraph.',
     markdown: `
 # D2 container
 

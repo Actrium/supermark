@@ -3,11 +3,12 @@ import ReactMarkdown from 'react-markdown';
 import { type VisonComponent } from '../shared/types';
 
 /**
- * 生产级 Web 渲染器
- * 增加特性：性能优化 (Memo)、错误边界处理、图片状态管理、样式安全过滤
+ * Production-grade web renderer
+ * Adds: performance optimization (Memo), error boundary handling, image state
+ * management, safe style filtering
  */
 
-// 图片组件：处理加载中与加载失败状态
+// Image component: handles loading and load-failure states
 const VisonImage: React.FC<{ props: Record<string, unknown>; style: React.CSSProperties }> = ({ props, style }) => {
   const [status, setStatus] = useState<'loading' | 'error' | 'loaded'>('loading');
 
@@ -15,7 +16,7 @@ const VisonImage: React.FC<{ props: Record<string, unknown>; style: React.CSSPro
     ...style,
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: '#F0F0F0', // 占位背景
+    backgroundColor: '#F0F0F0', // placeholder background
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -46,7 +47,7 @@ const VisonImage: React.FC<{ props: Record<string, unknown>; style: React.CSSPro
   );
 };
 
-// 渲染错误降级组件
+// Render-error fallback component
 const RenderError: React.FC<{ error: string }> = ({ error }) => (
   <div style={{ padding: '8px', border: '1px dashed #FF4D4F', borderRadius: '4px', color: '#FF4D4F', fontSize: '12px' }}>
     Renderer Error: {error}
@@ -56,14 +57,14 @@ const RenderError: React.FC<{ error: string }> = ({ error }) => (
 export const VisonWebRenderer: React.FC<{ data: VisonComponent }> = React.memo(({ data }) => {
   const { type, props = {}, style = {}, children } = data;
 
-  // 样式安全处理与计算
+  // Safe style processing and computation
   const baseStyle: React.CSSProperties = useMemo(() => {
     const s: React.CSSProperties = {
       display: type === 'container' ? 'flex' : 'inline-block',
       boxSizing: 'border-box',
     };
 
-    // 转换 Vison 样式到 CSS
+    // Convert Vison styles to CSS
     Object.entries(style).forEach(([key, value]) => {
       if (typeof value === 'number' && !['opacity', 'fontWeight', 'lineHeight'].includes(key)) {
         (s as Record<string, unknown>)[key] = `${value}px`;

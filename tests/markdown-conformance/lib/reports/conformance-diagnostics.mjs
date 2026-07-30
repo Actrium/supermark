@@ -5,16 +5,16 @@ import { htmlToSemanticTree } from '../semantic/html-semantics.mjs';
 
 const SUSPECTED_LAYERS = {
   'HTML blocks': 'Block Parser / Raw HTML Renderer',
-  'Raw HTML': 'Inline Parser / HTML 安全策略',
+  'Raw HTML': 'Inline Parser / HTML security policy',
   Autolinks: 'Inline Parser',
-  'Hard line breaks': 'Inline Parser / 空白处理',
+  'Hard line breaks': 'Inline Parser / whitespace handling',
   Lists: 'Block Parser / List Renderer',
   'List items': 'Block Parser / List Renderer',
   'Emphasis and strong emphasis': 'Inline Parser',
   Links: 'Inline Parser / Link Renderer',
   'Code spans': 'Inline Parser / Code Renderer',
-  'Backslash escapes': 'Inline Parser / 转义处理',
-  'Entity and numeric character references': 'Inline Parser / 实体解码',
+  'Backslash escapes': 'Inline Parser / escape handling',
+  'Entity and numeric character references': 'Inline Parser / entity decoding',
 };
 
 export async function readOptionalJson(filePath) {
@@ -32,12 +32,12 @@ export function buildRuntimeMetadata({ repositoryRoot, parserBinary, astById, wo
   const gitRef = process.env.GITHUB_REF_NAME ?? git(repositoryRoot, ['branch', '--show-current']);
   const status = git(repositoryRoot, ['status', '--porcelain', '--untracked-files=normal'], true);
   return {
-    supramarkCommit: commit || '未知',
+    supramarkCommit: commit || 'unknown',
     gitRef: gitRef || 'detached',
     workspaceDirty: status.length > 0,
     parserBinary,
     parserName: firstAst?.parser?.name ?? 'supramark-markdown',
-    parserVersion: firstAst?.parser?.version ?? '未知',
+    parserVersion: firstAst?.parser?.version ?? 'unknown',
     nodeVersion: process.version,
     platform: process.platform,
     arch: process.arch,
@@ -51,8 +51,8 @@ export function buildFailureGroups(semanticFailures, visualFailures, sectionName
     if (!groups.has(section)) {
       groups.set(section, {
         section,
-        nameZh: sectionName(section),
-        suspectedLayer: SUSPECTED_LAYERS[section] ?? 'Parser / Renderer 待定位',
+        sectionLabel: sectionName(section),
+        suspectedLayer: SUSPECTED_LAYERS[section] ?? 'Parser / Renderer (not yet identified)',
         semanticIds: new Set(),
         visualIds: new Set(),
       });
@@ -63,7 +63,7 @@ export function buildFailureGroups(semanticFailures, visualFailures, sectionName
   for (const failure of visualFailures) ensure(failure.section).visualIds.add(failure.id);
   return [...groups.values()].map(group => ({
     section: group.section,
-    nameZh: group.nameZh,
+    sectionLabel: group.sectionLabel,
     suspectedLayer: group.suspectedLayer,
     uniqueCases: new Set([...group.semanticIds, ...group.visualIds]).size,
     semanticNotPassed: group.semanticIds.size,

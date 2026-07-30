@@ -3,23 +3,23 @@ const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
-// 配置 Metro 解析 monorepo 中的包
+// Configure Metro to resolve packages inside the monorepo
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../..');
 
-// 配置 watchFolders 以包含 monorepo 根目录
+// Include the monorepo root in watchFolders
 config.watchFolders = [workspaceRoot];
 
-// 配置 nodeModulesPath
+// Configure nodeModulesPaths
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
-// 获取原始的 resolveRequest
+// Grab the original resolveRequest
 const defaultResolver = config.resolver.resolveRequest;
 
-// 配置模块解析,处理 package.json exports 和 imports 字段
+// Custom module resolution, handling package.json exports/imports fields
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   // RN must not load the wasm web parser. plugin-loader.ts re-exports the web
   // loader whose `await import(specifier)` wasm fallback Metro cannot bundle;
@@ -35,9 +35,11 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
-  // workspace 内多个 TS 源文件用 Node-ESM 风格的 `./foo.js` 导入兄弟 `.ts`。
-  // Metro 默认不会把 `.js` 重映射到 `.ts` —— 我们对仅相对路径 + .js 后缀的
-  // 失败 case 退一步尝试同名 .ts / .tsx，保持源码端的 ESM 风格不变。
+  // Several TS source files in the workspace import sibling `.ts` files using
+  // Node-ESM style `./foo.js` specifiers. Metro won't remap `.js` to `.ts` by
+  // default — for relative-path-only, `.js`-suffixed failures we fall back to
+  // trying the same-named `.ts` / `.tsx`, preserving the ESM style on the
+  // source side.
   if (
     (moduleName.startsWith('./') || moduleName.startsWith('../')) &&
     moduleName.endsWith('.js')
@@ -50,10 +52,12 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     }
   }
 
-  // RN 不加载 wasm web 包。D2 / Mermaid / PlantUML 走 native FFI adapter；
-  // ECharts / Vega-Lite 走纯 JS SVG-string engine。@supramark/engines/src/*
-  // 仍静态引用了部分 *-web 包名，Metro 不会跳过未调用的 `await import(...)`，
-  // 所以仅把这些 wasm/web 入口短路到空 stub。
+  // RN never loads the wasm web packages. D2 / Mermaid / PlantUML go through
+  // the native FFI adapter; ECharts / Vega-Lite go through the pure-JS
+  // SVG-string engine. @supramark/engines/src/* still statically references
+  // some *-web package names, and Metro won't skip an uncalled
+  // `await import(...)`, so we short-circuit just these wasm/web entries to
+  // an empty stub.
   if (/^@(kookyleo|actrium)\/(d2|mermaid|plantuml)-little-web$|^@(kookyleo|actrium)\/graphviz-anywhere-web$/.test(moduleName)) {
     return {
       filePath: path.resolve(projectRoot, 'stubs/empty.js'),
@@ -61,10 +65,12 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
-  // 处理 @supramark/core 包的 react-native 入口
-  // Metro 不支持 package.json 的 exports 条件导出,需要手动指定 RN 入口。
-  // 早期版本指向 dist/index.rn.js（已不存在；core 现在源码直出），改用源
-  // 文件直供 Metro，避免依赖一次额外的 tsc --emit 步骤。
+  // Handle the react-native entry point for the @supramark/core package.
+  // Metro doesn't support package.json's exports conditional exports, so we
+  // point it at the RN entry manually. An earlier version pointed at
+  // dist/index.rn.js (which no longer exists; core now ships source
+  // directly) — we now feed Metro the source file directly instead, avoiding
+  // a dependency on an extra tsc --emit step.
   if (moduleName === '@supramark/core') {
     return {
       filePath: path.resolve(workspaceRoot, 'packages/core/src/index.rn.ts'),
@@ -72,8 +78,8 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
-  // @supramark/engines 的 ./rn subpath — Metro 同样不支持 package.json exports
-  // 的 subpath；手动映射到 source 文件。
+  // @supramark/engines's ./rn subpath — Metro likewise doesn't support
+  // package.json exports subpaths; map it to the source file manually.
   // @supramark/core/rn subpath — Metro ignores package.json exports, so map it
   // to the same RN entry as the bare specifier (index.rn.ts re-exports the
   // native parser registry @supramark/markdown-native-rn registers into).
@@ -91,7 +97,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
-  // 处理 devlop 包的 exports 字段
+  // Handle the devlop package's exports field
   if (moduleName === 'devlop') {
     return {
       filePath: path.resolve(
@@ -102,7 +108,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
-  // 处理 vfile 包的 subpath imports (以 # 开头)
+  // Handle the vfile package's subpath imports (starting with #)
   if (moduleName === '#minpath') {
     return {
       filePath: path.resolve(
@@ -133,7 +139,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
-  // 处理 unist-util-visit-parents 的 subpath exports
+  // Handle unist-util-visit-parents's subpath exports
   if (moduleName === 'unist-util-visit-parents/do-not-use-color') {
     return {
       filePath: path.resolve(
@@ -144,7 +150,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
-  // 使用默认解析器
+  // Fall back to the default resolver
   if (defaultResolver) {
     return defaultResolver(context, moduleName, platform);
   }

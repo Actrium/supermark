@@ -65,7 +65,7 @@ impl Validator {
     pub fn new() -> Self {
         let mut style_whitelist = HashSet::new();
         let list = vec![
-            // 布局
+            // layout
             "padding",
             "margin",
             "flexDirection",
@@ -76,19 +76,19 @@ impl Validator {
             "maxWidth",
             "minWidth",
             "gap",
-            // 文本
+            // text
             "color",
             "fontSize",
             "fontWeight",
             "lineHeight",
             "textAlign",
-            // 视觉
+            // visual
             "backgroundColor",
             "borderRadius",
             "borderWidth",
             "borderColor",
             "opacity",
-            "aspectRatio", // 专门为图片准备
+            "aspectRatio", // reserved specifically for images
         ];
         for item in list {
             style_whitelist.insert(item.to_string());
@@ -121,11 +121,12 @@ impl Validator {
             return Err(VisonError::MaxDepthExceeded(Self::MAX_DEPTH));
         }
 
-        // 校验样式白名单
+        // Validate against the style whitelist
         for key in component.style.keys() {
             if !self.style_whitelist.contains(key) {
-                // 规范 12 节：非法 style 忽略。这里我们选择在验证层抛错以确生成端规范。
-                // 如果是为了极致容错，可以改为 warn 或静默过滤。
+                // Spec section 12: invalid styles are ignored. Here we choose to error
+                // at the validation layer to keep the generating side spec-compliant.
+                // For maximum fault tolerance this could instead warn or silently filter.
                 return Err(VisonError::InvalidStyleProperty(key.clone()));
             }
         }
@@ -136,7 +137,7 @@ impl Validator {
                 if *image_count > Self::MAX_IMAGES {
                     return Err(VisonError::MaxImageCountExceeded(Self::MAX_IMAGES));
                 }
-                // 校验图片尺寸约束 (9.1 节)
+                // Validate image size constraints (spec section 9.1)
                 let has_width =
                     component.props.contains_key("width") || component.style.contains_key("width");
                 let has_height = component.props.contains_key("height")
@@ -211,7 +212,7 @@ mod tests {
     #[test]
     fn test_depth_limit() {
         let mut current = create_base_container();
-        // 构建 6 层嵌套 (1个根 + 5个子) -> 深度 6
+        // Build 6 levels of nesting (1 root + 5 children) -> depth 6
         for _ in 0..5 {
             current = VisonComponent {
                 version: None,
@@ -245,7 +246,7 @@ mod tests {
             style: HashMap::new(),
             children: Some(children),
         };
-        // 总共 65 个节点 (1 根 + 64 子)
+        // 65 nodes total (1 root + 64 children)
         let validator = Validator::new();
         let result = validator.validate(&root);
         assert!(matches!(result, Err(VisonError::MaxNodeCountExceeded(64))));
@@ -284,7 +285,7 @@ mod tests {
     fn test_image_constraints() {
         let mut props = HashMap::new();
         props.insert("src".to_string(), Value::String("...".into()));
-        // 缺少 height 和 aspectRatio
+        // Missing height and aspectRatio
         props.insert("width".to_string(), Value::Number(100.into()));
 
         let img = VisonComponent {
@@ -302,7 +303,7 @@ mod tests {
     #[test]
     fn test_style_whitelist() {
         let mut style = HashMap::new();
-        style.insert("position".to_string(), Value::String("absolute".into())); // 禁止属性
+        style.insert("position".to_string(), Value::String("absolute".into())); // disallowed property
 
         let comp = VisonComponent {
             version: None,

@@ -1,7 +1,7 @@
 /**
- * Weather Web 渲染器
+ * Weather web renderer
  *
- * 实现 ContainerWebRenderer 接口
+ * Implements the ContainerWebRenderer interface
  *
  * @packageDocumentation
  */
@@ -11,7 +11,7 @@ import type { ContainerWebRenderArgs } from '@supramark/core';
 import type { WeatherData } from './feature.js';
 
 /**
- * 天气图标（简单 SVG）
+ * Weather icon (simple SVG)
  */
 function WeatherIcon({ type }: { type: 'sunny' | 'cloudy' | 'rainy' }) {
   const icons = {
@@ -52,10 +52,10 @@ function WeatherIcon({ type }: { type: 'sunny' | 'cloudy' | 'rainy' }) {
 }
 
 /**
- * 模拟天气数据（实际应用中应该调用天气 API）
+ * Mock weather data (a real app should call a weather API)
  */
 function getMockWeather(location: string, units: 'metric' | 'imperial' = 'metric') {
-  // 根据城市名生成伪随机温度
+  // Derive a pseudo-random temperature from the location name
   const hash = location.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
   const baseTemp = 15 + (hash % 20);
   const temp = units === 'imperial' ? Math.round(baseTemp * 1.8 + 32) : baseTemp;
@@ -139,7 +139,7 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 /**
- * Web 渲染器 for :::weather
+ * Web renderer for :::weather
  */
 export function renderWeatherContainerWeb({
   node,
@@ -148,11 +148,11 @@ export function renderWeatherContainerWeb({
   const data = (node?.data ?? {}) as unknown as WeatherData;
   const { format, location, units = 'metric', parseError, rawConfig } = data;
 
-  // 解析错误时显示错误信息
+  // Show an error message when parsing failed
   if (parseError) {
     return (
       <div key={key} style={styles.error}>
-        <div style={styles.errorTitle}>⚠️ Weather 配置错误</div>
+        <div style={styles.errorTitle}>⚠️ Weather config error</div>
         <div>{parseError}</div>
         {rawConfig && (
           <pre style={styles.errorCode}>{rawConfig}</pre>
@@ -161,17 +161,17 @@ export function renderWeatherContainerWeb({
     );
   }
 
-  // 缺少必要配置
+  // Missing required config
   if (!location) {
     return (
       <div key={key} style={styles.error}>
-        <div style={styles.errorTitle}>⚠️ 缺少 location 配置</div>
-        <div>请在配置中指定 location 字段</div>
+        <div style={styles.errorTitle}>⚠️ Missing location config</div>
+        <div>Please specify the location field in the config</div>
       </div>
     );
   }
 
-  // 获取模拟天气数据
+  // Fetch mock weather data
   const weather = getMockWeather(location, units);
 
   return (

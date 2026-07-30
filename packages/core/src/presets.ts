@@ -2,7 +2,7 @@ import type { SupramarkFeature } from './feature.js';
 import type { SupramarkNode } from './ast.js';
 
 /**
- * 预设配置类型
+ * The preset configuration type.
  */
 export interface SupramarkPreset {
   name: string;
@@ -11,7 +11,7 @@ export interface SupramarkPreset {
 }
 
 /**
- * 助手函数：创建一个预设
+ * Helper function: create a preset.
  */
 export function createPreset(
   name: string,

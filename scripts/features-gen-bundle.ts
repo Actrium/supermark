@@ -24,8 +24,8 @@ function generateBundle(platform: 'web' | 'rn') {
   const content = `/* AUTO-GENERATED. DO NOT EDIT. */
 /**
  * Supramark All-in-One Bundle (${platform})
- * 
- * 包含项目中所有已注册的官方 Features。
+ *
+ * Includes all officially registered Features in the project.
  */
 
 ${imports.join('\n')}
@@ -42,7 +42,7 @@ export const defaultFullConfig = {
   const platformTargets = targets[platform];
   platformTargets.forEach(relPath => {
     const outPath = path.join(repoRoot, relPath);
-    // 确保目标目录存在
+    // Ensure the target directory exists
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, content, 'utf8');
     console.log(`[feature:bundle] Generated ${relPath} with ${allFeatures.length} features.`);

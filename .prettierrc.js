@@ -1,5 +1,5 @@
 module.exports = {
-  // 基础配置
+  // Base config
   printWidth: 100,
   tabWidth: 2,
   useTabs: false,
@@ -7,23 +7,23 @@ module.exports = {
   singleQuote: true,
   quoteProps: 'as-needed',
 
-  // JSX 配置
+  // JSX config
   jsxSingleQuote: false,
 
-  // 尾随逗号
+  // Trailing commas
   trailingComma: 'es5',
 
-  // 括号空格
+  // Bracket spacing
   bracketSpacing: true,
   bracketSameLine: false,
 
-  // 箭头函数括号
+  // Arrow function parens
   arrowParens: 'avoid',
 
-  // 换行符
+  // Line endings
   endOfLine: 'lf',
 
-  // 其他
+  // Other
   proseWrap: 'preserve',
   htmlWhitespaceSensitivity: 'css',
 };

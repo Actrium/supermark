@@ -1,7 +1,8 @@
-// 根入口只导出"包级公共 API"，具体 engine 走 subpath（./mermaid, ./echarts 等）。
-// 避免 `export *` 在多个 engine 都有同名 `Options` 时冲突。
+// The root entry point only exports the "package-level public API"; specific
+// engines live under their own subpath (./mermaid, ./echarts, etc.).
+// This avoids `export *` conflicts when multiple engines have a same-named `Options`.
 
-// ── 类型 ────────────────────────────────────────────────
+// ── types ────────────────────────────────────────────────
 export type {
   // Engine v2 types
   RenderOptions,

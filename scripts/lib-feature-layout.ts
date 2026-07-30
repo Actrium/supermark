@@ -1,10 +1,11 @@
 /**
- * Feature 包布局与发现工具
+ * Feature package layout and discovery utilities.
  *
- * 目标：
- * - 把「Feature 在哪个目录下」这一约定集中在一处；
- * - 方便后续从 packages/feature-xxx 迁移到分家族目录时，只改这一层实现；
- * - 为各脚本提供统一的 Feature 扫描 / 定位能力。
+ * Goals:
+ * - Centralize the convention for "which directory a feature lives in" in one place;
+ * - Make a future migration from packages/feature-xxx to family-split directories
+ *   a change to this implementation layer only;
+ * - Give all scripts a shared feature scanning / lookup capability.
  */
 
 import fs from 'node:fs';
@@ -99,7 +100,7 @@ export async function selectMenu(
   });
   log('');
 
-  const answer = await question(`请选择 [1-${optionList.length}]: `);
+  const answer = await question(`Select [1-${optionList.length}]: `);
   const idx = parseInt(answer, 10) - 1;
   if (idx >= 0 && idx < optionList.length) {
     return optionList[idx].value;
@@ -117,23 +118,23 @@ export function getFeatureKind(feature: FeaturePackageInfo): FeatureKind {
 }
 
 export async function selectFeature(
-  prompt: string = '选择 Feature:',
+  prompt: string = 'Select feature:',
   filter?: FeatureKind | FeatureKind[]
 ): Promise<FeaturePackageInfo | null> {
   let features = discoverFeaturePackages();
 
-  // 可选过滤
+  // Optional filter
   if (filter) {
     const kinds = Array.isArray(filter) ? filter : [filter];
     features = features.filter(f => kinds.includes(getFeatureKind(f)));
   }
 
   if (features.length === 0) {
-    log('未找到符合条件的 Feature 包\n', 'yellow');
+    log('No matching feature packages found\n', 'yellow');
     return null;
   }
 
-  // 按类型分组
+  // Group by kind
   const kindLabels: Record<FeatureKind, string> = {
     container: 'Container',
     input: 'Input',
@@ -166,7 +167,7 @@ export async function selectFeature(
     log('');
   }
 
-  const answer = await question(`请选择 [1-${index - 1}]: `);
+  const answer = await question(`Select [1-${index - 1}]: `);
   const selectedIndex = parseInt(answer, 10);
 
   if (selectedIndex >= 1 && selectedIndex < index) {
@@ -258,17 +259,17 @@ export function getFeatureSyntaxFamily(feature: FeaturePackageInfo): string | nu
   try {
     const content = fs.readFileSync(featureFile, 'utf-8');
 
-    // 新结构：检查 containerNames 字段（ContainerFeature 接口）
+    // New structure: check the containerNames field (ContainerFeature interface)
     if (content.includes('containerNames:') || content.includes('CONTAINER_NAMES')) {
       return 'container';
     }
 
-    // 新结构：检查 inputNames 字段（InputFeature 接口，未来）
+    // New structure: check the inputNames field (InputFeature interface, future)
     if (content.includes('inputNames:') || content.includes('INPUT_NAMES')) {
       return 'input';
     }
 
-    // 旧结构：检查 syntaxFamily 字段
+    // Legacy structure: check the syntaxFamily field
     const match = content.match(/syntaxFamily:\s*['"]([^'"]+)['"]/);
     return match ? match[1] : null;
   } catch {
@@ -296,7 +297,7 @@ export function getNewFeatureLocation(
   dir: string;
   relativeDir: string;
 } {
-  // 新目录约定：packages/features/<family>/<kebab-name>/
+  // New directory convention: packages/features/<family>/<kebab-name>/
   //   main → main
   //   container / containers → containers
   //   fence / diagrams → diagrams

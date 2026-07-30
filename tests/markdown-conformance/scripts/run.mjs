@@ -21,33 +21,38 @@ import {
   findFirstDifference,
   htmlToSemanticTree,
 } from '../lib/semantic/html-semantics.mjs';
+// Display names for CommonMark spec sections. The section keys below already
+// match the spec's own English headings, so this map is effectively the
+// identity function today; it is kept as a lookup table (rather than
+// collapsed to `return section`) so a source with differently-named sections
+// can still supply a friendlier display label without touching call sites.
 const SECTION_NAMES = {
-  Tabs: '制表符',
-  'Backslash escapes': '反斜杠转义',
-  'Entity and numeric character references': '实体与数字字符引用',
-  Precedence: '优先级',
-  'Thematic breaks': '主题分隔线',
-  'ATX headings': 'ATX 标题',
-  'Setext headings': 'Setext 标题',
-  'Indented code blocks': '缩进代码块',
-  'Fenced code blocks': '围栏代码块',
-  'HTML blocks': 'HTML 块',
-  'Link reference definitions': '链接引用定义',
-  Paragraphs: '段落',
-  'Blank lines': '空行',
-  'Block quotes': '块引用',
-  'List items': '列表项',
-  Lists: '列表',
-  Inlines: '行内内容',
-  'Code spans': '代码片段',
-  'Emphasis and strong emphasis': '强调与加粗',
-  Links: '链接',
-  Images: '图片',
-  Autolinks: '自动链接',
-  'Raw HTML': '原始 HTML',
-  'Hard line breaks': '硬换行',
-  'Soft line breaks': '软换行',
-  'Textual content': '文本内容',
+  Tabs: 'Tabs',
+  'Backslash escapes': 'Backslash escapes',
+  'Entity and numeric character references': 'Entity and numeric character references',
+  Precedence: 'Precedence',
+  'Thematic breaks': 'Thematic breaks',
+  'ATX headings': 'ATX headings',
+  'Setext headings': 'Setext headings',
+  'Indented code blocks': 'Indented code blocks',
+  'Fenced code blocks': 'Fenced code blocks',
+  'HTML blocks': 'HTML blocks',
+  'Link reference definitions': 'Link reference definitions',
+  Paragraphs: 'Paragraphs',
+  'Blank lines': 'Blank lines',
+  'Block quotes': 'Block quotes',
+  'List items': 'List items',
+  Lists: 'Lists',
+  Inlines: 'Inlines',
+  'Code spans': 'Code spans',
+  'Emphasis and strong emphasis': 'Emphasis and strong emphasis',
+  Links: 'Links',
+  Images: 'Images',
+  Autolinks: 'Autolinks',
+  'Raw HTML': 'Raw HTML',
+  'Hard line breaks': 'Hard line breaks',
+  'Soft line breaks': 'Soft line breaks',
+  'Textual content': 'Textual content',
 };
 
 
@@ -112,7 +117,7 @@ await mkdir(artifactDirectory, { recursive: true });
 
 let visualExecution = {
   enabled: false,
-  result: '未执行',
+  result: 'not-run',
   total: 0,
   passed: 0,
   failed: 0,
@@ -152,7 +157,7 @@ if (visualEnabled) {
   } catch (error) {
     visualExecution = {
       enabled: true,
-      result: '错误',
+      result: 'error',
       profile: `${sourceName}-visual-v1`,
       browser: null,
       total: selectedCases.length,
@@ -163,7 +168,7 @@ if (visualEnabled) {
       bySection: {},
       failures: [{
         id: `${sourceName}-visual-environment`,
-        section: '视觉测试环境',
+        section: 'Visual test environment',
         status: 'error',
         error: error.stack ?? error.message,
       }],
@@ -205,8 +210,8 @@ const summary = {
   runtime,
   baseline,
   failureGroups,
-  locale: 'zh-CN',
-  result: notPassed.length === 0 && visualExecution.notPassed === 0 ? '通过' : '失败',
+  locale: 'en-US',
+  result: notPassed.length === 0 && visualExecution.notPassed === 0 ? 'pass' : 'fail',
   gate: buildGate({
     mode: gateMode,
     baseline,
@@ -231,7 +236,7 @@ const summary = {
   bySection: Object.fromEntries(
     Object.entries(sectionSummary).map(([section, counts]) => [
       section,
-      { nameZh: sectionName(section), ...counts },
+      { sectionLabel: sectionName(section), ...counts },
     ])
   ),
   visual: visualSummary,
@@ -260,7 +265,7 @@ await writeFile(
 );
 await writeFile(
   path.join(artifactDirectory, 'summary.md'),
-  renderChineseSummary(summary, semanticFailureRecords, visualFailureRecords)
+  renderSummaryMarkdown(summary, semanticFailureRecords, visualFailureRecords)
 );
 await writeFile(
   path.join(artifactDirectory, 'report.html'),
@@ -272,7 +277,7 @@ await writeFile(
     sourceVersion: version.version,
   })
 );
-if (summary.result === '失败') {
+if (summary.result === 'fail') {
   const issueMetadata = buildConformanceIssueMetadata(summary);
   await Promise.all([
     writeFile(
@@ -296,15 +301,15 @@ if (summary.result === '失败') {
   ]);
 }
 
-console.log(`${sourceDisplayName} 语义对照：通过 ${summary.passed}/${summary.total}，未通过 ${summary.notPassed}`);
+console.log(`${sourceDisplayName} semantic comparison: passed ${summary.passed}/${summary.total}, not passed ${summary.notPassed}`);
 if (summary.visual.enabled) {
-  console.log(`${sourceDisplayName} 视觉对照：通过 ${summary.visual.passed}/${summary.visual.total}，未通过 ${summary.visual.notPassed}`);
+  console.log(`${sourceDisplayName} visual comparison: passed ${summary.visual.passed}/${summary.visual.total}, not passed ${summary.visual.notPassed}`);
 } else {
-  console.log(`${sourceDisplayName} 视觉对照：未执行（使用 run-visual.mjs ${sourceName} 启用）`);
+  console.log(`${sourceDisplayName} visual comparison: not run (enable with run-visual.mjs ${sourceName})`);
 }
-console.log(`中文总结：${path.join(artifactDirectory, 'summary.md')}`);
-console.log(`HTML 可视化报告：${path.join(artifactDirectory, 'report.html')}`);
-if (summary.result === '失败') console.log(`Issue 内容：${issuePath}`);
+console.log(`Summary: ${path.join(artifactDirectory, 'summary.md')}`);
+console.log(`HTML report: ${path.join(artifactDirectory, 'report.html')}`);
+if (summary.result === 'fail') console.log(`Issue body: ${issuePath}`);
 console.log(`gate[${summary.gate.mode}]: ${summary.gate.failed ? 'FAIL' : 'PASS'} - ${summary.gate.reason}`);
 if (summary.gate.failed && failOnFailures) process.exitCode = 1;
 
@@ -423,7 +428,7 @@ function compareProductionCase(testCase) {
       section: testCase.source.section,
       status: 'error',
       stage: 'production-web-renderer',
-      error: 'Supramark 生产 Web Renderer 未生成实际 HTML。',
+      error: 'The Supramark production web renderer did not produce actual HTML.',
     };
   }
   return compareHtmlCase(testCase, ast, actualHtml);
@@ -448,40 +453,40 @@ function compareHtmlCase(testCase, ast, actualHtml) {
   };
 }
 
-function renderChineseSummary(summaryDocument, semanticFailures, visualFailures) {
+function renderSummaryMarkdown(summaryDocument, semanticFailures, visualFailures) {
   const lines = [
-    `# ${sourceDisplayName} 语义与视觉对照测试总结`,
+    `# ${sourceDisplayName} semantic & visual conformance summary`,
     '',
-    `- 总体结果：**${summaryDocument.result}**`,
-    `- 数据源：${sourceDisplayName} ${version.version}`,
-    `- 固定提交：\`${summaryDocument.sourceCommit}\``,
-    `- 解析配置：\`${summaryDocument.profile}\``,
-    `- 语义对照对象：${summaryDocument.comparisonTarget}`,
-    `- 总用例数：${summaryDocument.total}`,
-    `- 存在任一差异的用例：${summaryDocument.overallNotPassedCases}`,
+    `- Overall result: **${summaryDocument.result}**`,
+    `- Source: ${sourceDisplayName} ${version.version}`,
+    `- Pinned commit: \`${summaryDocument.sourceCommit}\``,
+    `- Parser profile: \`${summaryDocument.profile}\``,
+    `- Semantic comparison target: ${summaryDocument.comparisonTarget}`,
+    `- Total cases: ${summaryDocument.total}`,
+    `- Cases with at least one difference: ${summaryDocument.overallNotPassedCases}`,
     '',
-    '## 语义对照结果',
+    '## Semantic comparison results',
     '',
-    `- 通过：${summaryDocument.passed}`,
-    `- 语义差异：${summaryDocument.failed}`,
-    `- 执行错误：${summaryDocument.errors}`,
-    `- 渲染类型不一致：${summaryDocument.typeMismatches}`,
+    `- Passed: ${summaryDocument.passed}`,
+    `- Semantic differences: ${summaryDocument.failed}`,
+    `- Execution errors: ${summaryDocument.errors}`,
+    `- Render type mismatches: ${summaryDocument.typeMismatches}`,
     '',
-    '### 分章节语义结果',
+    '### Semantic results by section',
     '',
-    '| 章节 | 总数 | 通过 | 语义差异 | 执行错误 |',
+    '| Section | Total | Passed | Semantic diff | Execution error |',
     '| --- | ---: | ---: | ---: | ---: |',
   ];
   for (const [section, counts] of Object.entries(summaryDocument.bySection)) {
     lines.push(
-      `| ${escapeTableCell(`${counts.nameZh}（${section}）`)} | ${counts.total} | ${counts.passed} | ${counts.failed} | ${counts.errors} |`
+      `| ${escapeTableCell(`${counts.sectionLabel} (${section})`)} | ${counts.total} | ${counts.passed} | ${counts.failed} | ${counts.errors} |`
     );
   }
-  lines.push('', '### 未通过的语义用例', '');
+  lines.push('', '### Not-passing semantic cases', '');
   if (semanticFailures.length === 0) {
-    lines.push('全部语义用例通过。');
+    lines.push('All semantic cases passed.');
   } else {
-    lines.push('| 用例 | 章节 | 分类 | 首个差异位置 |', '| --- | --- | --- | --- |');
+    lines.push('| Case | Section | Category | First diff location |', '| --- | --- | --- | --- |');
     for (const failure of semanticFailures) {
       lines.push(
         `| \`${failure.id}\` | ${escapeTableCell(sectionName(failure.section))} | ${failureCategory(failure)} | \`${escapeTableCell(failure.difference?.path ?? '-')}\` |`
@@ -489,39 +494,39 @@ function renderChineseSummary(summaryDocument, semanticFailures, visualFailures)
     }
   }
 
-  lines.push('', '## 浏览器视觉对照结果', '');
+  lines.push('', '## Browser visual comparison results', '');
   if (!summaryDocument.visual.enabled) {
-    lines.push(`本次未启用视觉对照。运行 \`node tests/markdown-conformance/scripts/run-visual.mjs ${sourceName}\` 可启用。`);
+    lines.push(`Visual comparison was not enabled for this run. Run \`node tests/markdown-conformance/scripts/run-visual.mjs ${sourceName}\` to enable it.`);
   } else {
     lines.push(
-      `- 测试结果：**${summaryDocument.visual.result}**`,
-      '- 中文 HTML 可视化报告：[打开报告](./report.html)',
-      `- 浏览器：Chromium ${summaryDocument.visual.browser?.version ?? '启动失败'}`,
-      `- 实际渲染实现：${summaryDocument.visual.renderer?.implementation ?? '未加载'}`,
-      `- 样式配置：\`${summaryDocument.visual.profile}\``,
-      `- 固定宽度：${summaryDocument.visual.viewport?.width ?? '-'}px`,
-      `- 通过：${summaryDocument.visual.passed}/${summaryDocument.visual.total}`,
-      `- 像素差异：${summaryDocument.visual.failed}`,
-      `- 执行错误：${summaryDocument.visual.errors}`,
+      `- Test result: **${summaryDocument.visual.result}**`,
+      '- HTML visual report: [open report](./report.html)',
+      `- Browser: Chromium ${summaryDocument.visual.browser?.version ?? 'failed to launch'}`,
+      `- Actual rendering implementation: ${summaryDocument.visual.renderer?.implementation ?? 'not loaded'}`,
+      `- Style profile: \`${summaryDocument.visual.profile}\``,
+      `- Pinned width: ${summaryDocument.visual.viewport?.width ?? '-'}px`,
+      `- Passed: ${summaryDocument.visual.passed}/${summaryDocument.visual.total}`,
+      `- Pixel differences: ${summaryDocument.visual.failed}`,
+      `- Execution errors: ${summaryDocument.visual.errors}`,
       '',
-      '### 分章节视觉结果',
+      '### Visual results by section',
       '',
-      '| 章节 | 总数 | 通过 | 像素差异 | 执行错误 |',
+      '| Section | Total | Passed | Pixel diff | Execution error |',
       '| --- | ---: | ---: | ---: | ---: |'
     );
     for (const [section, counts] of Object.entries(summaryDocument.visual.bySection ?? {})) {
       lines.push(
-        `| ${escapeTableCell(`${counts.nameZh}（${section}）`)} | ${counts.total} | ${counts.passed} | ${counts.failed} | ${counts.errors} |`
+        `| ${escapeTableCell(`${counts.sectionLabel} (${section})`)} | ${counts.total} | ${counts.passed} | ${counts.failed} | ${counts.errors} |`
       );
     }
-    lines.push('', '### 未通过的视觉用例', '');
+    lines.push('', '### Not-passing visual cases', '');
     if (visualFailures.length === 0) {
-      lines.push('全部视觉用例通过。');
+      lines.push('All visual cases passed.');
     } else {
-      lines.push('| 用例 | 章节 | 分类 | 差异像素 | 差异比例 | 图片 |', '| --- | --- | --- | ---: | ---: | --- |');
+      lines.push('| Case | Section | Category | Diff pixels | Diff ratio | Images |', '| --- | --- | --- | ---: | ---: | --- |');
       for (const failure of visualFailures) {
         const images = failure.images
-          ? `[预期](${failure.images.expected}) · [实际](${failure.images.actual}) · [差异](${failure.images.diff})`
+          ? `[expected](${failure.images.expected}) &middot; [actual](${failure.images.actual}) &middot; [diff](${failure.images.diff})`
           : '-';
         lines.push(
           `| \`${failure.id}\` | ${escapeTableCell(sectionName(failure.section))} | ${visualFailureCategory(failure)} | ${failure.diffPixels ?? '-'} | ${formatPercent(failure.diffRatio)} | ${images} |`
@@ -532,30 +537,30 @@ function renderChineseSummary(summaryDocument, semanticFailures, visualFailures)
       if (failuresWithImages.length > 0) {
         lines.push(
           '',
-          '#### 视觉差异图片',
+          '#### Visual diff images',
           '',
-          '以下按“预期 / 实际 / 差异”直接展示，点击图片可查看原始尺寸。',
+          'Shown below as expected / actual / diff, in that order; click an image to view it at full size.',
           ''
         );
         for (const failure of failuresWithImages) {
           lines.push(
             `**\`${failure.id}\` — ${sectionName(failure.section)}**`,
             '',
-            '| 预期 | 实际 | 差异 |',
+            '| Expected | Actual | Diff |',
             '| --- | --- | --- |',
-            `| [![预期：${failure.id}](${failure.images.expected})](${failure.images.expected}) | [![实际：${failure.id}](${failure.images.actual})](${failure.images.actual}) | [![差异：${failure.id}](${failure.images.diff})](${failure.images.diff}) |`,
+            `| [![expected: ${failure.id}](${failure.images.expected})](${failure.images.expected}) | [![actual: ${failure.id}](${failure.images.actual})](${failure.images.actual}) | [![diff: ${failure.id}](${failure.images.diff})](${failure.images.diff}) |`,
             ''
           );
         }
       }
     }
   }
-  lines.push('', '详细机器数据见 `summary.json`、`failures.json` 和 `visual-failures.json`。', '');
+  lines.push('', 'See `summary.json`, `failures.json`, and `visual-failures.json` for the full machine-readable data.', '');
   return `${lines.join('\n')}\n`;
 }
 
 function visualFailureCategory(failure) {
-  return failure.status === 'error' ? '视觉执行错误' : '浏览器截图不一致';
+  return failure.status === 'error' ? 'Visual execution error' : 'Browser screenshot mismatch';
 }
 
 function formatPercent(value) {
@@ -598,16 +603,16 @@ function summarize(values, getKey) {
 }
 
 function failureCategory(failure) {
-  if (failure.status === 'error') return '执行错误';
-  if (failure.typeDifference) return '渲染类型不一致';
+  if (failure.status === 'error') return 'Execution error';
+  if (failure.typeDifference) return 'Render type mismatch';
   const reasons = {
-    value: '文本或属性值不一致',
-    type: '值类型不一致',
-    'array-type': '节点集合类型不一致',
-    'array-length': '子节点数量不一致',
-    'object-keys': '节点结构或属性不一致',
+    value: 'Text or attribute value mismatch',
+    type: 'Value type mismatch',
+    'array-type': 'Node collection type mismatch',
+    'array-length': 'Child count mismatch',
+    'object-keys': 'Node structure or attribute mismatch',
   };
-  return reasons[failure.difference?.reason] ?? '语义结构不一致';
+  return reasons[failure.difference?.reason] ?? 'Semantic structure mismatch';
 }
 
 function sectionName(section) {

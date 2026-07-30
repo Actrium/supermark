@@ -4,10 +4,11 @@ import {
   listNativeParserAdapters,
 } from '@supramark/core/rn';
 
-// 记录 mock native module 收到的调用，验证 wrapper 没有绕开 RN bridge。
+// Records the calls the mock native module received, verifying the wrapper
+// does not bypass the RN bridge.
 const nativeCalls: string[] = [];
 
-// 模拟 Old Architecture 下的 NativeModules.SupramarkMarkdownNative。
+// Simulates NativeModules.SupramarkMarkdownNative under the Old Architecture.
 const nativeMarkdownModule = {
   parseJson: async (source: string) => {
     nativeCalls.push(`parse:${source}`);
@@ -32,7 +33,7 @@ mock.module('react-native', () => ({
 }));
 
 describe('@supramark/markdown-native-rn', () => {
-  it('导入包时注册 native parser adapter，并把调用转发给 RN native module', async () => {
+  it('registers the native parser adapter on package import and forwards calls to the RN native module', async () => {
     expect(listNativeParserAdapters()).toEqual([]);
 
     const markdownNative = await import('../src/index');

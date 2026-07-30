@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * Supramark 工程质量评估脚本
+ * Supramark engineering quality assessment script
  *
- * 功能：
- * - TypeScript 编译检查
- * - 代码统计
- * - 依赖分析
- * - 生成质量报告
+ * Features:
+ * - TypeScript compilation check
+ * - Code statistics
+ * - Dependency analysis
+ * - Quality report generation
  */
 
 import { execSync } from 'node:child_process';
@@ -153,11 +153,11 @@ interface CodeStat {
 async function main(): Promise<void> {
   const projectRoot = path.resolve(__dirname, '..');
 
-  log('\n🔍 Supramark 工程质量评估', 'bright');
-  log(`项目路径: ${projectRoot}`, 'gray');
-  log(`评估时间: ${new Date().toLocaleString('zh-CN')}`, 'gray');
+  log('\n🔍 Supramark Engineering Quality Assessment', 'bright');
+  log(`Project path: ${projectRoot}`, 'gray');
+  log(`Assessment time: ${new Date().toLocaleString('zh-CN')}`, 'gray');
 
-  section('1. TypeScript 编译检查');
+  section('1. TypeScript Compilation Check');
 
   const packages = ['packages/core', 'packages/engines', 'packages/renderers/rn', 'packages/renderers/web'];
 
@@ -168,7 +168,7 @@ async function main(): Promise<void> {
     const pkgJson = readPackageJson(pkgPath);
 
     if (!pkgJson) {
-      log(`  ⚠️  ${pkg}: package.json 不存在`, 'yellow');
+      log(`  ⚠️  ${pkg}: package.json does not exist`, 'yellow');
       continue;
     }
 
@@ -177,15 +177,15 @@ async function main(): Promise<void> {
     try {
       process.chdir(pkgPath);
       exec('bun run build', { silent: true });
-      log(`  ✅ 编译成功`, 'green');
+      log(`  ✅ Build succeeded`, 'green');
       compileResults[pkg] = 'success';
     } catch {
-      log(`  ❌ 编译失败`, 'red');
+      log(`  ❌ Build failed`, 'red');
       compileResults[pkg] = 'failed';
     }
   }
 
-  section('2. 代码统计');
+  section('2. Code Statistics');
 
   const codeStats: Record<string, CodeStat> = {};
 
@@ -199,7 +199,7 @@ async function main(): Promise<void> {
 
     const srcPath = path.join(pkgPath, 'src');
     if (!fs.existsSync(srcPath)) {
-      log(`  ⚠️  src 目录不存在`, 'yellow');
+      log(`  ⚠️  src directory does not exist`, 'yellow');
       continue;
     }
 
@@ -210,12 +210,12 @@ async function main(): Promise<void> {
       lines: totalLines,
     };
 
-    log(`  文件数量: ${files.length}`, 'cyan');
-    log(`  代码行数: ${totalLines}`, 'cyan');
-    log(`  平均每文件: ${Math.round(totalLines / files.length)} 行`, 'gray');
+    log(`  File count: ${files.length}`, 'cyan');
+    log(`  Lines of code: ${totalLines}`, 'cyan');
+    log(`  Average per file: ${Math.round(totalLines / files.length)} lines`, 'gray');
   }
 
-  section('3. 依赖分析');
+  section('3. Dependency Analysis');
 
   for (const pkg of packages) {
     const pkgPath = path.join(projectRoot, pkg);
@@ -228,41 +228,41 @@ async function main(): Promise<void> {
     const deps = Object.keys(pkgJson.dependencies || {});
     const devDeps = Object.keys(pkgJson.devDependencies || {});
 
-    log(`  生产依赖: ${deps.length}`, 'cyan');
+    log(`  Production dependencies: ${deps.length}`, 'cyan');
     if (deps.length > 0) {
       deps.forEach(dep => log(`    - ${dep}`, 'gray'));
     }
 
-    log(`  开发依赖: ${devDeps.length}`, 'cyan');
+    log(`  Dev dependencies: ${devDeps.length}`, 'cyan');
   }
 
-  section('4. 项目结构检查');
+  section('4. Project Structure Check');
 
   const requiredFiles = ['README.md', 'package.json', 'tsconfig.base.json'];
 
   const requiredDirs = ['packages', 'examples', 'docs'];
 
-  subsection('必需文件');
+  subsection('Required files');
   for (const file of requiredFiles) {
     const exists = fs.existsSync(path.join(projectRoot, file));
     if (exists) {
       log(`  ✅ ${file}`, 'green');
     } else {
-      log(`  ❌ ${file} 缺失`, 'red');
+      log(`  ❌ ${file} missing`, 'red');
     }
   }
 
-  subsection('必需目录');
+  subsection('Required directories');
   for (const dir of requiredDirs) {
     const exists = fs.existsSync(path.join(projectRoot, dir));
     if (exists) {
       log(`  ✅ ${dir}/`, 'green');
     } else {
-      log(`  ❌ ${dir}/ 缺失`, 'red');
+      log(`  ❌ ${dir}/ missing`, 'red');
     }
   }
 
-  section('5. 质量评估总结');
+  section('5. Quality Assessment Summary');
 
   const totalFiles = Object.values(codeStats).reduce((sum, stat) => sum + stat.files, 0);
   const totalLines = Object.values(codeStats).reduce((sum, stat) => sum + stat.lines, 0);
@@ -271,36 +271,36 @@ async function main(): Promise<void> {
 
   const coreCoverage = readCoverageSummary(path.join(projectRoot, 'packages', 'core'));
 
-  subsection('整体统计');
-  log(`  📦 包数量: ${packages.length}`, 'cyan');
-  log(`  📄 源文件总数: ${totalFiles}`, 'cyan');
-  log(`  📝 代码总行数: ${totalLines}`, 'cyan');
+  subsection('Overall statistics');
+  log(`  📦 Package count: ${packages.length}`, 'cyan');
+  log(`  📄 Total source files: ${totalFiles}`, 'cyan');
+  log(`  📝 Total lines of code: ${totalLines}`, 'cyan');
   log(
-    `  ✅ 编译成功: ${successfulBuilds}/${totalBuilds}`,
+    `  ✅ Builds succeeded: ${successfulBuilds}/${totalBuilds}`,
     successfulBuilds === totalBuilds ? 'green' : 'yellow'
   );
 
   if (coreCoverage) {
-    subsection('测试覆盖率 (@supramark/core)');
+    subsection('Test coverage (@supramark/core)');
     log(
-      `  语句覆盖率: ${coreCoverage.statements.toFixed(1)}%`,
+      `  Statement coverage: ${coreCoverage.statements.toFixed(1)}%`,
       coreCoverage.statements >= 50 ? 'green' : 'yellow'
     );
     log(
-      `  分支覆盖率: ${coreCoverage.branches.toFixed(1)}%`,
+      `  Branch coverage: ${coreCoverage.branches.toFixed(1)}%`,
       coreCoverage.branches >= 50 ? 'green' : 'yellow'
     );
     log(
-      `  函数覆盖率: ${coreCoverage.functions.toFixed(1)}%`,
+      `  Function coverage: ${coreCoverage.functions.toFixed(1)}%`,
       coreCoverage.functions >= 50 ? 'green' : 'yellow'
     );
     log(
-      `  行覆盖率: ${coreCoverage.lines.toFixed(1)}%`,
+      `  Line coverage: ${coreCoverage.lines.toFixed(1)}%`,
       coreCoverage.lines >= 50 ? 'green' : 'yellow'
     );
   }
 
-  subsection('质量评分');
+  subsection('Quality score');
 
   const buildScore = (successfulBuilds / totalBuilds) * 35;
   const structureScore = 25;
@@ -314,40 +314,40 @@ async function main(): Promise<void> {
 
   const totalScore = buildScore + structureScore + codeScore + testScore;
 
-  log(`  编译成功率: ${buildScore.toFixed(0)}/35`, 'cyan');
-  log(`  项目结构: ${structureScore}/25`, 'cyan');
-  log(`  代码规范: ${codeScore}/20`, 'cyan');
-  log(`  测试覆盖: ${testScore.toFixed(0)}/20`, coreCoverage ? 'cyan' : 'gray');
+  log(`  Build success rate: ${buildScore.toFixed(0)}/35`, 'cyan');
+  log(`  Project structure: ${structureScore}/25`, 'cyan');
+  log(`  Code standards: ${codeScore}/20`, 'cyan');
+  log(`  Test coverage: ${testScore.toFixed(0)}/20`, coreCoverage ? 'cyan' : 'gray');
   log(
-    `  总分: ${totalScore.toFixed(0)}/100`,
+    `  Total score: ${totalScore.toFixed(0)}/100`,
     totalScore >= 80 ? 'green' : totalScore >= 60 ? 'yellow' : 'red'
   );
 
   if (totalScore >= 90) {
-    log('\n  🎉 优秀！工程质量非常高', 'green');
+    log('\n  🎉 Excellent! Engineering quality is very high', 'green');
   } else if (totalScore >= 80) {
-    log('\n  ✅ 良好，工程质量达标', 'green');
+    log('\n  ✅ Good, engineering quality meets the bar', 'green');
   } else if (totalScore >= 60) {
-    log('\n  ⚠️  一般，建议改进', 'yellow');
+    log('\n  ⚠️  Average, improvement recommended', 'yellow');
   } else {
-    log('\n  ❌ 需要重点改进', 'red');
+    log('\n  ❌ Needs significant improvement', 'red');
   }
 
-  subsection('改进建议');
+  subsection('Improvement suggestions');
 
   const suggestions: string[] = [];
 
   if (successfulBuilds < totalBuilds) {
-    suggestions.push('修复编译失败的包');
+    suggestions.push('Fix packages that fail to build');
   }
 
   if (totalFiles > 0 && totalLines / totalFiles > 300) {
-    suggestions.push('考虑拆分过大的文件（平均行数过多）');
+    suggestions.push('Consider splitting oversized files (average line count too high)');
   }
 
-  suggestions.push('添加单元测试');
-  suggestions.push('配置 ESLint 和 Prettier');
-  suggestions.push('完善 API 文档');
+  suggestions.push('Add unit tests');
+  suggestions.push('Configure ESLint and Prettier');
+  suggestions.push('Flesh out API documentation');
 
   suggestions.forEach((suggestion, index) => {
     log(`  ${index + 1}. ${suggestion}`, 'cyan');
@@ -359,6 +359,6 @@ async function main(): Promise<void> {
 }
 
 main().catch(error => {
-  console.error('评估过程出错:', error);
+  console.error('Error during assessment:', error);
   process.exit(1);
 });

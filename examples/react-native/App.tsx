@@ -197,7 +197,7 @@ export default function App() {
             <View style={styles.headerLeft}>
               <Text style={titleStyle}>supramark Demo</Text>
               <Text style={subtitleStyle}>
-                选择要演示的类型，进入详情查看 markdown 与渲染结果。
+                Pick a demo type below, then open it to see the markdown source and its rendered output.
               </Text>
             </View>
             <TouchableOpacity style={themeButtonStyle} onPress={toggleTheme}>
@@ -260,7 +260,7 @@ export default function App() {
       <ScrollView contentContainerStyle={detailContentStyle}>
         <View style={styles.detailHeader}>
           <TouchableOpacity onPress={() => setActiveId(null)} style={styles.backButton}>
-            <Text style={[styles.backButtonText, isDark && { color: '#58a6ff' }]}>‹ 返回</Text>
+            <Text style={[styles.backButtonText, isDark && { color: '#58a6ff' }]}>‹ Back</Text>
           </TouchableOpacity>
           <View style={styles.detailTitleWrap}>
             <Text style={demoTitleStyle}>{activeDemo.name}</Text>
@@ -270,11 +270,11 @@ export default function App() {
             <Text style={themeButtonTextStyle}>{isDark ? '☀️' : '🌙'}</Text>
           </TouchableOpacity>
         </View>
-        <Text style={demoSectionTitleStyle}>Markdown 源文本：</Text>
+        <Text style={demoSectionTitleStyle}>Markdown source:</Text>
         <View style={sourceBlockStyle}>
           <Text style={sourceTextStyle}>{activeDemo.markdown}</Text>
         </View>
-        <Text style={demoSectionTitleStyle}>渲染结果：</Text>
+        <Text style={demoSectionTitleStyle}>Rendered output:</Text>
         <View style={styles.renderBlock}>
           <Supramark
             markdown={activeDemo.markdown}
@@ -283,7 +283,7 @@ export default function App() {
             onOpenHtmlPage={(node) => {
               Alert.alert(
                 node.params || 'HTML Page',
-                '这里应该在宿主中打开独立页面或 Modal。当前只是示意回调已触发。',
+                'The host app would normally open a standalone page or modal here. This just shows the callback fired.',
               );
             }}
           />

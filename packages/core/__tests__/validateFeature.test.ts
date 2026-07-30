@@ -1,12 +1,12 @@
 /**
- * validateFeature 函数测试
+ * Tests for the validateFeature function
  */
 
 import { validateFeature } from '../src/feature';
 
 describe('validateFeature', () => {
-  describe('基本验证', () => {
-    it('应该通过完整的 Feature 定义', () => {
+  describe('basic validation', () => {
+    it('passes for a complete Feature definition', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -42,7 +42,7 @@ describe('validateFeature', () => {
       expect(result.errors.filter(e => e.severity === 'error')).toHaveLength(0);
     });
 
-    it('应该检测到缺少 id', () => {
+    it('detects a missing id', () => {
       const feature = {
         metadata: {
           name: 'Test Feature',
@@ -60,7 +60,7 @@ describe('validateFeature', () => {
       expect(result.errors.some(e => e.code === 'metadata-id-required')).toBe(true);
     });
 
-    it('应该检测到 id 格式错误', () => {
+    it('detects a malformed id', () => {
       const feature = {
         metadata: {
           id: 'invalid-id',
@@ -79,7 +79,7 @@ describe('validateFeature', () => {
       expect(result.errors.some(e => e.code === 'metadata-id-format')).toBe(true);
     });
 
-    it('应该检测到版本号格式错误', () => {
+    it('detects a malformed version number', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -98,7 +98,7 @@ describe('validateFeature', () => {
       expect(result.errors.some(e => e.code === 'metadata-version-semver')).toBe(true);
     });
 
-    it('应该检测到缺少 AST type', () => {
+    it('detects a missing AST type', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -116,8 +116,8 @@ describe('validateFeature', () => {
     });
   });
 
-  describe('警告检查', () => {
-    it('应该警告缺少 description', () => {
+  describe('warning checks', () => {
+    it('warns about a missing description', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -138,7 +138,7 @@ describe('validateFeature', () => {
       );
     });
 
-    it('应该警告 required 只包含 type', () => {
+    it('warns when required contains only type', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -162,7 +162,7 @@ describe('validateFeature', () => {
       expect(result.errors.some(e => e.code === 'ast-interface-required-nonempty')).toBe(true);
     });
 
-    it('应该警告 fields 缺少定义', () => {
+    it('warns when fields is missing a definition', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -176,7 +176,7 @@ describe('validateFeature', () => {
               required: ['type', 'value'],
               fields: {
                 type: { type: 'string', description: 'Node type' },
-                // 缺少 value 字段定义
+                // missing the value field definition
               },
             },
           },
@@ -188,8 +188,8 @@ describe('validateFeature', () => {
     });
   });
 
-  describe('建议检查', () => {
-    it('应该建议添加 tags', () => {
+  describe('info-level checks', () => {
+    it('suggests adding tags', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -208,7 +208,7 @@ describe('validateFeature', () => {
       expect(result.errors.find(e => e.code === 'metadata-tags-nonempty')?.severity).toBe('info');
     });
 
-    it('应该建议提供 examples', () => {
+    it('suggests providing examples', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -228,14 +228,14 @@ describe('validateFeature', () => {
     });
   });
 
-  describe('严格模式', () => {
-    it('严格模式下警告应该导致验证失败', () => {
+  describe('strict mode', () => {
+    it('fails validation on a warning in strict mode', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
           name: 'Test Feature',
           version: '1.0.0',
-          // 缺少 description (warning)
+          // missing description (warning)
         },
         syntax: {
           ast: {
@@ -248,7 +248,7 @@ describe('validateFeature', () => {
       expect(result.valid).toBe(false);
     });
 
-    it('严格模式下建议不应该导致验证失败', () => {
+    it('does not fail validation on an info-level item in strict mode', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -257,7 +257,7 @@ describe('validateFeature', () => {
           author: 'Test Author',
           description: 'Test description',
           license: 'Apache-2.0',
-          // 缺少 tags (info)
+          // missing tags (info)
         },
         syntax: {
           ast: {
@@ -271,8 +271,8 @@ describe('validateFeature', () => {
     });
   });
 
-  describe('生产模式', () => {
-    it('生产模式下应该要求 interface', () => {
+  describe('production mode', () => {
+    it('requires interface in production mode', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -282,7 +282,7 @@ describe('validateFeature', () => {
         syntax: {
           ast: {
             type: 'test_node',
-            // 缺少 interface
+            // missing interface
           },
         },
       };
@@ -292,7 +292,7 @@ describe('validateFeature', () => {
       expect(result.errors.some(e => e.code === 'ast-interface-required-production')).toBe(true);
     });
 
-    it('生产模式下应该要求至少一个渲染器', () => {
+    it('requires at least one renderer in production mode', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
@@ -318,7 +318,7 @@ describe('validateFeature', () => {
       expect(result.errors.some(e => e.code === 'renderers-required-production')).toBe(true);
     });
 
-    it('生产模式下应该建议提供测试', () => {
+    it('suggests providing tests in production mode', () => {
       const feature = {
         metadata: {
           id: '@supramark/feature-test',
