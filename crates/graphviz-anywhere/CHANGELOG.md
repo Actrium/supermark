@@ -184,9 +184,9 @@ Target version: **0.2.0** (cross-target build.rs + asset coverage)
 
 [Unreleased]: https://github.com/Actrium/supramark/compare/v0.2.4...HEAD
 [0.2.4]: https://github.com/Actrium/supramark/compare/v0.2.3...v0.2.4
-[0.2.1]: https://github.com/Actrium/graphviz-anywhere/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/Actrium/graphviz-anywhere/compare/v0.1.8...v0.2.0
-[0.1.8]: https://github.com/Actrium/graphviz-anywhere/releases/tag/v0.1.8
-[0.1.7]: https://github.com/Actrium/graphviz-anywhere/releases/tag/v0.1.7
-[0.1.6]: https://github.com/Actrium/graphviz-anywhere/releases/tag/v0.1.6
-[0.1.5]: https://github.com/Actrium/graphviz-anywhere/releases/tag/v0.1.5
+[0.2.1]: https://github.com/kookyleo/graphviz-anywhere/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/kookyleo/graphviz-anywhere/compare/v0.1.8...v0.2.0
+[0.1.8]: https://github.com/kookyleo/graphviz-anywhere/releases/tag/v0.1.8
+[0.1.7]: https://github.com/kookyleo/graphviz-anywhere/releases/tag/v0.1.7
+[0.1.6]: https://github.com/kookyleo/graphviz-anywhere/releases/tag/v0.1.6
+[0.1.5]: https://github.com/kookyleo/graphviz-anywhere/releases/tag/v0.1.5

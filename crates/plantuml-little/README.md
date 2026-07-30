@@ -27,7 +27,7 @@ Reference tests compare the SVG plantuml-little emits against an upstream-genera
 
 Two Graphviz execution modes are supported:
 
-- `native` (default): links against [`graphviz-anywhere`](https://github.com/Actrium/graphviz-anywhere)'s prebuilt `libgraphviz_api` — fast, no Node required; recommended for `cargo test --lib` / day-to-day development.
+- `native` (default): links against [`graphviz-anywhere`](https://github.com/kookyleo/graphviz-anywhere)'s prebuilt `libgraphviz_api` — fast, no Node required; recommended for `cargo test --lib` / day-to-day development.
 - `wasm` (opt-in via `PLANTUML_LITTLE_TEST_BACKEND=wasm`): spawns the same Node/wasm runner the Java reference pipeline uses; this is what CI runs for `test-reference` to guarantee cross-platform determinism.
 
 > **Font prerequisite for the `native` backend on non-Linux hosts.** The native Graphviz build measures real text through pango/fontconfig, so the reference baselines only reproduce byte-exact on a machine where fontconfig resolves `DejaVu Sans` to the same font the baselines were generated with. A fresh macOS has no DejaVu installed, so fontconfig silently falls back to a system face (e.g. Hiragino Sans) — that shifts `textLength` and layout coordinates by a pixel or two and the reference tests fail even though nothing is wrong with the code. Install DejaVu before running the native reference suite:
@@ -138,7 +138,7 @@ let svg = plantuml_little::convert(puml_source)?;
 ## Prerequisites
 
 - Rust 1.82+
-- [`graphviz-anywhere`](https://github.com/Actrium/graphviz-anywhere) prebuilt native lib (fetched automatically in CI; locally point `GRAPHVIZ_ANYWHERE_DIR` at an extracted release tarball)
+- [`graphviz-anywhere`](https://github.com/kookyleo/graphviz-anywhere) prebuilt native lib (fetched automatically in CI; locally point `GRAPHVIZ_ANYWHERE_DIR` at an extracted release tarball)
 - For the wasm test backend (`PLANTUML_LITTLE_TEST_BACKEND=wasm`): Node 22+ and `cd tests/support && npm install`
 - For regenerating reference SVGs locally: JDK 21+, DejaVu Sans fonts (`apt install fonts-dejavu-core` on Linux), and a `plantuml-1.2026.2.jar` — or use the `regenerate-refs.yml` workflow which sets all of that up on `ubuntu-latest`
 

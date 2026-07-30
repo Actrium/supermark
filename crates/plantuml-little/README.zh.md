@@ -27,7 +27,7 @@ Reference 测试对 `tests/fixtures/` 下每个 puml 用例的实际 SVG 输出�
 
 Graphviz 有两种执行模式：
 
-- `native`（默认）：链接 [`graphviz-anywhere`](https://github.com/Actrium/graphviz-anywhere) 的预编译 `libgraphviz_api`，速度快、无需 Node；日常 `cargo test --lib` / 开发调试推荐此模式。
+- `native`（默认）：链接 [`graphviz-anywhere`](https://github.com/kookyleo/graphviz-anywhere) 的预编译 `libgraphviz_api`，速度快、无需 Node；日常 `cargo test --lib` / 开发调试推荐此模式。
 - `wasm`（通过 `PLANTUML_LITTLE_TEST_BACKEND=wasm` 开启）：启动与 Java reference 管线相同的 Node/wasm runner；CI 的 `test-reference` 任务采用这种模式以保证跨平台可重放。
 
 > **非 Linux 主机上跑 `native` 后端的字体前置条件。** native 的 Graphviz 构建会经 pango/fontconfig 真实测量文本，因此只有当 fontconfig 把 `DejaVu Sans` 解析到与基线生成时相同的字体，reference 基线才能逐字复现。全新的 macOS 没装 DejaVu，fontconfig 会静默回落到系统字体（例如 Hiragino Sans）——这会让 `textLength` 与布局坐标偏移一两个像素，于是代码明明没问题、reference 测试却挂掉。跑 native reference 套件前先装 DejaVu：
@@ -136,7 +136,7 @@ let svg = plantuml_little::convert(puml_source)?;
 ## 前置条件
 
 - Rust 1.82+
-- [`graphviz-anywhere`](https://github.com/Actrium/graphviz-anywhere) 预编译原生库（CI 自动拉取；本地将 `GRAPHVIZ_ANYWHERE_DIR` 指向解压后的 release tarball）
+- [`graphviz-anywhere`](https://github.com/kookyleo/graphviz-anywhere) 预编译原生库（CI 自动拉取；本地将 `GRAPHVIZ_ANYWHERE_DIR` 指向解压后的 release tarball）
 - 启用 wasm 测试后端（`PLANTUML_LITTLE_TEST_BACKEND=wasm`）时：Node 22+，并执行 `cd tests/support && npm install`
 - 本地重新生成 reference SVG 时：JDK 21+、DejaVu Sans 字体（Linux 上 `apt install fonts-dejavu-core`）、以及一份 `plantuml-1.2026.2.jar`——或直接使用 `regenerate-refs.yml` 工作流在 `ubuntu-latest` 上一键搞定
 

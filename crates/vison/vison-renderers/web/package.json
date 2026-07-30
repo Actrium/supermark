@@ -6,10 +6,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Actrium/vison.git",
+    "url": "https://github.com/Actrium/supramark.git",
     "directory": "vison-renderers/web"
   },
-  "homepage": "https://github.com/Actrium/vison",
+  "homepage": "https://github.com/Actrium/supramark",
   "author": "kookyleo <kookyleo@gmail.com>",
   "main": "src/index.ts",
   "types": "src/index.ts",

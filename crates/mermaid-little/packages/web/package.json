@@ -6,12 +6,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Actrium/mermaid-little.git",
+    "url": "https://github.com/Actrium/supramark.git",
     "directory": "packages/web"
   },
-  "homepage": "https://github.com/Actrium/mermaid-little",
+  "homepage": "https://github.com/Actrium/supramark",
   "bugs": {
-    "url": "https://github.com/Actrium/mermaid-little/issues"
+    "url": "https://github.com/Actrium/supramark/issues"
   },
   "author": "kookyleo <kookyleo@gmail.com>",
   "main": "dist/index.js",
