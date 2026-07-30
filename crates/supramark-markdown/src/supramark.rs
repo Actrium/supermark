@@ -898,7 +898,9 @@ fn strip_task_marker_from_text(value: &mut String) -> Option<bool> {
     };
 
     let rest = &trimmed[marker_len..];
-    let rest = rest.strip_prefix([' ', '\t']).unwrap_or(rest);
+    // cmark-gfm keeps the single space that separates the task marker from the
+    // item text and emits it as a leading text character (`<input> foo`), so
+    // preserve it rather than stripping.
     let mut replacement = String::new();
     replacement.push_str(&value[..leading_len]);
     replacement.push_str(rest);

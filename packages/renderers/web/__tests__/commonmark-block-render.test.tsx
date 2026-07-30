@@ -81,6 +81,23 @@ function raw(value: string, block = true) {
   return { type: 'raw', format: 'html', value, block } as const;
 }
 
+function tableCell(content: string, header: boolean, align?: 'left' | 'right' | 'center') {
+  return {
+    type: 'table_cell',
+    header,
+    ...(align ? { align } : {}),
+    children: [text(content)],
+  } as const;
+}
+
+function tableRow(cells: ReturnType<typeof tableCell>[]) {
+  return { type: 'table_row', children: cells } as const;
+}
+
+function table(rows: ReturnType<typeof tableRow>[], align?: ('left' | 'right' | 'center')[]) {
+  return { type: 'table', align: align ?? [], children: rows } as const;
+}
+
 describe('CommonMark block rendering', () => {
   test('renders a blockquote with its paragraph children', async () => {
     const ast = makeRoot([{ type: 'blockquote', children: [paragraph('quote')] }]);
@@ -337,5 +354,85 @@ describe('CommonMark raw HTML', () => {
     const secondHtml = container.innerHTML.replace(/<span style="display: ?none[^>]*><\/span>/, '');
     expect((secondHtml.match(/<span>x<\/span>/g) ?? []).length).toBe(0);
     expect((secondHtml.match(/<span>y<\/span>/g) ?? []).length).toBe(1);
+  });
+});
+
+// GFM tables: cmark-gfm wraps the header row in <thead>, the rest in <tbody>,
+// and emits the obsolete `align` attribute (not an inline style) on aligned
+// cells. See issue #144 (cmark-gfm conformance).
+describe('GFM table rendering', () => {
+  test('splits the header row into <thead> and body rows into <tbody>', async () => {
+    const ast = makeRoot([
+      table([
+        tableRow([tableCell('foo', true), tableCell('bar', true)]),
+        tableRow([tableCell('baz', false), tableCell('bim', false)]),
+      ]),
+    ]);
+    const container = await renderAst(ast);
+    const html = container.innerHTML;
+    expect(html).toContain('<thead>');
+    expect(html).toContain('</thead>');
+    expect(html).toContain('<tbody>');
+    expect(html).toContain('</tbody>');
+    expect(html).toMatch(
+      /<thead>\s*<tr[^>]*>\s*<th[^>]*>foo<\/th>\s*<th[^>]*>bar<\/th>\s*<\/tr>\s*<\/thead>/
+    );
+    expect(html).toMatch(
+      /<tbody>\s*<tr[^>]*>\s*<td[^>]*>baz<\/td>\s*<td[^>]*>bim<\/td>\s*<\/tr>\s*<\/tbody>/
+    );
+  });
+
+  test('emits align attribute (not inline style) on aligned cells', async () => {
+    const ast = makeRoot([
+      table(
+        [
+          tableRow([tableCell('aaa', true, 'left'), tableCell('ccc', true, 'center')]),
+          tableRow([tableCell('fff', false, 'left'), tableCell('hhh', false, 'center')]),
+        ],
+        ['left', 'center']
+      ),
+    ]);
+    const container = await renderAst(ast);
+    const html = container.innerHTML;
+    expect(html).toMatch(/<th[^>]*align="left"[^>]*>aaa<\/th>/);
+    expect(html).toMatch(/<th[^>]*align="center"[^>]*>ccc<\/th>/);
+    expect(html).toMatch(/<td[^>]*align="left"[^>]*>fff<\/td>/);
+    expect(html).not.toMatch(/text-align/);
+  });
+
+  test('emits <thead> only with no <tbody> when the table has just a header row', async () => {
+    const ast = makeRoot([table([tableRow([tableCell('abc', true), tableCell('def', true)])])]);
+    const container = await renderAst(ast);
+    const html = container.innerHTML;
+    expect(html).toContain('<thead>');
+    expect(html).not.toContain('<tbody');
+  });
+});
+
+// GFM task lists: cmark-gfm separates the checkbox from the item text with a
+// literal space — `<input ...> foo`. The parser keeps that leading space on
+// the text node; the renderer must preserve it. See issue #144.
+describe('GFM task list rendering', () => {
+  function taskItem(checked: boolean, content: string) {
+    return {
+      type: 'list_item',
+      checked,
+      children: [text(content)],
+    } as const;
+  }
+
+  test('preserves the leading space between the checkbox and the item text', async () => {
+    const ast = makeRoot([
+      {
+        type: 'list',
+        ordered: false,
+        children: [taskItem(false, ' foo'), taskItem(true, ' bar')],
+      },
+    ]);
+    const container = await renderAst(ast);
+    const html = container.innerHTML;
+    expect(html).toMatch(/<input[^>]*>\sfoo/);
+    expect(html).toMatch(/<input[^>]*checked[^>]*>\sbar/);
+    expect(html).not.toMatch(/<input[^>]*>foo/);
   });
 });

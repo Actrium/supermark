@@ -1166,14 +1166,32 @@ function renderNode(
       );
     }
     case 'table': {
+      // cmark-gfm splits the leading header row(s) into <thead> and the rest
+      // into <tbody>. A header-only table (no body rows) emits <thead> only.
       const table = node;
+      const rows = table.children as Array<typeof table.children[number]>;
+      let firstBodyRow = rows.findIndex(
+        (row) => !(row as { children?: Array<{ header?: boolean }> }).children?.[0]?.header
+      );
+      if (firstBodyRow < 0) firstBodyRow = rows.length;
+      const headRows = rows.slice(0, firstBodyRow);
+      const bodyRows = rows.slice(firstBodyRow);
       return (
         <table key={key} className={classNames.table}>
-          <tbody className={classNames.tableBody}>
-            {table.children.map((row, index) =>
-              renderNode(row, index, classNames, rendered, highlighted, config, containerRenderers)
-            )}
-          </tbody>
+          {headRows.length > 0 && (
+            <thead className={classNames.tableHead}>
+              {headRows.map((row, index) =>
+                renderNode(row, index, classNames, rendered, highlighted, config, containerRenderers)
+              )}
+            </thead>
+          )}
+          {bodyRows.length > 0 && (
+            <tbody className={classNames.tableBody}>
+              {bodyRows.map((row, index) =>
+                renderNode(row, index, classNames, rendered, highlighted, config, containerRenderers)
+              )}
+            </tbody>
+          )}
         </table>
       );
     }
@@ -1189,19 +1207,21 @@ function renderNode(
     }
     case 'table_cell': {
       const cell = node;
-      const alignStyle = cell.align ? { textAlign: cell.align } : undefined;
+      // cmark-gfm emits the obsolete `align` attribute (not an inline style) so
+      // the alignment survives in the DOM semantic tree.
+      const alignAttr = cell.align ? { align: cell.align } : undefined;
       const content = renderInlineNodes(cell.children, classNames, rendered, highlighted, config);
 
       if (cell.header) {
         return (
-          <th key={key} style={alignStyle} className={classNames.tableHeaderCell}>
+          <th key={key} {...alignAttr} className={classNames.tableHeaderCell}>
             {content}
           </th>
         );
       }
 
       return (
-        <td key={key} style={alignStyle} className={classNames.tableCell}>
+        <td key={key} {...alignAttr} className={classNames.tableCell}>
           {content}
         </td>
       );

@@ -127,8 +127,10 @@ fn public_api_maps_task_list_items() {
 
     assert_eq!(*first_checked, Some(true));
     assert_eq!(*second_checked, Some(false));
-    assert_eq!(first_text(first_children), "Done");
-    assert_eq!(first_text(second_children), "Todo");
+    // cmark-gfm keeps the single space between the task marker and the item
+    // text (`<input> Done`), so the text node carries a leading space.
+    assert_eq!(first_text(first_children), " Done");
+    assert_eq!(first_text(second_children), " Todo");
 }
 
 fn first_text(nodes: &[SupramarkNode]) -> &str {
