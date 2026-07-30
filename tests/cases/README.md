@@ -17,6 +17,7 @@ tests/cases/
 当前数据源：
 
 - `commonmark`：CommonMark 0.31.2，共 652 条规范用例。
+- `cmark-gfm`：GitHub cmark-gfm 0.29.0.gfm.13，共 702 条规范及扩展用例。
 
 用例的导入、校验、生产 Web Renderer 对照和中文报告工具位于
 `tests/markdown-conformance/`。

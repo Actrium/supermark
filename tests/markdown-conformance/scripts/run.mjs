@@ -3,10 +3,10 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { astToHtml } from '../lib/semantic/ast-semantics.mjs';
-import { renderCommonMarkHtmlReport } from '../lib/reports/html-report.mjs';
+import { renderConformanceHtmlReport } from '../lib/reports/html-report.mjs';
 import {
   buildConformanceIssueMetadata,
-  renderCommonMarkIssue,
+  renderConformanceIssue,
 } from '../lib/reports/issue-report.mjs';
 import {
   attachEvidence,
@@ -53,7 +53,11 @@ const SECTION_NAMES = {
 
 const SUITE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPOSITORY_ROOT = path.resolve(SUITE_ROOT, '..', '..');
-const BASELINE_PATH = path.join(SUITE_ROOT, 'baselines', 'commonmark.json');
+const sourceName = process.argv[2];
+if (!sourceName || !/^[a-z0-9][a-z0-9-]*$/.test(sourceName)) {
+  throw new Error('Usage: node tests/markdown-conformance/scripts/run.mjs <source-name>');
+}
+const BASELINE_PATH = path.join(SUITE_ROOT, 'baselines', `${sourceName}.json`);
 const DEFAULT_BINARY = path.join(
   REPOSITORY_ROOT,
   'target',
@@ -62,6 +66,11 @@ const DEFAULT_BINARY = path.join(
 );
 const parserBinary = path.resolve(process.env.SUPRAMARK_MARKDOWN_BIN ?? DEFAULT_BINARY);
 const failOnFailures = process.env.FAIL_ON_FAILURES !== '0';
+// Gate mode decides what a non-zero exit means (see buildGate below).
+// 'regression' (default) fails only on movement away from the recorded
+// baseline; 'absolute' fails on any not-passing case, which is what every
+// run did before a source with a standing failure set existed.
+const gateMode = process.env.CONFORMANCE_GATE === 'absolute' ? 'absolute' : 'regression';
 const visualEnabled = process.env.VISUAL_COMPARE === '1';
 const parserProfile = 'supramark-default';
 const filter = process.env.CASE_IDS
@@ -72,13 +81,20 @@ const fixtureDirectory = path.join(
   'tests',
   'cases',
   '_fixtures',
-  'commonmark'
+  sourceName
 );
 const document = JSON.parse(await readFile(path.join(fixtureDirectory, 'cases.json'), 'utf8'));
 const version = JSON.parse(await readFile(path.join(fixtureDirectory, 'version.json'), 'utf8'));
 const sourceConfig = JSON.parse(
-  await readFile(path.join(SUITE_ROOT, 'config', 'sources', 'commonmark.json'), 'utf8')
+  await readFile(path.join(SUITE_ROOT, 'config', 'sources', `${sourceName}.json`), 'utf8')
 );
+const sourceDisplayName = sourceConfig.displayName ?? sourceConfig.name;
+if (sourceConfig.name !== sourceName || document.source !== sourceName || version.source !== sourceName) {
+  throw new Error(`Source mismatch: argument ${sourceName}, config ${sourceConfig.name}, cases ${document.source}, version ${version.source}`);
+}
+if (document.profile !== sourceConfig.profile) {
+  throw new Error(`Case profile does not match source config: ${document.profile} != ${sourceConfig.profile}`);
+}
 const baselineDocument = await readOptionalJson(BASELINE_PATH);
 const selectedCases = filter
   ? document.cases.filter(testCase => filter.has(testCase.id))
@@ -86,7 +102,7 @@ const selectedCases = filter
 const caseById = new Map(selectedCases.map(testCase => [testCase.id, testCase]));
 const artifactDirectory = process.env.ARTIFACT_DIR
   ? path.resolve(REPOSITORY_ROOT, process.env.ARTIFACT_DIR)
-  : path.join(SUITE_ROOT, 'artifacts', 'commonmark');
+  : path.join(SUITE_ROOT, 'artifacts', sourceName);
 const actualHtmlById = new Map();
 const astById = new Map();
 let productionRendererErrorsById = new Map();
@@ -137,7 +153,7 @@ if (visualEnabled) {
     visualExecution = {
       enabled: true,
       result: '错误',
-      profile: 'commonmark-visual-v1',
+      profile: `${sourceName}-visual-v1`,
       browser: null,
       total: selectedCases.length,
       passed: 0,
@@ -146,7 +162,7 @@ if (visualEnabled) {
       notPassed: selectedCases.length,
       bySection: {},
       failures: [{
-        id: 'commonmark-visual-environment',
+        id: `${sourceName}-visual-environment`,
         section: '视觉测试环境',
         status: 'error',
         error: error.stack ?? error.message,
@@ -191,6 +207,14 @@ const summary = {
   failureGroups,
   locale: 'zh-CN',
   result: notPassed.length === 0 && visualExecution.notPassed === 0 ? '通过' : '失败',
+  gate: buildGate({
+    mode: gateMode,
+    baseline,
+    // Union, not a sum: a case can fail both comparisons and must count once.
+    notPassedCount: overallNotPassedCases.size,
+    semanticErrorCount: errors.length,
+    visualErrorCount: visualExecution.errors,
+  }),
   source: sourceConfig.name,
   sourceDisplayName: sourceConfig.displayName ?? sourceConfig.name,
   profile: parserProfile,
@@ -240,7 +264,7 @@ await writeFile(
 );
 await writeFile(
   path.join(artifactDirectory, 'report.html'),
-  renderCommonMarkHtmlReport({
+  renderConformanceHtmlReport({
     summary,
     visualFailures,
     semanticFailures: semanticFailureRecords,
@@ -253,7 +277,7 @@ if (summary.result === '失败') {
   await Promise.all([
     writeFile(
       issuePath,
-      renderCommonMarkIssue({
+      renderConformanceIssue({
         summary,
         semanticFailures: semanticFailureRecords,
         visualFailures: visualFailureRecords,
@@ -272,16 +296,77 @@ if (summary.result === '失败') {
   ]);
 }
 
-console.log(`CommonMark 语义对照：通过 ${summary.passed}/${summary.total}，未通过 ${summary.notPassed}`);
+console.log(`${sourceDisplayName} 语义对照：通过 ${summary.passed}/${summary.total}，未通过 ${summary.notPassed}`);
 if (summary.visual.enabled) {
-  console.log(`CommonMark 视觉对照：通过 ${summary.visual.passed}/${summary.visual.total}，未通过 ${summary.visual.notPassed}`);
+  console.log(`${sourceDisplayName} 视觉对照：通过 ${summary.visual.passed}/${summary.visual.total}，未通过 ${summary.visual.notPassed}`);
 } else {
-  console.log('CommonMark 视觉对照：未执行（使用 run-commonmark-visual.mjs 启用）');
+  console.log(`${sourceDisplayName} 视觉对照：未执行（使用 run-visual.mjs ${sourceName} 启用）`);
 }
 console.log(`中文总结：${path.join(artifactDirectory, 'summary.md')}`);
 console.log(`HTML 可视化报告：${path.join(artifactDirectory, 'report.html')}`);
 if (summary.result === '失败') console.log(`Issue 内容：${issuePath}`);
-if (summary.result === '失败' && failOnFailures) process.exitCode = 1;
+console.log(`gate[${summary.gate.mode}]: ${summary.gate.failed ? 'FAIL' : 'PASS'} - ${summary.gate.reason}`);
+if (summary.gate.failed && failOnFailures) process.exitCode = 1;
+
+// Decide whether this run should fail the workflow, and say why in one place.
+//
+// A source is allowed to carry a standing set of known-failing cases (cmark-gfm
+// starts at 58 semantic / 29 visual), so "any case failed" is the wrong gate:
+// it makes main permanently red and tells a PR nothing about whether it made
+// things worse. The gate that carries information is movement away from the
+// recorded baseline.
+//
+// Two things still fail regardless of the baseline:
+//   - execution errors, which mean the parser or the harness broke rather than
+//     a case merely disagreeing. A panic must never be absorbed as "expected".
+//   - an unusable baseline. Without one there is nothing to compare against, so
+//     staying quiet would report a green run that checked nothing. This is also
+//     what makes RUN_VISUAL=false loud instead of silently ungated: the visual
+//     run and the baseline are keyed to production-web-renderer-dom, so a
+//     semantic-only run lands on baseline-target-mismatch and fails here.
+function buildGate({ mode, baseline, notPassedCount, semanticErrorCount, visualErrorCount }) {
+  const errorCount = semanticErrorCount + visualErrorCount;
+  if (errorCount > 0) {
+    return {
+      mode,
+      failed: true,
+      kind: 'execution-errors',
+      reason: `${errorCount} execution error(s): parser or harness failure, not a case disagreement`,
+      errorCount,
+    };
+  }
+  if (mode === 'absolute') {
+    return {
+      mode,
+      failed: notPassedCount > 0,
+      kind: 'absolute',
+      reason: `${notPassedCount} not-passing case(s) under absolute mode`,
+      notPassedCount,
+    };
+  }
+  if (!baseline.configured) {
+    return {
+      mode,
+      failed: true,
+      kind: 'baseline-unusable',
+      reason: `cannot gate on regressions: baseline ${baseline.reason} (${baseline.path})`,
+      baselineReason: baseline.reason,
+    };
+  }
+  const added = baseline.overall.added;
+  const resolved = baseline.overall.resolved;
+  return {
+    mode,
+    failed: added.length > 0,
+    kind: 'regression',
+    reason: added.length > 0
+      ? `${added.length} case(s) regressed against baseline: ${added.slice(0, 5).join(', ')}${added.length > 5 ? ', ...' : ''}`
+      : `no regression against baseline (${resolved.length} resolved, ${baseline.overall.persistent.length} still failing)`,
+    added,
+    resolved,
+    scope: baseline.scope,
+  };
+}
 
 function runCase(testCase) {
   const parsed = spawnSync(parserBinary, ['-'], {
@@ -365,10 +450,10 @@ function compareHtmlCase(testCase, ast, actualHtml) {
 
 function renderChineseSummary(summaryDocument, semanticFailures, visualFailures) {
   const lines = [
-    '# CommonMark 语义与视觉对照测试总结',
+    `# ${sourceDisplayName} 语义与视觉对照测试总结`,
     '',
     `- 总体结果：**${summaryDocument.result}**`,
-    `- 数据源：CommonMark ${version.version}`,
+    `- 数据源：${sourceDisplayName} ${version.version}`,
     `- 固定提交：\`${summaryDocument.sourceCommit}\``,
     `- 解析配置：\`${summaryDocument.profile}\``,
     `- 语义对照对象：${summaryDocument.comparisonTarget}`,
@@ -406,7 +491,7 @@ function renderChineseSummary(summaryDocument, semanticFailures, visualFailures)
 
   lines.push('', '## 浏览器视觉对照结果', '');
   if (!summaryDocument.visual.enabled) {
-    lines.push('本次未启用视觉对照。运行 `node tests/markdown-conformance/scripts/run-commonmark-visual.mjs` 可启用。');
+    lines.push(`本次未启用视觉对照。运行 \`node tests/markdown-conformance/scripts/run-visual.mjs ${sourceName}\` 可启用。`);
   } else {
     lines.push(
       `- 测试结果：**${summaryDocument.visual.result}**`,
@@ -441,6 +526,27 @@ function renderChineseSummary(summaryDocument, semanticFailures, visualFailures)
         lines.push(
           `| \`${failure.id}\` | ${escapeTableCell(sectionName(failure.section))} | ${visualFailureCategory(failure)} | ${failure.diffPixels ?? '-'} | ${formatPercent(failure.diffRatio)} | ${images} |`
         );
+      }
+
+      const failuresWithImages = visualFailures.filter(failure => failure.images);
+      if (failuresWithImages.length > 0) {
+        lines.push(
+          '',
+          '#### 视觉差异图片',
+          '',
+          '以下按“预期 / 实际 / 差异”直接展示，点击图片可查看原始尺寸。',
+          ''
+        );
+        for (const failure of failuresWithImages) {
+          lines.push(
+            `**\`${failure.id}\` — ${sectionName(failure.section)}**`,
+            '',
+            '| 预期 | 实际 | 差异 |',
+            '| --- | --- | --- |',
+            `| [![预期：${failure.id}](${failure.images.expected})](${failure.images.expected}) | [![实际：${failure.id}](${failure.images.actual})](${failure.images.actual}) | [![差异：${failure.id}](${failure.images.diff})](${failure.images.diff}) |`,
+            ''
+          );
+        }
       }
     }
   }

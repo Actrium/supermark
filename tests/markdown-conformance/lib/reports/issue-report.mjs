@@ -15,7 +15,7 @@ export function buildConformanceIssueMetadata(summary) {
   };
 }
 
-export function renderCommonMarkIssue({
+export function renderConformanceIssue({
   summary,
   semanticFailures,
   visualFailures,
@@ -25,6 +25,17 @@ export function renderCommonMarkIssue({
   sourceVersion,
 }) {
   const metadata = buildConformanceIssueMetadata(summary);
+  const sourceName = summary.source;
+  const sourceDisplayName = summary.sourceDisplayName ?? sourceName;
+  const visualEnabled = summary.visual?.enabled === true;
+  const comparisonScope = visualEnabled ? '语义与视觉' : '语义';
+  const runCommand = `node tests/markdown-conformance/scripts/${visualEnabled ? 'run-visual.mjs' : 'run.mjs'} ${sourceName}`;
+  const visualProblemDescription = visualEnabled
+    ? `视觉层有 ${summary.visual.notPassed} 条未通过`
+    : '视觉层未执行';
+  const visualResult = visualEnabled
+    ? `**${summary.visual.passed}/${summary.visual.total} 通过**，${summary.visual.notPassed} 未通过`
+    : '**未执行**';
   const workflowUrl = summary.runtime?.workflowUrl;
   const representatives = selectRepresentatives(
     summary.failureGroups ?? [],
@@ -33,12 +44,12 @@ export function renderCommonMarkIssue({
   );
   const lines = [
     metadata.marker,
-    '# CommonMark 语义与视觉对照测试失败',
+    `# CommonMark ${comparisonScope}对照测试失败`,
     '',
     '## **问题描述**',
     '',
     `Supramark 使用主仓库默认 Parser 配置执行 ${summary.total} 条 CommonMark ${sourceVersion} 规范用例。`,
-    `语义层有 ${summary.notPassed} 条未通过；视觉层有 ${summary.visual.notPassed} 条未通过；共有 ${summary.overallNotPassedCases} 条用例存在至少一种差异。`,
+    `语义层有 ${summary.notPassed} 条未通过；${visualProblemDescription}；共有 ${summary.overallNotPassedCases} 条用例存在至少一种差异。`,
     '',
     '### 运行摘要',
     '',
@@ -54,24 +65,24 @@ export function renderCommonMarkIssue({
     `| 浏览器 | Chromium ${escapeTableCell(summary.visual.browser?.version ?? '未执行')} |`,
     `| 平台 | ${escapeTableCell(summary.runtime?.platform ?? '未知')} / ${escapeTableCell(summary.runtime?.arch ?? '未知')} / Node ${escapeTableCell(summary.runtime?.nodeVersion ?? '未知')} |`,
     `| 语义结果 | **${summary.passed}/${summary.total} 通过**，${summary.notPassed} 未通过 |`,
-    `| 视觉结果 | **${summary.visual.passed}/${summary.visual.total} 通过**，${summary.visual.notPassed} 未通过 |`,
+    `| 视觉结果 | ${visualResult} |`,
     `| 生成时间 | ${summary.generatedAt} |`,
     ...(workflowUrl ? [`| Actions 运行 | [打开运行记录](${workflowUrl}) |`] : []),
     '',
     ...renderBaselineDelta(summary.baseline),
     '### 失败功能簇',
     '',
-    '| 功能簇 | 唯一失败用例 | 语义未通过 | 视觉未通过 | 建议定位层 |',
+    `| 功能簇 | 唯一失败用例 | 语义未通过 | ${visualEnabled ? '视觉未通过' : '视觉（未执行）'} | 建议定位层 |`,
     '| --- | ---: | ---: | ---: | --- |',
   ];
 
   for (const group of summary.failureGroups ?? []) {
     lines.push(
-      `| ${escapeTableCell(`${group.nameZh}（${group.section}）`)} | ${group.uniqueCases} | ${group.semanticNotPassed} | ${group.visualNotPassed} | ${escapeTableCell(group.suspectedLayer)} |`
+      `| ${escapeTableCell(`${group.nameZh}（${group.section}）`)} | ${group.uniqueCases} | ${group.semanticNotPassed} | ${visualEnabled ? group.visualNotPassed : '-'} | ${escapeTableCell(group.suspectedLayer)} |`
     );
   }
   if ((summary.failureGroups ?? []).length === 0) {
-    lines.push('| - | 0 | 0 | 0 | - |');
+    lines.push(`| - | 0 | 0 | ${visualEnabled ? 0 : '-'} | - |`);
   }
 
   lines.push(
@@ -81,19 +92,21 @@ export function renderCommonMarkIssue({
     '### 完整复现',
     '',
     '1. 在仓库根目录安装用例依赖：`pnpm --dir tests/markdown-conformance install --frozen-lockfile`。',
-    '2. 安装锁定版本的 Chromium：`node tests/markdown-conformance/node_modules/playwright/cli.js install chromium`。',
+    visualEnabled
+      ? '2. 安装锁定版本的 Chromium：`node tests/markdown-conformance/node_modules/playwright/cli.js install chromium`。'
+      : '2. 本次仅执行语义对照，无需安装 Chromium。',
     '3. 构建解析器：`cargo build -p supramark-markdown --bin supramark-markdown`。',
     '4. 导入锁定数据源：`node tests/markdown-conformance/scripts/import.mjs commonmark`。',
     '5. 校验统一用例：`node tests/markdown-conformance/scripts/validate.mjs commonmark`。',
-    '6. 执行语义与视觉对照：`node tests/markdown-conformance/scripts/run-commonmark-visual.mjs`。',
+    `6. 执行${comparisonScope}对照：\`${runCommand}\`。`,
     '',
     '### 单条用例复现（不会覆盖完整报告）',
     '',
     fencedCode([
-      `$env:CASE_IDS = "${representatives[0]?.id ?? 'commonmark-0.31.2-0020'}"`,
+      `$env:CASE_IDS = "${representatives[0]?.id ?? semanticFailures[0]?.id ?? visualFailures[0]?.id ?? sourceName}"`,
       '$env:FAIL_ON_FAILURES = "0"',
       '$env:ARTIFACT_DIR = "tests/markdown-conformance/artifacts/manual/$env:CASE_IDS"',
-      'node tests/markdown-conformance/scripts/run-commonmark-visual.mjs',
+      runCommand,
       'Remove-Item Env:CASE_IDS',
       'Remove-Item Env:FAIL_ON_FAILURES',
       'Remove-Item Env:ARTIFACT_DIR',
@@ -102,13 +115,17 @@ export function renderCommonMarkIssue({
     '## **预期结果**',
     '',
     `- **规范语义**：全部 ${summary.total} 条用例的最终 HTML/DOM 语义与 CommonMark 规范中的预期 HTML 一致。`,
-    '- **派生视觉**：在相同 Chromium、CSS、视口和字体环境中，预期 HTML 与 Supramark 实际 HTML 的截图一致。',
+    visualEnabled
+      ? '- **派生视觉**：在相同 Chromium、CSS、视口和字体环境中，预期 HTML 与 Supramark 实际 HTML 的截图一致。'
+      : '- **派生视觉**：本次未执行视觉测试，无法判断截图是否一致。',
     '',
     '> CommonMark 不规定 CSS 或产品主题；视觉层用于辅助发现最终 DOM、内容和结构差异。',
     '',
     '## **实际结果**',
     '',
-    `生产 Web Renderer DOM 语义通过 ${summary.passed}/${summary.total} 条；视觉通过 ${summary.visual.passed}/${summary.visual.total} 条。`,
+    visualEnabled
+      ? `生产 Web Renderer DOM 语义通过 ${summary.passed}/${summary.total} 条；视觉通过 ${summary.visual.passed}/${summary.visual.total} 条。`
+      : `语义通过 ${summary.passed}/${summary.total} 条；视觉测试未执行。`,
     '',
     ...renderCompleteResultsInstructions({ summary, workflowUrl }),
     '### 代表性失败用例',
@@ -123,6 +140,7 @@ export function renderCommonMarkIssue({
       testCase: caseById.get(representative.id),
       ast: astById.get(representative.id),
       actualHtml: actualHtmlById.get(representative.id),
+      visualEnabled,
     }));
   }
 
@@ -131,33 +149,46 @@ export function renderCommonMarkIssue({
     '### 下载包内容说明',
     '',
     '- `summary.md`：中文完整汇总。',
-    '- `report.html`：可筛选的视觉报告。',
+    visualEnabled ? '- `report.html`：可筛选的视觉报告。' : '- `report.html`：本次语义运行的 HTML 汇总报告。',
     '- `failures.json` / `visual-failures.json`：机器可读明细。',
     '- `evidence/<用例 ID>/`：实际 AST、实际 HTML、预期及实际语义树。',
-    '- `visual/<用例 ID>/`：预期、实际与像素差异图片。',
+    ...(visualEnabled ? ['- `visual/<用例 ID>/`：预期、实际与像素差异图片。'] : []),
     ...(workflowUrl ? [`- [打开 Actions 运行并下载完整 artifact](${workflowUrl})。`] : []),
     '',
     `自动生成时间：${summary.generatedAt}`,
     ''
   );
-  return `${lines.join('\n')}\n`;
+  return `${lines.join('\n')}\n`
+    .replaceAll('CommonMark', sourceDisplayName)
+    .replaceAll('commonmark', sourceName);
 }
 
 function renderCompleteResultsInstructions({ summary, workflowUrl }) {
+  const visualEnabled = summary.visual?.enabled === true;
+  const comparisonScope = visualEnabled ? '语义与视觉' : '语义';
+  const packageDescription = visualEnabled
+    ? `Issue 正文只展示 ${REPRESENTATIVE_LIMIT} 个代表性失败用例。完整测试包包含 ${summary.total} 条用例的汇总、全部语义失败明细、全部视觉失败明细、截图和逐用例证据。`
+    : `Issue 正文只展示 ${REPRESENTATIVE_LIMIT} 个代表性失败用例。完整测试包包含 ${summary.total} 条用例的汇总、全部语义失败明细和逐用例证据；视觉测试未执行，因此不包含视觉截图。`;
   const openRunStep = workflowUrl
     ? `1. 打开[本次 GitHub Actions 运行记录](${workflowUrl})。即使工作流最终显示失败，报告 artifact 仍会在运行记录中上传。`
-    : '1. 打开仓库的 **Actions** 页面，进入本次 **CommonMark 语义与视觉对照验证**运行记录。';
+    : `1. 打开仓库的 **Actions** 页面，进入本次 **CommonMark ${comparisonScope}对照验证**运行记录。`;
   return [
     '## **下载并查看全部测试结果**',
     '',
-    `Issue 正文只展示 ${REPRESENTATIVE_LIMIT} 个代表性失败用例。完整测试包包含 ${summary.total} 条用例的汇总、全部语义失败明细、全部视觉失败明细、截图和逐用例证据。`,
+    packageDescription,
     '',
     openRunStep,
     '2. 在运行记录的 **Summary** 页面滚动到最下方，找到 **Artifacts** 区域。',
     '3. 点击并下载名为 **`commonmark-conformance-report`** 的 artifact；浏览器会下载一个 ZIP 文件。',
-    '4. 将 ZIP **完整解压到同一个目录**。不要只复制或移动 `report.html`，否则其中引用的 `visual/` 截图和 `evidence/` 证据可能无法显示。',
-    '5. 双击解压目录根部的 **`report.html`**，即可在浏览器中查看中文汇总、筛选全部视觉失败用例，并对照预期图、实际图和差异图。',
-    '6. 打开 **`summary.md`** 查看全部语义和视觉失败清单；需要逐条检查时，再进入 **`evidence/<用例 ID>/`** 查看 Markdown、预期/实际 HTML、AST 和归一化语义树。',
+    visualEnabled
+      ? '4. 将 ZIP **完整解压到同一个目录**。不要只复制或移动 `report.html`，否则其中引用的 `visual/` 截图和 `evidence/` 证据可能无法显示。'
+      : '4. 将 ZIP **完整解压到同一个目录**。不要只复制或移动 `report.html`，否则其中引用的 `evidence/` 证据可能无法显示。',
+    visualEnabled
+      ? '5. 双击解压目录根部的 **`report.html`**，即可在浏览器中查看中文汇总、筛选全部视觉失败用例，并对照预期图、实际图和差异图。'
+      : '5. 双击解压目录根部的 **`report.html`**，即可在浏览器中查看本次语义运行汇总。',
+    visualEnabled
+      ? '6. 打开 **`summary.md`** 查看全部语义和视觉失败清单；需要逐条检查时，再进入 **`evidence/<用例 ID>/`** 查看 Markdown、预期/实际 HTML、AST 和归一化语义树。'
+      : '6. 打开 **`summary.md`** 查看全部语义失败清单；需要逐条检查时，再进入 **`evidence/<用例 ID>/`** 查看 Markdown、预期/实际 HTML、AST 和归一化语义树。',
     '',
     '### 本地打开示例',
     '',
@@ -217,7 +248,7 @@ function renderBaselineDelta(baseline) {
   return lines;
 }
 
-function renderRepresentative({ representative, testCase, ast, actualHtml }) {
+function renderRepresentative({ representative, testCase, ast, actualHtml, visualEnabled }) {
   const { semantic, visual } = representative;
   const expectedSemantic = testCase ? htmlToSemanticTree(testCase.expected.html) : null;
   const actualSemantic = actualHtml === undefined ? null : htmlToSemanticTree(actualHtml);
@@ -234,7 +265,7 @@ function renderRepresentative({ representative, testCase, ast, actualHtml }) {
     `| 规范位置 | ${upstreamUrl ? `[${escapeTableCell(`${testCase.source.path} L${testCase.source.startLine}–L${testCase.source.endLine}`)}](${upstreamUrl})` : '-'} |`,
     `| 语义类型 | 预期：${inlineCodeList(semantic?.expectedSemanticTypes)}；实际：${inlineCodeList(semantic?.actualSemanticTypes)} |`,
     `| 首个差异 | ${semantic?.difference ? `\`${escapeTableCell(semantic.difference.path)}\`（${escapeTableCell(semantic.difference.reason)}）` : '-'} |`,
-    `| 视觉差异 | ${visual ? `${visual.diffPixels ?? '-'} px / ${formatPercent(visual.diffRatio)}` : '无视觉失败'} |`,
+    `| 视觉差异 | ${visual ? `${visual.diffPixels ?? '-'} px / ${formatPercent(visual.diffRatio)}` : visualEnabled ? '无视觉失败' : '未执行视觉测试'} |`,
     `| 证据目录 | ${evidence ? `\`${escapeTableCell(evidence.directory)}\`` : '-'} |`,
     '',
   ];

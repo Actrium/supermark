@@ -1,8 +1,13 @@
-name: CommonMark 语义与视觉对照验证
+name: Markdown 语义与视觉对照验证
 
 on:
   workflow_dispatch:
     inputs:
+      sources:
+        description: "执行的数据源（逗号分隔：commonmark,cmark-gfm；或 all）"
+        type: string
+        required: true
+        default: "all"
       create_issue:
         description: "失败后创建或更新 Issue"
         type: boolean
@@ -15,6 +20,11 @@ on:
         description: "存在未通过用例时将工作流标记为失败"
         type: boolean
         default: true
+      gate_mode:
+        description: "Gate: regression (fail only on new failures vs baseline) or absolute (fail on any)"
+        type: choice
+        options: [regression, absolute]
+        default: regression
       issue_repository:
         description: "Issue 目标仓库（owner/repo，留空使用当前仓库）"
         type: string
@@ -22,7 +32,7 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - ".github/workflows/commonmark-conformance.yml"
+      - ".github/workflows/markdown-conformance.yml"
       - "tests/cases/**"
       - "tests/markdown-conformance/**"
       - "crates/supramark-markdown/**"
@@ -38,7 +48,7 @@ on:
   # check and the run artifacts, and never open or update an issue.
   pull_request:
     paths:
-      - ".github/workflows/commonmark-conformance.yml"
+      - ".github/workflows/markdown-conformance.yml"
       - "tests/cases/**"
       - "tests/markdown-conformance/**"
       - "crates/supramark-markdown/**"
@@ -50,27 +60,60 @@ permissions:
   issues: write
 
 concurrency:
-  group: commonmark-conformance-${{ github.ref }}
+  group: markdown-conformance-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  commonmark-conformance:
-    name: 导入并对照 CommonMark 规范用例（语义与视觉）
+  resolve-sources:
+    name: 解析待测试数据源
+    runs-on: ubuntu-latest
+    outputs:
+      sources: ${{ steps.resolve.outputs.sources }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 校验并解析数据源
+        id: resolve
+        env:
+          REQUESTED_SOURCES: ${{ github.event_name == 'workflow_dispatch' && inputs.sources || vars.MARKDOWN_CONFORMANCE_SOURCES || 'all' }}
+        shell: bash
+        run: |
+          sources="$(node tests/markdown-conformance/scripts/resolve-sources.mjs "$REQUESTED_SOURCES")"
+          echo "sources=$sources" >> "$GITHUB_OUTPUT"
+          echo "selected_sources=$sources"
+
+  markdown-conformance:
+    name: ${{ matrix.source }} 语义与视觉对照
+    needs: resolve-sources
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        source: ${{ fromJSON(needs.resolve-sources.outputs.sources) }}
     env:
-      CREATE_ISSUE: ${{ github.event_name == 'workflow_dispatch' && inputs.create_issue || (github.event_name != 'workflow_dispatch' && vars.COMMONMARK_AUTO_ISSUE != 'false') }}
-      RUN_VISUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.run_visual || (github.event_name != 'workflow_dispatch' && vars.COMMONMARK_RUN_VISUAL != 'false') }}
-      FAIL_WORKFLOW: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_workflow || (github.event_name != 'workflow_dispatch' && vars.COMMONMARK_FAIL_WORKFLOW != 'false') }}
-      ISSUE_REPOSITORY: ${{ inputs.issue_repository || vars.COMMONMARK_ISSUE_REPOSITORY || github.repository }}
+      SOURCE_NAME: ${{ matrix.source }}
+      CREATE_ISSUE: ${{ github.event_name == 'workflow_dispatch' && inputs.create_issue || (github.event_name != 'workflow_dispatch' && vars.MARKDOWN_CONFORMANCE_AUTO_ISSUE != 'false' && vars.COMMONMARK_AUTO_ISSUE != 'false') }}
+      RUN_VISUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.run_visual || (github.event_name != 'workflow_dispatch' && vars.MARKDOWN_CONFORMANCE_RUN_VISUAL != 'false' && vars.COMMONMARK_RUN_VISUAL != 'false') }}
+      FAIL_WORKFLOW: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_workflow || (github.event_name != 'workflow_dispatch' && vars.MARKDOWN_CONFORMANCE_FAIL_WORKFLOW != 'false' && vars.COMMONMARK_FAIL_WORKFLOW != 'false') }}
+      ISSUE_REPOSITORY: ${{ inputs.issue_repository || vars.MARKDOWN_CONFORMANCE_ISSUE_REPOSITORY || vars.COMMONMARK_ISSUE_REPOSITORY || github.repository }}
+      CONFORMANCE_GATE: ${{ github.event_name == 'workflow_dispatch' && inputs.gate_mode || 'regression' }}
 
     steps:
       - name: 显示运行配置
         run: |
+          echo "source=$SOURCE_NAME"
           echo "create_issue=$CREATE_ISSUE"
           echo "run_visual=$RUN_VISUAL"
           echo "fail_workflow=$FAIL_WORKFLOW"
           echo "issue_repository=$ISSUE_REPOSITORY"
+          echo "gate=$CONFORMANCE_GATE"
 
       - name: 检出代码
         uses: actions/checkout@v4
@@ -97,14 +140,14 @@ jobs:
       - name: 配置 Rust
         uses: dtolnay/rust-toolchain@1.97.0
 
-      - name: 导入锁定的 CommonMark 数据源
-        run: node tests/markdown-conformance/scripts/import.mjs commonmark
+      - name: 导入锁定的数据源
+        run: node tests/markdown-conformance/scripts/import.mjs "$SOURCE_NAME"
 
       - name: 校验统一 JSON 用例
-        run: node tests/markdown-conformance/scripts/validate.mjs commonmark
+        run: node tests/markdown-conformance/scripts/validate.mjs "$SOURCE_NAME"
 
       - name: 检查导入产物可重复
-        run: git diff --exit-code -- tests/cases/_fixtures/commonmark/
+        run: git diff --exit-code -- "tests/cases/_fixtures/$SOURCE_NAME/"
 
       - name: 运行 Markdown parser 回归测试
         run: cargo test -p supramark-markdown --test public_api
@@ -112,7 +155,7 @@ jobs:
       - name: 构建 Supramark Markdown CLI
         run: cargo build -p supramark-markdown --bin supramark-markdown
 
-      - name: 执行 CommonMark 对照
+      - name: 执行语义与视觉对照
         id: conformance_test
         continue-on-error: true
         env:
@@ -120,27 +163,27 @@ jobs:
         shell: bash
         run: |
           if [ "$RUN_VISUAL" = "true" ]; then
-            node tests/markdown-conformance/scripts/run-commonmark-visual.mjs
+            node tests/markdown-conformance/scripts/run-visual.mjs "$SOURCE_NAME"
           else
-            node tests/markdown-conformance/scripts/run-commonmark.mjs
+            node tests/markdown-conformance/scripts/run.mjs "$SOURCE_NAME"
           fi
 
       - name: 上传中文报告与失败详情
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: commonmark-conformance-report
-          path: tests/markdown-conformance/artifacts/commonmark/
+          name: markdown-conformance-${{ matrix.source }}
+          path: tests/markdown-conformance/artifacts/${{ matrix.source }}/
           if-no-files-found: error
           retention-days: 30
 
       - name: 自动创建或更新失败 Issue
         if: steps.conformance_test.outcome == 'failure' && github.event_name != 'pull_request' && env.CREATE_ISSUE == 'true'
         env:
-          GH_TOKEN: ${{ secrets.COMMONMARK_ISSUE_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.MARKDOWN_CONFORMANCE_ISSUE_TOKEN || secrets.COMMONMARK_ISSUE_TOKEN || github.token }}
           GH_REPO: ${{ env.ISSUE_REPOSITORY }}
-          ISSUE_BODY: tests/markdown-conformance/artifacts/commonmark/issue.md
-          ISSUE_METADATA: tests/markdown-conformance/artifacts/commonmark/issue-metadata.json
+          ISSUE_BODY: tests/markdown-conformance/artifacts/${{ matrix.source }}/issue.md
+          ISSUE_METADATA: tests/markdown-conformance/artifacts/${{ matrix.source }}/issue-metadata.json
         shell: bash
         run: |
           mapfile -t issue_metadata < <(
@@ -181,10 +224,21 @@ jobs:
               continue
             fi
             if ! grep -Fqx -- "$issue_label" <<< "$existing_labels"; then
-              gh label create "$issue_label" \
+              if ! gh label create "$issue_label" \
                 --repo "$GH_REPO" \
                 --color "d73a4a" \
-                --description "测试发现需要修复的问题"
+                --description "测试发现需要修复的问题"; then
+                if ! gh label list \
+                  --repo "$GH_REPO" \
+                  --limit 1000 \
+                  --json name \
+                  --jq '.[].name' \
+                  | grep -Fqx -- "$issue_label"; then
+                  echo "无法创建或确认 Issue 标签：$issue_label"
+                  exit 1
+                fi
+                echo "Issue 标签已由并行任务创建：$issue_label"
+              fi
             fi
           done
 
@@ -222,5 +276,5 @@ jobs:
       - name: 标记语义或视觉对照失败
         if: always() && steps.conformance_test.outcome == 'failure' && env.FAIL_WORKFLOW == 'true'
         run: |
-          echo "CommonMark 语义或视觉对照存在未通过用例，中文报告和 Issue 内容已生成。"
+          echo "$SOURCE_NAME 语义或视觉对照存在未通过用例，中文报告和 Issue 内容已生成。"
           exit 1

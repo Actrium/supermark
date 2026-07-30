@@ -4,9 +4,13 @@ import { fileURLToPath } from 'node:url';
 
 const SUITE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPOSITORY_ROOT = path.resolve(SUITE_ROOT, '..', '..');
-const artifactDirectory = path.join(SUITE_ROOT, 'artifacts', 'commonmark');
-const baselinePath = path.join(SUITE_ROOT, 'baselines', 'commonmark.json');
-const fixtureDirectory = path.join(REPOSITORY_ROOT, 'tests', 'cases', '_fixtures', 'commonmark');
+const sourceName = process.argv[2];
+if (!sourceName || !/^[a-z0-9][a-z0-9-]*$/.test(sourceName)) {
+  throw new Error('Usage: node tests/markdown-conformance/scripts/update-baseline.mjs <source-name>');
+}
+const artifactDirectory = path.join(SUITE_ROOT, 'artifacts', sourceName);
+const baselinePath = path.join(SUITE_ROOT, 'baselines', `${sourceName}.json`);
+const fixtureDirectory = path.join(REPOSITORY_ROOT, 'tests', 'cases', '_fixtures', sourceName);
 
 const [summary, semanticFailures, visualFailures, version] = await Promise.all([
   readJson(path.join(artifactDirectory, 'summary.json')),
@@ -15,6 +19,9 @@ const [summary, semanticFailures, visualFailures, version] = await Promise.all([
   readJson(path.join(fixtureDirectory, 'version.json')),
 ]);
 
+if (summary.source !== sourceName || version.source !== sourceName) {
+  throw new Error(`Source mismatch: argument ${sourceName}, report ${summary.source}, version ${version.source}`);
+}
 if (summary.total !== version.caseCount) {
   throw new Error(`拒绝更新部分运行基线：报告 ${summary.total} 条，数据源 ${version.caseCount} 条。`);
 }
@@ -27,7 +34,7 @@ if (summary.sourceCommit !== version.commit) {
 
 const baseline = {
   schemaVersion: 2,
-  source: 'commonmark',
+  source: sourceName,
   sourceVersion: version.version,
   sourceCommit: version.commit,
   caseCount: version.caseCount,
@@ -40,7 +47,7 @@ const baseline = {
 await mkdir(path.dirname(baselinePath), { recursive: true });
 await writeFile(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`, 'utf8');
 console.log(
-  `已更新 CommonMark 批准基线：语义 ${baseline.semanticFailureIds.length} 条，视觉 ${baseline.visualFailureIds.length} 条 -> ${baselinePath}`
+  `Updated ${summary.sourceDisplayName ?? sourceName} baseline: semantic ${baseline.semanticFailureIds.length}, visual ${baseline.visualFailureIds.length} -> ${baselinePath}`
 );
 
 async function readJson(filePath) {
