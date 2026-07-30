@@ -352,6 +352,8 @@ fn create_parser(options: ParseOptions) -> MarkdownParser {
     if options.gfm_strikethrough {
         crate::plugins::extra::strikethrough::add(&mut md);
     }
+    // GFM autolink extension: bare www./scheme-URL/email linkification.
+    crate::plugins::extra::gfm_autolink::add(&mut md);
 
     md
 }

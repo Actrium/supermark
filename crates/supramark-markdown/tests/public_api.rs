@@ -141,6 +141,117 @@ fn first_text(nodes: &[SupramarkNode]) -> &str {
     }
 }
 
+// GFM autolink extension (cmark-gfm 0.29 conformance, spec-0621..0631 +
+// extensions-0019). Bare www./scheme-URL/email text is linkified into a Link
+// node whose child text is the raw matched substring, mirroring cmark-gfm's
+// postprocess pass. See issue #144.
+fn first_link(nodes: &[SupramarkNode]) -> (&str, &str) {
+    match &nodes[0] {
+        SupramarkNode::Paragraph { children, .. } => first_link(children),
+        SupramarkNode::Link { url, children, .. } => {
+            let SupramarkNode::Text { value, .. } = &children[0] else {
+                panic!("expected text child, got {:?}", children);
+            };
+            (url, value)
+        }
+        _ => panic!("expected link, got {:?}", nodes[0]),
+    }
+}
+
+#[test]
+fn gfm_autolink_www_basic() {
+    // spec-0621: `www.commonmark.org` -> <a href="http://www.commonmark.org">www.commonmark.org</a>
+    let ast = parse("www.commonmark.org\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let (url, text) = first_link(&children);
+    assert_eq!(url, "http://www.commonmark.org");
+    assert_eq!(text, "www.commonmark.org");
+}
+
+#[test]
+fn gfm_autolink_www_paren_balancing() {
+    // spec-0624: parens inside the path are kept, a trailing unmatched `)` is stripped.
+    let ast = parse("www.google.com/search?q=Markup+(business))\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let (url, _text) = first_link(&children);
+    assert_eq!(url, "http://www.google.com/search?q=Markup+(business)");
+}
+
+#[test]
+fn gfm_autolink_www_lt_truncation() {
+    // spec-0627: `www.commonmark.org/he<lp` -> URL ends at `<`.
+    let ast = parse("www.commonmark.org/he<lp\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let (url, _text) = first_link(&children);
+    assert_eq!(url, "http://www.commonmark.org/he");
+}
+
+#[test]
+fn gfm_autolink_scheme_url() {
+    // spec-0628: bare http://, https://, ftp:// URLs are linkified.
+    let ast = parse("https://encrypted.google.com/search?q=Markup+(business)\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let (url, _text) = first_link(&children);
+    assert_eq!(
+        url,
+        "https://encrypted.google.com/search?q=Markup+(business)"
+    );
+}
+
+#[test]
+fn gfm_autolink_email_basic() {
+    // spec-0629: `foo@bar.baz` -> mailto: link.
+    let ast = parse("foo@bar.baz\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let (url, text) = first_link(&children);
+    assert_eq!(url, "mailto:foo@bar.baz");
+    assert_eq!(text, "foo@bar.baz");
+}
+
+#[test]
+fn gfm_autolink_email_trailing_punct_stripped() {
+    // spec-0631: trailing `.`, `-`, `_` after the domain are not part of the link.
+    let ast = parse("foo@bar.baz/_test_link\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let (url, _text) = first_link(&children);
+    assert_eq!(url, "mailto:foo@bar.baz");
+}
+
+#[test]
+fn gfm_autolink_does_not_linkify_inside_link() {
+    // Text already inside a markdown link must not be re-linkified (cmark-gfm
+    // postprocess skips CMARK_NODE_LINK). `[x](http://a.b)` keeps the link text
+    // `x` verbatim.
+    let ast = parse("[click www.example.com](http://x.y)\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    let SupramarkNode::Link { children: link_children, .. } = &children[0] else {
+        panic!("expected link, got {:?}", children[0]);
+    };
+    // The link text is the single literal `click www.example.com` — no nested
+    // autolink child.
+    assert!(link_children.iter().all(|c| !matches!(
+        c,
+        SupramarkNode::Link { .. }
+    )));
+}
+
 #[test]
 fn public_api_maps_opaque_map_container() {
     let source =
