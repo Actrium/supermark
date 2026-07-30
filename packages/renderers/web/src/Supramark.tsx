@@ -1169,7 +1169,7 @@ function renderNode(
       // cmark-gfm splits the leading header row(s) into <thead> and the rest
       // into <tbody>. A header-only table (no body rows) emits <thead> only.
       const table = node;
-      const rows = table.children as Array<typeof table.children[number]>;
+      const rows = table.children;
       let firstBodyRow = rows.findIndex(
         (row) => !(row as { children?: Array<{ header?: boolean }> }).children?.[0]?.header
       );
