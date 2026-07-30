@@ -11,9 +11,9 @@ function extractInnerText(ctx: ContainerHookContext): string {
   return sourceLines.slice(innerStart, innerEnd).join('\n');
 }
 
-// 注册 HTML Page 容器 hook：
+// Register the HTML Page container hook:
 // - name: 'html'
-// - opaque: true（容器内部 token 不再进入默认 AST 构建流程）
+// - opaque: true (tokens inside the container no longer enter the default AST build flow)
 registerContainerHook({
   name: 'html',
   opaque: true,

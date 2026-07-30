@@ -1,7 +1,7 @@
 //! supramark-diagram: a facade assembling the four engines into a ready-to-use
 //! [`DiagramRegistry`].
 //!
-//! See the design in `docs/architecture/diagram-semantic-ast-impl-plan.md`.
+//! See the design in `docs/architecture/diagram-semantic-ast-impl-plan.zh.md`.
 //! This crate is the sole "assembly point" depending on both the trait core and
 //! the four engines; `supramark-markdown` stays lightweight and depends on no
 //! engine, and downstream code that needs semantics holds this crate's registry

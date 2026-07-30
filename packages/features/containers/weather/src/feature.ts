@@ -1,7 +1,7 @@
 /**
- * Weather Feature 定义
+ * Weather Feature definition
  *
- * 实现 ContainerFeature 接口，提供天气卡片容器。
+ * Implements the ContainerFeature interface, providing a weather card container.
  *
  * @example
  * ```markdown
@@ -36,51 +36,51 @@ import {
 } from '@supramark/core';
 
 // ============================================================================
-// 容器名称定义（唯一事实来源）
+// Container name definition (single source of truth)
 // ============================================================================
 
 /**
- * Weather 支持的容器名称
+ * Container names supported by Weather
  */
 export const WEATHER_CONTAINER_NAMES = ['weather'] as const;
 
 export type WeatherContainerName = (typeof WEATHER_CONTAINER_NAMES)[number];
 
 /**
- * 支持的配置格式
+ * Supported config formats
  *
- * - json: 标准 JSON 格式
- * - yaml: YAML 格式（默认，最友好）
- * - toon: 紧凑表格式格式，如 `key[n]{fields}: val1,val2,...`
+ * - json: standard JSON format
+ * - yaml: YAML format (default, most readable)
+ * - toon: compact tabular format, e.g. `key[n]{fields}: val1,val2,...`
  */
 export type WeatherConfigFormat = 'json' | 'yaml' | 'toon';
 
 /**
- * Weather 节点数据结构
+ * Weather node data structure
  */
 export interface WeatherData {
-  /** 配置格式 */
+  /** Config format */
   format: WeatherConfigFormat;
-  /** 位置/城市 */
+  /** Location / city */
   location?: string;
-  /** 温度单位: metric(摄氏) / imperial(华氏) */
+  /** Temperature unit: metric (Celsius) / imperial (Fahrenheit) */
   units?: 'metric' | 'imperial';
-  /** 是否显示预报 */
+  /** Whether to show the forecast */
   showForecast?: boolean;
-  /** 天数（预报） */
+  /** Number of forecast days */
   days?: number;
-  /** 原始配置文本（解析失败时保留） */
+  /** Raw config text (kept when parsing fails) */
   rawConfig?: string;
-  /** 解析错误信息 */
+  /** Parse error message */
   parseError?: string;
 }
 
 // ============================================================================
-// 配置解析
+// Config parsing
 // ============================================================================
 
 /**
- * 解析 JSON 配置
+ * Parse JSON config
  */
 function parseJsonConfig(content: string): Partial<WeatherData> {
   try {
@@ -92,12 +92,12 @@ function parseJsonConfig(content: string): Partial<WeatherData> {
       days: obj.days as number | undefined,
     };
   } catch (e) {
-    return { parseError: `JSON 解析错误: ${(e as Error).message}` };
+    return { parseError: `JSON parse error: ${(e as Error).message}` };
   }
 }
 
 /**
- * 解析 YAML 配置（简单实现，支持基本 key: value 格式）
+ * Parse YAML config (simple implementation, supports basic key: value format)
  */
 function parseYamlConfig(content: string): Partial<WeatherData> {
   try {
@@ -111,7 +111,7 @@ function parseYamlConfig(content: string): Partial<WeatherData> {
         const [, key, rawValue] = match;
         let value: unknown = rawValue;
 
-        // 类型转换
+        // Type coercion
         if (rawValue === 'true') value = true;
         else if (rawValue === 'false') value = false;
         else if (/^-?\d+$/.test(rawValue)) value = parseInt(rawValue, 10);
@@ -132,16 +132,16 @@ function parseYamlConfig(content: string): Partial<WeatherData> {
       days: result.days as number | undefined,
     };
   } catch (e) {
-    return { parseError: `YAML 解析错误: ${(e as Error).message}` };
+    return { parseError: `YAML parse error: ${(e as Error).message}` };
   }
 }
 
 /**
- * 解析 TOON 配置
+ * Parse TOON config
  *
- * TOON 是一种紧凑的表格式数据格式：
- * - 简单 key:value 格式（每行一个）
- * - 数组格式: `key[count]{field1,field2}: val1,val2`
+ * TOON is a compact tabular data format:
+ * - Simple key:value format (one per line)
+ * - Array format: `key[count]{field1,field2}: val1,val2`
  *
  * @example
  * ```
@@ -169,7 +169,7 @@ function parseToonConfig(content: string): Partial<WeatherData> {
 
       if (!line || line.startsWith('#')) continue;
 
-      // 尝试匹配数组格式: key[count]{fields}:
+      // Try to match array format: key[count]{fields}:
       const arrayMatch = line.match(/^([\w_]+)\[(\d+)\]\{([^}]+)\}:\s*$/);
       if (arrayMatch) {
         const [, key, countStr, fieldsStr] = arrayMatch;
@@ -177,12 +177,12 @@ function parseToonConfig(content: string): Partial<WeatherData> {
         const fields = fieldsStr.split(',').map(f => f.trim());
         const items: Record<string, unknown>[] = [];
 
-        // 读取接下来的 count 行数据
+        // Read the next `count` data lines
         for (let j = 0; j < count && i < lines.length; j++) {
           const dataLine = lines[i].trim();
           i++;
           if (!dataLine) {
-            j--; // 跳过空行
+            j--; // Skip blank lines
             continue;
           }
 
@@ -190,7 +190,7 @@ function parseToonConfig(content: string): Partial<WeatherData> {
           const item: Record<string, unknown> = {};
           fields.forEach((field, idx) => {
             let val: unknown = values[idx] ?? '';
-            // 类型转换
+            // Type coercion
             if (val === 'true') val = true;
             else if (val === 'false') val = false;
             else if (typeof val === 'string' && /^-?\d+$/.test(val)) val = parseInt(val, 10);
@@ -204,13 +204,13 @@ function parseToonConfig(content: string): Partial<WeatherData> {
         continue;
       }
 
-      // 简单 key: value 格式
+      // Simple key: value format
       const kvMatch = line.match(/^([\w_]+):\s*(.*)$/);
       if (kvMatch) {
         const [, key, rawValue] = kvMatch;
         let value: unknown = rawValue;
 
-        // 类型转换
+        // Type coercion
         if (rawValue === 'true') value = true;
         else if (rawValue === 'false') value = false;
         else if (/^-?\d+$/.test(rawValue)) value = parseInt(rawValue, 10);
@@ -227,12 +227,12 @@ function parseToonConfig(content: string): Partial<WeatherData> {
       days: result.days as number | undefined,
     };
   } catch (e) {
-    return { parseError: `TOON 解析错误: ${(e as Error).message}` };
+    return { parseError: `TOON parse error: ${(e as Error).message}` };
   }
 }
 
 /**
- * 根据格式解析配置内容
+ * Parse config content based on format
  */
 function parseConfig(content: string, format: WeatherConfigFormat): Partial<WeatherData> {
   switch (format) {
@@ -248,7 +248,7 @@ function parseConfig(content: string, format: WeatherConfigFormat): Partial<Weat
 }
 
 /**
- * 从 token.info 解析格式参数
+ * Parse the format argument from token.info
  */
 function parseFormat(info: string): WeatherConfigFormat {
   const parts = (info || '').trim().split(/\s+/).filter(Boolean);
@@ -258,12 +258,12 @@ function parseFormat(info: string): WeatherConfigFormat {
       return format;
     }
   }
-  // 默认 yaml（最友好）
+  // Default to yaml (most readable)
   return 'yaml';
 }
 
 // ============================================================================
-// 解析逻辑
+// Parsing logic
 // ============================================================================
 
 function createWeatherContainerHook(name: string): ContainerHook {
@@ -274,10 +274,10 @@ function createWeatherContainerHook(name: string): ContainerHook {
       const { token, stack, sourceLines } = ctx;
       const format = parseFormat(token.info || '');
 
-      // 提取容器内容
+      // Extract container content
       const innerText = extractContainerInnerText(token, sourceLines);
 
-      // 解析配置
+      // Parse config
       const parsed = parseConfig(innerText, format);
 
       const data: WeatherData = {
@@ -312,7 +312,7 @@ function createWeatherContainerHook(name: string): ContainerHook {
 }
 
 /**
- * 注册 Weather 解析器
+ * Register the Weather parser
  */
 function registerWeatherParser(): void {
   for (const name of WEATHER_CONTAINER_NAMES) {
@@ -321,19 +321,19 @@ function registerWeatherParser(): void {
 }
 
 // ============================================================================
-// Feature 定义（实现 ContainerFeature 接口）
+// Feature definition (implements the ContainerFeature interface)
 // ============================================================================
 
 /**
  * Weather Feature
  *
- * 天气卡片容器，支持 JSON/YAML/TOML 配置格式
+ * A weather card container, supporting JSON/YAML/TOML config formats
  */
 export const weatherFeature: ContainerFeature = {
   id: '@supramark/feature-weather',
   name: 'Weather',
   version: '0.1.0',
-  description: '天气卡片容器，支持 JSON/YAML/TOML 配置格式',
+  description: 'A weather card container, supporting JSON/YAML/TOML config formats',
 
   containerNames: [...WEATHER_CONTAINER_NAMES],
 

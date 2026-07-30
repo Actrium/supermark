@@ -10,10 +10,11 @@ export interface SupramarkInputToken {
 }
 
 /**
- * Input 语法处理上下文。
+ * Input syntax processing context.
  *
- * AST v2 的 %%% input 扫描已迁移到 Rust `supramark-markdown`。该上下文只保留给
- * 旧 feature runtime 编译和后处理迁移使用。
+ * Scanning for %%% input in AST v2 has moved to the Rust `supramark-markdown` crate.
+ * This context is kept only so old feature runtimes still compile, and for
+ * post-processing migration use.
  */
 export interface InputProcessorContext {
   config?: SupramarkConfig;
@@ -28,10 +29,10 @@ export interface InputHookContext extends InputProcessorContext {
 }
 
 export interface InputHook {
-  /** Input 块名称，对应 %%%name 中的 name。 */
+  /** The input block name, corresponding to `name` in %%%name. */
   name: string;
 
-  /** 历史字段；AST v2 使用节点上的 `mode` 表达透明/不透明。 */
+  /** A legacy field; AST v2 expresses transparent/opaque via the node's `mode`. */
   opaque?: boolean;
 
   onOpen: (ctx: InputHookContext) => void;
@@ -70,7 +71,7 @@ export function createInputProcessor(
 }
 
 /**
- * 从历史 token.map 信息中提取 input 内部原始文本。
+ * Extract the input block's raw inner text from legacy token.map information.
  */
 export function extractInputInnerText(token: SupramarkInputToken, sourceLines: string[]): string {
   if (!Array.isArray(token.map) || token.map.length !== 2) {

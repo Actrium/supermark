@@ -1,13 +1,13 @@
 /**
- * Supramark Feature 包的共享 Jest 配置 Preset
+ * Shared Jest config preset for Supramark Feature packages
  *
- * 用途：
- * - 为所有 Feature 包提供统一的测试配置
- * - 与 @supramark/core 的配置保持风格一致
- * - 减少各个包中的重复配置代码
+ * Purpose:
+ * - Provide a unified test configuration for all Feature packages
+ * - Keep style consistent with @supramark/core's configuration
+ * - Reduce duplicated configuration code across packages
  *
- * 使用方式：
- * 在 Feature 包的 jest.config.cjs 中：
+ * Usage:
+ * In a Feature package's jest.config.cjs:
  * ```javascript
  * module.exports = {
  *   ...require('../../jest.preset.cjs'),
@@ -17,14 +17,14 @@
 
 module.exports = {
   preset: 'ts-jest',
-  // 使用自定义测试环境，预先设置 localStorage mock
+  // Use a custom test environment that pre-sets up a localStorage mock
   testEnvironment: '<rootDir>/../../jest-environment.cjs',
 
-  // 测试文件路径
+  // Test file paths
   roots: ['<rootDir>/src', '<rootDir>/__tests__'],
   testMatch: ['**/__tests__/**/*.test.ts', '**/?(*.)+(spec|test).ts'],
 
-  // TypeScript 和 JavaScript 转换配置
+  // TypeScript and JavaScript transform configuration
   transform: {
     '^.+\\.ts$': [
       'ts-jest',
@@ -33,13 +33,13 @@ module.exports = {
           module: 'commonjs',
           esModuleInterop: true,
         },
-        // 忽略类型错误（特别是第三方库的类型定义缺失）
+        // Ignore type errors (especially missing type definitions from third-party libraries)
         diagnostics: {
-          ignoreCodes: [7016], // 忽略 "Could not find a declaration file" 错误
+          ignoreCodes: [7016], // Ignore "Could not find a declaration file" errors
         },
       },
     ],
-    // 转换 node_modules 中的 ESM 模块（.js 文件）
+    // Transform ESM modules in node_modules (.js files)
     '^.+\\.js$': [
       'ts-jest',
       {
@@ -52,19 +52,19 @@ module.exports = {
     ],
   },
 
-  // 模块路径映射（用于解析 @supramark/core）
+  // Module path mapping (used to resolve @supramark/core)
   moduleNameMapper: {
     '^@supramark/core$': '<rootDir>/../core/src/index.ts',
-    // 处理 .js 扩展名（实际指向 .ts 文件）
+    // Handle the .js extension (which actually points to a .ts file)
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
 
-  // 允许转换少量仍以 ESM 发布的测试依赖。
+  // Allow transforming the small set of test dependencies still published as ESM.
   transformIgnorePatterns: [
     'node_modules/(?!(escape-string-regexp|@types)/)',
   ],
 
-  // 代码覆盖率配置
+  // Code coverage configuration
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
@@ -75,7 +75,7 @@ module.exports = {
     '/dist/',
   ],
 
-  // 可选：启用覆盖率收集（默认关闭，按需启用）
+  // Optional: enable coverage collection (off by default, enable as needed)
   // collectCoverage: false,
   // coverageDirectory: 'coverage',
   // coverageReporters: ['text', 'lcov'],

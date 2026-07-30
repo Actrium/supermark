@@ -1,8 +1,8 @@
 import type { SupramarkConfig } from './types.js';
 
 /**
- * 轻量校验器——不用 ajv，避免给 CLI 引一个大依赖。
- * 只做结构性检查 + 少量关键语义检查。
+ * Lightweight validator — avoids ajv so the CLI doesn't pull in a heavy dependency.
+ * Only performs structural checks plus a handful of key semantic checks.
  */
 
 export class ConfigError extends Error {

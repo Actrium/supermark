@@ -5,7 +5,7 @@
 - **Pinned commit (last subtree pull):** `c6dc26569f87632fcd2c7d66493acb6d56d83996`
 - **Pinned tag:** `v0.2.1` (released on crates.io / npm / GitHub Release)
 - **First subtree merge into supramark:** 2026-05-09 at `436fe2f` / `v0.1.7`
-- **Last subtree pull:** 2026-05-11 — 0.2.1 brings full iOS / Android-x86 / Linux-aarch64 / Windows-arm64 coverage in `build.rs`, scripts, and CI; also static `.a` alongside shared libs so `prebuilt/<target-triple>/` actually has content. 0.2.1 specifically fixes the Windows `graphviz_api_static.lib` merge (was 19 KB wrapper-only in 0.2.0, now 7 MB containing all 27 Graphviz `.lib`s + wrapper `.obj` via direct `lib.exe` invocation). Unblocks `plantuml-little` cross-compile for iOS + 4 Android ABI (see `docs/architecture/native-ffi-blockers.md` 阻塞 #1 + #4).
+- **Last subtree pull:** 2026-05-11 — 0.2.1 brings full iOS / Android-x86 / Linux-aarch64 / Windows-arm64 coverage in `build.rs`, scripts, and CI; also static `.a` alongside shared libs so `prebuilt/<target-triple>/` actually has content. 0.2.1 specifically fixes the Windows `graphviz_api_static.lib` merge (was 19 KB wrapper-only in 0.2.0, now 7 MB containing all 27 Graphviz `.lib`s + wrapper `.obj` via direct `lib.exe` invocation). Unblocks `plantuml-little` cross-compile for iOS + 4 Android ABI (see `docs/architecture/native-ffi-blockers.zh.md` 阻塞 #1 + #4).
 
 ## License relationship
 - **graphviz-anywhere wrapper code:** Apache-2.0 (see `LICENSE`).
@@ -14,7 +14,7 @@
 - **Graphviz upstream (the C library being wrapped):** EPL-1.0 / CPL-1.0
   - Lives at https://gitlab.com/graphviz/graphviz, registered as a git submodule at `graphviz/`.
   - Built artifacts (in `packages/rust/prebuilt/` after a release build, and embedded in `packages/web/dist/viz.js` wasm) are derivative works of Graphviz and inherit EPL-1.0 — distributed under EPL-1.0 only.
-  - Per ADR-002 in `docs/architecture/LICENSE_COMPATIBILITY.md`, EPL-1.0 boundaries are isolated to `graphviz/` and built artifact paths; never source-mixed with Apache files.
+  - Per ADR-002 in `docs/architecture/LICENSE_COMPATIBILITY.zh.md`, EPL-1.0 boundaries are isolated to `graphviz/` and built artifact paths; never source-mixed with Apache files.
 
 ## Relationship
 - [ ] reimplementation

@@ -14,5 +14,5 @@ export {
 
 export { mathExamples } from './examples.js';
 
-// 重新导出核心类型（方便用户使用）
+// Re-export core types (for user convenience)
 export type { SupramarkMathInlineNode, SupramarkMathBlockNode } from '@supramark/core';

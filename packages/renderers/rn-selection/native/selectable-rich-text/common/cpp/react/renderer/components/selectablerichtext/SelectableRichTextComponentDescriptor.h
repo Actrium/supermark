@@ -9,11 +9,11 @@ namespace facebook::react {
 
 extern const char TextLayoutManagerKey[];
 
-// SelectableRichTextComponentDescriptor 复用 RN Paragraph 的 TextLayoutManager 注入逻辑。
-// RN 0.83 的 ParagraphComponentDescriptor 是 final class，无法继承；
-// 0.85 起才有非 final 的 BaseParagraphComponentDescriptor 基类。
-// 这里直接继承 ConcreteComponentDescriptor 并把 ParagraphComponentDescriptor 的 adopt 搬过来，
-// 保持与 RN Paragraph 一致的文本测量和 state 行为。
+// SelectableRichTextComponentDescriptor reuses RN Paragraph's TextLayoutManager injection logic.
+// RN 0.83's ParagraphComponentDescriptor is a final class and can't be extended;
+// only starting in 0.85 is there a non-final BaseParagraphComponentDescriptor base class.
+// Here ConcreteComponentDescriptor is extended directly, and ParagraphComponentDescriptor's adopt
+// logic is ported over, to keep text measurement and state behavior consistent with RN Paragraph.
 class SelectableRichTextComponentDescriptor final
     : public ConcreteComponentDescriptor<SelectableRichTextShadowNode> {
  public:
@@ -24,7 +24,8 @@ class SelectableRichTextComponentDescriptor final
   }
 
  protected:
-  // adopt 在 shadow node 被创建后注入 TextLayoutManager，让 SelectableRichTextShadowNode 能测量文本。
+  // adopt injects the TextLayoutManager after the shadow node is created, letting
+  // SelectableRichTextShadowNode measure text.
   void adopt(ShadowNode &shadowNode) const override
   {
     ConcreteComponentDescriptor::adopt(shadowNode);
@@ -34,7 +35,7 @@ class SelectableRichTextComponentDescriptor final
   }
 
  private:
-  // 共享的 TextLayoutManager，负责文本测量和布局缓存。
+  // The shared TextLayoutManager, responsible for text measurement and layout caching.
   const std::shared_ptr<const TextLayoutManager> textLayoutManager_;
 };
 

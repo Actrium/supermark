@@ -12,7 +12,7 @@
 >
 > - `docs/FEATURE_INTERFACE_ENHANCEMENT.md`
 > - `docs/FEATURE_LIFECYCLE_AND_CONFIG.md`
-> - `docs/PLUGIN_SYSTEM.md`
+> - `docs/architecture/PLUGIN_SYSTEM.zh.md`
 > - `docs/CREATE_FEATURE_GUIDE.md`
 
 ---
@@ -32,7 +32,7 @@
 如果需要**新增节点类型**，记下后面要修改：
 
 - `packages/core/src/ast.ts`
-- `docs/architecture/ast-spec.md`
+- `docs/architecture/ast-spec.zh.md`
 
 ---
 
@@ -130,7 +130,7 @@ npm run build --workspace @supramark/feature-xxx
    - 把新类型加入 `SupramarkNodeType` union；
    - 定义对应 interface（如 `SupramarkHtmlPageNode`）；
    - 将其纳入 `SupramarkBlockNode` / `SupramarkInlineNode` 等 union 中。
-2. 在 `docs/architecture/ast-spec.md` 中补充节点说明与示例。
+2. 在 `docs/architecture/ast-spec.zh.md` 中补充节点说明与示例。
 
 如果只是复用现有节点（如 `diagram` 的新引擎），可以略过这一步。
 
@@ -144,7 +144,7 @@ parse(source: string): Promise<SupramarkRootNode>
 
 如果 Feature 需要新增 Markdown 语法识别，不在 TS 中注册 parser hook，而是在
 `crates/supramark-markdown` 中补充 rule / scanner / AST builder，并让输出继续符合
-`docs/architecture/ast-spec.md`。
+`docs/architecture/ast-spec.zh.md`。
 
 常见判断：
 
@@ -308,7 +308,7 @@ React Native / React Web 示例中通过菜单展示这些 demo。
 为新 Feature 补充文档：
 
 - `docs/features/xxx.md`：语法 / AST / 配置 / 示例；
-- 如涉及 AST 变更：更新 `docs/architecture/ast-spec.md`；
+- 如涉及 AST 变更：更新 `docs/architecture/ast-spec.zh.md`；
 - 如涉及 Feature 配置：在 `docs/FEATURE_LIFECYCLE_AND_CONFIG.md` 中补充；
 - 如有特殊运行时约束（例如 Html Page 需要宿主提供隔离页面容器），在文档中明确写出。
 

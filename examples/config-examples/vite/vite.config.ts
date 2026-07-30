@@ -2,58 +2,58 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 /**
- * Vite 配置示例 - Supramark 集成
+ * Vite config example - Supramark integration
  *
- * Supramark 开箱即用，无需特殊配置。
- * 以下是一些常见的优化配置。
+ * Supramark works out of the box with no special configuration.
+ * Below are some common optimization settings.
  */
 
 export default defineConfig({
   plugins: [react()],
 
-  // 开发服务器配置
+  // Dev server config
   server: {
     port: 5173,
-    open: true, // 自动打开浏览器
+    open: true, // Open the browser automatically
   },
 
-  // 构建优化
+  // Build optimization
   build: {
-    // 输出目录
+    // Output directory
     outDir: 'dist',
 
-    // 代码分割策略
+    // Code splitting strategy
     rollupOptions: {
       output: {
         manualChunks: {
-          // 将 React 相关库分离到单独的 chunk
+          // Split React and related libraries into their own chunk
           'react-vendor': ['react', 'react-dom'],
-          // 将 Supramark 分离到单独的 chunk（可选）
+          // Split Supramark into its own chunk (optional)
           'supramark': ['@supramark/web', '@supramark/core'],
         },
       },
     },
 
-    // 压缩配置
+    // Minification
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: true, // 生产环境移除 console.log
+        drop_console: true, // Strip console.log in production
       },
     },
 
-    // 生成 sourcemap（可选）
+    // Generate sourcemaps (optional)
     sourcemap: false,
   },
 
-  // 路径别名（可选）
+  // Path alias (optional)
   resolve: {
     alias: {
       '@': '/src',
     },
   },
 
-  // 优化依赖预构建
+  // Pre-bundle dependencies
   optimizeDeps: {
     include: ['@supramark/web', '@supramark/core'],
   },

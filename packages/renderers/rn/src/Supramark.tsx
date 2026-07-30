@@ -136,57 +136,64 @@ export interface ContainerRendererRN {
 }
 
 export interface SupramarkProps {
-  /** Markdown 源文本 */
+  /** Markdown source text */
   markdown: string;
-  /** 预解析的 AST（优先级高于 markdown） */
+  /** Pre-parsed AST (takes precedence over markdown) */
   ast?: SupramarkRootNode;
   /**
-   * 自定义样式（覆盖默认样式）。
+   * Custom styles (override the default styles).
    *
-   * 间距模型：块间距由 root.gap（默认 8）统一管理，不再使用每块的
-   * marginBottom。若自定义某块的 marginBottom（如 paragraph:12），
-   * 会与 root.gap 叠加 → 实际间距 20。如需完全自定义间距，
-   * 请同时设置 root: { gap: 0 }。
+   * Spacing model: inter-block spacing is managed uniformly by root.gap
+   * (default 8) instead of each block's marginBottom. Customizing a block's
+   * marginBottom (e.g. paragraph:12) stacks with root.gap → an effective
+   * spacing of 20. To fully customize spacing, also set root: { gap: 0 }.
    */
   styles?: SupramarkStyles;
   /**
-   * 主题：调整内容元素的前景色与元素装饰色（文字、代码块底、边框等），
-   * 使其在对应明暗的画布上可读。
+   * Theme: adjusts the foreground color and decoration colors of content
+   * elements (text, code block background, borders, etc.) so they stay
+   * readable on a canvas of the corresponding brightness.
    *
-   * - 'dark'：应用 darkThemeStyles（深色友好的前景/元素色）。
-   * - 'light'：使用默认（浅色）前景，等同于不传 theme。
-   * - 也可直接传入自定义 SupramarkStyles 作为主题。
+   * - 'dark': applies darkThemeStyles (dark-friendly foreground/decoration colors).
+   * - 'light': uses the default (light) foreground, equivalent to not passing theme.
+   * - You may also pass a custom SupramarkStyles object directly as the theme.
    *
-   * 重要：组件不在 root 上绘制画布背景。宿主必须为渲染容器提供与 theme
-   * 明暗配套的画布颜色（可用导出的 {@link themeBackground} 作为推荐值），
-   * 否则前景文字可能不可读 —— 例如 theme="dark" 时宿主容器应使用深色背景。
+   * Important: the component does not paint a canvas background on root. The
+   * host must provide a canvas color matching the theme's brightness for the
+   * rendering container (the exported {@link themeBackground} is a recommended
+   * value) — otherwise foreground text may become unreadable, e.g. when
+   * theme="dark" the host container should use a dark background.
    */
   theme?: 'light' | 'dark' | SupramarkStyles;
   /**
-   * Feature 配置（用于按需启用/禁用图表等扩展能力）。
-   * `options.cache` 是文档和图表缓存的全局默认值；更具体的 diagram policy 可覆盖它。
-   * 缓存按等价输入共享，不要求 config 对象引用在重挂载间保持不变。
+   * Feature configuration (used to enable/disable diagrams and other
+   * extension capabilities as needed).
+   * `options.cache` is the global default for the document and diagram
+   * caches; a more specific diagram policy can override it. The cache is
+   * shared by equivalent inputs and does not require the config object
+   * reference to stay stable across remounts.
    */
   config?: SupramarkConfig;
   /** Whether the Markdown source may still receive appended streaming content. */
   sourceState?: SupramarkSourceState;
-  /** 错误回调（可选） */
+  /** Error callback (optional) */
   onError?: (error: Error, errorInfo?: React.ErrorInfo) => void;
-  /** 自定义错误展示组件（可选） */
+  /** Custom error display component (optional) */
   errorFallback?: (error: ErrorInfo) => RenderedNode;
 
   /**
-   * Container 扩展渲染器注册表：node.type === 'container' 时按 node.name 委派。
+   * Container extension renderer registry: dispatched by node.name when
+   * node.type === 'container'.
    */
   containerRenderers?: Record<string, ContainerRendererRN>;
   codeHighlighter?: SupramarkCodeHighlighter;
   codeHighlightTheme?: string;
 
   /**
-   * 当用户点击 HTML Page 卡片时的回调。
+   * Callback invoked when the user taps an HTML Page card.
    *
-   * - node.data.html 为完整 HTML 内容；
-   * - 宿主可以在回调中打开新的页面 / Modal / 外部浏览器。
+   * - node.data.html holds the full HTML content;
+   * - the host may open a new page / modal / external browser from the callback.
    */
   onOpenHtmlPage?: (node: SupramarkContainerNode) => void;
 }
@@ -232,7 +239,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
   );
   const [parseError, setParseError] = useState<ErrorInfo | null>(null);
 
-  // 合并样式：theme -> customStyles -> defaultStyles
+  // Merge styles: theme -> customStyles -> defaultStyles
   const mergedStyles = useMemo(() => {
     let themeStyles: SupramarkStyles | undefined;
 
@@ -242,7 +249,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
       themeStyles = theme;
     }
 
-    // 如果同时提供了 theme 和 customStyles，customStyles 优先级更高
+    // When both theme and customStyles are provided, customStyles takes precedence
     const finalCustomStyles = {
       ...themeStyles,
       ...customStyles,
@@ -270,11 +277,13 @@ export const Supramark: React.FC<SupramarkProps> = ({
         // snapshots may be shared across instances and virtual-list remounts.
         const buildParsedDocument = async (): Promise<ParsedDocument> => {
           const parsed = ast ?? (await parse(markdown, { config }));
-          // Post-process：递归解析 opaque container 的 value。
-          // 新 AST v2 的 opaque container children 为空，正文在 value（原始 markdown）。
-          // Rust parser 不认 feature 插件 JS 侧注册的 registerContainerHook，
-          // 把所有 :::xxx 当 opaque 处理。这里在主组件异步上下文里把 value 解析成
-          // AST 子树填回 children，renderNode 就能正常渲染。
+          // Post-process: recursively parse opaque containers' value.
+          // In AST v2, opaque container children are empty; the body lives in
+          // value (the raw markdown). The Rust parser doesn't know about
+          // registerContainerHook registered on the JS-side feature plugins,
+          // so it treats every :::xxx as opaque. Here, in the main component's
+          // async context, we parse value into an AST subtree and fill it back
+          // into children so renderNode can render it normally.
           await expandOpaqueContainers(parsed);
           const highlightedMap = await preHighlightAll(
             collectCodeHighlightTasks(parsed.children, config, codeHighlightTheme),
@@ -312,14 +321,14 @@ export const Supramark: React.FC<SupramarkProps> = ({
           const err = error as Error;
           const errorInfo: ErrorInfo = {
             type: 'parse',
-            message: err.message || '解析 Markdown 失败',
+            message: err.message || 'Failed to parse Markdown',
             details: err.toString(),
             stack: err.stack,
           };
           setParseError(errorInfo);
           setParsedDocument(null);
 
-          // 调用错误回调
+          // Invoke the error callback
           if (onError) {
             onError(err);
           }
@@ -343,12 +352,14 @@ export const Supramark: React.FC<SupramarkProps> = ({
   ]);
 
   const mergedContainerRenderers = useMemo(() => {
-    // FeatureConfig 只描述启用状态与 options，不再携带 renderer 定义。
-    // container 渲染器需要由宿主显式注入，避免运行时隐式耦合到 feature 包实现。
+    // FeatureConfig only describes enabled state and options; it no longer
+    // carries a renderer definition. Container renderers must be injected
+    // explicitly by the host to avoid implicit runtime coupling to a
+    // feature package's implementation.
     return containerRenderers ?? {};
   }, [containerRenderers]);
 
-  // 解析错误降级：显示错误信息或原始 markdown
+  // Parse-error fallback: show the error info or the raw markdown
   if (parseError) {
     if (errorFallback) {
       return <>{errorFallback(parseError)}</>;
@@ -364,7 +375,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
   }
 
   if (!parsedDocument) {
-    // 解析中时的简单回退：直接显示原始 markdown 文本。
+    // Simple fallback while parsing: show the raw markdown text directly.
     return <Text>{markdown}</Text>;
   }
 
@@ -452,7 +463,7 @@ function renderNode(
     }
     case 'math_block': {
       const mathBlock = node;
-      // 如果禁用了 Math Feature，则降级为普通代码块展示原始 TeX
+      // If the Math feature is disabled, fall back to a plain code block showing raw TeX
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-math'])) {
         return renderDisabledMathBlock(mathBlock, key, styles);
       }
@@ -513,7 +524,7 @@ function renderNode(
     }
     case 'diagram': {
       const diagram = node;
-      // 如果配置中显式禁用了对应图表 Feature，则降级为代码块渲染
+      // If the config explicitly disables the corresponding diagram feature, fall back to code-block rendering
       if (!isDiagramFeatureEnabled(config, diagram.engine, 'rn:diagram-feature')) {
         return renderDisabledDiagram(diagram, key, styles);
       }
@@ -530,11 +541,13 @@ function renderNode(
       const container = node;
       const containerName = container.name;
 
-      // 纵向 block 容器：html 卡片（标题+提示）、未识别 container 的 block children。
-      // 不复用 styles.listItem —— 它是 row 布局，会把 block children 横向排列且无间距。
+      // Vertical block container: the html card (title + hint), and block
+      // children of unrecognized containers.
+      // Don't reuse styles.listItem — it's a row layout that would lay out
+      // block children horizontally with no spacing.
       const blockContainerStyle = { flexDirection: 'column' as const, gap: 8 };
 
-      // 检查是否有注册的自定义渲染器
+      // Check whether a custom renderer is registered
       if (containerRenderers && containerRenderers[containerName]) {
         return containerRenderers[containerName]({
           node: container,
@@ -559,20 +572,20 @@ function renderNode(
         });
       }
 
-      // 内置处理：map 类型
+      // Built-in handling: map type
       if (containerName === 'map') {
         return renderMapNodeFromContainer(container, key, styles, config);
       }
 
-      // 内置处理：html 类型
+      // Built-in handling: html type
       if (containerName === 'html') {
         const data = container.data || {};
-        const title = (data.title as string) || container.params || '[HTML 页面]';
+        const title = (data.title as string) || container.params || '[HTML Page]';
         const content = (
           <View style={blockContainerStyle}>
             <Text style={{ fontWeight: '600', lineHeight: 20 }}>{title}</Text>
             <Text style={{ lineHeight: 20 }}>
-              点击卡片以在独立容器中打开 HTML 页面（需要宿主实现 onOpenHtmlPage 回调）。
+              Tap the card to open the HTML page in a standalone container (requires the host to implement the onOpenHtmlPage callback).
             </Text>
           </View>
         );
@@ -588,10 +601,11 @@ function renderNode(
         );
       }
 
-      // 内置处理：admonition 类型 (note, tip, warning, etc.)
-      // opaque container 的 children 已在主组件 useEffect 里通过 expandOpaqueContainers
-      // 预解析填充（parse(value) → children）。这里直接渲染 children。
-      // Column 布局：title 一行，正文一行。
+      // Built-in handling: admonition types (note, tip, warning, etc.)
+      // An opaque container's children are already pre-parsed and filled in
+      // by expandOpaqueContainers in the main component's useEffect
+      // (parse(value) → children). Here we render children directly.
+      // Column layout: title on one line, body on the next.
       if (
         SUPRAMARK_ADMONITION_KINDS.includes(
           containerName as (typeof SUPRAMARK_ADMONITION_KINDS)[number]
@@ -638,7 +652,7 @@ function renderNode(
         );
       }
 
-      // 默认：渲染为通用容器块
+      // Default: render as a generic container block
       return (
         <View key={key} style={blockContainerStyle}>
           {container.params && (
@@ -665,13 +679,14 @@ function renderNode(
       const defOptions =
         getFeatureOptionsAs<{ compact?: boolean }>(config, '@supramark/feature-definition-list') ??
         {};
-      const isCompact = defOptions.compact !== false; // 默认紧凑
-      // Column 布局：term 一行，description 缩进一行。
-      // 避免 row 布局下 description 被 term 挤压导致 Text 不换行。
+      const isCompact = defOptions.compact !== false; // Compact by default
+      // Column layout: term on one line, description indented on the next.
+      // This avoids a row layout squeezing the description against the term
+      // and causing Text to fail to wrap.
       const defItemStyle = { flexDirection: 'column' as const };
       const defDescriptionStyle = { paddingLeft: 16, gap: 8 };
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-definition-list'])) {
-        // 禁用时，将定义列表退化为普通列表样式
+        // When disabled, degrade the definition list to a plain list style
         return (
           <View key={key} style={styles.list}>
             {list.children.map((item, index) => {
@@ -743,15 +758,16 @@ function renderNode(
     }
     case 'footnote_definition': {
       const def = node;
-      // 新 AST v2 的 footnote_definition.children 是 block 节点（paragraph 等），
-      // 不是 inline 节点。用 renderNode 渲染 children，避免 renderInlineNodes 跳过 block 节点。
+      // In AST v2, footnote_definition.children are block nodes (paragraph,
+      // etc.), not inline nodes. Use renderNode to render children so
+      // renderInlineNodes doesn't skip block nodes.
       const renderFootnoteContent = () =>
         def.children.map((child, childIndex) =>
           renderNode(child, childIndex, styles, highlighted, config, onOpenHtmlPage, containerRenderers)
         );
-      // 第一阶段：简单以「[n] 内容」形式追加在文末
+      // Phase one: simply append as "[n] content" at the end of the text
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-footnote'])) {
-        // 禁用脚注 Feature 时，直接渲染为普通段落
+        // When the footnote feature is disabled, render as a plain paragraph
         return (
           <View key={key} style={styles.listItem}>
             <Text style={styles.listItemText}>{renderFootnoteContent()}</Text>
@@ -1018,7 +1034,7 @@ function renderInlineNode(
     }
     case 'image': {
       const imageNode = node;
-      // RN 中暂时用文本展示图片（未来可以用 Image 组件）
+      // Show images as text for now in RN (could use the Image component in the future)
       return (
         <Text key={key} style={styles.imageText}>
           [Image: {imageNode.alt || imageNode.url}]
@@ -1076,12 +1092,14 @@ function headingStyle(
 }
 
 /**
- * 判断一组 Feature ID 是否被启用。
+ * Determines whether a group of feature IDs is enabled.
  *
- * 约定：
- * - 未提供 config 或 config.features 为空 → 视为全部启用；
- * - 如果 config 中根本没有提到这些 ID → 视为使用默认行为（启用）；
- * - 一旦显式配置了其中任意一个 ID，则以配置为准，只要有一个 enabled:true 就认为启用。
+ * Convention:
+ * - No config, or an empty config.features → treated as all enabled;
+ * - If config doesn't mention any of these IDs at all → treated as default
+ *   behavior (enabled);
+ * - Once any of these IDs is explicitly configured, config wins: as long as
+ *   one of them has enabled:true, the group is considered enabled.
  */
 function isFeatureGroupEnabled(config: SupramarkConfig | undefined, ids: string[]): boolean {
   if (!config || !config.features || config.features.length === 0) {
@@ -1181,7 +1199,7 @@ function renderDisabledDiagram(
   key: number,
   styles: ReturnType<typeof mergeStyles>
 ): RenderedNode {
-  const header = `[diagram engine="${diagram.engine}" 已被禁用]\n\n`;
+  const header = `[diagram engine="${diagram.engine}" disabled]\n\n`;
   return (
     <View key={key} style={styles.codeBlock}>
       <Text style={styles.code}>{header + diagram.code}</Text>
@@ -1194,7 +1212,7 @@ function renderDisabledMathBlock(
   key: number,
   styles: ReturnType<typeof mergeStyles>
 ): RenderedNode {
-  const header = '[math 已被禁用]\n\n';
+  const header = '[math disabled]\n\n';
   return (
     <View key={key} style={styles.codeBlock}>
       <Text style={styles.code}>{header + math.value}</Text>
@@ -1208,13 +1226,13 @@ function renderMapNodeFromContainer(
   styles: ReturnType<typeof mergeStyles>,
   _config?: SupramarkConfig
 ): RenderedNode {
-  // 从 container.data 中提取 map 数据
+  // Extract map data from container.data
   const data = container.data || {};
   const center = (data.center as [number, number]) || [0, 0];
   const zoom = (data.zoom as number) || 12;
   const marker = data.marker as { lat: number; lng: number } | undefined;
 
-  // 尝试使用真实的 react-native-maps
+  // Try using the real react-native-maps
   try {
     // react-native-maps is an optional dependency; keep it lazy-loaded.
     // Cast the untyped require() result to a minimal local module shape so the
@@ -1226,11 +1244,11 @@ function renderMapNodeFromContainer(
 
     const { width } = Dimensions.get('window');
 
-    // 解析坐标
+    // Parse coordinates
     const latitude = center[0] || 0;
     const longitude = center[1] || 0;
 
-    // 计算地图区域 - 根据zoom调整视野范围
+    // Compute the map region — adjust the viewport based on zoom
     const latitudeDelta = Math.max(0.001, 0.1 * Math.pow(0.5, zoom - 8));
     const longitudeDelta = Math.max(0.001, 0.1 * Math.pow(0.5, zoom - 8));
 
@@ -1246,8 +1264,8 @@ function renderMapNodeFromContainer(
     return (
       <View key={key} style={styles.mapCard}>
         <View style={styles.mapCardHeader}>
-          <Text style={styles.mapCardTitle}>🗺️ 真实地图</Text>
-          <Text style={styles.mapCardSubtitle}>React Native Maps 实现</Text>
+          <Text style={styles.mapCardTitle}>🗺️ Real Map</Text>
+          <Text style={styles.mapCardSubtitle}>Powered by React Native Maps</Text>
         </View>
 
         <View style={styles.mapContainer}>
@@ -1262,15 +1280,15 @@ function renderMapNodeFromContainer(
             rotateEnabled={true}
             pitchEnabled={false}
           >
-            {/* 中心标记 */}
+            {/* Center marker */}
             <Marker
               coordinate={{ latitude, longitude }}
-              title="中心点"
-              description={`坐标: ${latitude}, ${longitude}`}
+              title="Center"
+              description={`Coordinates: ${latitude}, ${longitude}`}
               pinColor="red"
             />
 
-            {/* 额外标记 */}
+            {/* Extra marker */}
             {hasMarker && (
               <Marker
                 coordinate={{
@@ -1287,38 +1305,38 @@ function renderMapNodeFromContainer(
 
         <View style={styles.mapCardContent}>
           <Text style={styles.mapCardInfo}>
-            📍 中心：{latitude.toFixed(4)}, {longitude.toFixed(4)}
+            📍 Center: {latitude.toFixed(4)}, {longitude.toFixed(4)}
           </Text>
-          <Text style={styles.mapCardInfo}>🔍 缩放级别：{zoom}</Text>
+          <Text style={styles.mapCardInfo}>🔍 Zoom level: {zoom}</Text>
           {hasMarker && (
             <Text style={styles.mapCardInfo}>
               Marker: {marker.lat}, {marker.lng}
             </Text>
           )}
           <Text style={[styles.mapCardInfo, { color: '#28a745', fontWeight: '500' }]}>
-            ✅ 真实地图已启用
+            ✅ Real map enabled
           </Text>
         </View>
       </View>
     );
   } catch (error) {
-    // 如果 react-native-maps 不可用，显示智能占位卡片
+    // If react-native-maps is unavailable, show a smart placeholder card
     const { width } = Dimensions.get('window');
-    const centerText = center ? `${center[0]}, ${center[1]}` : '未指定';
+    const centerText = center ? `${center[0]}, ${center[1]}` : 'Unspecified';
     const hasMarkerFallback =
       marker && typeof marker.lat === 'number' && typeof marker.lng === 'number';
 
     return (
       <View key={key} style={styles.mapCard}>
         <View style={styles.mapCardHeader}>
-          <Text style={styles.mapCardTitle}>🗺️ 智能地图卡片</Text>
-          <Text style={styles.mapCardSubtitle}>可视化占位符 (react-native-maps 未就绪)</Text>
+          <Text style={styles.mapCardTitle}>🗺️ Smart Map Card</Text>
+          <Text style={styles.mapCardSubtitle}>Visual placeholder (react-native-maps not ready)</Text>
         </View>
 
-        {/* 智能地图占位区域 */}
+        {/* Smart map placeholder area */}
         <View style={styles.mapContainer}>
           <View style={[styles.map, { width: width - 32 }]}>
-            {/* 模拟地图网格 */}
+            {/* Simulated map grid */}
             <View style={styles.mapGridOverlay}>
               {Array.from({ length: 4 }, (_, i) => (
                 <View key={`h-${i}`} style={[styles.mapGridLine, { top: `${(i + 1) * 20}%` }]} />
@@ -1335,12 +1353,12 @@ function renderMapNodeFromContainer(
               ))}
             </View>
 
-            {/* 中心标记 */}
+            {/* Center marker */}
             <View style={styles.mapCenterMarker}>
               <Text style={styles.mapCenterMarkerText}>📍</Text>
             </View>
 
-            {/* 额外标记 */}
+            {/* Extra marker */}
             {hasMarkerFallback && (
               <View
                 style={[
@@ -1355,23 +1373,23 @@ function renderMapNodeFromContainer(
               </View>
             )}
 
-            {/* 地图信息覆盖层 */}
+            {/* Map info overlay */}
             <View style={styles.mapOverlay}>
-              <Text style={styles.mapOverlayText}>模拟 {zoom}x</Text>
+              <Text style={styles.mapOverlayText}>Simulated {zoom}x</Text>
             </View>
           </View>
         </View>
 
         <View style={styles.mapCardContent}>
-          <Text style={styles.mapCardInfo}>📍 中心：{centerText}</Text>
-          <Text style={styles.mapCardInfo}>🔍 缩放级别：{zoom}</Text>
+          <Text style={styles.mapCardInfo}>📍 Center: {centerText}</Text>
+          <Text style={styles.mapCardInfo}>🔍 Zoom level: {zoom}</Text>
           {hasMarkerFallback && (
             <Text style={styles.mapCardInfo}>
               Marker: {marker.lat}, {marker.lng}
             </Text>
           )}
           <Text style={[styles.mapCardInfo, { color: '#ffc107', fontStyle: 'italic' }]}>
-            ⚠️ 安装 react-native-maps 以启用真实地图
+            ⚠️ Install react-native-maps to enable the real map
           </Text>
         </View>
       </View>

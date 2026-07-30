@@ -1,24 +1,24 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * Math Feature 使用示例
+ * Math Feature usage examples
  */
 export const mathExamples: ExampleDefinition[] = [
   {
-    name: '数学公式（Math / LaTeX）',
-    description: '展示行内 `$...$` 与块级 `$$...$$` 数学公式的 AST 与基础渲染效果。',
+    name: 'Math formulas (Math / LaTeX)',
+    description: 'Shows the AST and basic rendering of inline `$...$` and block `$$...$$` math formulas.',
     markdown: `
-# 数学公式示例
+# Math Formula Example
 
-supramark 会识别行内公式 $E = mc^2$，并在 AST 中生成 \`math_inline\` 节点。
+supramark recognizes the inline formula $E = mc^2$ and generates a \`math_inline\` node in the AST.
 
-下面是一个块级公式（\`math_block\`）：
+Below is a block formula (\`math_block\`):
 
 $$
 \\frac{1}{\\sqrt{2\\pi\\sigma^2}} e^{-\\frac{(x - \\mu)^2}{2\\sigma^2}}
 $$
 
-当前阶段，这些公式会以「代码样式的 TeX 文本」渲染，后续会通过 KaTeX 等方式升级为真正的公式渲染。
+At the current stage, these formulas are rendered as "code-styled TeX text"; they will later be upgraded to real formula rendering via KaTeX and similar tools.
     `.trim(),
   },
 ];

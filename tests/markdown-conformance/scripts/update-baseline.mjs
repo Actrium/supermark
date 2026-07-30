@@ -23,13 +23,13 @@ if (summary.source !== sourceName || version.source !== sourceName) {
   throw new Error(`Source mismatch: argument ${sourceName}, report ${summary.source}, version ${version.source}`);
 }
 if (summary.total !== version.caseCount) {
-  throw new Error(`拒绝更新部分运行基线：报告 ${summary.total} 条，数据源 ${version.caseCount} 条。`);
+  throw new Error(`Refusing to update baseline from a partial run: report has ${summary.total} case(s), source has ${version.caseCount}.`);
 }
 if (!summary.visual?.enabled || summary.errors !== 0 || summary.visual.errors !== 0) {
-  throw new Error('拒绝更新异常运行基线：必须完成视觉测试且语义、视觉执行错误均为 0。');
+  throw new Error('Refusing to update baseline from an unhealthy run: visual comparison must have run, and semantic/visual execution errors must both be 0.');
 }
 if (summary.sourceCommit !== version.commit) {
-  throw new Error(`拒绝更新数据源不一致的基线：${summary.sourceCommit} != ${version.commit}`);
+  throw new Error(`Refusing to update baseline: source commit mismatch (${summary.sourceCommit} != ${version.commit})`);
 }
 
 const baseline = {

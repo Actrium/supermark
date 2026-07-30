@@ -1,12 +1,12 @@
 /**
- * Supramark Web ClassName 系统
+ * Supramark Web className system
  *
- * 此文件定义了 Supramark Web 组件的 className 类型和默认值。
- * 用户可以通过传入 classNames prop 来自定义每个元素的 className。
+ * This file defines the className types and defaults for Supramark Web components.
+ * Users can customize the className of each element by passing the classNames prop.
  */
 
 /**
- * Supramark 可自定义的 className 键
+ * Customizable className keys for Supramark
  */
 export interface SupramarkClassNames {
   // Block elements
@@ -17,19 +17,19 @@ export interface SupramarkClassNames {
   h4?: string;
   h5?: string;
   h6?: string;
-  blockquote?: string; // blockquote 元素
-  thematicBreak?: string; // hr 元素
+  blockquote?: string; // blockquote element
+  thematicBreak?: string; // hr element
 
   // Code blocks
-  codeBlock?: string; // pre 元素
-  code?: string; // code 元素
+  codeBlock?: string; // pre element
+  code?: string; // code element
 
   // Lists
-  listOrdered?: string; // ol 元素
-  listUnordered?: string; // ul 元素
-  listItem?: string; // li 元素
-  taskListItem?: string; // 任务列表的 li
-  taskCheckbox?: string; // 任务列表的 checkbox
+  listOrdered?: string; // ol element
+  listUnordered?: string; // ul element
+  listItem?: string; // li element
+  taskListItem?: string; // li for task list items
+  taskCheckbox?: string; // checkbox for task list items
 
   // Inline elements
   strong?: string;
@@ -41,31 +41,31 @@ export interface SupramarkClassNames {
 
   // Tables
   table?: string;
-  tableBody?: string; // tbody 元素
-  tableRow?: string; // tr 元素
-  tableCell?: string; // td 元素
-  tableHeaderCell?: string; // th 元素
+  tableBody?: string; // tbody element
+  tableRow?: string; // tr element
+  tableCell?: string; // td element
+  tableHeaderCell?: string; // th element
 
   // Diagram
-  diagram?: string; // diagram 容器 div
-  diagramPre?: string; // diagram 中的 pre
-  diagramCode?: string; // diagram 中的 code
+  diagram?: string; // diagram container div
+  diagramPre?: string; // pre inside diagram
+  diagramCode?: string; // code inside diagram
 
   // Container
-  root?: string; // 最外层容器
+  root?: string; // outermost container
 }
 
 /**
- * 默认 className（为空，用户可自由添加）
+ * Default className (empty, users are free to add their own)
  */
 export const defaultClassNames: SupramarkClassNames = {
-  // 默认不添加任何 className，保持原生 HTML 元素
+  // No className is added by default, keeping native HTML elements untouched
 };
 
 /**
- * 合并用户 className 和默认 className
- * @param customClassNames 用户自定义 className
- * @returns 合并后的 className
+ * Merge user className with default className
+ * @param customClassNames user-provided className overrides
+ * @returns merged className
  */
 export function mergeClassNames(customClassNames?: SupramarkClassNames): SupramarkClassNames {
   if (!customClassNames) {
@@ -79,7 +79,7 @@ export function mergeClassNames(customClassNames?: SupramarkClassNames): Suprama
 }
 
 /**
- * Tailwind CSS 主题预设（示例）
+ * Tailwind CSS theme preset (example)
  */
 export const tailwindClassNames: SupramarkClassNames = {
   root: 'prose prose-slate max-w-none',
@@ -117,7 +117,7 @@ export const tailwindClassNames: SupramarkClassNames = {
 };
 
 /**
- * 极简主题预设（示例）
+ * Minimal theme preset (example)
  */
 export const minimalClassNames: SupramarkClassNames = {
   root: 'supramark',

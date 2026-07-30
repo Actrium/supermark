@@ -12,23 +12,23 @@ import { makeFeatureConfigHelpers } from '@supramark/core';
 /**
  * Footnote Feature
  *
- * 脚注语法支持（引用 + 定义）的规范描述：
+ * Canonical description of footnote syntax support (reference + definition):
  *
- * - 复用 core 中已实现的 `footnote_reference` / `footnote_definition` AST；
- * - 不负责实际解析与渲染逻辑；
- * - 主要用于：文档、能力发现、Feature 配置桥梁。
+ * - Reuses the `footnote_reference` / `footnote_definition` AST already implemented in core;
+ * - Does not own the actual parsing/rendering logic;
+ * - Mainly used for: documentation, capability discovery, and the Feature configuration bridge.
  *
  * @example
  * ```markdown
- * 这是正文[^1]，以及一个内联脚注 ^[内联脚注内容]。
+ * This is body text[^1], plus an inline footnote ^[inline footnote content].
  *
- * [^1]: 这里是脚注定义内容。
+ * [^1]: Here is the footnote definition content.
  * ```
  *
- * 节点类型说明：
- * - 如果此 Feature 只处理单一节点类型（如 'diagram'），直接使用当前配置即可
- * - 如果此 Feature 需要处理多个节点类型（如 'math_inline' 和 'math_block'），
- *   请参考下面的"多节点类型处理"注释，定义具体的节点接口和 selector
+ * Node type notes:
+ * - If this Feature handles only a single node type (e.g. 'diagram'), just use the current config as-is
+ * - If this Feature needs to handle multiple node types (e.g. 'math_inline' and 'math_block'),
+ *   see the "multi node type handling" comment below for defining the concrete node interface and selector
  */
 export const footnoteFeature: SupramarkFeature<
   SupramarkFootnoteReferenceNode | SupramarkFootnoteDefinitionNode
@@ -38,12 +38,12 @@ export const footnoteFeature: SupramarkFeature<
     name: 'Footnote',
     version: '0.1.0',
     author: 'Supramark Team',
-    description: '脚注语法支持（引用 + 定义）',
+    description: 'Footnote syntax support (reference + definition)',
     license: 'Apache-2.0',
     tags: ['footnote', 'reference', 'definition'],
     syntaxFamily: 'main',
   },
-  // Footnote - 依赖基础 Markdown（脚注定义可以包含段落等）
+  // Footnote - depends on base Markdown (footnote definitions can contain paragraphs, etc.)
   dependencies: ['@supramark/feature-core-markdown'],
 
   syntax: {
@@ -60,15 +60,15 @@ export const footnoteFeature: SupramarkFeature<
           type: {
             type: 'string',
             description:
-              '节点类型："footnote_reference"（正文引用）或 "footnote_definition"（文末定义）。',
+              'Node type: "footnote_reference" (inline reference) or "footnote_definition" (definition at the end of the document).',
           },
           index: {
             type: 'number',
-            description: '脚注编号（从 1 开始），由解析管线统一分配。',
+            description: 'Footnote number (starting from 1), assigned uniformly by the parsing pipeline.',
           },
           label: {
             type: 'string',
-            description: '原始 label，例如 [^note] 中的 "note"。',
+            description: 'Raw label, e.g. "note" in [^note].',
           },
         },
       },
@@ -95,63 +95,63 @@ export const footnoteFeature: SupramarkFeature<
       ],
     },
 
-    // 可选：验证规则
+    // Optional: validation rules
     // validator: {
     //   validate: (node) => {
-    //     // TODO: 添加验证逻辑
+    //     // TODO: add validation logic
     //     return { valid: true, errors: [] };
     //   }
     // },
   },
 
-  // 渲染器定义
+  // Renderer definitions
   renderers: {
-    // Web 平台渲染器
+    // Web platform renderer
     web: {
       platform: 'web',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // Web 端使用锚点链接（<a href="#fn1">）
+        // On Web, uses anchor links (<a href="#fn1">)
         needsClientScript: false,
-        // 无需 Worker
+        // No worker needed
         needsWorker: false,
-        // 无需缓存
+        // No cache needed
         needsCache: false,
       },
 
-      // 无外部依赖（使用标准 HTML 锚点）
+      // No external dependencies (uses standard HTML anchors)
       dependencies: [],
     },
 
-    // React Native 平台渲染器
+    // React Native platform renderer
     rn: {
       platform: 'rn',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // RN 端使用 ScrollView ref 实现跳转
+        // On RN, uses a ScrollView ref to implement jumping
         needsWorker: false,
-        // 无需缓存
+        // No cache needed
         needsCache: false,
       },
 
-      // 无外部依赖（使用 ScrollView ref）
+      // No external dependencies (uses a ScrollView ref)
       dependencies: [],
     },
   },
 
-  // 使用示例
+  // Usage examples
   examples: footnoteExamples,
 
-  // 测试定义
+  // Test definitions
   testing: {
-    // Markdown → AST 语法测试
+    // Markdown → AST syntax tests
     syntaxTests: {
       cases: [
         {
-          name: '解析脚注引用',
-          input: '文本[^1]',
+          name: 'parses a footnote reference',
+          input: 'Text[^1]',
           expected: {
             type: 'footnote_reference',
             index: 1,
@@ -163,8 +163,8 @@ export const footnoteFeature: SupramarkFeature<
           },
         },
         {
-          name: '解析脚注定义',
-          input: '[^1]: 脚注内容',
+          name: 'parses a footnote definition',
+          input: '[^1]: Footnote content',
           expected: {
             type: 'footnote_definition',
             index: 1,
@@ -176,8 +176,8 @@ export const footnoteFeature: SupramarkFeature<
           },
         },
         {
-          name: '解析多个脚注引用',
-          input: '文本[^1]和[^2]',
+          name: 'parses multiple footnote references',
+          input: 'Text[^1] and [^2]',
           expected: [
             {
               type: 'footnote_reference',
@@ -196,11 +196,11 @@ export const footnoteFeature: SupramarkFeature<
       ],
     },
 
-    // AST → 渲染输出测试
+    // AST → render output tests
     renderTests: {
       web: [
         {
-          name: 'Web 渲染脚注引用',
+          name: 'Web renders a footnote reference',
           input: {
             type: 'footnote_reference',
             index: 1,
@@ -210,12 +210,12 @@ export const footnoteFeature: SupramarkFeature<
           snapshot: true,
         },
         {
-          name: 'Web 渲染脚注定义',
+          name: 'Web renders a footnote definition',
           input: {
             type: 'footnote_definition',
             index: 1,
             label: '1',
-            children: [{ type: 'paragraph', children: [{ type: 'text', value: '脚注内容' }] }],
+            children: [{ type: 'paragraph', children: [{ type: 'text', value: 'Footnote content' }] }],
           } as SupramarkFootnoteDefinitionNode,
           expected: (output: unknown) => output !== null && output !== undefined,
           snapshot: true,
@@ -223,7 +223,7 @@ export const footnoteFeature: SupramarkFeature<
       ],
       rn: [
         {
-          name: 'RN 渲染脚注引用',
+          name: 'RN renders a footnote reference',
           input: {
             type: 'footnote_reference',
             index: 2,
@@ -235,12 +235,12 @@ export const footnoteFeature: SupramarkFeature<
       ],
     },
 
-    // 端到端集成测试
+    // End-to-end integration tests
     integrationTests: {
       cases: [
         {
-          name: 'Footnote 端到端：引用 + 定义',
-          input: '正文[^1]\n\n[^1]: 脚注内容',
+          name: 'Footnote end-to-end: reference + definition',
+          input: 'Body text[^1]\n\n[^1]: Footnote content',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -257,8 +257,8 @@ export const footnoteFeature: SupramarkFeature<
           platforms: ['web', 'rn'],
         },
         {
-          name: 'Footnote 端到端：多个脚注',
-          input: '文本[^1]和[^2]\n\n[^1]: 第一个\n[^2]: 第二个',
+          name: 'Footnote end-to-end: multiple footnotes',
+          input: 'Text[^1] and [^2]\n\n[^1]: First\n[^2]: Second',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -281,7 +281,7 @@ export const footnoteFeature: SupramarkFeature<
       ],
     },
 
-    // 覆盖率要求
+    // Coverage requirements
     coverageRequirements: {
       statements: 80,
       branches: 75,
@@ -290,86 +290,86 @@ export const footnoteFeature: SupramarkFeature<
     },
   },
 
-  // 文档定义
+  // Documentation definitions
   documentation: {
     readme: `
 # Footnote Feature
 
-为 Supramark 提供脚注支持。
+Provides footnote support for Supramark.
 
-## 功能
+## Features
 
-- 脚注引用
-- 脚注定义
+- Footnote reference
+- Footnote definition
 
-## 使用
+## Usage
 
-查看 examples 目录获取更多示例。
+See the examples directory for more examples.
     `.trim(),
 
     api: {
       interfaces: [
         {
           name: 'FootnoteFeatureOptions',
-          description: 'Footnote Feature 的配置选项接口（当前为空，保留用于未来扩展）',
+          description: 'Configuration options interface for the Footnote Feature (currently empty, reserved for future extension)',
           fields: [],
         },
         {
           name: 'SupramarkFootnoteReferenceNode',
-          description: '脚注引用 AST 节点接口，用于表示正文中的脚注引用（[^1]）',
+          description: 'AST node interface for a footnote reference, representing an inline footnote reference ([^1])',
           fields: [
             {
               name: 'type',
               type: "'footnote_reference'",
-              description: '节点类型标识，固定为 "footnote_reference"',
+              description: 'Node type identifier, always "footnote_reference"',
               required: true,
             },
             {
               name: 'index',
               type: 'number',
-              description: '脚注编号（从 1 开始），由解析管线统一分配',
+              description: 'Footnote number (starting from 1), assigned uniformly by the parsing pipeline',
               required: true,
             },
             {
               name: 'label',
               type: 'string',
-              description: '原始 label，例如 [^note] 中的 "note"',
+              description: 'Raw label, e.g. "note" in [^note]',
               required: false,
             },
             {
               name: 'subId',
               type: 'string',
-              description: '子 ID，用于同一脚注的多次引用',
+              description: 'Sub-ID, used for multiple references to the same footnote',
               required: false,
             },
           ],
         },
         {
           name: 'SupramarkFootnoteDefinitionNode',
-          description: '脚注定义 AST 节点接口，用于表示文末的脚注定义内容（[^1]: ...）',
+          description: 'AST node interface for a footnote definition, representing the footnote definition content at the end of the document ([^1]: ...)',
           fields: [
             {
               name: 'type',
               type: "'footnote_definition'",
-              description: '节点类型标识，固定为 "footnote_definition"',
+              description: 'Node type identifier, always "footnote_definition"',
               required: true,
             },
             {
               name: 'index',
               type: 'number',
-              description: '脚注编号（从 1 开始），与引用的 index 对应',
+              description: 'Footnote number (starting from 1), corresponding to the reference\'s index',
               required: true,
             },
             {
               name: 'label',
               type: 'string',
-              description: '原始 label，例如 [^note] 中的 "note"',
+              description: 'Raw label, e.g. "note" in [^note]',
               required: false,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '脚注内容节点列表，可包含段落、列表、代码块等',
+              description: 'List of footnote content nodes, can contain paragraphs, lists, code blocks, etc.',
               required: true,
             },
           ],
@@ -379,18 +379,18 @@ export const footnoteFeature: SupramarkFeature<
       functions: [
         {
           name: 'createFootnoteFeatureConfig',
-          description: '创建 Footnote Feature 配置对象，用于在 SupramarkConfig 中启用脚注支持',
+          description: 'Creates a Footnote Feature config object, used to enable footnote support in SupramarkConfig',
           parameters: [
             {
               name: 'enabled',
               type: 'boolean',
-              description: '是否启用 Footnote Feature',
+              description: 'Whether to enable the Footnote Feature',
               optional: false,
             },
             {
               name: 'options',
               type: 'FootnoteFeatureOptions',
-              description: 'Footnote Feature 配置选项（当前为空对象）',
+              description: 'Footnote Feature configuration options (currently an empty object)',
               optional: true,
             },
           ],
@@ -407,12 +407,12 @@ const config = {
         },
         {
           name: 'getFootnoteFeatureOptions',
-          description: '从 SupramarkConfig 中提取 Footnote Feature 的配置选项',
+          description: 'Extracts the Footnote Feature configuration options from a SupramarkConfig',
           parameters: [
             {
               name: 'config',
               type: 'SupramarkConfig',
-              description: 'Supramark 配置对象',
+              description: 'The Supramark configuration object',
               optional: true,
             },
           ],
@@ -429,7 +429,7 @@ const options = getFootnoteFeatureOptions(config);`,
         {
           name: 'FootnoteFeatureConfig',
           description:
-            'Footnote Feature 配置类型，是 FeatureConfigWithOptions<FootnoteFeatureOptions> 的类型别名',
+            'Footnote Feature configuration type, a type alias for FeatureConfigWithOptions<FootnoteFeatureOptions>',
           definition:
             'type FootnoteFeatureConfig = FeatureConfigWithOptions<FootnoteFeatureOptions>',
         },
@@ -437,39 +437,39 @@ const options = getFootnoteFeatureOptions(config);`,
     },
 
     bestPractices: [
-      '脚注引用使用 [^label] 格式，label 可以是数字或文字',
-      '脚注定义使用 [^label]: 内容 格式，通常放在文档末尾',
-      '同一脚注可以被多次引用，系统会自动处理',
-      '脚注编号由系统自动分配，按照引用出现的顺序从 1 开始',
+      'Use the [^label] format for footnote references; label can be a number or text',
+      'Use the [^label]: content format for footnote definitions, usually placed at the end of the document',
+      'The same footnote can be referenced multiple times; the system handles it automatically',
+      'Footnote numbers are assigned automatically by the system, starting from 1 in reference order',
     ],
 
     faq: [
       {
-        question: '脚注的语法格式是什么？',
-        answer: '引用格式：[^label]，定义格式：[^label]: 脚注内容。label 可以是数字或文字标识符。',
+        question: 'What is the footnote syntax format?',
+        answer: 'Reference format: [^label]; definition format: [^label]: footnote content. label can be a number or a text identifier.',
       },
       {
-        question: '脚注编号如何确定？',
-        answer: '脚注编号由解析器自动分配，按照脚注引用在文档中出现的顺序从 1 开始递增。',
+        question: 'How are footnote numbers determined?',
+        answer: 'Footnote numbers are assigned automatically by the parser, incrementing from 1 in the order footnote references appear in the document.',
       },
       {
-        question: '同一脚注可以被多次引用吗？',
-        answer: '可以。多次引用同一 label 的脚注会生成多个引用节点，它们共享同一个定义和编号。',
+        question: 'Can the same footnote be referenced multiple times?',
+        answer: 'Yes. Referencing the same label multiple times generates multiple reference nodes, which share the same definition and number.',
       },
       {
-        question: '脚注定义可以包含哪些内容？',
+        question: 'What content can a footnote definition contain?',
         answer:
-          '脚注定义可以包含段落、列表、代码块、引用块等多种 Markdown 元素，支持复杂的内容结构。',
+          'A footnote definition can contain paragraphs, lists, code blocks, blockquotes, and other Markdown elements, supporting complex content structures.',
       },
     ],
   },
 };
 
 /**
- * Footnote Feature 的配置项。
+ * Configuration options for the Footnote Feature.
  */
 export interface FootnoteFeatureOptions {
-  // 当前为空，保留用于未来扩展
+  // Currently empty, reserved for future extension
 }
 
 export type FootnoteFeatureConfig = FeatureConfigWithOptions<FootnoteFeatureOptions>;

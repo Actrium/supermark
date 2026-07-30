@@ -12,17 +12,17 @@ import { mathExamples } from './examples.js';
 /**
  * Math Feature
  *
- * 为 supramark 提供 Math / LaTeX 公式能力的规范描述。
+ * Canonical description of Math / LaTeX formula capability for supramark.
  *
- * - 复用 core 中已定义的 `math_inline` / `math_block` AST；
- * - 不负责实际解析与渲染逻辑（由 @supramark/core / @supramark/web / @supramark/rn 实现）；
- * - 主要用于：文档、能力发现、FeatureRegistry 配置桥梁。
+ * - Reuses the `math_inline` / `math_block` AST already defined in core;
+ * - Does not own the actual parsing/rendering logic (implemented by @supramark/core / @supramark/web / @supramark/rn);
+ * - Mainly used for: documentation, capability discovery, and the FeatureRegistry configuration bridge.
  *
  * @example
  * ```markdown
- * 行内公式：这是著名的 $E = mc^2$。
+ * Inline formula: this is the famous $E = mc^2$.
  *
- * 块级公式：
+ * Block formula:
  *
  * $$
  * \frac{1}{\sqrt{2\pi\sigma^2}} e^{-\frac{(x - \mu)^2}{2\sigma^2}}
@@ -35,47 +35,45 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
     name: 'Math',
     version: '0.1.0',
     author: 'Supramark Team',
-    description: 'LaTeX 数学公式支持',
+    description: 'LaTeX math formula support',
     license: 'Apache-2.0',
     tags: ['math', 'latex', 'formula'],
     syntaxFamily: 'main',
   },
-  // Math - 无依赖（独立的 LaTeX 语法，只有 value 字符串）
-  // dependencies: [] - 不显式声明空依赖
-  // Math - 无依赖（独立的 LaTeX 语法，只有 value 字符串）
-  // dependencies: [] - 不显式声明空依赖
+  // Math - no dependencies (a standalone LaTeX syntax, just a value string)
+  // dependencies: [] - do not declare an empty dependency array explicitly
 
   syntax: {
     ast: {
-      // 以 inline Math 作为主类型，通过 selector 覆盖 block Math
+      // Uses inline Math as the primary type, and covers block Math via the selector
       type: 'math_inline',
       selector: (node: SupramarkNode) => node.type === 'math_inline' || node.type === 'math_block',
 
-      // 可选：描述节点接口
+      // Optional: describes the node interface
       interface: {
         required: ['type', 'value'],
         optional: [],
         fields: {
           type: {
             type: 'string',
-            description: '节点类型，行内公式为 "math_inline"，块级公式为 "math_block"。',
+            description: 'Node type: "math_inline" for inline formulas, "math_block" for block formulas.',
           },
           value: {
             type: 'string',
-            description: '原始 TeX 文本内容，不含包裹的 $ / $$。',
+            description: 'Raw TeX text content, without the wrapping $ / $$.',
           },
         },
       },
 
-      // 可选：节点约束
+      // Optional: node constraints
       constraints: {
-        // 行内公式通常出现在段落、列表项、表格单元格等位置；
-        // 块级公式则多为 root / list_item 下的独立块。
+        // Inline formulas typically appear in paragraphs, list items, table cells, etc;
+        // block formulas are usually standalone blocks under root / list_item.
         allowedParents: ['root', 'paragraph', 'list_item', 'table_cell'],
         allowedChildren: [],
       },
 
-      // 可选：示例节点
+      // Optional: example nodes
       examples: [
         {
           type: 'math_inline',
@@ -88,32 +86,32 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
       ],
     },
 
-    // 可选：验证规则
+    // Optional: validation rules
     // validator: {
     //   validate: (node) => {
-    //     // TODO: 添加验证逻辑
+    //     // TODO: add validation logic
     //     return { valid: true, errors: [] };
     //   }
     // },
   },
 
-  // 渲染器定义
+  // Renderer definitions
   renderers: {
-    // Web 平台渲染器
+    // Web platform renderer
     web: {
       platform: 'web',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // Web 端使用客户端脚本（KaTeX）进行渲染
+        // On Web, rendering is done via a client-side script (KaTeX)
         needsClientScript: true,
-        // 无需 Worker
+        // No worker needed
         needsWorker: false,
-        // 无需缓存（KaTeX 渲染很快）
+        // No cache needed (KaTeX renders fast)
         needsCache: false,
       },
 
-      // 依赖的外部库
+      // External library dependencies
       dependencies: [
         {
           name: 'katex',
@@ -132,23 +130,23 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
       ],
     },
 
-    // React Native 平台渲染器
+    // React Native platform renderer
     rn: {
       platform: 'rn',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // RN 端本地使用 MathJax 直接渲染为 SVG
+        // On RN, MathJax renders directly to SVG locally
         needsWorker: false,
-        // 需要缓存（MathJax 首次初始化与复杂公式渲染成本较高）
+        // Cache needed (MathJax's first-time initialization and complex-formula rendering are costly)
         needsCache: true,
         cacheConfig: {
           maxSize: 100,
-          ttl: 600000, // 10 分钟
+          ttl: 600000, // 10 minutes
         },
       },
 
-      // 依赖的外部库
+      // External library dependencies
       dependencies: [
         {
           name: 'react-native-svg',
@@ -166,17 +164,17 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
     },
   },
 
-  // 使用示例
+  // Usage examples
   examples: mathExamples,
 
-  // 测试定义
+  // Test definitions
   testing: {
-    // Markdown → AST 语法测试
+    // Markdown → AST syntax tests
     syntaxTests: {
       cases: [
         {
-          name: '解析行内数学公式',
-          input: '这是 $E = mc^2$ 公式',
+          name: 'parses an inline math formula',
+          input: 'This is the $E = mc^2$ formula',
           expected: {
             type: 'math_inline',
             value: 'E = mc^2',
@@ -186,7 +184,7 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
           },
         },
         {
-          name: '解析块级数学公式',
+          name: 'parses a block math formula',
           input: '$$\n\\frac{1}{2}\n$$',
           expected: {
             type: 'math_block',
@@ -197,8 +195,8 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
           },
         },
         {
-          name: '解析复杂行内公式',
-          input: '根据公式 $\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$ 可知',
+          name: 'parses a complex inline formula',
+          input: 'By the formula $\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$ we know',
           expected: {
             type: 'math_inline',
             value: '\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}',
@@ -210,11 +208,11 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
       ],
     },
 
-    // AST → 渲染输出测试
+    // AST → render output tests
     renderTests: {
       web: [
         {
-          name: 'Web 渲染行内公式',
+          name: 'Web renders an inline formula',
           input: {
             type: 'math_inline',
             value: 'x^2',
@@ -223,7 +221,7 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
           snapshot: true,
         },
         {
-          name: 'Web 渲染分数公式',
+          name: 'Web renders a fraction formula',
           input: {
             type: 'math_inline',
             value: '\\frac{a}{b}',
@@ -234,7 +232,7 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
       ],
       rn: [
         {
-          name: 'RN 渲染块级公式',
+          name: 'RN renders a block formula',
           input: {
             type: 'math_block',
             value: '\\sum_{i=1}^{n}',
@@ -243,7 +241,7 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
           snapshot: true,
         },
         {
-          name: 'RN 渲染复杂公式',
+          name: 'RN renders a complex formula',
           input: {
             type: 'math_block',
             value: '\\int_0^1 x^2 dx',
@@ -254,12 +252,12 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
       ],
     },
 
-    // 端到端集成测试
+    // End-to-end integration tests
     integrationTests: {
       cases: [
         {
-          name: 'Math 端到端：行内 + 块级公式',
-          input: '测试 $x^2$ 和\n\n$$\\int_0^1$$',
+          name: 'Math end-to-end: inline + block formulas',
+          input: 'Test $x^2$ and\n\n$$\\int_0^1$$',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -274,8 +272,8 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
           platforms: ['web', 'rn'],
         },
         {
-          name: 'Math 端到端：多个行内公式',
-          input: '公式 $a^2$ 和 $b^2$ 以及 $c^2$',
+          name: 'Math end-to-end: multiple inline formulas',
+          input: 'Formulas $a^2$ and $b^2$ and $c^2$',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -291,7 +289,7 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
       ],
     },
 
-    // 覆盖率要求
+    // Coverage requirements
     coverageRequirements: {
       statements: 80,
       branches: 75,
@@ -300,35 +298,35 @@ export const mathFeature: SupramarkFeature<SupramarkMathInlineNode | SupramarkMa
     },
   },
 
-  // 文档定义
+  // Documentation definitions
   documentation: {
     readme: `
 # Math Feature
 
-为 Supramark 提供 LaTeX 数学公式支持。
+Provides LaTeX math formula support for Supramark.
 
-## 功能
+## Features
 
-- 行内公式：\`$...$\`
-- 块级公式：\`$$...$$\`
+- Inline formulas: \`$...$\`
+- Block formulas: \`$$...$$\`
 
-## 示例
+## Example
 
-行内公式：这是著名的 $E = mc^2$。
+Inline formula: this is the famous $E = mc^2$.
 
-块级公式：
+Block formula:
 
 $$
 \\frac{1}{\\sqrt{2\\pi\\sigma^2}} e^{-\\frac{(x - \\mu)^2}{2\\sigma^2}}
 $$
 
-## 配置
+## Configuration
 
 \`\`\`typescript
 import { createMathFeatureConfig } from '@supramark/feature-math';
 
 const config = createMathFeatureConfig(true, {
-  engine: 'katex', // 或 'mathjax'
+  engine: 'katex', // or 'mathjax'
 });
 \`\`\`
     `.trim(),
@@ -337,12 +335,12 @@ const config = createMathFeatureConfig(true, {
       interfaces: [
         {
           name: 'MathFeatureOptions',
-          description: 'Math Feature 的配置选项接口',
+          description: 'Configuration options interface for the Math Feature',
           fields: [
             {
               name: 'engine',
               type: "'katex' | 'mathjax'",
-              description: '数学公式渲染引擎，用于选择 KaTeX 或 MathJax 作为渲染引擎',
+              description: 'Math formula rendering engine, used to select KaTeX or MathJax',
               required: false,
               default: 'katex',
             },
@@ -350,36 +348,36 @@ const config = createMathFeatureConfig(true, {
         },
         {
           name: 'SupramarkMathInlineNode',
-          description: '行内数学公式 AST 节点接口，用于表示 Markdown 中的行内数学公式（$...$）',
+          description: 'AST node interface for inline math formulas, representing inline math ($...$) in Markdown',
           fields: [
             {
               name: 'type',
               type: "'math_inline'",
-              description: '节点类型标识，固定为 "math_inline"',
+              description: 'Node type identifier, always "math_inline"',
               required: true,
             },
             {
               name: 'value',
               type: 'string',
-              description: 'LaTeX 公式内容（不含 $ 包裹符），例如 "E = mc^2"',
+              description: 'LaTeX formula content (without the wrapping $), e.g. "E = mc^2"',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkMathBlockNode',
-          description: '块级数学公式 AST 节点接口，用于表示 Markdown 中的块级数学公式（$$...$$）',
+          description: 'AST node interface for block math formulas, representing block math ($$...$$) in Markdown',
           fields: [
             {
               name: 'type',
               type: "'math_block'",
-              description: '节点类型标识，固定为 "math_block"',
+              description: 'Node type identifier, always "math_block"',
               required: true,
             },
             {
               name: 'value',
               type: 'string',
-              description: 'LaTeX 公式内容（不含 $$ 包裹符），支持多行公式',
+              description: 'LaTeX formula content (without the wrapping $$), supports multi-line formulas',
               required: true,
             },
           ],
@@ -389,18 +387,18 @@ const config = createMathFeatureConfig(true, {
       functions: [
         {
           name: 'createMathFeatureConfig',
-          description: '创建 Math Feature 配置对象，用于在 SupramarkConfig 中启用数学公式支持',
+          description: 'Creates a Math Feature config object, used to enable math formula support in SupramarkConfig',
           parameters: [
             {
               name: 'enabled',
               type: 'boolean',
-              description: '是否启用 Math Feature',
+              description: 'Whether to enable the Math Feature',
               optional: false,
             },
             {
               name: 'options',
               type: 'MathFeatureOptions',
-              description: 'Math Feature 配置选项，可指定渲染引擎等参数',
+              description: 'Math Feature configuration options, can specify the rendering engine and other parameters',
               optional: true,
             },
           ],
@@ -415,7 +413,7 @@ const config = {
     }),
   ],
 };`,
-            `// 使用 MathJax 引擎
+            `// Using the MathJax engine
 const config = {
   features: [
     createMathFeatureConfig(true, {
@@ -427,12 +425,12 @@ const config = {
         },
         {
           name: 'getMathFeatureOptions',
-          description: '从 SupramarkConfig 中提取 Math Feature 的配置选项',
+          description: 'Extracts the Math Feature configuration options from a SupramarkConfig',
           parameters: [
             {
               name: 'config',
               type: 'SupramarkConfig',
-              description: 'Supramark 配置对象',
+              description: 'The Supramark configuration object',
               optional: true,
             },
           ],
@@ -442,7 +440,7 @@ const config = {
 
 const options = getMathFeatureOptions(config);
 if (options) {
-  console.log('当前使用的渲染引擎:', options.engine);
+  console.log('Current rendering engine:', options.engine);
 }`,
           ],
         },
@@ -452,40 +450,40 @@ if (options) {
         {
           name: 'MathFeatureConfig',
           description:
-            'Math Feature 配置类型，是 FeatureConfigWithOptions<MathFeatureOptions> 的类型别名',
+            'Math Feature configuration type, a type alias for FeatureConfigWithOptions<MathFeatureOptions>',
           definition: 'type MathFeatureConfig = FeatureConfigWithOptions<MathFeatureOptions>',
         },
       ],
     },
 
     bestPractices: [
-      '使用 $ 包裹行内公式，使用 $$ 包裹块级公式',
-      '复杂公式建议使用块级格式以提高可读性',
-      '确保 LaTeX 语法正确，避免渲染错误',
+      'Wrap inline formulas with $ and block formulas with $$',
+      'For complex formulas, prefer the block format for better readability',
+      'Ensure the LaTeX syntax is correct to avoid rendering errors',
     ],
 
     faq: [
       {
-        question: '支持哪些 LaTeX 语法？',
+        question: 'Which LaTeX syntax is supported?',
         answer:
-          '支持标准 LaTeX 数学模式的大部分语法，具体取决于所选的渲染引擎（KaTeX 或 MathJax）。',
+          'Most of the standard LaTeX math-mode syntax is supported, depending on the chosen rendering engine (KaTeX or MathJax).',
       },
       {
-        question: '如何切换渲染引擎？',
-        answer: '通过配置 options.engine 字段，可选值为 "katex" 或 "mathjax"。',
+        question: 'How do I switch rendering engines?',
+        answer: 'Set the options.engine field; valid values are "katex" or "mathjax".',
       },
     ],
   },
 };
 
-// 注册 Feature（可选）
+// Register the Feature (optional)
 // FeatureRegistry.register(mathFeature);
 
 /**
- * Math Feature 的配置项。
+ * Configuration options for the Math Feature.
  *
- * - engine: 未来用于选择渲染引擎（'katex' | 'mathjax'）；
- *   当前实现默认使用 MathJax，保留此字段便于后续演进。
+ * - engine: reserved for future selection of the rendering engine ('katex' | 'mathjax');
+ *   the current implementation defaults to MathJax, this field is kept for future evolution.
  */
 export interface MathFeatureOptions {
   engine?: 'katex' | 'mathjax';

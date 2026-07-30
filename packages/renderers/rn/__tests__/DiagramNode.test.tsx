@@ -6,12 +6,13 @@ import type { SupramarkDiagramNode, SupramarkSourceState } from '@supramark/core
 
 import './support/mock-react-native';
 
-// react-test-renderer 需要显式开启 act 环境，否则 effect 不会同步 flush。
+// react-test-renderer requires explicitly enabling the act environment, otherwise effects won't flush synchronously.
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-// 受控 engine：DiagramNode 在模块加载时调用一次 createReactNativeDiagramEngine，
-// 因此 mock engine 跨测试共享；每个测试通过 engineState 观察调用与控制 resolve。
+// A controlled engine: DiagramNode calls createReactNativeDiagramEngine once
+// at module load time, so the mock engine is shared across tests; each test
+// observes calls and controls resolution via engineState.
 const engineState = {
   renderCalls: 0,
   pendingResolve: null as null | ((result: DiagramRenderResult) => void),
@@ -28,12 +29,12 @@ const controlledDiagramEngine: DiagramRenderService = {
   },
 };
 
-// 动态 import：确保上方 mock 在 DiagramNode 加载 react-native / engines/rn 前生效。
+// Dynamic import: ensures the mock above takes effect before DiagramNode loads react-native / engines/rn.
 const { DiagramNode } = await import('../src/DiagramNode');
 const { clearReactNativeRendererCaches } = await import('../src/renderCache');
 const { SourceStateContext } = await import('../src/SourceStateContext');
 
-// 开启现有 diagram.defaultCache 配置，用于验证 RN renderer 真正消费缓存策略。
+// Enable an existing diagram.defaultCache config to verify that the RN renderer actually consumes the cache policy.
 const enabledCacheConfig = {
   defaultCache: {
     enabled: true,
@@ -85,8 +86,9 @@ function normalizationFailureResult(): DiagramRenderResult {
   };
 }
 
-// create / update 必须包在 act 里，effect 才会同步 flush；额外的 microtask 等待
-// 让 useEffect 内的 setState 在 act 边界内完成，避免 act 警告。
+// create / update must be wrapped in act so effects flush synchronously; the
+// extra microtask wait lets setState inside useEffect complete within the
+// act boundary, avoiding act warnings.
 async function renderWithState(
   node: SupramarkDiagramNode,
   state: SupramarkSourceState,
@@ -109,7 +111,7 @@ async function renderWithState(
     );
     await Promise.resolve();
   });
-  // act 回调内赋值后 TS 不收紧，这里断言已赋值。
+  // TS doesn't narrow the type after assignment inside the act callback, so assert it's been assigned here.
   return renderer as unknown as ReactTestRenderer;
 }
 

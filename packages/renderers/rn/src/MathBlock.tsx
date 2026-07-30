@@ -57,7 +57,7 @@ export const MathBlock: React.FC<MathBlockProps> = ({ node }) => {
     return (
       <View style={styles.placeholder}>
         <ActivityIndicator size="small" />
-        <Text style={styles.placeholderText}>正在渲染公式...</Text>
+        <Text style={styles.placeholderText}>Rendering formula...</Text>
       </View>
     );
   }

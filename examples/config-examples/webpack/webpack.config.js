@@ -5,38 +5,38 @@ const TerserPlugin = require('terser-webpack-plugin');
 const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 
 /**
- * Webpack 配置示例 - Supramark 集成
+ * Webpack config example - Supramark integration
  *
- * 支持开发和生产环境
+ * Supports development and production environments
  */
 
 module.exports = (env, argv) => {
   const isProduction = argv.mode === 'production';
 
   return {
-    // 入口文件
+    // Entry point
     entry: './src/index.tsx',
 
-    // 输出配置
+    // Output config
     output: {
       path: path.resolve(__dirname, 'dist'),
       filename: isProduction ? '[name].[contenthash].js' : '[name].js',
       chunkFilename: isProduction ? '[name].[contenthash].chunk.js' : '[name].chunk.js',
-      clean: true, // 构建前清理输出目录
+      clean: true, // Clean the output directory before each build
       publicPath: '/',
     },
 
-    // 模块解析
+    // Module resolution
     resolve: {
       extensions: ['.tsx', '.ts', '.jsx', '.js', '.json'],
       alias: {
         '@': path.resolve(__dirname, 'src'),
       },
-      // 确保正确解析 package.json exports
+      // Make sure package.json exports resolve correctly
       conditionNames: ['import', 'require', 'default'],
     },
 
-    // 模块规则
+    // Module rules
     module: {
       rules: [
         // TypeScript / JavaScript
@@ -64,7 +64,7 @@ module.exports = (env, argv) => {
           ],
         },
 
-        // 图片和字体
+        // Images and fonts
         {
           test: /\.(png|jpg|jpeg|gif|svg|woff|woff2|eot|ttf|otf)$/,
           type: 'asset/resource',
@@ -72,15 +72,15 @@ module.exports = (env, argv) => {
       ],
     },
 
-    // 插件
+    // Plugins
     plugins: [
-      // 生成 HTML 文件
+      // Generate the HTML file
       new HtmlWebpackPlugin({
         template: './public/index.html',
         inject: 'body',
       }),
 
-      // 提取 CSS（生产环境）
+      // Extract CSS (production only)
       ...(isProduction
         ? [
             new MiniCssExtractPlugin({
@@ -91,43 +91,43 @@ module.exports = (env, argv) => {
         : []),
     ],
 
-    // 优化配置
+    // Optimization
     optimization: {
       minimize: isProduction,
       minimizer: [
         new TerserPlugin({
           terserOptions: {
             compress: {
-              drop_console: true, // 生产环境移除 console.log
+              drop_console: true, // Strip console.log in production
             },
           },
         }),
         new CssMinimizerPlugin(),
       ],
 
-      // 代码分割
+      // Code splitting
       splitChunks: {
         chunks: 'all',
         cacheGroups: {
-          // React 相关库
+          // React and related libraries
           react: {
             test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
             name: 'react-vendor',
             priority: 20,
           },
-          // Supramark 库
+          // Supramark library
           supramark: {
             test: /[\\/]node_modules[\\/](@supramark)[\\/]/,
             name: 'supramark',
             priority: 15,
           },
-          // 其他第三方库
+          // Other third-party libraries
           vendors: {
             test: /[\\/]node_modules[\\/]/,
             name: 'vendors',
             priority: 10,
           },
-          // 公共模块
+          // Common/shared modules
           common: {
             minChunks: 2,
             priority: 5,
@@ -136,13 +136,13 @@ module.exports = (env, argv) => {
         },
       },
 
-      // 运行时 chunk
+      // Runtime chunk
       runtimeChunk: {
         name: 'runtime',
       },
     },
 
-    // 开发服务器
+    // Dev server
     devServer: {
       static: {
         directory: path.join(__dirname, 'public'),
@@ -150,21 +150,21 @@ module.exports = (env, argv) => {
       port: 3000,
       hot: true,
       open: true,
-      historyApiFallback: true, // SPA 路由支持
+      historyApiFallback: true, // SPA routing support
       compress: true,
     },
 
     // Source maps
     devtool: isProduction ? 'source-map' : 'eval-source-map',
 
-    // 性能提示
+    // Performance hints
     performance: {
       hints: isProduction ? 'warning' : false,
       maxEntrypointSize: 512000,
       maxAssetSize: 512000,
     },
 
-    // 统计信息
+    // Stats output
     stats: {
       children: false,
       modules: false,

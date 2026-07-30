@@ -1,23 +1,23 @@
-name: Markdown 语义与视觉对照验证
+name: Markdown Semantic and Visual Conformance Check
 
 on:
   workflow_dispatch:
     inputs:
       sources:
-        description: "执行的数据源（逗号分隔：commonmark,cmark-gfm；或 all）"
+        description: "Data sources to run (comma-separated: commonmark,cmark-gfm; or all)"
         type: string
         required: true
         default: "all"
       create_issue:
-        description: "失败后创建或更新 Issue"
+        description: "Create or update an Issue on failure"
         type: boolean
         default: true
       run_visual:
-        description: "执行浏览器视觉对照测试"
+        description: "Run browser-based visual conformance tests"
         type: boolean
         default: true
       fail_workflow:
-        description: "存在未通过用例时将工作流标记为失败"
+        description: "Mark the workflow as failed when there are failing cases"
         type: boolean
         default: true
       gate_mode:
@@ -26,7 +26,7 @@ on:
         options: [regression, absolute]
         default: regression
       issue_repository:
-        description: "Issue 目标仓库（owner/repo，留空使用当前仓库）"
+        description: "Target repository for the Issue (owner/repo; leave empty to use the current repository)"
         type: string
         default: ""
   push:
@@ -65,20 +65,20 @@ concurrency:
 
 jobs:
   resolve-sources:
-    name: 解析待测试数据源
+    name: Resolve data sources to test
     runs-on: ubuntu-latest
     outputs:
       sources: ${{ steps.resolve.outputs.sources }}
     steps:
-      - name: 检出代码
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 配置 Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: 校验并解析数据源
+      - name: Validate and resolve data sources
         id: resolve
         env:
           REQUESTED_SOURCES: ${{ github.event_name == 'workflow_dispatch' && inputs.sources || vars.MARKDOWN_CONFORMANCE_SOURCES || 'all' }}
@@ -89,7 +89,7 @@ jobs:
           echo "selected_sources=$sources"
 
   markdown-conformance:
-    name: ${{ matrix.source }} 语义与视觉对照
+    name: ${{ matrix.source }} semantic and visual conformance
     needs: resolve-sources
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -106,7 +106,7 @@ jobs:
       CONFORMANCE_GATE: ${{ github.event_name == 'workflow_dispatch' && inputs.gate_mode || 'regression' }}
 
     steps:
-      - name: 显示运行配置
+      - name: Show run configuration
         run: |
           echo "source=$SOURCE_NAME"
           echo "create_issue=$CREATE_ISSUE"
@@ -115,47 +115,47 @@ jobs:
           echo "issue_repository=$ISSUE_REPOSITORY"
           echo "gate=$CONFORMANCE_GATE"
 
-      - name: 检出代码
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 配置 Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: 配置 pnpm
+      - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
           version: "10.28.2"
 
-      - name: 安装用例依赖
+      - name: Install test case dependencies
         working-directory: tests/markdown-conformance
         run: pnpm install --frozen-lockfile
 
-      - name: 安装 Playwright Chromium
+      - name: Install Playwright Chromium
         if: env.RUN_VISUAL == 'true'
         working-directory: tests/markdown-conformance
         run: node node_modules/playwright/cli.js install --with-deps chromium
 
-      - name: 配置 Rust
+      - name: Set up Rust
         uses: dtolnay/rust-toolchain@1.97.0
 
-      - name: 导入锁定的数据源
+      - name: Import locked data sources
         run: node tests/markdown-conformance/scripts/import.mjs "$SOURCE_NAME"
 
-      - name: 校验统一 JSON 用例
+      - name: Validate unified JSON test cases
         run: node tests/markdown-conformance/scripts/validate.mjs "$SOURCE_NAME"
 
-      - name: 检查导入产物可重复
+      - name: Check that import output is reproducible
         run: git diff --exit-code -- "tests/cases/_fixtures/$SOURCE_NAME/"
 
-      - name: 运行 Markdown parser 回归测试
+      - name: Run Markdown parser regression tests
         run: cargo test -p supramark-markdown --test public_api
 
-      - name: 构建 Supramark Markdown CLI
+      - name: Build Supramark Markdown CLI
         run: cargo build -p supramark-markdown --bin supramark-markdown
 
-      - name: 执行语义与视觉对照
+      - name: Run semantic and visual conformance checks
         id: conformance_test
         continue-on-error: true
         env:
@@ -168,7 +168,7 @@ jobs:
             node tests/markdown-conformance/scripts/run.mjs "$SOURCE_NAME"
           fi
 
-      - name: 上传中文报告与失败详情
+      - name: Upload report and failure details
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -177,7 +177,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: 自动创建或更新失败 Issue
+      - name: Automatically create or update a failure Issue
         if: steps.conformance_test.outcome == 'failure' && github.event_name != 'pull_request' && env.CREATE_ISSUE == 'true'
         env:
           GH_TOKEN: ${{ secrets.MARKDOWN_CONFORMANCE_ISSUE_TOKEN || secrets.COMMONMARK_ISSUE_TOKEN || github.token }}
@@ -206,7 +206,7 @@ jobs:
           issue_marker="${issue_metadata[3]}"
 
           if [ -z "$issue_source" ] || [ -z "$issue_title" ] || [ -z "$issue_labels" ] || [ -z "$issue_marker" ]; then
-            echo "Issue 元数据不完整，无法创建或更新 Issue。"
+            echo "Issue metadata is incomplete; cannot create or update the Issue."
             exit 1
           fi
 
@@ -227,17 +227,17 @@ jobs:
               if ! gh label create "$issue_label" \
                 --repo "$GH_REPO" \
                 --color "d73a4a" \
-                --description "测试发现需要修复的问题"; then
+                --description "Issue found by tests that needs to be fixed"; then
                 if ! gh label list \
                   --repo "$GH_REPO" \
                   --limit 1000 \
                   --json name \
                   --jq '.[].name' \
                   | grep -Fqx -- "$issue_label"; then
-                  echo "无法创建或确认 Issue 标签：$issue_label"
+                  echo "Failed to create or confirm the Issue label: $issue_label"
                   exit 1
                 fi
-                echo "Issue 标签已由并行任务创建：$issue_label"
+                echo "Issue label was already created by a parallel job: $issue_label"
               fi
             fi
           done
@@ -261,7 +261,7 @@ jobs:
               --title "$issue_title" \
               --body-file "$ISSUE_BODY" \
               --add-label "$issue_labels"
-            echo "已更新 $issue_source Issue #$issue_number：$issue_title"
+            echo "Updated $issue_source Issue #$issue_number: $issue_title"
           else
             issue_url="$(
               gh issue create \
@@ -270,11 +270,11 @@ jobs:
                 --body-file "$ISSUE_BODY" \
                 --label "$issue_labels"
             )"
-            echo "已创建 $issue_source Issue：$issue_url"
+            echo "Created $issue_source Issue: $issue_url"
           fi
 
-      - name: 标记语义或视觉对照失败
+      - name: Mark semantic or visual conformance as failed
         if: always() && steps.conformance_test.outcome == 'failure' && env.FAIL_WORKFLOW == 'true'
         run: |
-          echo "$SOURCE_NAME 语义或视觉对照存在未通过用例，中文报告和 Issue 内容已生成。"
+          echo "$SOURCE_NAME has failing semantic or visual conformance cases; the report and Issue content have been generated."
           exit 1

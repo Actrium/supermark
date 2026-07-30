@@ -16,7 +16,7 @@ const PRESETS_DIR = resolve(
 );
 
 // ----------------------------------------------------------------------------
-// argv 解析（不引 mri/cac，手写一个极简的）
+// argv parsing (no mri/cac dependency; a minimal hand-rolled parser)
 // ----------------------------------------------------------------------------
 interface Args {
   config?: string;
@@ -80,13 +80,13 @@ Usage:
   supramark-gen [options]
 
 Options:
-  -c, --config <path>    配置文件路径          [default: ${DEFAULT_CONFIG_PATH}]
-  -o, --out <path>       生成文件路径          [default: ${DEFAULT_OUT_PATH}]
-  -p, --preset <name>    使用内置 preset       [与 --config 互斥]
-      --check            仅校验；漂移即失败（CI 用）
-      --list-presets     列出可用 preset
-  -h, --help             显示此帮助
-  -v, --version          打印 CLI 版本
+  -c, --config <path>    Config file path      [default: ${DEFAULT_CONFIG_PATH}]
+  -o, --out <path>       Output file path       [default: ${DEFAULT_OUT_PATH}]
+  -p, --preset <name>    Use a built-in preset  [mutually exclusive with --config]
+      --check            Validate only; fail on drift (for CI)
+      --list-presets     List available presets
+  -h, --help             Show this help
+  -v, --version          Print the CLI version
 
 Examples:
   supramark-gen --preset docs
@@ -105,7 +105,7 @@ function listPresets(): void {
 }
 
 // ----------------------------------------------------------------------------
-// 读 config（文件 or preset）
+// Load config (file or preset)
 // ----------------------------------------------------------------------------
 function loadConfig(
   args: Args
@@ -142,7 +142,7 @@ function loadConfig(
 }
 
 // ----------------------------------------------------------------------------
-// 主流程
+// Main flow
 // ----------------------------------------------------------------------------
 // Public CLI entry: the `Promise<number>` signature is a stable contract that
 // callers `await` (see bin/supramark-gen.mjs), so the body stays `async` even

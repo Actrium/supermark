@@ -167,7 +167,7 @@ After 0.2.0 ships on `kookyleo/graphviz-anywhere`:
 1. Pull updated subtree into supramark: `git subtree pull --prefix
    crates/graphviz-anywhere https://github.com/Actrium/graphviz-anywhere
    main`
-2. Update `crates/graphviz-anywhere/UPSTREAM.md` pin (currently
+2. Update `crates/graphviz-anywhere/UPSTREAM.zh.md` pin (currently
    `436fe2f00bf099416a3e6eea6d1012911d4f7435` / `v0.1.7` — bump to
    v0.2.0 SHA after release).
 3. Verify `plantuml-little` cross-compiles end-to-end for iOS and
@@ -176,7 +176,7 @@ After 0.2.0 ships on `kookyleo/graphviz-anywhere`:
    missing iOS branch.
 4. If `plantuml-little`'s graphviz dependency is still hard-required
    (no `optional` feature), consider Wave 2 task 1 from
-   `supramark/docs/architecture/native-ffi-blockers.md` — refactor
+   `supramark/docs/architecture/native-ffi-blockers.zh.md` — refactor
    `plantuml-little`'s Cargo.toml to make `graphviz-anywhere` an
    optional feature. That's a 30-60min change in the supramark repo,
    separate from this work.

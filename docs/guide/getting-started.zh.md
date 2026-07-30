@@ -78,6 +78,6 @@ import { gfmFeature } from '@supramark/feature-gfm'
 
 ## 下一步
 
-- [核心概念](/guide/concepts) - 了解 Supramark 的设计理念
+- [核心概念](/guide/concepts.zh) - 了解 Supramark 的设计理念
 - [Features 列表](/features/) - 查看所有可用功能
 - [API 参考](/api/) - 深入了解 API

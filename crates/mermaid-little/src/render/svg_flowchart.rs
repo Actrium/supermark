@@ -4808,8 +4808,9 @@ impl EdgeLabelAdjustments {
 /// Visual width floor for an edge-label collision box.
 ///
 /// The byte-exact jsdom shim has no metrics for the browser's CJK fallback
-/// font, so it measures CJK glyphs far too narrow — e.g. "接收设备离线时暂存"
-/// measures ~54 px but paints ~152 px. A label whose real width exceeds its
+/// font, so it measures CJK glyphs far too narrow — e.g. the 9-glyph CJK
+/// label used in the issue #93 repro (see `edge_label_decluster.rs`) measures
+/// ~54 px but paints ~152 px. A label whose real width exceeds its
 /// measured width collides on screen while the decluster reads it as clear, so
 /// pairs that obviously stack never get pushed apart. Floor the width at a
 /// per-glyph estimate (CJK ≈ 1em, others ≈ 0.56em) so the box tracks what the

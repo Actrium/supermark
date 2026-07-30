@@ -108,7 +108,7 @@
   line-height: 1.6;
 }
 
-/* Markdown 渲染样式 */
+/* Markdown rendering styles */
 .markdown-preview table {
   border-collapse: collapse;
   width: 100%;
@@ -146,7 +146,7 @@
   padding: 0;
 }
 
-/* 极简主题样式 */
+/* Minimal theme styles */
 .supramark {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
 }
@@ -261,7 +261,7 @@
 }
 
 .sm-tbody {
-  /* 默认无样式 */
+  /* No default styling */
 }
 
 .sm-tr {

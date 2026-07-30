@@ -1,14 +1,14 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * Diagram (ECharts) Feature 使用示例
+ * Diagram (ECharts) Feature usage examples
  */
 export const diagramEchartsExamples: ExampleDefinition[] = [
   {
-    name: 'ECharts 折线图',
-    description: '使用 ```echarts 围栏代码块定义一个简单折线图 option。',
+    name: 'ECharts line chart',
+    description: 'Uses a ```echarts fenced code block to define a simple line-chart option.',
     markdown: `
-# ECharts diagram 示例
+# ECharts diagram example
 
 \`\`\`echarts
 {

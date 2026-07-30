@@ -1,8 +1,8 @@
 # Features
 
-Supramark 提供了丰富的 Feature 扩展，支持 Markdown 语法增强。
+Supramark provides a rich set of Feature extensions for enhancing Markdown syntax.
 
-## 可用 Features
+## Available Features
 
 - [@supramark/feature-core-markdown](./core-markdown)
 - [@supramark/feature-gfm](./gfm)
@@ -12,7 +12,7 @@ Supramark 提供了丰富的 Feature 扩展，支持 Markdown 语法增强。
 - [@supramark/feature-emoji](./emoji)
 - [@supramark/feature-footnote](./footnote)
 
-## 使用方法
+## Usage
 
 ```typescript
 import { Supramark } from '@supramark/core';

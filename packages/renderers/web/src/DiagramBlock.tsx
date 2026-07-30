@@ -18,9 +18,10 @@ export const DiagramBlock: React.FC<DiagramBlockProps> = ({ classNames, code, en
         className={classNames.diagram}
       >
         <pre className={classNames.diagramPre}>
-          <code className={classNames.diagramCode}>正在渲染图表（{engine}）…</code>
+          <code className={classNames.diagramCode}>Rendering diagram ({engine})…</code>
         </pre>
-        {/* 代码回退：引擎结果到达前展示原始源码，避免占位符永久卡死且无内容可读。 */}
+        {/* Code fallback: show the raw source before the engine result arrives, so the
+            placeholder never gets stuck indefinitely with no readable content. */}
         <pre className={classNames.diagramPre}>
           <code className={classNames.diagramCode}>{code}</code>
         </pre>
@@ -29,7 +30,7 @@ export const DiagramBlock: React.FC<DiagramBlockProps> = ({ classNames, code, en
   }
 
   if (!result.success || result.format !== 'svg') {
-    const errorHeader = `[diagram engine="${engine}" 渲染失败]\n${result.error?.details || result.payload}\n\n`;
+    const errorHeader = `[diagram engine="${engine}" render failed]\n${result.error?.details || result.payload}\n\n`;
 
     return (
       <div data-supramark-diagram={engine} className={classNames.diagram}>

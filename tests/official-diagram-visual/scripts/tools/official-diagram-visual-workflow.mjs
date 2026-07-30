@@ -265,9 +265,9 @@ async function loadCases(files) {
       const caseType = typeMatch?.[1]?.trim() ?? '';
       const codeMatch = section.match(/````markdown\s*```([a-zA-Z0-9_-]+)\s*\n([\s\S]*?)\n```\s*````/);
       const imageMatch = section.match(/!\[[^\]]+\]\((assets\/[^)]+)\)/);
-      const checksMatch = section.match(/建议检查文本：(.+)/);
-      const officialSourceMatch = section.match(/官方来源：([^\n]+)/);
-      const officialRenderMatch = section.match(/官方渲染 URL：([^\n]+)/);
+      const checksMatch = section.match(/\u5efa\u8bae\u68c0\u67e5\u6587\u672c\uff1a(.+)/); // "recommended check text:" header in cases/*.md (out of scope, stays Chinese)
+      const officialSourceMatch = section.match(/\u5b98\u65b9\u6765\u6e90\uff1a([^\n]+)/); // "official source:" header in cases/*.md (out of scope, stays Chinese)
+      const officialRenderMatch = section.match(/\u5b98\u65b9\u6e32\u67d3 URL\uff1a([^\n]+)/); // "official render URL:" header in cases/*.md (out of scope, stays Chinese)
       if (!codeMatch || !imageMatch) continue;
 
       const language = codeMatch[1].trim();
@@ -358,7 +358,10 @@ async function runCase(page, browser, testCase) {
       const errors = [...document.querySelectorAll('.feature-preview-render-content, body')]
         .map(el => el.textContent || '')
         .join('\n')
-        .match(/Engine not configured|unsupported_engine|render_error|Syntax error|Error:|渲染失败|Failed to resolve module specifier|Failed to fetch dynamically imported module/gi);
+        // cjk-allow: \u6e32\u67d3\u5931\u8d25 means "render failed", a Chinese
+        // error string that some renderer/feature may still emit into the
+        // DOM at runtime (out of scope here); kept as Unicode escapes.
+        .match(/Engine not configured|unsupported_engine|render_error|Syntax error|Error:|\u6e32\u67d3\u5931\u8d25|Failed to resolve module specifier|Failed to fetch dynamically imported module/gi);
       const rect = (diagram ?? svg ?? canvas ?? content)?.getBoundingClientRect();
       return {
         html: diagram?.outerHTML ?? svg?.outerHTML ?? canvas?.outerHTML ?? '',
@@ -423,7 +426,7 @@ async function runCase(page, browser, testCase) {
         semantic,
         geometry,
         visual: null,
-        errors: errors.length > 0 ? errors : ['未生成可渲染图形'],
+        errors: errors.length > 0 ? errors : ['No renderable diagram was produced'],
       };
     }
 
@@ -590,12 +593,17 @@ async function selectExampleType(page, caseType) {
 }
 
 function normalizeLabel(value) {
+  // cjk-allow: this label is diffed against live dropdown option text that
+  // comes straight from the case docs (out of scope for this cleanup), so
+  // it still contains Chinese. \u793a\u4f8b is the suffix meaning "example";
+  // \uFF08 \uFF09 are full-width parentheses. Written as Unicode escapes,
+  // not literal characters, per repo policy.
   return String(value || '')
     .replace(/\s+/g, '')
-    .replace(/示例/g, '')
+    .replace(/\u793a\u4f8b/g, '')
     .replace(/echarts/gi, '')
     .replace(/vega-?lite/gi, '')
-    .replace(/[()（）]/g, '')
+    .replace(/[()\uFF08\uFF09]/g, '')
     .toLowerCase();
 }
 
@@ -607,7 +615,8 @@ async function waitForRender(page) {
     const diagram = content?.querySelector('[data-supramark-diagram]');
     const svg = content?.querySelector('svg');
     const canvas = content?.querySelector('canvas');
-    const hasError = /Engine not configured|unsupported_engine|render_error|Syntax error|Error:|渲染失败|Failed to resolve module specifier|Failed to fetch dynamically imported module/i.test(
+    // cjk-allow: \u6e32\u67d3\u5931\u8d25 means "render failed" (see probe() above)
+    const hasError = /Engine not configured|unsupported_engine|render_error|Syntax error|Error:|\u6e32\u67d3\u5931\u8d25|Failed to resolve module specifier|Failed to fetch dynamically imported module/i.test(
       content?.textContent || ''
     );
     return content && !loading && !hidden && (diagram || svg || canvas || hasError);
@@ -1213,7 +1222,7 @@ function runSelfTests() {
         .match(/^## .+$/gm)
         .slice(0, 5)
         .join('>'),
-      expected: '## 缺陷摘要>## 用例信息>## 复现代码>## 官方原渲染效果>## 运行环境',
+      expected: '## Defect summary>## Case info>## Reproduction code>## Official reference rendering>## Run environment',
     },
     {
       name: 'marks review issue titles for manual review',
@@ -1225,21 +1234,21 @@ function runSelfTests() {
         geometry: { pass: true },
         visual: { diffRatio: 0.2 },
         errors: [],
-      }).startsWith('【需 Review】'),
+      }).startsWith('[Needs review] '),
       expected: true,
     },
     {
       name: 'describes missing text and layout mismatch in issue titles',
       actual: renderIssueTitle({
         language: 'plantuml',
-        selectedExample: '活动图示例',
+        selectedExample: 'Activity Diagram',
         status: 'fail',
         semantic: { missingTexts: ['Client', 'Server'] },
         geometry: { pass: false, aspectRatioMismatch: true },
         visual: { diffRatio: 0.208 },
         errors: [],
       }),
-      expected: 'PlantUML 活动图：缺少 Client、Server 且布局比例异常',
+      expected: 'PlantUML Activity Diagram: missing Client, Server, and layout aspect ratio is off',
     },
   ];
 
@@ -1386,42 +1395,42 @@ async function handleIssues(reports) {
 
 function renderCurrentIssuesIndex(issueReports) {
   const lines = [
-    '# 当前运行 Issue 文件列表',
+    '# Current Run Issue Files',
     '',
-    '本文件由自动化脚本生成，列出本轮运行 status 为 `fail` 或 `review` 的用例。`review` 默认仅用于人工复核；只有同时设置 `SUBMIT_GITHUB_ISSUES=1` 和 `SUBMIT_REVIEW_ISSUES=1` 才会自动提交 GitHub issue。',
+    'This file is generated by the automation script and lists the cases from this run whose `status` is `fail` or `review`. `review` is for manual triage only by default; a GitHub issue is only auto-submitted when both `SUBMIT_GITHUB_ISSUES=1` and `SUBMIT_REVIEW_ISSUES=1` are set.',
     '',
   ];
 
   if (issueReports.length === 0) {
-    lines.push('本轮没有自动判定失败或需要人工复核的用例。');
+    lines.push('No cases in this run were auto-classified as failing or needing manual review.');
     return `${lines.join('\n')}\n`;
   }
 
   for (const report of issueReports) {
-    const marker = report.status === 'review' ? '需 Review' : 'Fail';
+    const marker = report.status === 'review' ? 'Needs review' : 'Fail';
     lines.push(
-      `- [${report.id}](./${report.id}.md)：${marker} / ${report.selectedFeature ?? '未记录'} / ${report.selectedExample ?? '未记录'}`
+      `- [${report.id}](./${report.id}.md): ${marker} / ${report.selectedFeature ?? 'not recorded'} / ${report.selectedExample ?? 'not recorded'}`
     );
   }
 
   return `${lines.join('\n')}\n`;
 }
 function renderNonCurrentIssueNote(report) {
-  return `# 非当前缺陷：${report.id}
+  return `# Not a current defect: ${report.id}
 
-这份文件曾经由旧运行生成过，但在最新一次运行中该用例没有被自动判定为缺陷。
+This file was generated by a previous run, but the latest run did not auto-classify this case as a defect.
 
-## 最新运行结果
+## Latest run result
 
-- 用例 ID：\`${report.id}\`
-- 当前状态：\`${report.status}\`
-- 页面 Feature 下拉框：\`${report.selectedFeature ?? '未记录'}\`
-- 类型/示例下拉框：\`${report.selectedExample ?? '未记录'}\`
-- 测试文档位置：\`${report.docPath ?? '未记录'}\`
-- Supramark 页面：${report.url ?? '未记录'}
-- HTML 总报告：\`artifacts/official-diagram-visual-workflow/report.html\`
+- Case ID: \`${report.id}\`
+- Current status: \`${report.status}\`
+- Page feature dropdown: \`${report.selectedFeature ?? 'not recorded'}\`
+- Type/example dropdown: \`${report.selectedExample ?? 'not recorded'}\`
+- Test doc location: \`${report.docPath ?? 'not recorded'}\`
+- Supramark page: ${report.url ?? 'not recorded'}
+- Full HTML report: \`artifacts/official-diagram-visual-workflow/report.html\`
 
-请以 \`artifacts/official-diagram-visual-workflow/summary.json\` 和 \`issues/CURRENT_ISSUES.md\` 为准，不要把旧 issue 文件当成本轮缺陷。
+Treat \`artifacts/official-diagram-visual-workflow/summary.json\` and \`issues/CURRENT_ISSUES.md\` as authoritative; do not treat this stale issue file as a defect from the current run.
 `;
 }
 
@@ -1501,32 +1510,6 @@ function githubHeaders(token) {
   };
 }
 
-function renderIssueTitleLegacy(report) {
-  const diagram = issueDiagramLabel(report);
-  const errors = report.errors ?? [];
-
-  if (errors.length > 0 || report.semantic?.hasError) {
-    return `${diagram}：渲染报错`;
-  }
-  if (!report.visual) {
-    return `${diagram}：未生成可对比图像`;
-  }
-  if (report.semantic?.missingTexts?.length) {
-    return `${diagram}：缺少关键文本`;
-  }
-  if (!report.geometry?.pass) {
-    if (report.geometry?.aspectRatioMismatch) {
-      return `${diagram}：图形布局比例异常`;
-    }
-    return `${diagram}：图形尺寸异常`;
-  }
-  if (typeof report.visual.diffRatio === 'number') {
-    return `${diagram}：视觉差异 ${(report.visual.diffRatio * 100).toFixed(2)}%`;
-  }
-
-  return `${diagram}：渲染结果不一致`;
-}
-
 function issueDiagramLabel(report) {
   const language = new Map([
     ['d2', 'D2'],
@@ -1539,202 +1522,41 @@ function issueDiagramLabel(report) {
   ]).get(report.language) ?? report.language;
 
   const type = String(report.selectedExample || report.title || '')
-    .replace(/示例/g, '')
+    // cjk-allow: strips the Chinese suffix meaning "example" (U+793A U+4F8B)
+    // that appears in labels sourced live from the preview UI / case docs,
+    // which stay in Chinese (case docs are out of scope for this cleanup).
+    // Written as Unicode escapes, not literal characters, per repo policy.
+    .replace(/\u793a\u4f8b/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
   return type ? `${language} ${type}` : language;
 }
 
-function renderIssueBodyLegacy(report, repo, options = {}) {
-  const artifactRunUrl = process.env.GITHUB_ACTIONS === 'true'
-    ? `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${process.env.GITHUB_REPOSITORY || repo}/actions/runs/${process.env.GITHUB_RUN_ID || ''}`
-    : '';
-  const artifactBaseUrl = (process.env.ARTIFACT_BASE_URL || '').replace(/\/+$/, '');
-  const diffRatio = typeof report.visual?.diffRatio === 'number'
-    ? `${(report.visual.diffRatio * 100).toFixed(3)}%`
-    : '无，未生成视觉 diff';
-  const rawDiffRatio = typeof report.visual?.raw?.diffRatio === 'number'
-    ? `${(report.visual.raw.diffRatio * 100).toFixed(3)}%`
-    : '无';
-  const perceptualDistance = typeof report.visual?.perceptual?.distanceRatio === 'number'
-    ? `${(report.visual.perceptual.distanceRatio * 100).toFixed(3)}%`
-    : '无';
-  const passThreshold = typeof report.visual?.passThreshold === 'number'
-    ? `${(report.visual.passThreshold * 100).toFixed(3)}%`
-    : `${(visualPassThreshold * 100).toFixed(3)}%`;
-  const failThreshold = typeof report.visual?.failThreshold === 'number'
-    ? `${(report.visual.failThreshold * 100).toFixed(3)}%`
-    : `${(visualFailThreshold * 100).toFixed(3)}%`;
-  const visualBandText = report.visual?.band ?? '无';
-  const captureMethodText = report.actual?.captureMethod ?? '无';
-  const severeSizeMismatchText = report.visual?.severeSizeMismatch ? '是' : '否';
-  const diffBounds = report.visual?.diffBounds
-    ? `x=${report.visual.diffBounds.x}, y=${report.visual.diffBounds.y}, width=${report.visual.diffBounds.width}, height=${report.visual.diffBounds.height}`
-    : '无';
-  const aspectRatioDelta = typeof report.geometry?.aspectRatioDelta === 'number'
-    ? `${(report.geometry.aspectRatioDelta * 100).toFixed(3)}%`
-    : '无';
-  const expectedAspectRatio = typeof report.geometry?.expectedAspectRatio === 'number'
-    ? report.geometry.expectedAspectRatio.toFixed(6)
-    : '无';
-  const actualAspectRatio = typeof report.geometry?.aspectRatio === 'number'
-    ? report.geometry.aspectRatio.toFixed(6)
-    : '无';
-  const aspectRatioThreshold = typeof report.geometry?.aspectRatioThreshold === 'number'
-    ? `${(report.geometry.aspectRatioThreshold * 100).toFixed(3)}%`
-    : '无';
-  const expectedViewBox = report.geometry?.expectedViewBox
-    ? formatViewBox(report.geometry.expectedViewBox)
-    : '无';
-  const actualViewBox = report.geometry?.viewBox
-    ? formatViewBox(report.geometry.viewBox)
-    : '无';
-  const missingTexts = report.semantic?.missingTexts?.length
-    ? report.semantic.missingTexts.map(text => `\`${text}\``).join(', ')
-    : '无';
-  const errors = report.errors?.length ? report.errors.map(error => `- ${error}`).join('\n') : '- 无';
-  const localExpected = report.expected?.pngPath || '';
-  const localOfficialReference = options.github
-    ? report.expected?.sourceSvg || ''
-    : localExpected || report.expected?.sourceSvg || '';
-  const localActual = report.actual?.previewPath || report.actual?.pngPath || report.actual?.screenshotPath || '';
-  const localDiff = report.visual?.diffPath || '';
-  const localRawDiff = report.visual?.raw?.diffPath || '';
-  const localNormalizedExpected = report.visual?.normalized?.expectedPath || '';
-  const localNormalizedActual = report.visual?.normalized?.actualPath || '';
-  const env = report.runEnvironment?.playwright ?? runEnvironment.playwright;
-  const envText = [
-    `Playwright 模式：${env.headless ? 'headless' : 'headed'}`,
-    `Viewport：${env.viewport?.width ?? '?'}x${env.viewport?.height ?? '?'}`,
-    `deviceScaleFactor：${env.deviceScaleFactor ?? '?'}`,
-    `Browser：${env.browserVersion ?? '未记录'}`,
-    `Chrome 路径：${env.executablePath ?? '未记录'}`,
-  ].join('\n- ');
-  const expectedImage = artifactImagePath(localExpected, { ...options, artifactBaseUrl });
-  const officialImage = officialReferenceImagePath({
-    localOfficialReference,
-    officialRenderUrl: report.expected?.officialRenderUrl || '',
-    repo: process.env.GITHUB_REPOSITORY || repo,
-    options: { ...options, artifactBaseUrl },
-  });
-  const actualImage = artifactImagePath(localActual, { ...options, artifactBaseUrl });
-  const diffImage = artifactImagePath(localDiff, { ...options, artifactBaseUrl });
-  const rawDiffImage = artifactImagePath(localRawDiff, { ...options, artifactBaseUrl });
-  const normalizedExpectedImage = artifactImagePath(localNormalizedExpected, { ...options, artifactBaseUrl });
-  const normalizedActualImage = artifactImagePath(localNormalizedActual, { ...options, artifactBaseUrl });
-  const localImageNote = options.github && !artifactBaseUrl
-    ? '\n> GitHub Issue 无法直接显示本地生成的 PNG。请打开本次 GitHub Actions artifact，或配置 `ARTIFACT_BASE_URL` 指向公开可访问的产物目录后再提交 issue。\n'
-    : '';
-
-  return `## 缺陷摘要
-
-自动化图表渲染检查发现 \`${report.id}\`${report.visual ? ' 渲染结果与官方参考结果不一致' : ' 页面未成功渲染出有效图表'}，判定为 **不通过**。
-
-## 用例信息
-
-- 用例 ID：\`${report.id}\`
-- 图表语言：\`${report.language}\`
-- 页面 Feature 下拉框：\`${report.selectedFeature ?? '未记录'}\`
-- 类型/示例下拉框：\`${report.selectedExample ?? '未记录'}\`
-- 测试文档位置：\`${report.docPath ?? '未记录'}\`
-- Supramark 页面：${report.url ?? '未记录'}
-
-## 运行环境
-
-- ${envText}
-
-## 差异项
-
-${report.visual ? '' : '- 视觉对比：跳过。页面未成功渲染出有效图表，继续做像素对比没有意义。\n'}
-- 视觉差异比例：${diffRatio}
-- 原始尺寸直接 diff：${rawDiffRatio}
-- 感知哈希距离：${perceptualDistance}
-- 视觉分级：${visualBandText}
-- Actual 生成方式：${captureMethodText}
-- 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核；若尺寸面积差异 ≥ ${formatRatio(severeSizeDeltaThreshold)} 且感知哈希距离 > ${formatRatio(perceptualSimilarThreshold)}，标记为人工复核；若像素差异本身已达到不通过则仍为不通过
-- 严重尺寸+感知异常：${severeSizeMismatchText}
-- 差异区域 bounding box：${diffBounds}
-- Expected 原图尺寸：${formatSize(report.visual?.expectedSize)}
-- Actual 原图尺寸：${formatSize(report.visual?.actualSize)}
-- 原图尺寸差异：${formatSizeDelta(report.visual?.sizeDelta?.original)}
-- 内容区域尺寸差异：${formatSizeDelta(report.visual?.sizeDelta?.content)}
-- Expected SVG viewBox：${expectedViewBox}
-- Actual SVG viewBox：${actualViewBox}
-- SVG viewBox 比例差异：expected=${expectedAspectRatio}，actual=${actualAspectRatio}，delta=${aspectRatioDelta}，阈值=${aspectRatioThreshold}
-- 关键文本缺失：${missingTexts}
-- 语义检查：${report.semantic?.pass ? '通过' : '不通过'}
-- 几何检查：${report.geometry?.pass ? '通过' : '不通过'}
-
-## 错误信息
-
-${errors}
-
-## 官方原渲染效果
-
-- 官方来源：${report.expected?.officialSource || '未记录'}
-- 官方渲染 URL：${report.expected?.officialRenderUrl || '未记录'}
-- 官方参考图文件：\`${report.expected?.sourceSvg || '未记录'}\`
-
-${officialImage ? `![官方原渲染效果](${officialImage})` : ''}
-
-## 自动化产物位置
-
-> 如果 issue 是从本地脚本提交的，下面是本地路径；如果从 GitHub Actions 提交，请查看本次 workflow artifact。
-
-- Expected PNG：\`${localExpected || '未生成'}\`
-- Actual PNG/截图：\`${localActual || '未生成'}\`
-- Normalized Expected PNG：\`${localNormalizedExpected || '未生成'}\`
-- Normalized Actual PNG：\`${localNormalizedActual || '未生成'}\`
-- Normalized Diff PNG：\`${localDiff || '未生成'}\`
-- Raw Diff PNG：\`${localRawDiff || '未生成'}\`
-- HTML 总报告：\`artifacts/official-diagram-visual-workflow/report.html\`
-${artifactRunUrl ? `- GitHub Actions Run：${artifactRunUrl}` : ''}
-${localImageNote}
-
-${expectedImage ? `![Expected](${expectedImage})` : ''}
-${actualImage ? `![Actual](${actualImage})` : ''}
-${normalizedExpectedImage ? `![Normalized Expected](${normalizedExpectedImage})` : ''}
-${normalizedActualImage ? `![Normalized Actual](${normalizedActualImage})` : ''}
-${diffImage ? `![Diff](${diffImage})` : ''}
-${rawDiffImage ? `![Raw Diff](${rawDiffImage})` : ''}
-
-## 复现代码
-
-\`\`\`text
-${getCaseCodeForIssue(report.id)}
-\`\`\`
-
-## 期望结果
-
-Supramark 渲染结果应与官方渲染效果在结构、文本、布局、连线/形状和可见区域上保持一致。结构性问题应修复；纯视觉差异只有达到高差异阈值时才自动判定为缺陷。
-`;
-}
-
 function renderIssueTitle(report) {
   const diagram = issueDiagramLabel(report);
-  const reviewPrefix = report.status === 'review' ? '【需 Review】' : '';
+  const reviewPrefix = report.status === 'review' ? '[Needs review] ' : '';
   const errors = report.errors ?? [];
   const missingTexts = report.semantic?.missingTexts ?? [];
   const missingTextTitle = formatIssueTitleTextList(missingTexts);
   let title;
 
   if (errors.length > 0 || report.semantic?.hasError) {
-    title = `${diagram}：渲染报错`;
+    title = `${diagram}: render error`;
   } else if (!report.visual) {
-    title = `${diagram}：未生成可对比图像`;
+    title = `${diagram}: no comparable image produced`;
   } else if (missingTexts.length && report.geometry?.aspectRatioMismatch) {
-    title = `${diagram}：缺少 ${missingTextTitle} 且布局比例异常`;
+    title = `${diagram}: missing ${missingTextTitle}, and layout aspect ratio is off`;
   } else if (missingTexts.length) {
-    title = `${diagram}：缺少 ${missingTextTitle}`;
+    title = `${diagram}: missing ${missingTextTitle}`;
   } else if (!report.geometry?.pass) {
     title = report.geometry?.aspectRatioMismatch
-      ? `${diagram}：图形布局比例异常`
-      : `${diagram}：图形尺寸异常`;
+      ? `${diagram}: layout aspect ratio is off`
+      : `${diagram}: diagram size is off`;
   } else if (typeof report.visual.diffRatio === 'number') {
-    title = `${diagram}：视觉差异 ${(report.visual.diffRatio * 100).toFixed(2)}%`;
+    title = `${diagram}: visual diff ${(report.visual.diffRatio * 100).toFixed(2)}%`;
   } else {
-    title = `${diagram}：渲染结果不一致`;
+    title = `${diagram}: render result mismatch`;
   }
 
   return `${reviewPrefix}${title}`;
@@ -1742,8 +1564,8 @@ function renderIssueTitle(report) {
 
 function formatIssueTitleTextList(texts) {
   const visibleTexts = texts.filter(Boolean).slice(0, 3);
-  const suffix = texts.length > visibleTexts.length ? ` 等 ${texts.length} 项文本` : '';
-  return `${visibleTexts.join('、')}${suffix}`;
+  const suffix = texts.length > visibleTexts.length ? ` and ${texts.length} more items` : '';
+  return `${visibleTexts.join(', ')}${suffix}`;
 }
 
 function renderIssueBody(report, repo, options = {}) {
@@ -1753,47 +1575,47 @@ function renderIssueBody(report, repo, options = {}) {
   const artifactBaseUrl = (process.env.ARTIFACT_BASE_URL || '').replace(/\/+$/, '');
   const diffRatio = typeof report.visual?.diffRatio === 'number'
     ? `${(report.visual.diffRatio * 100).toFixed(3)}%`
-    : '无，未生成视觉 diff';
+    : 'none, no visual diff produced';
   const rawDiffRatio = typeof report.visual?.raw?.diffRatio === 'number'
     ? `${(report.visual.raw.diffRatio * 100).toFixed(3)}%`
-    : '无';
+    : 'none';
   const perceptualDistance = typeof report.visual?.perceptual?.distanceRatio === 'number'
     ? `${(report.visual.perceptual.distanceRatio * 100).toFixed(3)}%`
-    : '无';
+    : 'none';
   const passThreshold = typeof report.visual?.passThreshold === 'number'
     ? `${(report.visual.passThreshold * 100).toFixed(3)}%`
     : `${(visualPassThreshold * 100).toFixed(3)}%`;
   const failThreshold = typeof report.visual?.failThreshold === 'number'
     ? `${(report.visual.failThreshold * 100).toFixed(3)}%`
     : `${(visualFailThreshold * 100).toFixed(3)}%`;
-  const visualBandText = report.visual?.band ?? '无';
-  const captureMethodText = report.actual?.captureMethod ?? '无';
-  const severeSizeMismatchText = report.visual?.severeSizeMismatch ? '是' : '否';
+  const visualBandText = report.visual?.band ?? 'none';
+  const captureMethodText = report.actual?.captureMethod ?? 'none';
+  const severeSizeMismatchText = report.visual?.severeSizeMismatch ? 'yes' : 'no';
   const diffBounds = report.visual?.diffBounds
     ? `x=${report.visual.diffBounds.x}, y=${report.visual.diffBounds.y}, width=${report.visual.diffBounds.width}, height=${report.visual.diffBounds.height}`
-    : '无';
+    : 'none';
   const aspectRatioDelta = typeof report.geometry?.aspectRatioDelta === 'number'
     ? `${(report.geometry.aspectRatioDelta * 100).toFixed(3)}%`
-    : '无';
+    : 'none';
   const expectedAspectRatio = typeof report.geometry?.expectedAspectRatio === 'number'
     ? report.geometry.expectedAspectRatio.toFixed(6)
-    : '无';
+    : 'none';
   const actualAspectRatio = typeof report.geometry?.aspectRatio === 'number'
     ? report.geometry.aspectRatio.toFixed(6)
-    : '无';
+    : 'none';
   const aspectRatioThreshold = typeof report.geometry?.aspectRatioThreshold === 'number'
     ? `${(report.geometry.aspectRatioThreshold * 100).toFixed(3)}%`
-    : '无';
+    : 'none';
   const expectedViewBox = report.geometry?.expectedViewBox
     ? formatViewBox(report.geometry.expectedViewBox)
-    : '无';
+    : 'none';
   const actualViewBox = report.geometry?.viewBox
     ? formatViewBox(report.geometry.viewBox)
-    : '无';
+    : 'none';
   const missingTexts = report.semantic?.missingTexts?.length
     ? report.semantic.missingTexts.map(text => `\`${text}\``).join(', ')
-    : '无';
-  const errors = report.errors?.length ? report.errors.map(error => `- ${error}`).join('\n') : '- 无';
+    : 'none';
+  const errors = report.errors?.length ? report.errors.map(error => `- ${error}`).join('\n') : '- none';
   const localExpected = report.expected?.pngPath || '';
   const localOfficialReference = options.github
     ? report.expected?.sourceSvg || ''
@@ -1805,11 +1627,11 @@ function renderIssueBody(report, repo, options = {}) {
   const localNormalizedActual = report.visual?.normalized?.actualPath || '';
   const env = report.runEnvironment?.playwright ?? runEnvironment.playwright;
   const envText = [
-    `Playwright 模式：${env.headless ? 'headless' : 'headed'}`,
-    `Viewport：${env.viewport?.width ?? '?'}x${env.viewport?.height ?? '?'}`,
-    `deviceScaleFactor：${env.deviceScaleFactor ?? '?'}`,
-    `Browser：${env.browserVersion ?? '未记录'}`,
-    `Chrome 路径：${env.executablePath ?? '未记录'}`,
+    `Playwright mode: ${env.headless ? 'headless' : 'headed'}`,
+    `Viewport: ${env.viewport?.width ?? '?'}x${env.viewport?.height ?? '?'}`,
+    `deviceScaleFactor: ${env.deviceScaleFactor ?? '?'}`,
+    `Browser: ${env.browserVersion ?? 'not recorded'}`,
+    `Chrome path: ${env.executablePath ?? 'not recorded'}`,
   ].join('\n- ');
   const expectedImage = artifactImagePath(localExpected, { ...options, artifactBaseUrl });
   const officialImage = officialReferenceImagePath({
@@ -1824,82 +1646,82 @@ function renderIssueBody(report, repo, options = {}) {
   const normalizedExpectedImage = artifactImagePath(localNormalizedExpected, { ...options, artifactBaseUrl });
   const normalizedActualImage = artifactImagePath(localNormalizedActual, { ...options, artifactBaseUrl });
   const localImageNote = options.github && !artifactBaseUrl
-    ? '\n> GitHub Issue 无法直接显示本地生成的 PNG。请打开本次 GitHub Actions artifact，或配置 `ARTIFACT_BASE_URL` 指向公开可访问的产物目录后再提交 issue。\n'
+    ? '\n> GitHub Issue cannot directly display locally generated PNGs. Open this GitHub Actions artifact, or set `ARTIFACT_BASE_URL` to a publicly reachable artifact directory before filing the issue.\n'
     : '';
   const visualSkipNote = report.visual
     ? ''
-    : '- 视觉对比：跳过。页面未成功渲染出有效图表，继续做像素对比没有意义。\n';
+    : '- Visual comparison: skipped. The page did not render a valid diagram, so a pixel comparison would be meaningless.\n';
   const issueVerdictText = report.status === 'review'
-    ? '需人工复核'
-    : '不通过';
+    ? 'needs manual review'
+    : 'fail';
 
-  return `## 缺陷摘要
+  return `## Defect summary
 
-自动化图表渲染检查发现 \`${report.id}\`${report.visual ? ' 渲染结果与官方参考结果不一致' : ' 页面未成功渲染出有效图表'}，判定为 **${issueVerdictText}**。
+The automated diagram rendering check found that \`${report.id}\`${report.visual ? ' does not match the official reference rendering' : ' did not render a valid diagram on the page'}, and classified it as **${issueVerdictText}**.
 
-## 用例信息
+## Case info
 
-- 用例 ID：\`${report.id}\`
-- 图表语言：\`${report.language}\`
-- 页面 Feature 下拉框：\`${report.selectedFeature ?? '未记录'}\`
-- 类型/示例下拉框：\`${report.selectedExample ?? '未记录'}\`
-- 测试文档位置：\`${report.docPath ?? '未记录'}\`
-- Supramark 页面：${report.url ?? '未记录'}
+- Case ID: \`${report.id}\`
+- Diagram language: \`${report.language}\`
+- Page feature dropdown: \`${report.selectedFeature ?? 'not recorded'}\`
+- Type/example dropdown: \`${report.selectedExample ?? 'not recorded'}\`
+- Test doc location: \`${report.docPath ?? 'not recorded'}\`
+- Supramark page: ${report.url ?? 'not recorded'}
 
-## 复现代码
+## Reproduction code
 
 \`\`\`text
 ${report.code ?? report.markdown ?? ''}
 \`\`\`
 
-## 官方原渲染效果
+## Official reference rendering
 
-- 官方来源：${report.expected?.officialSource || '未记录'}
-- 官方渲染 URL：${report.expected?.officialRenderUrl || '未记录'}
-- 官方参考图文件：\`${report.expected?.sourceSvg || '未记录'}\`
+- Official source: ${report.expected?.officialSource || 'not recorded'}
+- Official render URL: ${report.expected?.officialRenderUrl || 'not recorded'}
+- Official reference image file: \`${report.expected?.sourceSvg || 'not recorded'}\`
 
-${officialImage ? `![官方原渲染效果](${officialImage})` : ''}
+${officialImage ? `![Official reference rendering](${officialImage})` : ''}
 
-## 运行环境
+## Run environment
 
 - ${envText}
 
-## 差异项
+## Differences
 
-${visualSkipNote}- 视觉差异比例：${diffRatio}
-- 原始尺寸直接 diff：${rawDiffRatio}
-- 感知哈希距离：${perceptualDistance}
-- 视觉分级：${visualBandText}
-- Actual 生成方式：${captureMethodText}
-- 视觉阈值：≤ ${passThreshold} 通过，> ${passThreshold} 且 < ${failThreshold} 人工复核，≥ ${failThreshold} 不通过；若高像素差异但感知哈希距离 ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}，降级为人工复核；若尺寸面积差异 ≥ ${formatRatio(severeSizeDeltaThreshold)} 且感知哈希距离 > ${formatRatio(perceptualSimilarThreshold)}，标记为人工复核；若像素差异本身已达到不通过则仍为不通过
-- 严重尺寸+感知异常：${severeSizeMismatchText}
-- 差异区域 bounding box：${diffBounds}
-- Expected 原图尺寸：${formatSize(report.visual?.expectedSize)}
-- Actual 原图尺寸：${formatSize(report.visual?.actualSize)}
-- 原图尺寸差异：${formatSizeDelta(report.visual?.sizeDelta?.original)}
-- 内容区域尺寸差异：${formatSizeDelta(report.visual?.sizeDelta?.content)}
-- Expected SVG viewBox：${expectedViewBox}
-- Actual SVG viewBox：${actualViewBox}
-- SVG viewBox 比例差异：expected=${expectedAspectRatio}，actual=${actualAspectRatio}，delta=${aspectRatioDelta}，阈值=${aspectRatioThreshold}
-- 关键文本缺失：${missingTexts}
-- 语义检查：${report.semantic?.pass ? '通过' : '不通过'}
-- 几何检查：${report.geometry?.pass ? '通过' : '不通过'}
+${visualSkipNote}- Visual diff ratio: ${diffRatio}
+- Raw-size direct diff: ${rawDiffRatio}
+- Perceptual hash distance: ${perceptualDistance}
+- Visual band: ${visualBandText}
+- Actual capture method: ${captureMethodText}
+- Visual thresholds: pass at ≤ ${passThreshold}, manual review at > ${passThreshold} and < ${failThreshold}, fail at ≥ ${failThreshold}; a high pixel diff is downgraded to manual review if the perceptual hash distance is ≤ ${formatRatio(report.visual?.perceptual?.similarThreshold ?? perceptualSimilarThreshold)}; it is flagged for manual review if the size/area delta is ≥ ${formatRatio(severeSizeDeltaThreshold)} and the perceptual hash distance is > ${formatRatio(perceptualSimilarThreshold)}; it stays fail if the pixel diff alone already reaches the fail threshold
+- Severe size + perceptual mismatch: ${severeSizeMismatchText}
+- Diff region bounding box: ${diffBounds}
+- Expected original image size: ${formatSize(report.visual?.expectedSize)}
+- Actual original image size: ${formatSize(report.visual?.actualSize)}
+- Original image size delta: ${formatSizeDelta(report.visual?.sizeDelta?.original)}
+- Content region size delta: ${formatSizeDelta(report.visual?.sizeDelta?.content)}
+- Expected SVG viewBox: ${expectedViewBox}
+- Actual SVG viewBox: ${actualViewBox}
+- SVG viewBox aspect ratio delta: expected=${expectedAspectRatio}, actual=${actualAspectRatio}, delta=${aspectRatioDelta}, threshold=${aspectRatioThreshold}
+- Missing key text: ${missingTexts}
+- Semantic check: ${report.semantic?.pass ? 'pass' : 'fail'}
+- Geometry check: ${report.geometry?.pass ? 'pass' : 'fail'}
 
-## 错误信息
+## Errors
 
 ${errors}
 
-## 自动化产物位置
+## Automation artifact locations
 
-> 如果 issue 是从本地脚本提交的，下面是本地路径；如果从 GitHub Actions 提交，请查看本次 workflow artifact。
-${artifactRunUrl ? `\n- GitHub Actions Run：${artifactRunUrl}` : ''}
-- Expected PNG：\`${localExpected || '未生成'}\`
-- Actual PNG/截图：\`${localActual || '未生成'}\`
-- Normalized Expected PNG：\`${localNormalizedExpected || '未生成'}\`
-- Normalized Actual PNG：\`${localNormalizedActual || '未生成'}\`
-- Normalized Diff PNG：\`${localDiff || '未生成'}\`
-- Raw Diff PNG：\`${localRawDiff || '未生成'}\`
-- HTML 总报告：\`artifacts/official-diagram-visual-workflow/report.html\`
+> If this issue was filed from a local script run, the paths below are local paths; if filed from GitHub Actions, see this run's workflow artifact.
+${artifactRunUrl ? `\n- GitHub Actions run: ${artifactRunUrl}` : ''}
+- Expected PNG: \`${localExpected || 'not generated'}\`
+- Actual PNG/screenshot: \`${localActual || 'not generated'}\`
+- Normalized Expected PNG: \`${localNormalizedExpected || 'not generated'}\`
+- Normalized Actual PNG: \`${localNormalizedActual || 'not generated'}\`
+- Normalized Diff PNG: \`${localDiff || 'not generated'}\`
+- Raw Diff PNG: \`${localRawDiff || 'not generated'}\`
+- Full HTML report: \`artifacts/official-diagram-visual-workflow/report.html\`
 
 ${localImageNote}
 
@@ -1949,11 +1771,6 @@ function isEmbeddableImageUrl(value) {
   } catch {
     return false;
   }
-}
-
-function getCaseCodeForIssue(caseId) {
-  const testCase = cases.find(item => item.id === caseId);
-  return testCase?.code ?? '';
 }
 
 function classify({ semantic, geometry, visual, errors }) {

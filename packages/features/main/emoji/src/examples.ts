@@ -1,21 +1,21 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * Emoji Feature 使用示例
+ * Emoji Feature usage examples
  */
 export const emojiExamples: ExampleDefinition[] = [
   {
-    name: 'Emoji / 短代码',
-    description: '展示 :smile: / :rocket: 等 Emoji 短代码的解析效果。',
+    name: 'Emoji / shortcode',
+    description: 'Shows how Emoji shortcodes such as :smile: / :rocket: are parsed.',
     markdown: `
-# Emoji 示例
+# Emoji Example
 
-支持 GitHub 风格短代码：
+GitHub-style shortcodes are supported:
 
 - :smile: :joy: :wink:
 - :rocket: :tada: :warning:
 
-也可以直接输入原生 Emoji 😄🚀🎉。
+Native Emoji characters 😄🚀🎉 can also be typed directly.
     `.trim(),
   },
 ];

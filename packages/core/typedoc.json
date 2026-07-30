@@ -7,7 +7,7 @@
   "excludeProtected": false,
   "excludeExternals": true,
   "includeVersion": true,
-  "readme": "README.md",
+  "readme": "README.zh.md",
   "plugin": [],
   "name": "@supramark/core API Documentation",
   "navigationLinks": {

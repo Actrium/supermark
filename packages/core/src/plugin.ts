@@ -3,54 +3,57 @@ import { type SupramarkConfig } from './feature.js';
 import { loadRustMarkdownModule } from './plugin-loader.js';
 
 /**
- * 插件解析上下文，提供给插件访问原始数据和共享状态。
+ * Plugin parse context, giving plugins access to the raw data and shared state.
  */
 export interface SupramarkParseContext {
-  /** 原始 markdown 文本。 */
+  /** The raw markdown text. */
   source: string;
 
-  /** 插件共享数据存储，用于插件间通信。 */
+  /** Shared data store for plugins, used for inter-plugin communication. */
   data: Record<string, unknown>;
 }
 
 /**
- * AST 后处理插件。
+ * An AST post-processing plugin.
  *
- * AST v2 的 canonical parse 由 Rust `supramark-markdown` 完成；TS 插件只允许在
- * 解析完成后做结构化转换，不再参与 Markdown tokenization。
+ * The canonical parse for AST v2 is done by the Rust `supramark-markdown` crate; TS
+ * plugins are only allowed to perform structural transforms after parsing completes
+ * and no longer participate in Markdown tokenization.
  */
 export interface SupramarkPlugin {
-  /** 插件名称，必须唯一。 */
+  /** The plugin name, must be unique. */
   name: string;
 
-  /** 插件版本（可选）。 */
+  /** The plugin version (optional). */
   version?: string;
 
-  /** 插件依赖列表（可选）。 */
+  /** The plugin's dependency list (optional). */
   dependencies?: string[];
 
-  /** 解析后的 AST 转换钩子。 */
+  /** The post-parse AST transform hook. */
   transform?(root: SupramarkRootNode, context: SupramarkParseContext): void | Promise<void>;
 }
 
 /**
- * Markdown 解析选项。
+ * Markdown parse options.
  */
 export interface SupramarkParseOptions {
-  /** AST 后处理插件列表。 */
+  /** The list of AST post-processing plugins. */
   plugins?: SupramarkPlugin[];
 
   /**
-   * Feature 运行时配置（可选）。
+   * Feature runtime configuration (optional).
    *
-   * Rust parser 是 AST v2 的唯一入口。配置裁剪由 `features.manifest.json` 与构建脚本
-   * 在打包期完成；运行时字段保留给宿主传递 feature 语义。
+   * The Rust parser is the sole entry point for AST v2. Configuration-driven
+   * trimming is handled by `features.manifest.json` and the build scripts at bundle
+   * time; this runtime field is kept so hosts can still pass feature semantics
+   * through.
    */
   config?: SupramarkConfig;
 }
 
 /**
- * 解析 Markdown 为 Supramark AST v2。
+ * Parse Markdown into Supramark AST v2.
  */
 export async function parse(
   source: string,
@@ -138,7 +141,8 @@ async function applyPlugins(
 }
 
 /**
- * 对插件进行拓扑排序，确保依赖的插件先执行。
+ * Topologically sort plugins so that dependencies run before the plugins that
+ * depend on them.
  */
 function sortPluginsByDependencies(plugins: SupramarkPlugin[]): SupramarkPlugin[] {
   const pluginMap = new Map<string, SupramarkPlugin>();
@@ -184,12 +188,13 @@ function sortPluginsByDependencies(plugins: SupramarkPlugin[]): SupramarkPlugin[
 }
 
 /**
- * Supramark 预设类型。
+ * The Supramark preset type.
  */
 export type SupramarkPreset = () => SupramarkParseOptions;
 
 /**
- * 默认预设。GFM 基础能力由 `supramark-markdown` 默认启用。
+ * The default preset. Base GFM capability is enabled by default by
+ * `supramark-markdown`.
  */
 export function presetDefault(): SupramarkParseOptions {
   return {
@@ -198,7 +203,8 @@ export function presetDefault(): SupramarkParseOptions {
 }
 
 /**
- * GFM 预设。保留为语义化入口，实际能力由 AST v2 parser 提供。
+ * The GFM preset. Kept as a semantic entry point; the actual capability is provided
+ * by the AST v2 parser.
  */
 export function presetGFM(): SupramarkParseOptions {
   return {

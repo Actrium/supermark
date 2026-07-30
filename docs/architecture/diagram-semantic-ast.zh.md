@@ -1,7 +1,7 @@
 # Diagram 语义 AST 与统一引擎接口设计
 
 > 状态：设计草案（仅设计，未实施）。
-> 关联文档：`DIAGRAM_ENGINE_TARGET.md`、`ENGINES_AND_CLI_PLAN.md`、`ast-spec.md`。
+> 关联文档：`DIAGRAM_ENGINE_TARGET.zh.md`、`ENGINES_AND_CLI_PLAN.zh.md`、`ast-spec.zh.md`。
 > 关键区分：上述两份文档讨论的是 **TS 侧 `@supramark/engines`** 的
 > `source -> svg` 渲染收口；本文讨论的是 **Rust 侧四个引擎 crate** 如何在
 > `source -> svg` 之外，再额外暴露一层 **结构化语义（semantic AST）**，
@@ -136,7 +136,7 @@ SupramarkNode::Diagram {
   `render`、`semantic` 返回 `None`。
 
 > 现状交叉印证：`supramark-markdown` 的 `diagram_engine()`（`supramark.rs:954`）
-> 把 `dot`/`graphviz` 都归一到图表块；`ENGINES_AND_CLI_PLAN.md` §1 也提到
+> 把 `dot`/`graphviz` 都归一到图表块；`ENGINES_AND_CLI_PLAN.zh.md` §1 也提到
 > renderer 层对未接入引擎「fallback 为原样代码块——默默失败」，与本文要解决的
 > 「source fallback」是同一痛点的两个层面。
 
@@ -297,9 +297,9 @@ Diagram {
 - **序列化契约**：`semantic` 一律是 `{ "engine": "...", "kind": "...", "data": {...} }`。
   TS 侧只依赖 `engine`/`kind` 做分派，`data` 的形状随引擎/版本演进（见 §7 版本漂移）。
 
-### 4.3 与 `ast-spec.md` 的衔接
+### 4.3 与 `ast-spec.zh.md` 的衔接
 
-需在 `ast-spec.md` 增补 `Diagram` 节点的 `semantic` 可选字段定义与
+需在 `ast-spec.zh.md` 增补 `Diagram` 节点的 `semantic` 可选字段定义与
 `{engine,kind,data}` JSON 形状（本设计落地时同步更新，避免契约漂移）。
 
 ---

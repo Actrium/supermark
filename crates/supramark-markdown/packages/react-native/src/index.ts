@@ -20,8 +20,8 @@
  * to an empty module (mirroring how `@actrium/*-web` wasm packages
  * are stubbed for the diagram engines) so the wasm bundle never loads.
  *
- * registry API 从 `@supramark/core/rn` 导入（不污染 web 入口，模式对齐
- * `@supramark/engines/rn`）。
+ * The registry API is imported from `@supramark/core/rn` (keeping the web
+ * entry point clean, mirroring the pattern used by `@supramark/engines/rn`).
  */
 import { NativeModules, Platform } from 'react-native';
 import { registerNativeParserAdapter } from '@supramark/core/rn';

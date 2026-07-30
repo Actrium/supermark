@@ -2,7 +2,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-// RCTSelectableRichTextComponentView 是 SelectableRichText 的 Fabric mounting 层入口。
+// RCTSelectableRichTextComponentView is SelectableRichText's Fabric mounting-layer entry point.
 @interface RCTSelectableRichTextComponentView : RCTViewComponentView
 
 @end

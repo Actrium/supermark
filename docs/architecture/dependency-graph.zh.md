@@ -118,7 +118,7 @@ flowchart TB
 
 用户视图层：
 
-- **`@supramark/core`** — Markdown parser + AST + `SupramarkFeature` trait（7 个核心 trait，详见 `PLUGIN_SYSTEM.md`）
+- **`@supramark/core`** — Markdown parser + AST + `SupramarkFeature` trait（7 个核心 trait，详见 `PLUGIN_SYSTEM.zh.md`）
 - **`@supramark/feature-*`** — 每个 feature 是「代码 + 文档 + 测试 + prompt」的完整产品单元
 - **`@supramark/web` / `@supramark/rn`** — 平台特定的 React renderer，**不直接** import 任何图表库，只通过 `useDiagramRender()` 拿 SVG
 
@@ -197,7 +197,7 @@ Go upstream `drawBuf` 故意泄漏 `prevR` 跨 `\n`（lib/textmeasure/textmeasur
 
 ## 相关文档
 
-- [插件系统设计](./PLUGIN_SYSTEM.md)
-- [AST 规范](./ast-spec.md)
-- [Diagram Engine 目标](./DIAGRAM_ENGINE_TARGET.md)
-- [Engines & CLI 计划](./ENGINES_AND_CLI_PLAN.md)
+- [插件系统设计](./PLUGIN_SYSTEM.zh.md)
+- [AST 规范](./ast-spec.zh.md)
+- [Diagram Engine 目标](./DIAGRAM_ENGINE_TARGET.zh.md)
+- [Engines & CLI 计划](./ENGINES_AND_CLI_PLAN.zh.md)

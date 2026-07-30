@@ -1,10 +1,11 @@
 /**
- * Web / Node 的 Rust markdown module 加载器。
+ * The Rust markdown module loader for Web / Node.
  *
- * 通过 wasm-bindgen 产物 `@supramark/markdown-web` 加载 Rust parser。
- * 此文件只被 `@supramark/core` 的 web 入口（`index.ts`）引用，
- * RN 入口（`index.rn.ts`）走 `plugin-loader-rn.ts`，完全不 import 此文件，
- * 因此 metro 打包 RN bundle 时不会扫描到 `@supramark/markdown-web`。
+ * Loads the Rust parser via the wasm-bindgen artifact `@supramark/markdown-web`.
+ * This file is referenced only by the web entry point of `@supramark/core`
+ * (`index.ts`); the RN entry point (`index.rn.ts`) goes through
+ * `plugin-loader-rn.ts` and never imports this file, so Metro never scans
+ * `@supramark/markdown-web` while bundling the RN bundle.
  */
 
 type RustMarkdownModule = {
@@ -12,11 +13,12 @@ type RustMarkdownModule = {
   parseJson?: (source: string) => string | Promise<string>;
 };
 
-// Node package subpath：只在服务端运行时尝试，不能让浏览器 bundler 静态解析。
+// Node package subpath: only attempted at server runtime; must not be statically
+// resolved by a browser bundler.
 const MARKDOWN_WEB_NODE_PACKAGE = '@supramark/markdown-web/node';
-// Node fallback 产物路径：只在 package subpath 加载失败时运行时尝试。
+// Node fallback artifact path: only attempted at runtime if the package subpath fails to load.
 const MARKDOWN_WEB_NODE_DIST = '../../../crates/supramark-markdown/packages/web/dist/node.js';
-// Browser fallback 产物路径：只在 package main 加载失败时运行时尝试。
+// Browser fallback artifact path: only attempted at runtime if the package main fails to load.
 const MARKDOWN_WEB_BROWSER_DIST = '../../../crates/supramark-markdown/packages/web/dist/index.js';
 
 type RuntimeGlobal = typeof globalThis & {
@@ -39,8 +41,9 @@ export async function loadRustMarkdownModule(): Promise<RustMarkdownModule> {
     }
   }
 
-  // Server runtime 候选：每个候选都写成静态字符串字面量，让 Metro 在
-  // 静态分析时走 resolveRequest（宿主 metro.config.js 可 stub）。
+  // Server runtime candidates: each candidate is written as a static string literal
+  // so Metro's static analysis routes it through resolveRequest (which the host's
+  // metro.config.js can stub).
   if (isServerRuntime()) {
     try {
       return await importRustMarkdownModule(MARKDOWN_WEB_NODE_PACKAGE);
@@ -54,7 +57,7 @@ export async function loadRustMarkdownModule(): Promise<RustMarkdownModule> {
     }
   }
 
-  // 兜底候选：直接路径（Web/Node）。
+  // Fallback candidate: a direct path (Web/Node).
   try {
     return await importRustMarkdownModule(MARKDOWN_WEB_BROWSER_DIST);
   } catch (error) {
@@ -72,7 +75,8 @@ function isServerRuntime(): boolean {
 }
 
 /**
- * 运行时加载 dist fallback，避免 TypeScript 把构建产物路径当成源码依赖解析。
+ * Load the dist fallback at runtime, so TypeScript doesn't try to resolve the build
+ * artifact path as a source dependency.
  */
 async function importRustMarkdownModule(specifier: string): Promise<RustMarkdownModule> {
   return (await import(/* @vite-ignore */ specifier)) as RustMarkdownModule;

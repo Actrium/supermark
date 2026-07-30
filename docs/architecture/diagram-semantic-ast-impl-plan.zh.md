@@ -1,6 +1,6 @@
 # Diagram 语义 AST 实施方案（落地计划）
 
-> 状态：实施中。关联设计：`diagram-semantic-ast.md`（§0 决策记录）。
+> 状态：实施中。关联设计：`diagram-semantic-ast.zh.md`（§0 决策记录）。
 > 本文是该设计的工程落地拆解，仅承载「怎么做、谁先谁后、怎么并行」。
 
 ## 0. 本轮已拍板（在设计 §0 三项之外补充）
@@ -38,7 +38,7 @@
 | T3 plantuml | 加 `serde` feature；feature-gated derive（36 文件）；复用 `parser::parse→Diagram`；impl render+semantic | T0a | A |
 | T0b graphviz | impl render 薄封装，semantic 返回 None | T0a | A |
 | Tfacade | facade crate + `default_registry()` | T0a+四引擎 impl | B |
-| Tast | AST v2 `Diagram` 加 `semantic: Option<Value>`；更新 `ast-spec.md` | — | 独立 |
+| Tast | AST v2 `Diagram` 加 `semantic: Option<Value>`；更新 `ast-spec.zh.md` | — | 独立 |
 | Ttest | 全 workspace 编译 + clippy + 契约快照测试 | 全部 | 收尾 |
 
 并行约束：同一 cargo workspace 并发编译抢同一 target 锁，故各引擎可并行**编写**，
@@ -62,7 +62,7 @@
 `SupramarkNode::Diagram` 加 `#[serde(skip_serializing_if="Option::is_none")] semantic: Option<serde_json::Value>`。
 parser 主流程**默认不填**（设计 §4.2 推荐路径 2，避免只渲染场景付解析成本）；
 markdown crate 因此不引入任何引擎依赖。下游持 facade 按需解析填充。
-同步更新 `ast-spec.md` 增补 `semantic` 字段与 `{engine,kind,data}` 形状。
+同步更新 `ast-spec.zh.md` 增补 `semantic` 字段与 `{engine,kind,data}` 形状。
 
 ## 5. 测试与契约（设计 §7-4）
 

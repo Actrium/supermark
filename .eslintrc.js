@@ -18,7 +18,7 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:react/recommended',
     'plugin:react-hooks/recommended',
-    'prettier', // 关闭与 Prettier 冲突的规则
+    'prettier', // disable rules that conflict with Prettier
   ],
   plugins: ['@typescript-eslint', 'react', 'react-hooks'],
   settings: {

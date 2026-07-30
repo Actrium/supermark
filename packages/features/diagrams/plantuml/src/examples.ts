@@ -1,15 +1,15 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * PlantUML Feature 使用示例
+ * PlantUML Feature usage examples
  *
- * 每个示例都尽量简短，方便在 preview 应用里快速渲染。Examples 覆盖常见的
- * UML 图族：时序图 / 类图 / 活动图。
+ * Each example is kept as short as possible for fast rendering in the preview app. Examples cover
+ * common UML diagram families: sequence diagrams / class diagrams / activity diagrams.
  */
 export const plantumlExamples: ExampleDefinition[] = [
   {
-    name: '时序图示例',
-    description: '使用 ```plantuml 围栏定义一个最小的时序图。',
+    name: 'Sequence diagram example',
+    description: 'Uses a ```plantuml fence to define a minimal sequence diagram.',
     markdown: `
 # PlantUML sequence diagram
 
@@ -22,8 +22,8 @@ Alice -> Bob : hi
     `.trim(),
   },
   {
-    name: '类图示例',
-    description: '展示 PlantUML 类图语法。',
+    name: 'Class diagram example',
+    description: 'Shows PlantUML class diagram syntax.',
     markdown: `
 # PlantUML class diagram
 
@@ -41,8 +41,8 @@ class Dog extends Animal {
     `.trim(),
   },
   {
-    name: '活动图示例',
-    description: '展示 PlantUML 活动图语法。',
+    name: 'Activity diagram example',
+    description: 'Shows PlantUML activity diagram syntax.',
     markdown: `
 # PlantUML activity diagram
 

@@ -3,11 +3,13 @@ module.exports = {
     platforms: {
       android: {
         sourceDir: 'android',
-        // libraryName 必须和 common/cpp/CMakeLists.txt 里的 react_codegen_* target 后缀一致。
+        // libraryName must match the react_codegen_* target suffix in common/cpp/CMakeLists.txt.
         libraryName: 'RNSelectableTextSpec',
-        // componentDescriptors 告诉 Android autolinking 注册手写 Paragraph 兼容 descriptor。
+        // componentDescriptors tells Android autolinking to register the hand-written
+        // Paragraph-compatible descriptor.
         componentDescriptors: ['SelectableRichTextComponentDescriptor'],
-        // cmakeListsPath 指向随包提供的 C++ renderer component，避免生成普通 View descriptor。
+        // cmakeListsPath points at the C++ renderer component shipped with this package, to avoid
+        // generating a plain View descriptor.
         cmakeListsPath: '../common/cpp/CMakeLists.txt',
       },
     },

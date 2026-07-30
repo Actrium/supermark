@@ -263,8 +263,9 @@ function plantumlNeedsGraphviz(code: string): boolean {
  * present, swallowing errors caused by re-init.
  */
 async function loadWebD2Render(): Promise<DiagramRenderFn> {
-  // d2 wasm 通过 globalThis.supramark.measureText 量字宽；bridge 未安装时
-  // wasm-bindgen catch 路径 fallback 到 size*0.6 启发式，导致 layout 偏差。
+  // d2 wasm measures glyph width via globalThis.supramark.measureText; if the
+  // bridge isn't installed, the wasm-bindgen catch path falls back to the
+  // size*0.6 heuristic, which throws off the layout.
   installHostMetricsBridge();
 
   const d2 = (await import('@actrium/d2-little-web' as string)) as WasmRenderModule;

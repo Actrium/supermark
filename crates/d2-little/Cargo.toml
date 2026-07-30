@@ -22,7 +22,7 @@ exclude = [
     "examples/",
     "scripts/",
     "run_e2e.sh",
-    "SVG_E2E_MIGRATION_CHECKLIST.md",
+    "SVG_E2E_MIGRATION_CHECKLIST.zh.md",
     ".github/",
 ]
 

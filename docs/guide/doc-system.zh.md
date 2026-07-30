@@ -85,8 +85,8 @@ npm run docs:copy-typedoc
 - `docs/.vitepress/config.mts` - VitePress 配置（导航、侧边栏）
 - `docs/.vitepress/theme/` - 主题和样式
 - `docs/index.md` - 首页（Hero 布局）
-- `docs/guide/concepts.md` - 核心概念（可选，概览性内容）
-- `docs/guide/architecture.md` - 架构设计（可选，设计思路）
+- `docs/guide/concepts.zh.md` - 核心概念（可选，概览性内容）
+- `docs/guide/architecture.zh.md` - 架构设计（可选，设计思路）
 
 ## 🚀 使用方法
 
