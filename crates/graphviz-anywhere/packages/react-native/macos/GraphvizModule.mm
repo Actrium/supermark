@@ -1,5 +1,5 @@
 /*
- * GraphvizModule.m (macOS)
+ * GraphvizModule.mm (macOS)
  *
  * React Native native module implementation for macOS.
  * Manages a singleton Graphviz context and dispatches rendering
@@ -156,7 +156,7 @@ RCT_EXPORT_METHOD(getVersion:(RCTPromiseResolveBlock)resolve
 #ifdef RCT_NEW_ARCH_ENABLED
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params {
-    return std::make_shared<facebook::react::NativeGraphvizNativeSpecJSI>(params);
+    return std::make_shared<facebook::react::NativeGraphvizSpecJSI>(params);
 }
 #endif
 
