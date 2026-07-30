@@ -84,7 +84,7 @@ node tests/markdown-conformance/scripts/run.mjs cmark-gfm
 node tests/markdown-conformance/scripts/run-visual.mjs cmark-gfm
 ```
 
-原有 `run-commonmark.mjs` 与 `run-commonmark-visual.mjs` 保留为兼容入口。新增数据源只需提供配置、统一用例和导入适配器，不再新增专用运行脚本。
+每个数据源都走同一套 `run.mjs` / `run-visual.mjs`，不存在专用运行脚本；`test:commonmark` 之类的 npm script 只是带上数据源名的快捷方式。新增数据源只需提供配置、统一用例和导入适配器。
 
 可设置：
 
@@ -149,7 +149,7 @@ Pull Request 始终不会自动创建 Issue，即使 `COMMONMARK_AUTO_ISSUE=true
 node tests/markdown-conformance/scripts/update-baseline.mjs <source-name>
 ```
 
-原有 `update-commonmark-baseline.mjs` 保留为兼容入口。基线更新属于人工批准动作，不应在普通 Actions 运行中自动执行。
+基线更新属于人工批准动作，不应在普通 Actions 运行中自动执行。
 
 ## 失败判定
 

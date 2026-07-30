@@ -10,9 +10,9 @@
     "test:source": "node scripts/run.mjs",
     "test:source:visual": "node scripts/run-visual.mjs",
     "baseline:source": "node scripts/update-baseline.mjs",
-    "test:commonmark": "node scripts/run-commonmark.mjs",
-    "test:commonmark:visual": "node scripts/run-commonmark-visual.mjs",
-    "baseline:commonmark": "node scripts/update-commonmark-baseline.mjs",
+    "test:commonmark": "node scripts/run.mjs commonmark",
+    "test:commonmark:visual": "node scripts/run-visual.mjs commonmark",
+    "baseline:commonmark": "node scripts/update-baseline.mjs commonmark",
     "test:cmark-gfm": "node scripts/run.mjs cmark-gfm",
     "test:cmark-gfm:visual": "node scripts/run-visual.mjs cmark-gfm",
     "baseline:cmark-gfm": "node scripts/update-baseline.mjs cmark-gfm"
