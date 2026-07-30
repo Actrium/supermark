@@ -252,6 +252,100 @@ fn gfm_autolink_does_not_linkify_inside_link() {
     )));
 }
 
+// GFM strikethrough (cmark-gfm 0.29 conformance, extensions-0018). Both `~x~`
+// and `~~x~~` produce a single <del>; runs of 3+ tildes and mismatched lengths
+// stay literal. See issue #144.
+fn paragraph_children(ast: SupramarkNode) -> Vec<SupramarkNode> {
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children, .. } = &children[0] else {
+        panic!("expected paragraph, got {:?}", children[0]);
+    };
+    children.clone()
+}
+
+#[test]
+fn gfm_strikethrough_single_tilde() {
+    // extensions-0018: `~one~` -> <del>one</del>
+    let para = paragraph_children(parse("~one~\n"));
+    assert!(matches!(
+        &para[0],
+        SupramarkNode::Delete { children, .. } if matches!(&children[0], SupramarkNode::Text { value, .. } if value == "one")
+    ));
+}
+
+#[test]
+fn gfm_strikethrough_double_tilde_single_del() {
+    // extensions-0018: `~~two~~` -> a single <del>two</del> (not nested).
+    let para = paragraph_children(parse("~~two~~\n"));
+    let SupramarkNode::Delete { children, .. } = &para[0] else {
+        panic!("expected delete, got {:?}", para[0]);
+    };
+    assert!(matches!(
+        &children[0],
+        SupramarkNode::Text { value, .. } if value == "two"
+    ));
+    // No nested Delete.
+    assert!(children.iter().all(|c| !matches!(c, SupramarkNode::Delete { .. })));
+}
+
+#[test]
+fn gfm_strikethrough_three_tildes_literal() {
+    // extensions-0018: a run of 3+ tildes is not a delimiter — it stays literal.
+    // (Wrapped in a paragraph so the leading `~~~` isn't read as a code fence.)
+    let para = paragraph_children(parse("x ~~~three~~~ y\n"));
+    // No Delete node formed; the tildes survive as text.
+    assert!(para.iter().all(|c| !matches!(c, SupramarkNode::Delete { .. })));
+    let joined: String = para
+        .iter()
+        .filter_map(|c| match c {
+            SupramarkNode::Text { value, .. } => Some(value.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(joined, "x ~~~three~~~ y");
+}
+
+#[test]
+fn gfm_strikethrough_mismatched_lengths_literal() {
+    // extensions-0018: `~mismatch~~` -> literal (opener and closer must have
+    // equal length).
+    let para = paragraph_children(parse("~mismatch~~\n"));
+    let SupramarkNode::Text { value, .. } = &para[0] else {
+        panic!("expected literal text, got {:?}", para[0]);
+    };
+    assert_eq!(value, "~mismatch~~");
+}
+
+#[test]
+fn gfm_strikethrough_mixed_single_and_double() {
+    // extensions-0018: `~one~ ~~two~~` -> <del>one</del> <del>two</del>
+    let para = paragraph_children(parse("~one~ ~~two~~\n"));
+    let dels: Vec<_> = para
+        .iter()
+        .filter_map(|c| match c {
+            SupramarkNode::Delete { children, .. } => Some(children.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(dels.len(), 2, "expected two <del>, got {para:?}");
+}
+
+#[test]
+fn gfm_strikethrough_inner_tilde_preserved() {
+    // extensions-0018: `~is ~ legit~` -> <del>is ~ legit</del>. The middle `~`
+    // is flanked by spaces (neither open nor close) so it stays literal inside.
+    let para = paragraph_children(parse("~is ~ legit~\n"));
+    let SupramarkNode::Delete { children, .. } = &para[0] else {
+        panic!("expected delete, got {:?}", para[0]);
+    };
+    let SupramarkNode::Text { value, .. } = &children[0] else {
+        panic!("expected text child, got {:?}", children);
+    };
+    assert_eq!(value, "is ~ legit");
+}
+
 #[test]
 fn public_api_maps_opaque_map_container() {
     let source =
