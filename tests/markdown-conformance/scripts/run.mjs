@@ -70,11 +70,19 @@ const DEFAULT_BINARY = path.join(
   process.platform === 'win32' ? 'supramark-markdown.exe' : 'supramark-markdown'
 );
 const parserBinary = path.resolve(process.env.SUPRAMARK_MARKDOWN_BIN ?? DEFAULT_BINARY);
-// The CommonMark spec has no bare-URL/email autolink extension, so the
-// commonmark source is parsed with the GFM autolink extension disabled to
-// match (cmark-gfm spec.txt expects those linkified, so it keeps the default).
-const parserArgs =
-  sourceName === 'commonmark' ? ['--no-gfm-autolink', '-'] : ['-'];
+// The GFM bare-URL/email autolink extension is gated per case:
+//  - CommonMark spec has no bare-URL autolink, so the whole commonmark source
+//    is parsed with the extension off (bare URLs stay literal).
+//  - cmark-gfm's spec.txt splits autolink cases by section: the core
+//    "Autolinks" section tests CommonMark (bare URLs literal), while
+//    "Autolinks (extension)" tests GFM linkification. Disable the extension
+//    for the core section only.
+function parserArgsFor(testCase) {
+  if (sourceName === 'commonmark' || testCase.source?.section === 'Autolinks') {
+    return ['--no-gfm-autolink', '-'];
+  }
+  return ['-'];
+}
 const failOnFailures = process.env.FAIL_ON_FAILURES !== '0';
 // Gate mode decides what a non-zero exit means (see buildGate below).
 // 'regression' (default) fails only on movement away from the recorded
@@ -379,7 +387,7 @@ function buildGate({ mode, baseline, notPassedCount, semanticErrorCount, visualE
 }
 
 function runCase(testCase) {
-  const parsed = spawnSync(parserBinary, parserArgs, {
+  const parsed = spawnSync(parserBinary, parserArgsFor(testCase), {
     input: testCase.input.markdown,
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,

@@ -26,10 +26,6 @@
     "cmark-gfm-0.29.0.gfm.13-spec-0474",
     "cmark-gfm-0.29.0.gfm.13-spec-0475",
     "cmark-gfm-0.29.0.gfm.13-spec-0477",
-    "cmark-gfm-0.29.0.gfm.13-spec-0610",
-    "cmark-gfm-0.29.0.gfm.13-spec-0616",
-    "cmark-gfm-0.29.0.gfm.13-spec-0619",
-    "cmark-gfm-0.29.0.gfm.13-spec-0620",
     "cmark-gfm-0.29.0.gfm.13-spec-0652"
   ],
   "visualFailureIds": [
@@ -41,14 +37,10 @@
     "cmark-gfm-0.29.0.gfm.13-extensions-0024",
     "cmark-gfm-0.29.0.gfm.13-extensions-0025",
     "cmark-gfm-0.29.0.gfm.13-spec-0398",
-    "cmark-gfm-0.29.0.gfm.13-spec-0610",
-    "cmark-gfm-0.29.0.gfm.13-spec-0616",
-    "cmark-gfm-0.29.0.gfm.13-spec-0619",
-    "cmark-gfm-0.29.0.gfm.13-spec-0620",
     "cmark-gfm-0.29.0.gfm.13-spec-0652"
   ],
   "notes": {
-    "_summary": "Approved cmark-gfm 0.29.0.gfm.13 divergence baseline after issue #144. Of the 58 semantic / 29 visual failures recorded on main, the parser/renderer fixes in this change (GFM table thead/tbody + align attribute, task-list leading space, GFM bare-URL/email autolink postprocess, GFM single+double-tilde strikethrough) resolve 34 semantic / 16 visual cases. The 24 semantic / 13 visual cases below remain and are tracked here as documented divergence rather than regressions; each is either a deliberate spec-correct stance or out-of-scope future work.",
+    "_summary": "Approved cmark-gfm 0.29.0.gfm.13 divergence baseline after issue #144. Of the 58 semantic / 29 visual failures recorded on main, the parser/renderer fixes in this change (GFM table thead/tbody + align attribute, task-list leading space, GFM bare-URL/email autolink postprocess, GFM single+double-tilde strikethrough, plus per-case autolink gating for the CommonMark-core Autolinks section) resolve 38 semantic / 20 visual cases. The 20 semantic / 9 visual cases below remain and are tracked here as documented divergence rather than regressions; each is either a deliberate spec-correct stance or out-of-scope future work.",
     "spec-0398": "Emphasis: cmark 0.29 emits flat output where the CommonMark emphasis algorithm (delimiter runs, rule of 3) mandates nesting. Supramark's parser is spec-correct; matching cmark 0.29 would require reintroducing the known cmark emphasis bug. See issue #144 (emphasis divergence).",
     "spec-0426": "Emphasis: same cmark-0.29 flat-vs-nested divergence as spec-0398; parser is spec-correct.",
     "spec-0434": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
@@ -58,10 +50,6 @@
     "spec-0474": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
     "spec-0475": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
     "spec-0477": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
-    "spec-0610": "GFM autolink divergence: `<http://foo.bar/baz bim>` is a failed angle-bracket autolink, so cmark-gfm's bare-URL postprocess linkifies `http://foo.bar/baz`. CommonMark spec.txt (run without the autolink extension) expects the whole literal text. Supramark's default profile enables the GFM autolink extension and matches cmark-gfm `--extension autolink` byte-for-byte (verified against the pinned cmark-gfm binary). Divergence is GFM-vs-CommonMark, not a bug.",
-    "spec-0616": "GFM autolink divergence: `< http://foo.bar >` is not a valid angle-bracket autolink, so cmark-gfm bare-URL-autolinks `http://foo.bar`. CommonMark spec.txt expects literal text. Supramark matches cmark-gfm `--extension autolink` exactly. Same GFM-vs-CommonMark stance as spec-0610.",
-    "spec-0619": "GFM autolink divergence: bare `http://example.com` is linkified by the GFM autolink extension. CommonMark spec.txt (no autolink extension) expects literal text. Supramark matches cmark-gfm `--extension autolink` exactly.",
-    "spec-0620": "GFM autolink divergence: bare `foo@bar.example.com` is linkified (mailto:) by the GFM autolink extension. CommonMark spec.txt expects literal text. Supramark matches cmark-gfm `--extension autolink` exactly.",
     "spec-0280": "GFM task list: cmark-gfm renders the checkbox as `<input checked=\"\" disabled=\"\" type=\"checkbox\">` (specific attribute set and order). Supramark's web renderer emits a different checkbox shape; the AST (task-list item with leading space) is correct. Tracked as future renderer work.",
     "spec-0652": "Disallowed Raw HTML: GFM tagfilter (escaping disallowed block-level raw HTML tags) is not yet implemented. Tracked as future work.",
     "extensions-0012": "Embedded HTML inside a GFM table cell: inline HTML within a cell is not yet promoted to a raw node (`<strong>hello</strong>` stays as text). Tracked as future parser work.",

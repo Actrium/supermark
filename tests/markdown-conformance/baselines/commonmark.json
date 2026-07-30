@@ -9,6 +9,6 @@
   "semanticFailureIds": [],
   "visualFailureIds": [],
   "notes": {
-    "_summary": "Clean CommonMark 0.31.2 baseline. The commonmark source is parsed with the GFM autolink extension disabled (parser `--no-gfm-autolink` flag, see scripts/run.mjs) because the CommonMark spec has no bare-URL/email autolink extension — bare `https://`, `www.` and `foo@bar` must stay literal. The cmark-gfm source keeps the extension on because its bundled spec expects those linkified. See issue #144."
+    "_summary": "Clean CommonMark 0.31.2 baseline. The commonmark source is parsed with the GFM autolink extension disabled (parser `--no-gfm-autolink` flag, see scripts/run.mjs) because the CommonMark spec has no bare-URL/email autolink extension — bare `https://`, `www.` and `foo@bar` must stay literal. The cmark-gfm source disables the extension for its core \"Autolinks\" section too (CommonMark-core cases expect literal) and keeps it on only for the \"Autolinks (extension)\" section. See issue #144."
   }
 }
