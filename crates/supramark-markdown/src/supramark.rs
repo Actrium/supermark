@@ -292,9 +292,13 @@ pub enum SupramarkNode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ParseOptions {
-    gfm_tables: bool,
-    gfm_strikethrough: bool,
+pub struct ParseOptions {
+    pub gfm_tables: bool,
+    pub gfm_strikethrough: bool,
+    /// GFM bare-URL/email autolink extension. On by default to match the
+    /// cmark-gfm profile; the CommonMark conformance suite disables it so
+    /// bare URLs stay literal (CommonMark spec has no bare-URL autolink).
+    pub gfm_autolink: bool,
 }
 
 impl Default for ParseOptions {
@@ -302,6 +306,7 @@ impl Default for ParseOptions {
         Self {
             gfm_tables: true,
             gfm_strikethrough: true,
+            gfm_autolink: true,
         }
     }
 }
@@ -310,7 +315,7 @@ pub fn parse(source: &str) -> SupramarkNode {
     parse_with_options(source, ParseOptions::default())
 }
 
-fn parse_with_options(source: &str, options: ParseOptions) -> SupramarkNode {
+pub fn parse_with_options(source: &str, options: ParseOptions) -> SupramarkNode {
     let md = create_parser(options);
     let index = OffsetIndex::new(source);
     let (mut children, diagnostics) = map_document(source, &md, &index);
@@ -352,8 +357,10 @@ fn create_parser(options: ParseOptions) -> MarkdownParser {
     if options.gfm_strikethrough {
         crate::plugins::extra::strikethrough::add(&mut md);
     }
-    // GFM autolink extension: bare www./scheme-URL/email linkification.
-    crate::plugins::extra::gfm_autolink::add(&mut md);
+    if options.gfm_autolink {
+        // GFM autolink extension: bare www./scheme-URL/email linkification.
+        crate::plugins::extra::gfm_autolink::add(&mut md);
+    }
 
     md
 }

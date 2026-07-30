@@ -1,4 +1,7 @@
-use supramark_markdown::{parse, DiagnosticSeverity, ExtensionMode, SupramarkNode, TableAlign};
+use supramark_markdown::{
+    parse, parse_with_options, DiagnosticSeverity, ExtensionMode, ParseOptions, SupramarkNode,
+    TableAlign,
+};
 
 #[test]
 fn public_api_outputs_ast_v2_with_positions() {
@@ -268,6 +271,39 @@ fn gfm_autolink_does_not_linkify_inside_code_span() {
         panic!("expected trailing text, got {:?}", para[1]);
     };
     assert_eq!(value, "baz>`");
+}
+
+#[test]
+fn gfm_autolink_option_disables_bare_url_linkification() {
+    // The CommonMark conformance suite parses with the GFM autolink extension
+    // disabled so bare URLs stay literal (CommonMark spec has no bare-URL
+    // autolink). `parse` (default) linkifies; `parse_with_options` with
+    // `gfm_autolink: false` does not.
+    let default_ast = parse("https://example.com\n");
+    let SupramarkNode::Root { children, .. } = default_ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(
+        matches!(children[0], SupramarkNode::Link { .. }),
+        "default profile should autolink bare URLs"
+    );
+
+    let mut options = ParseOptions::default();
+    options.gfm_autolink = false;
+    let ast = parse_with_options("https://example.com\n", options);
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    let SupramarkNode::Text { value, .. } = &children[0] else {
+        panic!("expected literal text, got {:?}", children[0]);
+    };
+    assert_eq!(value, "https://example.com");
 }
 
 // GFM strikethrough (cmark-gfm 0.29 conformance, extensions-0018). Both `~x~`

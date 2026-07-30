@@ -7,5 +7,8 @@
   "parserProfile": "supramark-default",
   "comparisonTarget": "production-web-renderer-dom",
   "semanticFailureIds": [],
-  "visualFailureIds": []
+  "visualFailureIds": [],
+  "notes": {
+    "_summary": "Clean CommonMark 0.31.2 baseline. The commonmark source is parsed with the GFM autolink extension disabled (parser `--no-gfm-autolink` flag, see scripts/run.mjs) because the CommonMark spec has no bare-URL/email autolink extension — bare `https://`, `www.` and `foo@bar` must stay literal. The cmark-gfm source keeps the extension on because its bundled spec expects those linkified. See issue #144."
+  }
 }
