@@ -18,10 +18,13 @@
 //! **Best-effort, not a guarantee.** The pass *reduces* overlap but does not
 //! promise zero overlaps: when `max_displacement` binds, labels that cannot
 //! be pushed far enough apart remain stacked. The property the pass actually
-//! provides is "overlap count strictly decreases"; "zero overlaps" is a
-//! fixture-specific fact that holds for some layouts (e.g. the #93 repro)
-//! and not others. Tests assert the general property, and only assert zero
-//! for a fixture known to fully resolve.
+//! provides is "overlap count strictly decreases"; "zero overlaps" holds
+//! only when `max_displacement` does not bind. Tests split the two: the
+//! integration test on the #93 repro asserts only strict-decrease (robust to
+//! layout drift), and the unit test `result_has_no_remaining_overlaps`
+//! asserts the strict zero-overlap contract on a synthetic cluster whose
+//! required displacement is far under `max_displacement` — so a red
+//! zero-overlap result always means a regression, never drift.
 //!
 //! The function is pure arithmetic over centre-based rects `(cx, cy, w, h)`
 //! so it is trivially testable without laying out a real diagram.
@@ -215,7 +218,17 @@ mod tests {
 
     #[test]
     fn result_has_no_remaining_overlaps() {
-        // A dense cluster of four labels plus a distant one.
+        // The strict zero-overlap contract. This feeds `decluster` a dense
+        // cluster of four 30x10 labels stacked within ~2 px of (50, 50) plus
+        // a distant outlier — a cluster far smaller than the displacement
+        // budget (default `max_displacement` = 80 px; the greedy resolves
+        // it with ~18 px of movement). The assertion below checks the
+        // contract directly: a label clamped by `max_displacement` would
+        // leave an overlap, so the pass achieving zero overlaps here is
+        // itself the proof that the budget did not bind. A red result is
+        // therefore always a regression, never layout drift. The
+        // integration test on the #93 repro asserts only strict-decrease,
+        // since that realistic fixture can leave `max_displacement` bound.
         let mut r = vec![
             (50.0, 50.0, 30.0, 10.0),
             (52.0, 52.0, 30.0, 10.0),

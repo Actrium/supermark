@@ -65,8 +65,8 @@ function setup(opts?: { p2Handle?: boolean }) {
     ...(opts?.p2Handle === false ? {} : { handle: p2.handle }),
   });
   const store = createSelectionStore(() => units);
-  const unsubscribe = createNativeBridge(store, registry);
-  return { registry, store, p1, p2, unsubscribe };
+  const { unsubscribe, pushedStore } = createNativeBridge(store, registry);
+  return { registry, store, p1, p2, unsubscribe, pushedStore };
 }
 
 const P = (nodeId: string, unitId: string, offset: number) => ({ nodeId, unitId, offset });
@@ -180,6 +180,43 @@ describe('createNativeBridge', () => {
     store.extendTo(P('p1', 'p1#1', 5));
     store.commit();
     expect(p1.calls).toEqual([]);
+  });
+
+  test('pushedStore reports the pushed block, then null on clear', () => {
+    // The overlay subscribes to pushedStore to yield for the block the native
+    // side has taken over. A single-block commit publishes that nodeId; clear
+    // publishes null.
+    const { store, pushedStore } = setup();
+    expect(pushedStore.getPushed()).toBeNull();
+    store.beginAt(P('p1', 'p1#0', 0));
+    store.extendTo(P('p1', 'p1#1', 5));
+    // 'selecting' is coordinator-owned: nothing pushed yet.
+    expect(pushedStore.getPushed()).toBeNull();
+    store.commit();
+    expect(pushedStore.getPushed()).toBe('p1');
+    store.clear();
+    expect(pushedStore.getPushed()).toBeNull();
+  });
+
+  test('pushedStore reports null for a cross-block commit (native veto)', () => {
+    // Cross-block ranges are never pushed native, so pushedStore stays null and
+    // the overlay paints every covered block.
+    const { store, pushedStore } = setup();
+    store.beginAt(P('p1', 'p1#0', 0));
+    store.extendTo(P('p2', 'p2#0', 3));
+    store.commit();
+    expect(pushedStore.getPushed()).toBeNull();
+  });
+
+  test('pushedStore notifies subscribers when the pushed block changes', () => {
+    const { store, pushedStore } = setup();
+    const seen: (string | null)[] = [];
+    pushedStore.subscribe(() => seen.push(pushedStore.getPushed()));
+    store.beginAt(P('p1', 'p1#0', 0));
+    store.extendTo(P('p1', 'p1#1', 5));
+    store.commit();
+    store.clear();
+    expect(seen).toEqual(['p1', null]);
   });
 });
 

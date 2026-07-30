@@ -49,7 +49,7 @@ pub fn render(
         r#"<rect width="{w}" height="{h}" class="background" fill="{bg}"></rect>"#,
         w = fmt_int(l.width),
         h = fmt_int(l.height),
-        bg = &l.background_color,
+        bg = l.background_color,
     ));
 
     // 4b. Drawable elements — upstream uses getGroup() which re-uses

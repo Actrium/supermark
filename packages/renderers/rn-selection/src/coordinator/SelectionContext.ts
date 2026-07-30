@@ -3,17 +3,21 @@ import type { SelectionNodeId } from '../model';
 import type { SegmentEventSink } from '../nativePrimitive';
 import type { LayoutRect, RegisteredBlock, SelectionRegistry } from './registry';
 import type { SelectionStore } from './state';
+import type { NativeBridgePushedStore } from './nativeBridge';
 
 /**
  * Contract a block component uses to plug itself into the document selection.
  * All real logic lives in `SelectionRegistry` / `SelectionStore`; this context
  * is only wiring. The registry and store are exposed directly so the overlay
  * and host controls under the root need no prop-drilling; per-block event
- * routing is built through `createBlockSink`.
+ * routing is built through `createBlockSink`. `nativePushed` lets the overlay
+ * yield for the block the native bridge has taken over.
  */
 export interface SelectionContextValue {
   registry: SelectionRegistry;
   store: SelectionStore;
+  /** The block the native bridge is showing, for overlay yield. Null if none. */
+  nativePushed: NativeBridgePushedStore;
   /** Register a block; the returned disposer unregisters it. Call from useEffect. */
   registerBlock(block: RegisteredBlock): () => void;
   updateLayout(nodeId: SelectionNodeId, rect: LayoutRect): void;

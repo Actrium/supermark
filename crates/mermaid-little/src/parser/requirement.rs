@@ -508,11 +508,10 @@ fn parse_relationship(line: &str) -> Option<Relation> {
     //   A <- verb - B   (B is src, A is dst)  (upstream: yy.addRelationship($3,$5,$1))
     let (left_end, op_start) = if let Some(idx) = line.find(" - ") {
         (idx, idx + 1)
-    } else if let Some(idx) = line.find("- ") {
+    } else {
+        let idx = line.find("- ")?;
         // start-of-line tolerance
         (idx, idx)
-    } else {
-        return None;
     };
     // Determine direction.
     let rest_after_dash = &line[op_start + 1..];

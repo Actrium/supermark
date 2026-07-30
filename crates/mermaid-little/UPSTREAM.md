@@ -1,7 +1,7 @@
 # Upstream Tracking — mermaid-little
 
 ## Source repo
-- **Upstream:** https://github.com/Actrium/mermaid-little
+- **Upstream:** https://github.com/kookyleo/mermaid-little — no longer developed there; this sub-tree is the live copy
 - **Pinned commit (at merge time):** `7beb9ab1f737833bb4798eafe6a59da97dab1401`
 - **Pinned tag:** (HEAD of `main`; no tag yet at merge time)
 - **Merged into supramark on:** 2026-05-09 (step 4 of the super-monorepo plan)

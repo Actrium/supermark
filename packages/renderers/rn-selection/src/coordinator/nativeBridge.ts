@@ -4,6 +4,20 @@ import type { RegisteredBlock, SelectionRegistry } from './registry';
 import type { SelectionSnapshot, SelectionStore } from './state';
 
 /**
+ * External-store view of which block the bridge has pushed to the native side.
+ * The overlay subscribes so it can YIELD for that block — letting the native
+ * selection (handles + system menu) paint alone — and only paint cross-block
+ * ranges itself. Property-style getters are safe to pass unbound into
+ * `useSyncExternalStore`.
+ */
+export interface NativeBridgePushedStore {
+  /** The nodeId the native side is currently showing, or `null` if none. */
+  getPushed: () => SelectionNodeId | null;
+  /** External-store subscribe; returns the unsubscriber. */
+  subscribe: (listener: () => void) => () => void;
+}
+
+/**
  * Downlink half of the vendored command bridge: the coordinator store stays
  * the single source of truth, and committed selection state is pushed DOWN to
  * the owning block's native `TextSegmentHandle` (`selectRange` — native
@@ -56,8 +70,19 @@ export function planNativeSelection(
   return { nodeId: owner.nodeId, ...segment };
 }
 
+/** Result of wiring the downlink: an unsubscriber plus the pushed-block store. */
+export interface NativeBridgeHandle {
+  /** Detach the downlink from the store. */
+  unsubscribe: () => void;
+  /** External-store view of the block the native side is showing. */
+  pushedStore: NativeBridgePushedStore;
+}
+
 /**
- * Subscribe the downlink to a store. Returns the unsubscriber.
+ * Subscribe the downlink to a store. Returns the unsubscriber plus a
+ * `pushedStore` the overlay subscribes to so it can yield for the block the
+ * native side has taken over (single-block commit) and paint only cross-block
+ * ranges itself.
  *
  * Command discipline (`selectRange` pops the system selection menu, so every
  * avoided call is an avoided menu popup):
@@ -77,8 +102,22 @@ export function planNativeSelection(
 export function createNativeBridge(
   store: Pick<SelectionStore, 'getSnapshot' | 'subscribe'>,
   registry: NativeBridgeRegistry
-): () => void {
+): NativeBridgeHandle {
   let pushed: NativeSelectionTarget | null = null;
+  const pushedListeners = new Set<() => void>();
+
+  const notifyPushed = (): void => {
+    for (const listener of pushedListeners) listener();
+  };
+  const pushedStore: NativeBridgePushedStore = {
+    getPushed: () => pushed?.nodeId ?? null,
+    subscribe: listener => {
+      pushedListeners.add(listener);
+      return () => {
+        pushedListeners.delete(listener);
+      };
+    },
+  };
 
   const apply = (): void => {
     const snapshot = store.getSnapshot();
@@ -89,6 +128,7 @@ export function createNativeBridge(
       if (pushed !== null) {
         registry.getBlock(pushed.nodeId)?.handle?.clearSelection();
         pushed = null;
+        notifyPushed();
       }
       return;
     }
@@ -105,12 +145,17 @@ export function createNativeBridge(
     }
     const handle = registry.getBlock(target.nodeId)?.handle;
     if (handle === undefined) {
-      pushed = null;
+      if (pushed !== null) {
+        pushed = null;
+        notifyPushed();
+      }
       return;
     }
     handle.selectRange(target.startUtf16, target.endUtf16);
     pushed = target;
+    notifyPushed();
   };
 
-  return store.subscribe(apply);
+  const unsubscribe = store.subscribe(apply);
+  return { unsubscribe, pushedStore };
 }

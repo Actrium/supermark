@@ -1186,10 +1186,9 @@ fn parse_note_header(line: &str) -> Option<(String, NotePosition)> {
         (NotePosition::RightOf, r)
     } else if let Some(r) = rest.strip_prefix("above of ") {
         (NotePosition::Above, r)
-    } else if let Some(r) = rest.strip_prefix("below of ") {
-        (NotePosition::Below, r)
     } else {
-        return None;
+        let r = rest.strip_prefix("below of ")?;
+        (NotePosition::Below, r)
     };
     // Trailing colon / inline content indicates it's actually the
     // one-liner form; caller handles that.
@@ -1207,10 +1206,9 @@ fn parse_inline_note(line: &str) -> Option<(String, NotePosition, String)> {
         (NotePosition::RightOf, r)
     } else if let Some(r) = rest.strip_prefix("above of ") {
         (NotePosition::Above, r)
-    } else if let Some(r) = rest.strip_prefix("below of ") {
-        (NotePosition::Below, r)
     } else {
-        return None;
+        let r = rest.strip_prefix("below of ")?;
+        (NotePosition::Below, r)
     };
     let (target, text) = split_once_colon(rest)?;
     Some((target.trim().to_string(), pos, text.trim().to_string()))
