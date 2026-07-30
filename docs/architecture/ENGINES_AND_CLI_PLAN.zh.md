@@ -2,7 +2,7 @@
 
 > 本文是 `@supramark/engines` 从"service-based wiring"迁移到
 > "纯函数 engine + config 驱动 codegen"的总设计文档。它**取代** 
-> `DIAGRAM_ENGINE_TARGET.md` 作为后续实施依据。
+> `DIAGRAM_ENGINE_TARGET.zh.md` 作为后续实施依据。
 >
 > 目标版本：v0.2。状态：设计定稿，待实施。
 
@@ -559,7 +559,7 @@ import { Supramark } from '@/generated/supramark';
 | `@supramark/web` | **简化**：`Supramark.tsx` 不再自造 DiagramRenderService；runtime 层迁到 `@supramark/engines`；保留 `Supramark` 薄壳（由 `createSupramark` 生成） |
 | `@supramark/rn` | **简化**：同上 |
 | `@supramark/feature-*` | 不变。 |
-| `@supramark/feature-diagram-plantuml` | **删除**。`DIAGRAM_ENGINE_TARGET.md` 早定的淘汰项 |
+| `@supramark/feature-diagram-plantuml` | **删除**。`DIAGRAM_ENGINE_TARGET.zh.md` 早定的淘汰项 |
 | 旧 RN diagram worker 包 | **删除**。旧 RN worker 过渡方案正式退场 |
 | 旧 Web diagram helper 包 | **删除**。空壳包 |
 | `@supramark/cli` | **新增** |
@@ -616,4 +616,4 @@ Phase 1–7 合并前：
 
 **设计定稿日期**：2026-04-19  
 **预计实施周期**：1–2 周（Phase 1–7）+ 1 日（Phase 8）  
-**本文件取代**：`DIAGRAM_ENGINE_TARGET.md`（保留作为历史记录，不再更新）
+**本文件取代**：`DIAGRAM_ENGINE_TARGET.zh.md`（保留作为历史记录，不再更新）

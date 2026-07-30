@@ -1,7 +1,7 @@
 /**
  * Config → generated TypeScript file content.
  *
- * See docs/architecture/ENGINES_AND_CLI_PLAN.md §5.5 for the output shape.
+ * See docs/architecture/ENGINES_AND_CLI_PLAN.zh.md §5.5 for the output shape.
  */
 
 import { createHash } from 'node:crypto';

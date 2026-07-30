@@ -189,13 +189,22 @@ const RULES: Record<string, LintRule> = {
         'src/index.ts',
         'src/feature.ts',
         '__tests__/feature.test.ts',
-        'README.md',
       ];
 
-      return required.every(file => {
-        const fullPath = path.join(context.packagePath, file);
-        return fs.existsSync(fullPath);
-      });
+      // Any one of these satisfies the requirement. A Chinese README is named
+      // README.zh.md so the English-only source check can tell documents apart
+      // by filename, so requiring README.md exactly would fail every package
+      // whose README is translated.
+      const requiredOneOf = [['README.md', 'README.zh.md']];
+
+      const hasAllRequired = required.every(file =>
+        fs.existsSync(path.join(context.packagePath, file))
+      );
+      const hasEachAlternative = requiredOneOf.every(alternatives =>
+        alternatives.some(file => fs.existsSync(path.join(context.packagePath, file)))
+      );
+
+      return hasAllRequired && hasEachAlternative;
     },
   },
 };

@@ -290,7 +290,7 @@ ${extConfig.syntax}
 
 ## Related
 
-- [Container Extension Guide](../../docs/architecture/PLUGIN_SYSTEM.md)
+- [Container Extension Guide](../../docs/architecture/PLUGIN_SYSTEM.zh.md)
 `;
 }
 

@@ -52,6 +52,6 @@ bun run dev
 
 ## Related Resources
 
-- [Getting Started](/guide/getting-started)
+- [Getting Started](/guide/getting-started.zh)
 - [API Reference](/api/)
 - [Features](/features/)

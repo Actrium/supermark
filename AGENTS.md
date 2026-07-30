@@ -32,7 +32,7 @@ bun run feature:lint <name>       # 单个 feature 严格模式
 bun run format                    # prettier 写回
 
 # Feature 脚手架 / 维护
-bun run feature:create            # 交互式创建 feature 包，详见 docs/guide/CREATE_FEATURE_GUIDE.md
+bun run feature:create            # 交互式创建 feature 包，详见 docs/guide/CREATE_FEATURE_GUIDE.zh.md
 bun run feature:update
 bun run feature:del
 bun run features:sync             # 同步 feature 元数据 + 生成 bundle + 重建文档
@@ -54,9 +54,9 @@ bun run quality                   # 运行所有质量检查，CI 也会调用
 
 ### 1. `packages/core` — `@supramark/core`
 
-- **AST v2**：与 mdast 尽量兼容、但以 source map / 协作批注为一等目标的 `SupramarkNode`（见 `src/ast.ts`、`docs/architecture/ast-spec.md`）。
+- **AST v2**：与 mdast 尽量兼容、但以 source map / 协作批注为一等目标的 `SupramarkNode`（见 `src/ast.ts`、`docs/architecture/ast-spec.zh.md`）。
 - **单一解析入口**：`parse(source)` 调用 Rust `supramark-markdown` canonical parser，公开合同固定为 `source -> AST v2`。旧 TS 解析线路已移除；TS 插件只做 AST 后处理。
-- **Feature Interface**：`SupramarkFeature` 把 metadata / syntax / renderers / examples / testing / documentation / prompt 封装为一个**完整产品单元**。参见 `docs/architecture/PLUGIN_SYSTEM.md` 的「7 个核心 Trait」。
+- **Feature Interface**：`SupramarkFeature` 把 metadata / syntax / renderers / examples / testing / documentation / prompt 封装为一个**完整产品单元**。参见 `docs/architecture/PLUGIN_SYSTEM.zh.md` 的「7 个核心 Trait」。
 - **语法家族运行时**：`src/syntax/{main,container,fence,input}.ts` 给 feature 提供 `registerContainerHook` / `registerInputHook` 等可扩展点。
 - **Container 扩展**：`container-feature.ts` 是新的精简版统一接口，用于实现 `:::` 型 container。
 
@@ -98,7 +98,7 @@ Feature 跨包导入同理——用 `@supramark/core` / `@supramark/feature-*` �
 2. **运行时**：`validateFeature()`（core 导出），支持基本 / 严格 / 生产模式。
 3. **静态 + CI**：`scripts/features-lint.ts`（`bun run lint:features`）打质量分；`.github/workflows/ci.yml` 在每次 PR 跑 `test:core --coverage`、`build`、`quality`。
 
-详见 `docs/FEATURE_QUALITY_ASSURANCE.md`。
+详见 `docs/guide/FEATURE_QUALITY_ASSURANCE.zh.md`。
 
 ## 文档生成管线
 

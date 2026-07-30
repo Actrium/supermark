@@ -22,7 +22,7 @@
 ## Sub-tree contents
 | Path | Purpose | License |
 |---|---|---|
-| `crates/vison/SPEC.md` / `ARCHITECTURE.md` / `README.md` | Spec docs | MIT |
+| `crates/vison/SPEC.zh.md` / `ARCHITECTURE.zh.md` / `README.zh.md` | Spec docs | MIT |
 | `crates/vison/example.vison.json` / `playground.html` | Reference example + standalone HTML demo | MIT |
 | `crates/vison/verify.sh` | Helper script | MIT |
 | `crates/vison/vison-core/` | Rust crate `vison-core` — validator + parser + CLI | MIT |

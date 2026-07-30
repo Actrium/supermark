@@ -150,10 +150,14 @@ function lintFeature(feature: FeaturePackageInfo): LintResult {
     result.warnings.push('Missing src/examples.ts');
   }
 
-  // Check that README.md exists
-  const readmeFile = path.join(feature.dir, 'README.md');
-  if (!fs.existsSync(readmeFile)) {
-    result.warnings.push('Missing README.md');
+  // Check that a README exists. A Chinese README is named README.zh.md so that
+  // the English-only source check can tell documents apart by filename, so both
+  // names satisfy this.
+  const hasReadme = ['README.md', 'README.zh.md'].some(name =>
+    fs.existsSync(path.join(feature.dir, name))
+  );
+  if (!hasReadme) {
+    result.warnings.push('Missing README.md or README.zh.md');
   }
 
   // ========== Container-kind-specific checks ==========

@@ -8,12 +8,12 @@
 config-examples/
 ├── vite/              # Vite 配置示例
 │   ├── vite.config.ts
-│   └── README.md
+│   └── README.zh.md
 ├── webpack/           # Webpack 配置示例
 │   ├── webpack.config.js
 │   ├── package.json.example
-│   └── README.md
-└── README.md          # 本文件
+│   └── README.zh.md
+└── README.zh.md       # 本文件
 ```
 
 ## 快速导航
@@ -29,7 +29,7 @@ config-examples/
 
 **查看示例：**
 - [vite.config.ts](./vite/vite.config.ts) - 完整配置文件
-- [README.md](./vite/README.md) - 详细使用说明
+- [README.zh.md](./vite/README.zh.md) - 详细使用说明
 
 ---
 
@@ -45,7 +45,7 @@ config-examples/
 **查看示例：**
 - [webpack.config.js](./webpack/webpack.config.js) - 完整配置文件
 - [package.json.example](./webpack/package.json.example) - 依赖列表
-- [README.md](./webpack/README.md) - 详细使用说明
+- [README.zh.md](./webpack/README.zh.md) - 详细使用说明
 
 ---
 

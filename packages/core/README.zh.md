@@ -44,7 +44,7 @@ const ast: SupramarkRootNode = await parse('# Hello **Supramark**!');
 查看功能扩展的完整示例：
 
 - [Admonition 功能示例](../../docs/FEATURE_INTERFACE_EXAMPLE.md)
-- [插件系统设计](../../docs/PLUGIN_SYSTEM.md)
+- [插件系统设计](../../docs/architecture/PLUGIN_SYSTEM.zh.md)
 
 ## 开发
 

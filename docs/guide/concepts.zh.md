@@ -217,7 +217,7 @@ const myFeature = defineFeature({
 });
 ```
 
-详细指南：[自定义 Feature 开发](/guide/custom-features)
+详细指南：[自定义 Feature 开发](/guide/custom-features.zh)
 
 ### 自定义样式
 
@@ -314,6 +314,6 @@ const config: SupramarkConfig = {
 
 ## 下一步
 
-- [架构设计](/guide/architecture) - 深入了解内部架构
+- [架构设计](/guide/architecture.zh) - 深入了解内部架构
 - [Features 列表](/features/) - 浏览所有可用功能
 - [API 参考](/api/) - 查看完整 API 文档

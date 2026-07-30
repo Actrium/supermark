@@ -10,8 +10,8 @@ Vison 是一套专门为 AI 聊天场景设计的**纯视觉 JSON 描述规范**
 
 ## 文档导航
 
-- [**技术规范 (SPEC v1)**](./SPEC.md) - 详细的 JSON 结构、组件白名单、样式规范及约束。
-- [**架构设计 (ARCHITECTURE)**](./ARCHITECTURE.md) - 设计哲学、渲染流程、以及为什么选择 Flexbox 等技术细节。
+- [**技术规范 (SPEC v1)**](./SPEC.zh.md) - 详细的 JSON 结构、组件白名单、样式规范及约束。
+- [**架构设计 (ARCHITECTURE)**](./ARCHITECTURE.zh.md) - 设计哲学、渲染流程、以及为什么选择 Flexbox 等技术细节。
 
 ## 快速示例
 

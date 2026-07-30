@@ -516,7 +516,7 @@ npm run format                     # Prettier 格式化
 ## 相关文档
 
 - [Feature Interface 接口定义](../packages/core/src/feature.ts)
-- [Feature 创建指南](./CREATE_FEATURE_GUIDE.md)
+- [Feature 创建指南](./CREATE_FEATURE_GUIDE.zh.md)
 - [Feature 生命周期与配置](./FEATURE_LIFECYCLE_AND_CONFIG.md)
 - [CLI 工具使用指南](./CHANGELOG_CLI_v0.2.1.md)
 

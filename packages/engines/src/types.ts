@@ -97,7 +97,7 @@ export interface DiagramEngineOptions {
 }
 
 // ============================================================================
-// v0.2 — pure-function engine + config-driven codegen (see docs/architecture/ENGINES_AND_CLI_PLAN.md)
+// v0.2 — pure-function engine + config-driven codegen (see docs/architecture/ENGINES_AND_CLI_PLAN.zh.md)
 // ============================================================================
 
 /**

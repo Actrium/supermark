@@ -145,7 +145,7 @@ function isGraphvizImageSize(value: unknown): value is NonNullable<GraphvizDiagr
 }
 
 // ============================================================================
-// v0.2 unified engine factory (see docs/architecture/ENGINES_AND_CLI_PLAN.md)
+// v0.2 unified engine factory (see docs/architecture/ENGINES_AND_CLI_PLAN.zh.md)
 // ============================================================================
 
 /**

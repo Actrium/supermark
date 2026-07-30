@@ -144,7 +144,19 @@ for (const file of tracked.stdout.split('\0').filter(Boolean)) {
   // A whole Chinese document is a rename, not a line-by-line edit: reporting
   // every line would bury the one action that fixes it.
   if (isMarkdown) {
-    const count = (text.match(CJK_GLOBAL) ?? []).length;
+    // The English half of a translated pair carries a language switcher whose
+    // label is the word for "Chinese" in Chinese, pointing at the .zh.md half:
+    //   [<label>](README.zh.md) | English
+    // That is navigation, not prose, and flagging it would push every bilingual
+    // README toward either a needless pragma or losing its own translation.
+    // Only the link whose target is the Chinese counterpart is discounted, so
+    // actual Chinese prose in an English document still fails.
+    const withoutLanguageSwitcher = text.replace(/\[[^\]]*\]\(([^)]*\.zh\.md)\)/g, '');
+    if (!CJK.test(withoutLanguageSwitcher)) {
+      skipped.allowedLocation += 1;
+      continue;
+    }
+    const count = (withoutLanguageSwitcher.match(CJK_GLOBAL) ?? []).length;
     findings.push({
       file: posix,
       kind: 'markdown-should-be-zh-md',

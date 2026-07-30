@@ -3,7 +3,7 @@
 > **📖 相关文档**:
 >
 > - [Feature Interface 接口定义](../packages/core/src/feature.ts) - 完整的 TypeScript 接口定义
-> - [创建新 Feature 指南](../guide/CREATE_FEATURE_GUIDE.md)
+> - [创建新 Feature 指南](../guide/CREATE_FEATURE_GUIDE.zh.md)
 
 ## 核心设计哲学
 

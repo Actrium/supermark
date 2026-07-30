@@ -33,7 +33,7 @@ Supramark 采用分层架构，从底层到上层分为：
 
 图表链路正在从“平台各自渲染”收敛到“统一 engine 产出 SVG，再由各平台消费”。
 
-- 架构目标文档见 [../architecture/DIAGRAM_ENGINE_TARGET.md](../architecture/DIAGRAM_ENGINE_TARGET.md)
+- 架构目标文档见 [../architecture/DIAGRAM_ENGINE_TARGET.zh.md](../architecture/DIAGRAM_ENGINE_TARGET.zh.md)
 - 图表渲染不再通过额外执行容器，RN 与 Web 都消费 `@supramark/engines` 输出的 SVG
 
 ## 核心层（@supramark/core）
@@ -465,7 +465,7 @@ it('should match snapshot', () => {
 
 通过 `style` prop 覆盖默认样式
 
-详细指南请参考 [自定义 Feature 开发](/guide/custom-features)。
+详细指南请参考 [自定义 Feature 开发](/guide/custom-features.zh)。
 
 ## 设计原则
 
@@ -499,7 +499,7 @@ TypeScript 优先，编译时检查
 
 ## 参考资料
 
-- [核心概念](/guide/concepts)
+- [核心概念](/guide/concepts.zh)
 - [Features 文档](/features/)
 - [API 参考](/api/)
 - [TypeDoc](/typedoc/)

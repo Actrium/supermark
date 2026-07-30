@@ -6,15 +6,15 @@
 
 ### 🛠️ 开发指南
 
-- [如何创建新 Feature](./guide/CREATE_FEATURE_GUIDE.md)
-- [质量保障体系](./guide/FEATURE_QUALITY_ASSURANCE.md)
-- [CI 配置说明](./guide/CI_SETUP.md)
+- [如何创建新 Feature](./guide/CREATE_FEATURE_GUIDE.zh.md)
+- [质量保障体系](./guide/FEATURE_QUALITY_ASSURANCE.zh.md)
+- [CI 配置说明](./guide/CI_SETUP.zh.md)
 
 ### 🏗️ 架构设计
 
-- [项目结构报告](./architecture/PROJECT_STRUCTURE_REPORT.md)
-- [插件系统设计](./architecture/PLUGIN_SYSTEM.md)
-- [文档自动化架构](./architecture/DOCUMENTATION_ARCHITECTURE.md)
+- [项目结构报告](./architecture/PROJECT_STRUCTURE_REPORT.zh.md)
+- [插件系统设计](./architecture/PLUGIN_SYSTEM.zh.md)
+- [文档自动化架构](./architecture/DOCUMENTATION_ARCHITECTURE.zh.md)
 
 ### 📚 自动生成参考 (运行 `npm run features:sync` 更新)
 

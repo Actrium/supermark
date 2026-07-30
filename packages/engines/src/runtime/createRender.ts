@@ -33,7 +33,7 @@ export function createRender(
   return async (_markdown, _options) => {
     throw new Error(
       '[@supramark/engines] createRender is not implemented yet (Phase 5). ' +
-        'Track ENGINES_AND_CLI_PLAN.md §8 for progress.'
+        'Track ENGINES_AND_CLI_PLAN.zh.md §8 for progress.'
     );
   };
 }

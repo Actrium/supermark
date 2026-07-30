@@ -795,7 +795,7 @@ A:
 - [Feature Interface 接口定义](../packages/core/src/feature.ts)
 - [Feature Interface 改进说明](./FEATURE_INTERFACE_IMPROVEMENTS.md)
 - [Feature 生命周期与配置管理](./FEATURE_LIFECYCLE_AND_CONFIG.md)
-- [Plugin System 设计](./PLUGIN_SYSTEM.md)
+- [Plugin System 设计](../architecture/PLUGIN_SYSTEM.zh.md)
 
 ## 反馈与改进
 

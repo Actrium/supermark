@@ -151,7 +151,7 @@ pub enum SupramarkNode {
         meta: Option<serde_json::Value>,
         /// Semantic AST envelope { engine, kind, data }. None = not parsed or unsupported
         /// (lazy by default; not inlined in the parser main path, filled in on demand by
-        /// downstream). See docs/architecture/diagram-semantic-ast.md.
+        /// downstream). See docs/architecture/diagram-semantic-ast.zh.md.
         #[serde(skip_serializing_if = "Option::is_none")]
         semantic: Option<serde_json::Value>,
         #[serde(skip_serializing_if = "Option::is_none")]
