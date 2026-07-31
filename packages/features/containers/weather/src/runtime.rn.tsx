@@ -8,27 +8,17 @@
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { getMockWeather } from './mock-weather.js';
 import type { ContainerRNRenderArgs } from '@supramark/core';
 import type { WeatherData } from './feature.js';
 
 /**
- * Mock weather data (a real app should call a weather API)
+ * condition index → RN emoji (platform-specific, not in shared layer)
+ *
+ * Shared derivation (temp/humidity/wind/conditionIndex) lives in
+ * mock-weather.ts; this only maps the condition for this platform.
  */
-function getMockWeather(location: string, units: 'metric' | 'imperial' = 'metric') {
-  const hash = location.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const baseTemp = 15 + (hash % 20);
-  const temp = units === 'imperial' ? Math.round(baseTemp * 1.8 + 32) : baseTemp;
-  const unit = units === 'imperial' ? '°F' : '°C';
-
-  const conditions = ['☀️', '☁️', '🌧️'] as const;
-  const condition = conditions[hash % 3];
-
-  const humidity = 40 + (hash % 40);
-  const wind = 5 + (hash % 20);
-  const windUnit = units === 'imperial' ? 'mph' : 'km/h';
-
-  return { temp, unit, condition, humidity, wind, windUnit };
-}
+const RN_CONDITIONS = ['☀️', '☁️', '🌧️'] as const;
 
 const localStyles = StyleSheet.create({
   container: {
@@ -153,7 +143,7 @@ export function renderWeatherContainerRN({
         <Text style={localStyles.format}>{format.toUpperCase()}</Text>
       </View>
       <View style={localStyles.main}>
-        <Text style={localStyles.icon}>{weather.condition}</Text>
+        <Text style={localStyles.icon}>{RN_CONDITIONS[weather.conditionIndex]}</Text>
         <Text style={localStyles.temp}>
           {weather.temp}
           <Text style={localStyles.unit}>{weather.unit}</Text>
