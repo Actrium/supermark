@@ -590,7 +590,7 @@ function FootnoteRef({ node }: { node: SupramarkFootnoteReferenceNode }) {
   const id = footnoteHrefEscape(refMeta.defIdentifier);
   return (
     <sup className="footnote-ref">
-      <a href={`#fn-${id}`} id={`fnref-${id}${suffix}`} data-footnote-ref>
+      <a href={`#fn-${id}`} id={`fnref-${id}${suffix}`} data-footnote-ref="">
         {refMeta.defIndex}
       </a>
     </sup>
@@ -611,7 +611,7 @@ function FootnoteBackref({
     <a
       href={`#fnref-${id}${suffix}`}
       className="footnote-backref"
-      data-footnote-backref
+      data-footnote-backref=""
       data-footnote-backref-idx={idx}
       aria-label={`Back to reference ${idx}`}
     >
@@ -694,7 +694,7 @@ function FootnoteSection({
   containerRenderers: Record<string, ContainerRendererWeb> | undefined;
 }) {
   return (
-    <section className="footnotes" data-footnotes>
+    <section className="footnotes" data-footnotes="">
       <ol>
         {defs.map((def, index) => (
           <FootnoteDefLi
@@ -878,6 +878,36 @@ function mergeRawNodes(
   let i = 0;
   while (i < children.length) {
     const node = children[i];
+    // Paragraph with unclosed inline formatting elements (e.g. spec-0652's
+    // `<strong> … <em>`): cmark emits the raw tokens verbatim, and the
+    // browser's tree-construction reconstructs the active formatting elements
+    // across `</p>` into following blocks. Rendering the paragraph alone via
+    // RawHtml only reconstructs within the paragraph's fragment; to reproduce
+    // the cross-block leak, fold the paragraph and following serializable
+    // siblings into one RawHtml fragment so a single parse owns the
+    // reconstruction. Falls through when there is nothing to fold into or a
+    // following block can't be statically serialized.
+    if (allowDangerous && node?.type === 'paragraph' && classNames) {
+      const inlineHtml = inlineNodesToHtml(node.children, classNames, config);
+      if (inlineHtml !== null && unclosedInlineFormattingTags(inlineHtml).length > 0) {
+        const following = children.slice(i + 1);
+        const serializedFollowing =
+          following.length > 0 ? serializeBlocksToHtml(following, classNames, config) : '';
+        if (serializedFollowing !== null) {
+          const classAttr = classNames.paragraph
+            ? ` class="${escapeHtmlAttr(classNames.paragraph)}"`
+            : '';
+          result.push(
+            React.createElement(RawHtml, {
+              key: i,
+              value: `<p${classAttr}>${inlineHtml}</p>\n${serializedFollowing}`,
+            })
+          );
+          i = children.length;
+          continue;
+        }
+      }
+    }
     if (allowDangerous && node?.type === 'raw') {
       const rawNode = node;
       const value = rawNode.value ?? '';
@@ -1692,10 +1722,11 @@ function renderInlineNodes(
   classNames: SupramarkClassNames,
   rendered: Map<string, DiagramRenderResult>,
   highlighted: Map<string, SupramarkCodeHighlightResult>,
-  config?: SupramarkConfig
+  config?: SupramarkConfig,
+  parentType?: SupramarkNode['type']
 ): React.ReactNode {
   return mergeRawNodes(nodes, (node, index) =>
-    renderInlineNode(node, index, classNames, rendered, highlighted, config)
+    renderInlineNode(node, index, classNames, rendered, highlighted, config, parentType)
   );
 }
 
@@ -1720,11 +1751,12 @@ function inlineNodesToHtml(
 function serializeInlineList(
   nodes: SupramarkNode[],
   classNames: SupramarkClassNames,
-  config?: SupramarkConfig
+  config?: SupramarkConfig,
+  parentType?: SupramarkNode['type']
 ): string | null {
   let out = '';
   for (const node of nodes) {
-    const piece = serializeInlineNode(node, classNames, config);
+    const piece = serializeInlineNode(node, classNames, config, parentType);
     if (piece === null) return null;
     out += piece;
   }
@@ -1734,7 +1766,8 @@ function serializeInlineList(
 function serializeInlineNode(
   node: SupramarkNode,
   classNames: SupramarkClassNames,
-  config?: SupramarkConfig
+  config?: SupramarkConfig,
+  parentType?: SupramarkNode['type']
 ): string | null {
   const cls = (value?: string) => (value ? ` class="${escapeHtmlAttr(value)}"` : '');
   switch (node.type) {
@@ -1743,17 +1776,24 @@ function serializeInlineNode(
     case 'raw':
       return maybeTagfilter(node.value ?? '', config);
     case 'strong': {
-      const inner = serializeInlineList(node.children, classNames, config);
-      return inner === null ? null : `<strong${cls(classNames.strong)}>${inner}</strong>`;
+      const inner = serializeInlineList(node.children, classNames, config, 'strong');
+      if (inner === null) return null;
+      // Mirror cmark-gfm's HTML renderer: a strong whose parent is also a
+      // strong emits no wrapper at all, so `****foo****` flattens to a
+      // single <strong>foo</strong>. (Children are still recursed with
+      // parentType='strong' since the suppressed node is still a strong
+      // ancestor to its own children.)
+      if (parentType === 'strong') return inner;
+      return `<strong${cls(classNames.strong)}>${inner}</strong>`;
     }
     case 'emphasis': {
-      const inner = serializeInlineList(node.children, classNames, config);
+      const inner = serializeInlineList(node.children, classNames, config, 'emphasis');
       return inner === null ? null : `<em${cls(classNames.emphasis)}>${inner}</em>`;
     }
     case 'inline_code':
       return `<code${cls(classNames.inlineCode)}>${escapeHtmlText(node.value)}</code>`;
     case 'link': {
-      const inner = serializeInlineList(node.children, classNames, config);
+      const inner = serializeInlineList(node.children, classNames, config, 'link');
       if (inner === null) return null;
       const title = node.title ? ` title="${escapeHtmlAttr(node.title)}"` : '';
       return `<a href="${escapeHtmlAttr(node.url)}"${title}${cls(classNames.link)}>${inner}</a>`;
@@ -1765,7 +1805,7 @@ function serializeInlineNode(
     case 'break':
       return '<br />\n';
     case 'delete': {
-      const inner = serializeInlineList(node.children, classNames, config);
+      const inner = serializeInlineList(node.children, classNames, config, 'delete');
       if (inner === null) return null;
       return isFeatureGroupEnabled(config, ['@supramark/feature-gfm'])
         ? `<del${cls(classNames.delete)}>${inner}</del>`
@@ -1876,13 +1916,40 @@ function unclosedBlockContainerOpen(
   return tag;
 }
 
+// HTML5 active formatting elements (HTML spec, "list of active formatting
+// elements"). cmark emits raw inline HTML verbatim, so an unclosed formatting
+// tag in one block leaks into following blocks when the browser reconstructs
+// the active formatting elements across the block boundary — e.g. spec-0652's
+// `<strong> … <em>` paragraph wraps the following blockquote's text in
+// `<strong><em>` after `</p>`. Returning the set of tags opened but not closed
+// in a serialized inline run lets mergeRawNodes fold following siblings into
+// one RawHtml fragment so the browser's tree-construction reproduces cmark's
+// reconstruction in a single parse.
+const HTML_FORMATTING_TAGS = new Set([
+  'a', 'b', 'big', 'code', 'em', 'font', 'i', 'nobr', 's', 'small', 'strike',
+  'strong', 'tt', 'u',
+]);
+function unclosedInlineFormattingTags(html: string): string[] {
+  const counts: Record<string, number> = {};
+  const re = /<\/?([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const tag = m[1].toLowerCase();
+    if (!HTML_FORMATTING_TAGS.has(tag)) continue;
+    const closing = m[0].charCodeAt(1) === 47; // '</'
+    counts[tag] = (counts[tag] ?? 0) + (closing ? -1 : 1);
+  }
+  return Object.keys(counts).filter((t) => counts[t] > 0);
+}
+
 function renderInlineNode(
   node: SupramarkNode,
   key: number,
   classNames: SupramarkClassNames,
   rendered: Map<string, DiagramRenderResult>,
   highlighted: Map<string, SupramarkCodeHighlightResult>,
-  config?: SupramarkConfig
+  config?: SupramarkConfig,
+  parentType?: SupramarkNode['type']
 ): React.ReactNode {
   switch (node.type) {
     case 'text': {
@@ -1891,9 +1958,21 @@ function renderInlineNode(
     }
     case 'strong': {
       const strongNode = node;
+      // cmark-gfm's HTML renderer suppresses the <strong> wrapper when a
+      // strong node's parent is also strong (html.c CMARK_NODE_STRONG),
+      // collapsing `****foo****` to a single `<strong>foo</strong>` instead
+      // of the nested `<strong><strong>foo</strong></strong>` the delimiter
+      // algorithm produces. Only STRONG is suppressed — nested <em> stays.
+      if (parentType === 'strong') {
+        return (
+          <React.Fragment key={key}>
+            {renderInlineNodes(strongNode.children, classNames, rendered, highlighted, config, 'strong')}
+          </React.Fragment>
+        );
+      }
       return (
         <strong key={key} className={classNames.strong}>
-          {renderInlineNodes(strongNode.children, classNames, rendered, highlighted, config)}
+          {renderInlineNodes(strongNode.children, classNames, rendered, highlighted, config, 'strong')}
         </strong>
       );
     }
@@ -1901,7 +1980,7 @@ function renderInlineNode(
       const emphasisNode = node;
       return (
         <em key={key} className={classNames.emphasis}>
-          {renderInlineNodes(emphasisNode.children, classNames, rendered, highlighted, config)}
+          {renderInlineNodes(emphasisNode.children, classNames, rendered, highlighted, config, 'emphasis')}
         </em>
       );
     }
@@ -1931,7 +2010,7 @@ function renderInlineNode(
       const linkNode = node;
       return (
         <a key={key} href={linkNode.url} title={linkNode.title} className={classNames.link}>
-          {renderInlineNodes(linkNode.children, classNames, rendered, highlighted, config)}
+          {renderInlineNodes(linkNode.children, classNames, rendered, highlighted, config, 'link')}
         </a>
       );
     }
@@ -1959,11 +2038,11 @@ function renderInlineNode(
     case 'delete': {
       const deleteNode = node;
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-gfm'])) {
-        return renderInlineNodes(deleteNode.children, classNames, rendered, highlighted, config);
+        return renderInlineNodes(deleteNode.children, classNames, rendered, highlighted, config, 'delete');
       }
       return (
         <del key={key} className={classNames.delete}>
-          {renderInlineNodes(deleteNode.children, classNames, rendered, highlighted, config)}
+          {renderInlineNodes(deleteNode.children, classNames, rendered, highlighted, config, 'delete')}
         </del>
       );
     }

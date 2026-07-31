@@ -38,17 +38,19 @@ function createContainer(): TestContainer {
 
 async function renderAst(
   ast: SupramarkRootNode,
-  options?: { allowDangerousHtml?: boolean }
+  options?: { allowDangerousHtml?: boolean; gfmTagfilter?: boolean }
 ): Promise<TestContainer> {
   const container = createContainer();
+  const opts = options
+    ? {
+        options: {
+          ...(options.allowDangerousHtml ? { allowDangerousHtml: true } : {}),
+          ...(options.gfmTagfilter ? { gfmTagfilter: true } : {}),
+        },
+      }
+    : undefined;
   await act(async () => {
-    root?.render(
-      <Supramark
-        markdown=""
-        ast={ast}
-        config={options?.allowDangerousHtml ? { options: { allowDangerousHtml: true } } : undefined}
-      />
-    );
+    root?.render(<Supramark markdown="" ast={ast} config={opts} />);
   });
   return container;
 }
@@ -153,6 +155,130 @@ describe('CommonMark block rendering', () => {
     const codeMatch = container.innerHTML.match(/<code[^>]*>/i);
     expect(codeMatch).not.toBeNull();
     expect(codeMatch![0]).not.toMatch(/language-/i);
+  });
+});
+
+describe('CommonMark emphasis delimiter flattening', () => {
+  // cmark-gfm's HTML renderer suppresses the <strong> wrapper when a strong
+  // node's parent is itself strong (html.c, CMARK_NODE_STRONG), collapsing
+  // the nested `<strong><strong>foo</strong></strong>` that the delimiter
+  // run algorithm produces into a single flat `<strong>foo</strong>`. Only
+  // STRONG is suppressed; nested <em> stays nested. See issue #144.
+
+  function strong(children: SupramarkRootNode['children']) {
+    return { type: 'strong', children } as const;
+  }
+  function emph(children: SupramarkRootNode['children']) {
+    return { type: 'emphasis', children } as const;
+  }
+
+  test('flattens nested strong-strong to a single <strong>', async () => {
+    // `****foo****` -> <p><strong>foo</strong></p>
+    const ast = makeRoot([
+      { type: 'paragraph', children: [strong([strong([text('foo')])])] },
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toContain('<strong>foo</strong>');
+    expect(container.innerHTML).not.toContain('<strong><strong>');
+  });
+
+  test('flattens strong child of strong but keeps intervening text', async () => {
+    // `__foo, __bar__, baz__` -> <p><strong>foo, bar, baz</strong></p>
+    const ast = makeRoot([
+      {
+        type: 'paragraph',
+        children: [
+          strong([text('foo, '), strong([text('bar')]), text(', baz')]),
+        ],
+      },
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toContain('<strong>foo, bar, baz</strong>');
+    expect(container.innerHTML).not.toContain('<strong><strong>');
+  });
+
+  test('preserves nested emphasis (only strong is suppressed)', async () => {
+    // `*(*foo*)*` -> <p><em>(<em>foo</em>)</em></p>
+    const ast = makeRoot([
+      {
+        type: 'paragraph',
+        children: [
+          emph([text('('), emph([text('foo')]), text(')')]),
+        ],
+      },
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toContain('<em>(<em>foo</em>)</em>');
+  });
+
+  test('keeps inner strong whose parent is emphasis, not strong', async () => {
+    // `**_**b**_**` -> <p><strong><em><strong>b</strong></em></strong></p>
+    const ast = makeRoot([
+      {
+        type: 'paragraph',
+        children: [strong([emph([strong([text('b')])])])],
+      },
+    ]);
+    const container = await renderAst(ast);
+    expect(container.innerHTML).toContain('<strong><em><strong>b</strong></em></strong>');
+  });
+
+  test('flattens strong-strong inside a raw-HTML paragraph (serialize path)', async () => {
+    // `****foo**** <b>x</b>` -> the paragraph contains raw HTML, so it goes
+    // through serializeInlineNode; the inner strong must still suppress.
+    const ast = makeRoot([
+      {
+        type: 'paragraph',
+        children: [strong([strong([text('foo')])]), raw('<b>x</b>', false), text(' ')],
+      },
+    ]);
+    const container = await renderAst(ast, { allowDangerousHtml: true });
+    expect(container.innerHTML).toContain('<strong>foo</strong>');
+    expect(container.innerHTML).not.toContain('<strong><strong>');
+  });
+});
+
+describe('Raw HTML active-formatting-element reconstruction across blocks', () => {
+  // cmark-gfm spec-0652: a paragraph with unclosed inline formatting tags
+  // (`<strong> … <em>`) followed by a raw block. cmark emits the raw tokens
+  // verbatim, and the browser's tree-construction reconstructs the open
+  // strong/em across `</p>` into the following block. The renderer folds the
+  // paragraph and following serializable raw siblings into one RawHtml
+  // fragment so a single parse owns the reconstruction (verified end-to-end by
+  // the real-Chromium conformance gate). In a non-reconstructing DOM
+  // (happy-dom) the observable guard is that the paragraph-level path no
+  // longer leaves a trailing reconstructed `<strong><em>…</em></strong>`
+  // artifact between the paragraph and the following block.
+  function inlineRaw(value: string) {
+    return { type: 'raw', format: 'html', value, block: false } as const;
+  }
+  function blockRaw(value: string) {
+    return { type: 'raw', format: 'html', value, block: true } as const;
+  }
+
+  test('folds the paragraph and following raw block into one fragment', async () => {
+    const ast = makeRoot([
+      {
+        type: 'paragraph',
+        children: [
+          inlineRaw('<strong>'),
+          text(' '),
+          inlineRaw('<title>'),
+          text(' '),
+          inlineRaw('<style>'),
+          text(' '),
+          inlineRaw('<em>'),
+        ],
+      },
+      blockRaw('<blockquote>\n  &lt;xmp> is disallowed.\n</blockquote>\n'),
+    ]);
+    const container = await renderAst(ast, { allowDangerousHtml: true, gfmTagfilter: true });
+    const html = container.innerHTML;
+    // The paragraph-level reconstruction artifact (a trailing empty
+    // <strong><em>…</em></strong> between </p> and the blockquote) is gone.
+    expect(html).not.toContain('<strong><em>');
+    // The blockquote is still rendered as a sibling block.
+    expect(html).toContain('<blockquote>');
   });
 });
 
