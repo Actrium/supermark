@@ -150,7 +150,7 @@ export async function compareVisualCases({
           const actualPath = path.join(outputDirectory, 'actual.png');
           const diffPath = path.join(outputDirectory, 'diff.png');
           await Promise.all([
-            writeFile(expectedPath, expected),
+            writeFile(expectedPath, expectedShot),
             writeFile(actualPath, actual),
             writeFile(diffPath, PNG.sync.write(diffPng)),
           ]);
