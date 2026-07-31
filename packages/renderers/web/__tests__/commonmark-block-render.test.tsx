@@ -548,9 +548,10 @@ describe('GFM table rendering', () => {
   });
 });
 
-// GFM task lists: cmark-gfm separates the checkbox from the item text with a
-// literal space — `<input ...> foo`. The parser keeps that leading space on
-// the text node; the renderer must preserve it. See issue #144.
+// GFM task lists: cmark-gfm's html_render emits `<input ... /> ` with a literal
+// trailing space before the item text. The parser consumes the marker's
+// separator whitespace (cmark's `spacechar+`), so the text node carries no
+// leading space and the renderer emits the literal space here. See issue #144.
 describe('GFM task list rendering', () => {
   function taskItem(checked: boolean, content: string) {
     return {
@@ -565,7 +566,7 @@ describe('GFM task list rendering', () => {
       {
         type: 'list',
         ordered: false,
-        children: [taskItem(false, ' foo'), taskItem(true, ' bar')],
+        children: [taskItem(false, 'foo'), taskItem(true, 'bar')],
       },
     ]);
     const container = await renderAst(ast);

@@ -191,6 +191,7 @@ if (visualEnabled) {
 }
 const failedCases = results.filter(result => result.status === 'fail');
 const errors = results.filter(result => result.status === 'error');
+const skippedCases = results.filter(result => result.status === 'skip' || result.skipped);
 const notPassed = [...failedCases, ...errors];
 const typeMismatchCount = failedCases.filter(result => result.typeDifference).length;
 const sectionSummary = summarize(results, result => result.section);
@@ -241,9 +242,10 @@ const summary = {
   sourceCommit: version.commit,
   parserBinary,
   total: results.length,
-  passed: results.length - notPassed.length,
+  passed: results.length - notPassed.length - skippedCases.length,
   failed: failedCases.length,
   errors: errors.length,
+  skipped: skippedCases.length,
   notPassed: notPassed.length,
   typeMismatches: typeMismatchCount,
   overallNotPassedCases: overallNotPassedCases.size,
@@ -315,9 +317,9 @@ if (summary.result === 'fail') {
   ]);
 }
 
-console.log(`${sourceDisplayName} semantic comparison: passed ${summary.passed}/${summary.total}, not passed ${summary.notPassed}`);
+console.log(`${sourceDisplayName} semantic comparison: passed ${summary.passed}/${summary.total}, skipped ${summary.skipped}, not passed ${summary.notPassed}`);
 if (summary.visual.enabled) {
-  console.log(`${sourceDisplayName} visual comparison: passed ${summary.visual.passed}/${summary.visual.total}, not passed ${summary.visual.notPassed}`);
+  console.log(`${sourceDisplayName} visual comparison: passed ${summary.visual.passed}/${summary.visual.total}, skipped ${summary.visual.skipped}, not passed ${summary.visual.notPassed}`);
 } else {
   console.log(`${sourceDisplayName} visual comparison: not run (enable with run-visual.mjs ${sourceName})`);
 }
@@ -457,11 +459,15 @@ function compareHtmlCase(testCase, ast, actualHtml) {
   // Supramark against it instead of skipping. See issue #144 (extensions-0020).
   const expected = effectiveExpected(testCase);
   if (expected.isIgnoreWithoutOverride) {
-    // `<IGNORE>` with no binary override recorded: auto-pass as before.
+    // `<IGNORE>` with no binary override recorded: there is no real expected
+    // HTML to compare against (the fixture's sentinel is not a rendering
+    // target and no cmark-binary output was captured). Surface this as a
+    // skipped case rather than inflating `passed`, so the summary cannot
+    // claim a comparison that never happened.
     return {
       id: testCase.id,
       section: testCase.source.section,
-      status: 'pass',
+      status: 'skip',
       skipped: 'ignore-sentinel',
     };
   }
@@ -499,18 +505,19 @@ function renderSummaryMarkdown(summaryDocument, semanticFailures, visualFailures
     '## Semantic comparison results',
     '',
     `- Passed: ${summaryDocument.passed}`,
+    `- Skipped (\`<IGNORE>\` without override): ${summaryDocument.skipped}`,
     `- Semantic differences: ${summaryDocument.failed}`,
     `- Execution errors: ${summaryDocument.errors}`,
     `- Render type mismatches: ${summaryDocument.typeMismatches}`,
     '',
     '### Semantic results by section',
     '',
-    '| Section | Total | Passed | Semantic diff | Execution error |',
-    '| --- | ---: | ---: | ---: | ---: |',
+    '| Section | Total | Passed | Skipped | Semantic diff | Execution error |',
+    '| --- | ---: | ---: | ---: | ---: | ---: |',
   ];
   for (const [section, counts] of Object.entries(summaryDocument.bySection)) {
     lines.push(
-      `| ${escapeTableCell(`${counts.sectionLabel} (${section})`)} | ${counts.total} | ${counts.passed} | ${counts.failed} | ${counts.errors} |`
+      `| ${escapeTableCell(`${counts.sectionLabel} (${section})`)} | ${counts.total} | ${counts.passed} | ${counts.skipped} | ${counts.failed} | ${counts.errors} |`
     );
   }
   lines.push('', '### Not-passing semantic cases', '');
@@ -537,17 +544,18 @@ function renderSummaryMarkdown(summaryDocument, semanticFailures, visualFailures
       `- Style profile: \`${summaryDocument.visual.profile}\``,
       `- Pinned width: ${summaryDocument.visual.viewport?.width ?? '-'}px`,
       `- Passed: ${summaryDocument.visual.passed}/${summaryDocument.visual.total}`,
+      `- Skipped (\`<IGNORE>\` without override): ${summaryDocument.visual.skipped}`,
       `- Pixel differences: ${summaryDocument.visual.failed}`,
       `- Execution errors: ${summaryDocument.visual.errors}`,
       '',
       '### Visual results by section',
       '',
-      '| Section | Total | Passed | Pixel diff | Execution error |',
-      '| --- | ---: | ---: | ---: | ---: |'
+      '| Section | Total | Passed | Skipped | Pixel diff | Execution error |',
+      '| --- | ---: | ---: | ---: | ---: | ---: |'
     );
     for (const [section, counts] of Object.entries(summaryDocument.visual.bySection ?? {})) {
       lines.push(
-        `| ${escapeTableCell(`${counts.sectionLabel} (${section})`)} | ${counts.total} | ${counts.passed} | ${counts.failed} | ${counts.errors} |`
+        `| ${escapeTableCell(`${counts.sectionLabel} (${section})`)} | ${counts.total} | ${counts.passed} | ${counts.skipped} | ${counts.failed} | ${counts.errors} |`
       );
     }
     lines.push('', '### Not-passing visual cases', '');
@@ -624,9 +632,10 @@ function summarize(values, getKey) {
   const result = {};
   for (const value of values) {
     const key = getKey(value);
-    result[key] ??= { total: 0, passed: 0, failed: 0, errors: 0 };
+    result[key] ??= { total: 0, passed: 0, failed: 0, errors: 0, skipped: 0 };
     result[key].total += 1;
-    if (value.status === 'pass') result[key].passed += 1;
+    if (value.status === 'skip' || value.skipped) result[key].skipped += 1;
+    else if (value.status === 'pass') result[key].passed += 1;
     else if (value.status === 'error') result[key].errors += 1;
     else result[key].failed += 1;
   }

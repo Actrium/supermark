@@ -505,12 +505,24 @@ fn autolink_delim(data: &[u8], mut link_end: usize) -> usize {
                 link_end -= 1;
             }
             b';' => {
-                let mut new_end = link_end - 2;
-                while new_end > 0 && data[new_end].is_ascii_alphabetic() {
-                    new_end -= 1;
-                }
-                if new_end < link_end - 2 && data[new_end] == b'&' {
-                    link_end = new_end;
+                // cmark-gfm 0.29 autolink.c: `new_end = link_end - 2` then scan
+                // back over alphas for a `&entity;` tail. The C version relies
+                // on link_end >= 2 (a `;` at offset 0/1 cannot be a valid URL
+                // end) and would underflow on `size_t` otherwise. Guard the
+                // entity scan so the port cannot panic on a degenerate input;
+                // when there is no room for `&x;`, fall through to the
+                // single-char trim (`link_end -= 1`) exactly as the else arm.
+                if link_end >= 2 {
+                    let tail = link_end - 2;
+                    let mut new_end = tail;
+                    while new_end > 0 && data[new_end].is_ascii_alphabetic() {
+                        new_end -= 1;
+                    }
+                    if new_end < tail && data[new_end] == b'&' {
+                        link_end = new_end;
+                    } else {
+                        link_end -= 1;
+                    }
                 } else {
                     link_end -= 1;
                 }
@@ -528,10 +540,16 @@ fn check_domain(data: &[u8], allow_short: bool) -> Option<usize> {
     let size = data.len();
     let mut i = 1usize;
     while i < size - 1 {
-        let c = data[i];
-        if c == b'\\' && i < size - 2 {
+        // Mirror cmark-gfm 0.29.0.gfm.13 autolink.c check_domain: when a
+        // backslash is followed by at least one more byte, skip the backslash
+        // itself and classify the *next* byte. The previous port captured `c`
+        // before this increment, so the backslash was tested against
+        // is_valid_hostchar and broke the domain — diverging from cmark, which
+        // linkifies `www.foo\.bar` (href percent-encodes the backslash).
+        if data[i] == b'\\' && i < size - 2 {
             i += 1;
         }
+        let c = data[i];
         if c == b'_' {
             uscore2 += 1;
         } else if c == b'.' {
@@ -563,10 +581,17 @@ fn is_valid_hostchar(b: u8) -> bool {
     if b < 0x80 {
         return !is_space(b) && !is_punct(b);
     }
-    // Non-ASCII: lead bytes (>=0xC0) decode to a codepoint that is neither
-    // space nor punctuation (emoji, letters), so they are valid host chars;
-    // continuation bytes (0x80-0xBF) are an invalid start -> not valid,
-    // matching cmark_utf8proc_iterate returning an error.
+    // Non-ASCII lead byte. cmark-gfm 0.29.0.gfm.13 autolink.c is_valid_hostchar
+    // calls cmark_utf8proc_iterate to decode the full codepoint, then rejects
+    // cmark_utf8proc_is_space / cmark_utf8proc_is_punctuation codepoints. This
+    // port takes only the lead byte: continuation bytes (0x80-0xBF) as a start
+    // are invalid UTF-8 -> not valid (matches cmark_utf8proc_iterate's error);
+    // lead bytes (>=0xC0) are accepted unconditionally. That is broader than
+    // cmark for non-ASCII *punctuation* (e.g. U+2018/201C/2026), which cmark
+    // would reject and break the domain on. The conformance suite does not
+    // exercise non-ASCII host characters, and faithfully porting cmark's
+    // curated Unicode punctuation table (~80 lines of codepoints in utf8.c) is
+    // out of scope for this change; left as a documented edge divergence.
     b >= 0xC0
 }
 
@@ -652,6 +677,19 @@ mod tests {
     fn www_entity_truncates() {
         let m = www_match(b"www.google.com/search?q=commonmark&hl;", 0).unwrap();
         assert_eq!(m.display, "www.google.com/search?q=commonmark");
+    }
+
+    #[test]
+    fn www_backslash_in_domain_is_skipped_not_break() {
+        // cmark-gfm 0.29.0.gfm.13 linkifies `www.foo\.bar`: check_domain skips
+        // the backslash and classifies the next byte, so the domain extends
+        // past it (the href serializer percent-encodes the backslash to %5C at
+        // render time; the matcher itself keeps the raw byte). The previous
+        // port captured the byte before the backslash-skip and broke the
+        // domain on the backslash itself, truncating the link to `www.foo`.
+        let m = www_match(b"www.foo\\.bar", 0).unwrap();
+        assert_eq!(m.display, "www.foo\\.bar");
+        assert_eq!(m.url, "http://www.foo\\.bar");
     }
 
     #[test]

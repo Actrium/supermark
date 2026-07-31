@@ -88,10 +88,12 @@ export async function compareVisualCases({
       // we fall back to auto-pass. See issue #144 (extensions-0020).
       const expected = effectiveExpected(testCase);
       if (expected.isIgnoreWithoutOverride) {
+        // No real expected HTML to screenshot against. Surface as skipped so
+        // the visual summary cannot count a comparison that never happened.
         results.push({
           id: testCase.id,
           section: testCase.source.section,
-          status: 'pass',
+          status: 'skip',
           skipped: 'ignore-sentinel',
         });
         continue;
@@ -175,7 +177,8 @@ export async function compareVisualCases({
     await browser.close();
   }
 
-  const failures = results.filter(result => result.status !== 'pass');
+  const failures = results.filter(result => result.status === 'fail' || result.status === 'error');
+  const skipped = results.filter(result => result.status === 'skip' || result.skipped);
   const bySection = summarize(results, sectionName);
   return {
     schemaVersion: 1,
@@ -186,7 +189,8 @@ export async function compareVisualCases({
     viewport: { width: VIEWPORT_WIDTH, deviceScaleFactor: 1 },
     thresholds: { pixelThreshold, maxDiffPixels, maxDiffRatio },
     total: results.length,
-    passed: results.length - failures.length,
+    passed: results.length - failures.length - skipped.length,
+    skipped: skipped.length,
     failed: results.filter(result => result.status === 'fail').length,
     errors: results.filter(result => result.status === 'error').length,
     notPassed: failures.length,
@@ -235,12 +239,14 @@ function summarize(results, sectionName) {
       sectionLabel: sectionName(result.section),
       total: 0,
       passed: 0,
+      skipped: 0,
       failed: 0,
       errors: 0,
     };
     const counts = summary[result.section];
     counts.total += 1;
-    if (result.status === 'pass') counts.passed += 1;
+    if (result.status === 'skip' || result.skipped) counts.skipped += 1;
+    else if (result.status === 'pass') counts.passed += 1;
     else if (result.status === 'error') counts.errors += 1;
     else counts.failed += 1;
   }

@@ -130,10 +130,13 @@ fn public_api_maps_task_list_items() {
 
     assert_eq!(*first_checked, Some(true));
     assert_eq!(*second_checked, Some(false));
-    // cmark-gfm keeps the single space between the task marker and the item
-    // text (`<input> Done`), so the text node carries a leading space.
-    assert_eq!(first_text(first_children), " Done");
-    assert_eq!(first_text(second_children), " Todo");
+    // cmark-gfm's tasklist scan consumes the `[x]`/`[ ]` marker plus its
+    // trailing separator whitespace (ext_scanners.re `spacechar+`); the text
+    // node carries the item text with no leading whitespace, and the single
+    // space in `<input ... /> Done` comes from the renderer's literal, not the
+    // text node.
+    assert_eq!(first_text(first_children), "Done");
+    assert_eq!(first_text(second_children), "Todo");
 }
 
 fn first_text(nodes: &[SupramarkNode]) -> &str {

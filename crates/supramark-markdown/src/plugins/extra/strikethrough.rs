@@ -63,7 +63,11 @@ impl InlineRule for StrikethroughScanner {
 
     fn run(state: &mut InlineState) -> Option<(Node, usize)> {
         let mut chars = state.src[state.pos..state.pos_max].chars();
-        if chars.next().unwrap() != '~' {
+        // The inline parser only invokes this rule when the byte at `state.pos`
+        // is `~`, so the slice is non-empty and the first char is `~`; compare
+        // against `Some('~')` instead of `.unwrap()` so a degenerate empty
+        // slice cannot panic on user input.
+        if chars.next() != Some('~') {
             return None;
         }
 

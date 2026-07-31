@@ -1095,12 +1095,25 @@ fn strip_task_marker_from_text(value: &mut String) -> Option<bool> {
     };
 
     let rest = &trimmed[marker_len..];
-    // cmark-gfm keeps the single space that separates the task marker from the
-    // item text and emits it as a leading text character (`<input> foo`), so
-    // preserve it rather than stripping.
-    let mut replacement = String::new();
+    // cmark-gfm's tasklist scan (ext_scanners.re) requires one or more
+    // spacechars (`[ \t]`) after the `[ ]`/`[x]` marker and consumes them as
+    // the separator — the text content starts after the separator, and the
+    // single space in the HTML output comes from the renderer's literal
+    // (`"<input ... /> "`), not from the text node. Mirror that:
+    //   * no separator whitespace => not a task-list item (cmark leaves
+    //     `[ ]foo` literal), so bail;
+    //   * a separator => consume all of it so the text node is `foo`, not
+    //     `\tfoo` / `  foo`.
+    // Previously the raw separator was preserved, which forced the web
+    // renderer to rely on whitespace-collapse to match cmark and left RN
+    // showing a stray tab / doubled space.
+    let content = rest.trim_start_matches(|c| c == ' ' || c == '\t');
+    if content.len() == rest.len() {
+        return None;
+    }
+    let mut replacement = String::with_capacity(leading_len + content.len());
     replacement.push_str(&value[..leading_len]);
-    replacement.push_str(rest);
+    replacement.push_str(content);
     *value = replacement;
     Some(checked)
 }
@@ -2170,5 +2183,65 @@ mod tests {
             };
             assert_eq!(lang.as_deref(), Some(expected_lang));
         }
+    }
+
+    #[test]
+    fn task_marker_consumes_separator_whitespace() {
+        // cmark-gfm's tasklist scan consumes the marker plus its trailing
+        // `spacechar+` separator; the text node carries the content with no
+        // leading whitespace, regardless of whether the source separator was a
+        // space, a tab, or several spaces. Previously the raw separator was
+        // preserved, leaving `\tfoo` / `  foo` in the text node.
+        fn first_text(nodes: &[SupramarkNode]) -> &str {
+            match &nodes[0] {
+                SupramarkNode::Paragraph { children, .. } => first_text(children),
+                SupramarkNode::Text { value, .. } => value,
+                _ => panic!("expected text"),
+            }
+        }
+        for (input, expected_text) in [
+            ("- [ ] foo", "foo"),
+            ("- [ ]\tfoo", "foo"),
+            ("- [ ]  foo", "foo"),
+            ("- [x] bar", "bar"),
+        ] {
+            let ast = parse(input);
+            let SupramarkNode::Root { children, .. } = ast else {
+                panic!("expected root for {input}");
+            };
+            let SupramarkNode::List { children: items, .. } = &children[0] else {
+                panic!("expected list for {input}");
+            };
+            let SupramarkNode::ListItem { children, .. } = &items[0] else {
+                panic!("expected list item for {input}");
+            };
+            assert_eq!(first_text(children), expected_text, "for input {input}");
+        }
+    }
+
+    #[test]
+    fn task_marker_requires_separator_whitespace() {
+        // cmark-gfm does NOT treat `[ ]foo` (no separator) as a task list
+        // item; the marker must be followed by `spacechar+`. The text node
+        // stays literal.
+        fn first_text(nodes: &[SupramarkNode]) -> &str {
+            match &nodes[0] {
+                SupramarkNode::Paragraph { children, .. } => first_text(children),
+                SupramarkNode::Text { value, .. } => value,
+                _ => panic!("expected text"),
+            }
+        }
+        let ast = parse("- [ ]foo");
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root");
+        };
+        let SupramarkNode::List { children: items, .. } = &children[0] else {
+            panic!("expected list");
+        };
+        let SupramarkNode::ListItem { checked, children, .. } = &items[0] else {
+            panic!("expected list item");
+        };
+        assert!(checked.is_none(), "no-separator should not be a task item");
+        assert_eq!(first_text(children), "[ ]foo");
     }
 }

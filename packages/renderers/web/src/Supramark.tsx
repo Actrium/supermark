@@ -374,6 +374,7 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
                 ),
               mergedClassNames,
               config,
+              parsedDocument.highlighted
             )}
             {footnoteMeta && footnoteMeta.defs.length > 0 && (
               <FootnoteSection
@@ -880,7 +881,8 @@ function mergeRawNodes(
   children: SupramarkNode[],
   renderSingle: (node: SupramarkNode, key: number) => React.ReactNode,
   classNames?: SupramarkClassNames,
-  config?: SupramarkConfig
+  config?: SupramarkConfig,
+  highlighted?: Map<string, SupramarkCodeHighlightResult>
 ): React.ReactNode[] {
   // Raw HTML is opt-in. When disabled, skip raw-merge entirely so raw nodes
   // fall through to their per-node renderer (which drops them) and no
@@ -904,7 +906,7 @@ function mergeRawNodes(
       if (inlineHtml !== null && unclosedInlineFormattingTags(inlineHtml).length > 0) {
         const following = children.slice(i + 1);
         const serializedFollowing =
-          following.length > 0 ? serializeBlocksToHtml(following, classNames, config) : '';
+          following.length > 0 ? serializeBlocksToHtml(following, classNames, config, highlighted) : '';
         if (serializedFollowing !== null) {
           const classAttr = classNames.paragraph
             ? ` class="${escapeHtmlAttr(classNames.paragraph)}"`
@@ -945,7 +947,7 @@ function mergeRawNodes(
           // container (e.g. `<del>\n<p>…</p>\n</del>`) that the reference
           // HTML relies on, and a React host element drops them.
           if (inner.some(hasBlockChild) && classNames) {
-            const serialized = serializeBlocksToHtml(inner, classNames, config);
+            const serialized = serializeBlocksToHtml(inner, classNames, config, highlighted);
             const closeValue =
               (children[closeIdx] as SupramarkRawNode).value ?? '';
             if (serialized !== null) {
@@ -963,7 +965,7 @@ function mergeRawNodes(
             React.createElement(
               open.tag,
               { key: i, ...attrs },
-              mergeRawNodes(inner, renderSingle, classNames, config)
+              mergeRawNodes(inner, renderSingle, classNames, config, highlighted)
             )
           );
           i = closeIdx + 1;
@@ -984,7 +986,8 @@ function mergeRawNodes(
           const serialized = serializeBlocksToHtml(
             following,
             classNames,
-            config
+            config,
+            highlighted
           );
           if (serialized !== null) {
             result.push(
@@ -1139,7 +1142,8 @@ function renderNode(
             (child, index) =>
               renderNode(child, index, classNames, rendered, highlighted, config, containerRenderers),
             classNames,
-            config
+            config,
+            highlighted
           )}
         </blockquote>
       );
@@ -1202,6 +1206,10 @@ function renderNode(
               disabled
               className={classNames.taskCheckbox}
             />
+            {/* cmark-gfm html_render emits `<input ... /> ` with a trailing
+              space before the item text; the parser consumes the separator
+              whitespace, so emit the literal space here to keep DOM parity. */}
+            {' '}
             {renderListItemChildren(
               item.children,
               classNames,
@@ -1560,8 +1568,13 @@ function renderNode(
     }
     case 'table_cell': {
       const cell = node;
-      // cmark-gfm emits the obsolete `align` attribute (not an inline style) so
-      // the alignment survives in the DOM semantic tree.
+      // cmark-gfm 0.29.0.gfm.13 emits the obsolete but standard `align`
+      // attribute (not an inline `style`) on table cells. The conformance gate
+      // (issue #144) compares the full attribute set against cmark's DOM, so
+      // using `style={{ textAlign }}` here would add an attribute cmark does
+      // not emit and fail every alignment case. Emitting `align` keeps DOM
+      // parity; it is deprecated but universally supported and carries the
+      // alignment through to the consumer's CSS.
       const alignAttr = cell.align ? { align: cell.align } : undefined;
       // When a cell contains inline raw HTML (e.g. `<strong>hello</strong>`),
       // emit the cell's inline run as a single raw HTML string so the browser's
@@ -1854,7 +1867,8 @@ function hasBlockChild(node: SupramarkNode): boolean {
 function serializeBlockToHtml(
   node: SupramarkNode,
   classNames: SupramarkClassNames,
-  config?: SupramarkConfig
+  config?: SupramarkConfig,
+  highlighted?: Map<string, SupramarkCodeHighlightResult>
 ): string | null {
   switch (node.type) {
     case 'paragraph': {
@@ -1875,7 +1889,14 @@ function serializeBlockToHtml(
       const preClassAttr = classNames.codeBlock
         ? ` class="${escapeHtmlAttr(classNames.codeBlock)}"`
         : '';
-      return `<pre${preClassAttr}><code${codeClassAttr}>${escapeHtmlText(node.value)}</code></pre>\n`;
+      // When this code block was folded into a RawHtml fragment (cross-block
+      // active-formatting reconstruction), the normal React renderCodeBlock
+      // path is bypassed — so emit the highlighted spans here too, mirroring
+      // renderCodeBlock's token structure, otherwise the fold silently drops
+      // syntax highlighting for any code block following an unclosed-inline
+      // paragraph.
+      const inner = serializeCodeInner(node, highlighted);
+      return `<pre${preClassAttr}><code${codeClassAttr}>${inner}</code></pre>\n`;
     }
     case 'raw':
       return maybeTagfilter(node.value ?? '', config);
@@ -1898,15 +1919,58 @@ function serializeBlockToHtml(
 function serializeBlocksToHtml(
   nodes: SupramarkNode[],
   classNames: SupramarkClassNames,
-  config?: SupramarkConfig
+  config?: SupramarkConfig,
+  highlighted?: Map<string, SupramarkCodeHighlightResult>
 ): string | null {
   let out = '';
   for (const node of nodes) {
-    const piece = serializeBlockToHtml(node, classNames, config);
+    const piece = serializeBlockToHtml(node, classNames, config, highlighted);
     if (piece === null) return null;
     out += piece;
   }
   return out;
+}
+
+// Emits the inner HTML for a fenced code block when it is serialized into a
+// RawHtml fragment. Mirrors renderCodeBlock: highlighted spans when a result
+// exists for this block's key, otherwise the plain escaped source.
+function serializeCodeInner(
+  codeBlock: SupramarkCodeNode,
+  highlighted?: Map<string, SupramarkCodeHighlightResult>
+): string {
+  const highlight = highlighted?.get(
+    buildCodeHighlightKey(codeBlock.value, codeBlock.lang, codeBlock.meta)
+  );
+  if (!highlight) {
+    return escapeHtmlText(codeBlock.value);
+  }
+  let out = '';
+  for (let lineIndex = 0; lineIndex < highlight.lines.length; lineIndex++) {
+    const line = highlight.lines[lineIndex];
+    for (const token of line.tokens) {
+      const css = codeTokenInlineCss(token);
+      out += css
+        ? `<span style="${css}">${escapeHtmlText(token.text)}</span>`
+        : escapeHtmlText(token.text);
+    }
+    if (lineIndex < highlight.lines.length - 1) out += '\n';
+  }
+  return out;
+}
+
+function codeTokenInlineCss(token: {
+  color?: string;
+  backgroundColor?: string;
+  fontStyle?: Array<'bold' | 'italic' | 'underline'>;
+}): string {
+  const parts: string[] = [];
+  if (token.color) parts.push(`color:${token.color}`);
+  if (token.backgroundColor) parts.push(`background:${token.backgroundColor}`);
+  const fontStyle = token.fontStyle ?? [];
+  if (fontStyle.includes('bold')) parts.push('font-weight:bold');
+  if (fontStyle.includes('italic')) parts.push('font-style:italic');
+  if (fontStyle.includes('underline')) parts.push('text-decoration:underline');
+  return parts.join(';');
 }
 
 // Detect a block raw whose value is an open tag with no matching close tag in
