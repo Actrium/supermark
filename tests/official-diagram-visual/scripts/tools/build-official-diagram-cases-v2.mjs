@@ -17,10 +17,33 @@ const outputPath = resolve(docsDir, 'official-diagram-rendering-cases-v2.md');
 const assetDir = resolve(docsDir, 'assets', 'official-diagram-rendering-cases-v2');
 const MERMAID_VERSION = '11.16.0';
 
+// cjk-allow-file: the `### <category>` headings below become part of the
+// generated cases/*.md doc, whose text this same repo's
+// official-diagram-visual-workflow.mjs re-parses as `caseType` and then
+// matches (via normalizeLabel/selectExampleType) against live Chinese
+// dropdown option text in the preview app. That preview app and the
+// already-committed case docs are out of scope for this cleanup, so these
+// category labels must stay Chinese to keep matching them. Written as
+// Unicode escapes, not literal characters, per repo policy. Gloss for each:
+// SIMPLEST_FLOW = "simplest flow", LABELED_CONNECTIONS = "labeled
+// connections", CONTAINER_GROUPING = "container/grouping",
+// SEQUENCE_DIAGRAM_EXAMPLE = "sequence diagram example",
+// CLASS_DIAGRAM_EXAMPLE = "class diagram example", ACTIVITY_DIAGRAM_EXAMPLE
+// = "activity diagram example", FLOWCHART = "flowchart".
+const CATEGORY = {
+  SIMPLEST_FLOW: '\u6700\u7b80\u6d41\u7a0b',
+  LABELED_CONNECTIONS: '\u5e26\u6807\u7b7e\u8fde\u7ebf',
+  CONTAINER_GROUPING: '\u5bb9\u5668/\u5206\u7ec4',
+  SEQUENCE_DIAGRAM_EXAMPLE: '\u65f6\u5e8f\u56fe\u793a\u4f8b',
+  CLASS_DIAGRAM_EXAMPLE: '\u7c7b\u56fe\u793a\u4f8b',
+  ACTIVITY_DIAGRAM_EXAMPLE: '\u6d3b\u52a8\u56fe\u793a\u4f8b',
+  FLOWCHART: '\u6d41\u7a0b\u56fe',
+};
+
 const d2Cases = [
   {
     id: 'd2-v2-flow-up-direction',
-    category: '最简流程',
+    category: CATEGORY.SIMPLEST_FLOW,
     title: 'Upward directed three-node flow',
     sourceUrl: 'https://d2lang.com/tour/layouts/',
     codeUrl: 'https://raw.githubusercontent.com/terrastruct/d2-docs/master/static/d2/direction-up.d2',
@@ -30,7 +53,7 @@ const d2Cases = [
   },
   {
     id: 'd2-v2-flow-colored-legend',
-    category: '最简流程',
+    category: CATEGORY.SIMPLEST_FLOW,
     title: 'Three-node flow with colored edges and legend',
     sourceUrl: 'https://d2lang.com/tour/near/',
     codeUrl: 'https://raw.githubusercontent.com/terrastruct/d2-docs/master/static/d2/near-container.d2',
@@ -40,7 +63,7 @@ const d2Cases = [
   },
   {
     id: 'd2-v2-flow-grid-process',
-    category: '最简流程',
+    category: CATEGORY.SIMPLEST_FLOW,
     title: 'Grid-based process flow with optional branch',
     sourceUrl: 'https://d2lang.com/tour/grid-diagrams/',
     codeUrl: 'https://raw.githubusercontent.com/terrastruct/d2-docs/master/static/d2/grid-connections.d2',
@@ -50,7 +73,7 @@ const d2Cases = [
   },
   {
     id: 'd2-v2-labeled-arrowheads',
-    category: '带标签连线',
+    category: CATEGORY.LABELED_CONNECTIONS,
     title: 'Labeled edges with custom source and target arrowheads',
     sourceUrl: 'https://d2lang.com/tour/connections/',
     codeUrl: 'https://raw.githubusercontent.com/terrastruct/d2-docs/master/static/d2/connections-5.d2',
@@ -60,7 +83,7 @@ const d2Cases = [
   },
   {
     id: 'd2-v2-labeled-glob-connections',
-    category: '带标签连线',
+    category: CATEGORY.LABELED_CONNECTIONS,
     title: 'Glob-generated labeled connections',
     sourceUrl: 'https://d2lang.com/tour/globs/',
     codeUrl: 'https://raw.githubusercontent.com/terrastruct/d2-docs/master/static/d2/globs-connections.d2',
@@ -70,7 +93,7 @@ const d2Cases = [
   },
   {
     id: 'd2-v2-labeled-access-flow',
-    category: '带标签连线',
+    category: CATEGORY.LABELED_CONNECTIONS,
     title: 'Access architecture with audited labeled edge',
     sourceUrl: 'https://d2lang.com/tour/grid-diagrams/',
     codeUrl: 'https://raw.githubusercontent.com/terrastruct/d2-docs/master/static/d2/grid-connected.d2',
@@ -80,7 +103,7 @@ const d2Cases = [
   },
   {
     id: 'd2-v2-container-regift',
-    category: '容器/分组',
+    category: CATEGORY.CONTAINER_GROUPING,
     title: 'Cross-container reference with underscore root lookup',
     sourceUrl: 'https://d2lang.com/tour/containers/',
     codeUrl: 'https://raw.githubusercontent.com/terrastruct/d2-docs/master/static/d2/containers-underscore.d2',
@@ -90,7 +113,7 @@ const d2Cases = [
   },
   {
     id: 'd2-v2-container-nested-grid',
-    category: '容器/分组',
+    category: CATEGORY.CONTAINER_GROUPING,
     title: 'Nested grid container layout',
     sourceUrl: 'https://d2lang.com/tour/grid-diagrams/',
     codeUrl: 'https://raw.githubusercontent.com/terrastruct/d2-docs/master/static/d2/grid-nested-grid.d2',
@@ -100,7 +123,7 @@ const d2Cases = [
   },
   {
     id: 'd2-v2-container-ml-platform',
-    category: '容器/分组',
+    category: CATEGORY.CONTAINER_GROUPING,
     title: 'Platform graph with explanatory near container',
     sourceUrl: 'https://d2lang.com/tour/near/',
     codeUrl: 'https://raw.githubusercontent.com/terrastruct/d2-docs/master/static/d2/near-explanation.d2',
@@ -113,7 +136,7 @@ const d2Cases = [
 const plantUmlCases = [
   {
     id: 'plantuml-v2-sequence-notes',
-    category: '时序图示例',
+    category: CATEGORY.SEQUENCE_DIAGRAM_EXAMPLE,
     title: 'Sequence diagram with notes and return message',
     sourceUrl: 'https://plantuml.com/sequence-diagram',
     language: 'plantuml',
@@ -134,7 +157,7 @@ API --> Browser: 200 OK
   },
   {
     id: 'plantuml-v2-sequence-create-destroy',
-    category: '时序图示例',
+    category: CATEGORY.SEQUENCE_DIAGRAM_EXAMPLE,
     title: 'Sequence diagram with create and destroy lifecycle',
     sourceUrl: 'https://plantuml.com/sequence-diagram',
     language: 'plantuml',
@@ -154,7 +177,7 @@ Worker --> Client: completed
   },
   {
     id: 'plantuml-v2-sequence-critical',
-    category: '时序图示例',
+    category: CATEGORY.SEQUENCE_DIAGRAM_EXAMPLE,
     title: 'Sequence diagram with critical section and break',
     sourceUrl: 'https://plantuml.com/sequence-diagram',
     language: 'plantuml',
@@ -178,7 +201,7 @@ Service --> User: order confirmed
   },
   {
     id: 'plantuml-v2-class-enum',
-    category: '类图示例',
+    category: CATEGORY.CLASS_DIAGRAM_EXAMPLE,
     title: 'Class diagram with enum and composition',
     sourceUrl: 'https://plantuml.com/class-diagram',
     language: 'plantuml',
@@ -203,7 +226,7 @@ Order --> OrderStatus
   },
   {
     id: 'plantuml-v2-class-visibility',
-    category: '类图示例',
+    category: CATEGORY.CLASS_DIAGRAM_EXAMPLE,
     title: 'Class diagram with visibility and static members',
     sourceUrl: 'https://plantuml.com/class-diagram',
     language: 'plantuml',
@@ -223,7 +246,7 @@ Account --> Ledger : writes entries
   },
   {
     id: 'plantuml-v2-class-interface',
-    category: '类图示例',
+    category: CATEGORY.CLASS_DIAGRAM_EXAMPLE,
     title: 'Class diagram with interface implementation and dependency',
     sourceUrl: 'https://plantuml.com/class-diagram',
     language: 'plantuml',
@@ -242,7 +265,7 @@ Service ..> Repository : depends on
   },
   {
     id: 'plantuml-v2-activity-while',
-    category: '活动图示例',
+    category: CATEGORY.ACTIVITY_DIAGRAM_EXAMPLE,
     title: 'Activity diagram with while loop',
     sourceUrl: 'https://plantuml.com/activity-diagram-beta',
     language: 'plantuml',
@@ -260,7 +283,7 @@ stop
   },
   {
     id: 'plantuml-v2-activity-switch',
-    category: '活动图示例',
+    category: CATEGORY.ACTIVITY_DIAGRAM_EXAMPLE,
     title: 'Activity diagram with switch branches',
     sourceUrl: 'https://plantuml.com/activity-diagram-beta',
     language: 'plantuml',
@@ -281,7 +304,7 @@ stop
   },
   {
     id: 'plantuml-v2-activity-swimlanes',
-    category: '活动图示例',
+    category: CATEGORY.ACTIVITY_DIAGRAM_EXAMPLE,
     title: 'Activity diagram with swimlanes',
     sourceUrl: 'https://plantuml.com/activity-diagram-beta',
     language: 'plantuml',
@@ -308,7 +331,7 @@ stop
 const mermaidCases = [
   {
     id: 'mermaid-v2-flowchart-arrow-types',
-    category: '流程图',
+    category: CATEGORY.FLOWCHART,
     title: 'Flowchart with circle, cross, and bidirectional arrows',
     sourceUrl: 'https://mermaid.js.org/syntax/flowchart.html',
     language: 'mermaid',
@@ -322,7 +345,7 @@ const mermaidCases = [
   },
   {
     id: 'mermaid-v2-flowchart-styled-classes',
-    category: '流程图',
+    category: CATEGORY.FLOWCHART,
     title: 'Flowchart with class definitions and styled nodes',
     sourceUrl: 'https://mermaid.js.org/syntax/flowchart.html',
     language: 'mermaid',
@@ -340,7 +363,7 @@ const mermaidCases = [
   },
   {
     id: 'mermaid-v2-flowchart-markdown-labels',
-    category: '流程图',
+    category: CATEGORY.FLOWCHART,
     title: 'Flowchart with markdown labels and multiple text lines',
     sourceUrl: 'https://mermaid.js.org/syntax/flowchart.html',
     language: 'mermaid',
@@ -442,19 +465,19 @@ function buildMarkdown(cases) {
   const sections = [
     '# Official Diagram Rendering Test Cases V2',
     '',
-    '这份文档是第二组官方图表渲染测试用例。它不会覆盖第一组用例，并且所有代码块都与 `official-diagram-rendering-cases.md` 中的旧用例不同。',
+    'This document is the second batch of official diagram rendering test cases. It does not replace the first batch, and every code block here is different from the older cases in `official-diagram-rendering-cases.md`.',
     '',
-    '生成时间：2026-07-01',
+    'Generated: 2026-07-01',
     '',
-    '## 使用方式',
+    '## How to use',
     '',
-    '1. 将每个“代码”区域中的整个 fenced code block 复制到 Supramark 中测试。',
-    '2. 将 Supramark 的渲染结果与本页“官方渲染效果”对比。',
-    '3. 自动化时建议检查：渲染成功、关键文本、viewBox、节点形状、连线方向、标签、分组层级。',
+    '1. Copy the entire fenced code block from each "Code" section into Supramark to test.',
+    '2. Compare Supramark\'s rendering output against this page\'s "Official rendering" for each case.',
+    '3. When automating, checking the following is recommended: rendering success, key text, viewBox, node shapes, edge direction, labels, group nesting.',
     '',
-    '## 用例总览',
+    '## Case overview',
     '',
-    '| ID | 语言 | 类型 | 覆盖点 | 官方来源 |',
+    '| ID | Language | Type | Coverage | Official source |',
     '| --- | --- | --- | --- | --- |',
     ...cases.map(testCase => `| \`${testCase.id}\` | ${testCase.language} | ${testCase.category} | ${escapePipes(testCase.title)} | [source](${testCase.sourceUrl}) |`),
     '',
@@ -471,13 +494,19 @@ function buildMarkdown(cases) {
         sections.push(
           `#### ${testCase.id}: ${testCase.title}`,
           '',
-          `官方来源：${testCase.sourceUrl}`,
+          // cjk-allow: this header must stay Chinese (Unicode escapes, not
+          // literal characters) because official-diagram-visual-workflow.mjs
+          // parses it back out with a regex matching the Chinese label
+          // "official source:" - see officialSourceMatch in that file.
+          `\u5b98\u65b9\u6765\u6e90\uff1a${testCase.sourceUrl}`,
           '',
-          testCase.codeUrl ? `官方源码：${testCase.codeUrl}` : '',
-          testCase.renderUrl ? `官方渲染 URL：${testCase.renderUrl}` : '',
-          testCase.rendererVersion ? `官方渲染器版本：Mermaid ${testCase.rendererVersion}` : '',
+          testCase.codeUrl ? `Official source code: ${testCase.codeUrl}` : '',
+          // cjk-allow: stays Chinese (Unicode escapes) to match
+          // officialRenderMatch's regex in official-diagram-visual-workflow.mjs.
+          testCase.renderUrl ? `\u5b98\u65b9\u6e32\u67d3 URL\uff1a${testCase.renderUrl}` : '',
+          testCase.rendererVersion ? `Official renderer version: Mermaid ${testCase.rendererVersion}` : '',
           '',
-          '代码（复制下面整个 fenced code block 到 Supramark 中测试）：',
+          'Code (copy the entire fenced code block below into Supramark to test):',
           '',
           '````markdown',
           `\`\`\`${testCase.language}`,
@@ -485,11 +514,13 @@ function buildMarkdown(cases) {
           '```',
           '````',
           '',
-          '官方渲染效果：',
+          'Official rendering:',
           '',
           `![${testCase.id}](${assetRel})`,
           '',
-          `建议检查文本：${testCase.checks.map(item => `\`${item}\``).join(', ')}`,
+          // cjk-allow: stays Chinese (Unicode escapes) to match checksMatch's
+          // regex in official-diagram-visual-workflow.mjs.
+          `\u5efa\u8bae\u68c0\u67e5\u6587\u672c\uff1a${testCase.checks.map(item => `\`${item}\``).join(', ')}`,
           ''
         );
       }

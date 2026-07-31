@@ -4,7 +4,7 @@ import { collectSemanticTypes } from '../lib/semantic/html-semantics.mjs';
 const EXAMPLE_OPEN = `${'`'.repeat(32)} example`;
 const EXAMPLE_CLOSE = '`'.repeat(32);
 
-const SECTION_COVERAGE = {
+export const COMMONMARK_SECTION_COVERAGE = {
   Tabs: coverage(['whitespace', 'tabs'], ['paragraph', 'code', 'list', 'list_item']),
   'Backslash escapes': coverage(['escape'], ['text']),
   'Entity and numeric character references': coverage(['character-reference'], ['text']),
@@ -48,7 +48,8 @@ function coverage(syntax, candidateNodeTypes) {
   };
 }
 
-export function importCommonMark(sourceText, sourceConfig) {
+export function importCommonMark(sourceDocuments, sourceConfig) {
+  const [{ text: sourceText }] = sourceDocuments;
   const normalizedSource = normalizeLineEndings(sourceText);
   const version = readSpecVersion(normalizedSource);
 
@@ -145,7 +146,7 @@ function parseSpecExamples(source) {
 }
 
 function toUnifiedCase(rawCase, sourceConfig) {
-  const sectionCoverage = SECTION_COVERAGE[rawCase.section];
+  const sectionCoverage = COMMONMARK_SECTION_COVERAGE[rawCase.section];
   if (!sectionCoverage) {
     throw new Error(`No Supramark coverage mapping for CommonMark section: ${rawCase.section}`);
   }
@@ -175,3 +176,5 @@ function toUnifiedCase(rawCase, sourceConfig) {
     coverage: sectionCoverage,
   };
 }
+
+export default importCommonMark;

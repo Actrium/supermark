@@ -1,16 +1,17 @@
 /**
- * Admonition Feature 定义
+ * Admonition Feature definition
  *
- * 实现 ContainerFeature 接口，合并了元数据、容器定义和解析器注册。
+ * Implements the ContainerFeature interface, combining metadata, container
+ * definition and parser registration.
  *
  * @example
  * ```markdown
- * :::note 提示标题
- * 这是一个提示框内容
+ * :::note Tip title
+ * This is the content of a tip box
  * :::
  *
- * :::warning 警告
- * 请注意这个警告信息
+ * :::warning Warning
+ * Please pay attention to this warning message
  * :::
  * ```
  *
@@ -30,13 +31,13 @@ type ContainerTokenLike = {
 };
 
 // ============================================================================
-// 容器名称定义（唯一事实来源）
+// Container name definitions (single source of truth)
 // ============================================================================
 
 /**
- * Admonition 支持的容器名称
+ * Container names supported by Admonition
  *
- * 全局唯一，不能与其他 Feature 冲突。
+ * Globally unique, must not clash with other Features.
  */
 export const ADMONITION_CONTAINER_NAMES = [
   'note',
@@ -49,12 +50,12 @@ export const ADMONITION_CONTAINER_NAMES = [
 export type AdmonitionKind = (typeof ADMONITION_CONTAINER_NAMES)[number];
 
 // ============================================================================
-// 解析逻辑
+// Parsing logic
 // ============================================================================
 
 function parseTitle(token: ContainerTokenLike, _kind: string): string | undefined {
   const info = (token.info || '').trim();
-  // info 形如 "note 标题..."，第一个单词是容器名(kind)
+  // info looks like "note Title...", the first word is the container name (kind)
   const parts = info.split(/\s+/).filter(Boolean);
   const titleParts = parts.length > 1 ? parts.slice(1) : [];
   return titleParts.length > 0 ? titleParts.join(' ') : undefined;
@@ -90,9 +91,9 @@ function createAdmonitionContainerHook(kind: string): ContainerHook {
 }
 
 /**
- * 注册 Admonition 解析器
+ * Register the Admonition parser
  *
- * 为所有 containerNames 注册解析 hook。
+ * Registers a parsing hook for every entry in containerNames.
  */
 function registerAdmonitionParser(): void {
   for (const kind of ADMONITION_CONTAINER_NAMES) {
@@ -101,37 +102,37 @@ function registerAdmonitionParser(): void {
 }
 
 // ============================================================================
-// Feature 定义（实现 ContainerFeature 接口）
+// Feature definition (implements the ContainerFeature interface)
 // ============================================================================
 
 /**
  * Admonition Feature
  *
- * 提示框容器块语法支持（note/tip/warning 等）
+ * Tip-box container block syntax support (note/tip/warning etc.)
  */
 export const admonitionFeature: ContainerFeature = {
-  // 元数据
+  // Metadata
   id: '@supramark/feature-admonition',
   name: 'Admonition',
   version: '0.1.0',
-  description: '提示框容器块语法支持（note/tip/warning 等）',
+  description: 'Tip-box container block syntax support (note/tip/warning etc.)',
 
-  // 容器定义
+  // Container definition
   containerNames: [...ADMONITION_CONTAINER_NAMES],
 
-  // 解析器注册
+  // Parser registration
   registerParser: registerAdmonitionParser,
 
-  // 渲染器导出名
+  // Renderer export names
   webRendererExport: 'renderAdmonitionContainerWeb',
   rnRendererExport: 'renderAdmonitionContainerRN',
 };
 
 // ============================================================================
-// 兼容性导出（保持向后兼容）
+// Compatibility exports (kept for backward compatibility)
 // ============================================================================
 
 /**
- * @deprecated 使用 admonitionFeature.registerParser() 代替
+ * @deprecated Use admonitionFeature.registerParser() instead
  */
 export const registerAdmonitionContainer = registerAdmonitionParser;

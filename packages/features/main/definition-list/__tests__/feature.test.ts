@@ -24,9 +24,9 @@ describe('Definition List Feature', () => {
       expect(typeof definitionListFeature.syntax.ast.type).toBe('string');
     });
 
-    // TODO: 添加更多语法测试
+    // TODO: add more syntax tests
   });
 
-  // TODO: 添加渲染测试
-  // TODO: 添加集成测试
+  // TODO: add render tests
+  // TODO: add integration tests
 });

@@ -38,9 +38,10 @@ const ANDROID_ABIS = {
 };
 const ANDROID_JNILIBS_DEST = path.join(PKG_DIR, 'android', 'src', 'main', 'jniLibs');
 
-// C ABI header —— 拷贝到包内，让 Android CMake 能自包含找到（不依赖
-// monorepo 内的相对路径；file: 协议安装后包会被拷贝到消费者的 node_modules，
-// 相对路径会断裂）。
+// C ABI header — copied into the package so Android CMake can find it
+// self-contained (not relying on relative paths inside the monorepo; once
+// installed via the `file:` protocol the package gets copied into the
+// consumer's node_modules and relative paths would break).
 const NATIVE_HEADER_SRC = path.join(
   REPO_ROOT,
   'crates',
@@ -104,7 +105,7 @@ function prepareAndroid() {
 const ios = prepareIOS();
 const android = prepareAndroid();
 
-// 拷贝 C ABI header 到包内（Android CMake 自包含用；iOS 靠 xcframework 内的 Headers）
+// Copy the C ABI header into the package (used by Android CMake to be self-contained; iOS relies on the Headers inside the xcframework)
 function prepareHeader() {
   if (!fileExists(NATIVE_HEADER_SRC)) {
     console.warn(`⚠  Native header not found at:\n   ${NATIVE_HEADER_SRC}`);

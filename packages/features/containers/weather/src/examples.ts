@@ -1,5 +1,5 @@
 /**
- * Weather Feature 示例
+ * Weather Feature examples
  *
  * @packageDocumentation
  */
@@ -8,8 +8,8 @@ import type { ExampleDefinition } from '@supramark/core';
 
 export const weatherExamples: ExampleDefinition[] = [
   {
-    name: '天气卡片 - YAML 格式',
-    description: '使用 YAML 格式配置天气卡片（默认格式）',
+    name: 'Weather card - YAML format',
+    description: 'Configure a weather card using YAML format (the default)',
     markdown: `
 :::weather yaml
 location: Beijing
@@ -18,8 +18,8 @@ units: metric
 `.trim(),
   },
   {
-    name: '天气卡片 - JSON 格式',
-    description: '使用 JSON 格式配置天气卡片',
+    name: 'Weather card - JSON format',
+    description: 'Configure a weather card using JSON format',
     markdown: `
 :::weather json
 {
@@ -30,8 +30,8 @@ units: metric
 `.trim(),
   },
   {
-    name: '天气卡片 - TOON 格式',
-    description: '使用 TOON 紧凑表格式格式配置天气卡片',
+    name: 'Weather card - TOON format',
+    description: 'Configure a weather card using the compact TOON tabular format',
     markdown: `
 :::weather toon
 location: London
@@ -40,8 +40,8 @@ units: imperial
 `.trim(),
   },
   {
-    name: '多个天气卡片',
-    description: '展示不同城市的天气',
+    name: 'Multiple weather cards',
+    description: 'Show weather for several cities',
     markdown: `
 :::weather yaml
 location: New York

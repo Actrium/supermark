@@ -1,12 +1,14 @@
 /**
- * React Native 的 Rust markdown module 加载器。
+ * The Rust markdown module loader for React Native.
  *
- * RN 下 markdown 解析走 native FFI（`@supramark/markdown-native-rn` 注册的
- * adapter），不加载 wasm。此文件**不 import** `@supramark/markdown-web`，
- * 因此 metro 打包 RN bundle 时不会扫描到 wasm 相关代码，避免 lazy bundle
- * 与静态 require 冲突导致的 "unknown module" 错误。
+ * On RN, markdown parsing goes through native FFI (the adapter registered by
+ * `@supramark/markdown-native-rn`); wasm is never loaded. This file **does not
+ * import** `@supramark/markdown-web`, so Metro never scans any wasm-related code
+ * while bundling the RN bundle, avoiding an "unknown module" error caused by a
+ * conflict between lazy bundling and static require.
  *
- * 此文件只被 `@supramark/core` 的 RN 入口（`index.rn.ts`）引用。
+ * This file is referenced only by the RN entry point of `@supramark/core`
+ * (`index.rn.ts`).
  */
 
 import { getNativeParserAdapter } from './parser-native-adapter.js';
@@ -20,8 +22,9 @@ type RustMarkdownModule = {
 // variant (plugin-loader-web.ts) that the bundler swaps in; callers await it.
 // eslint-disable-next-line @typescript-eslint/require-await -- contract parity with web loader
 export async function loadRustMarkdownModule(): Promise<RustMarkdownModule> {
-  // RN 下 native adapter 必须已注册（由 `@supramark/markdown-native-rn`
-  // side-effect import 触发）。未注册时抛明确错误，而不是回退到 wasm。
+  // On RN, the native adapter must already be registered (triggered by the
+  // `@supramark/markdown-native-rn` side-effect import). If it's not registered,
+  // throw a clear error instead of silently falling back to wasm.
   const nativeAdapter = getNativeParserAdapter();
   if (nativeAdapter) {
     return { parseJson: nativeAdapter.parseJson };

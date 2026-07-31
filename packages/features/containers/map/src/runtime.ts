@@ -21,9 +21,9 @@ function parseTuple2(valueRaw: string): [number, number] | undefined {
 }
 
 /**
- * 解析 :::map 容器内部的配置文本。
+ * Parse the config text inside a :::map container.
  *
- * 当前版本实现的是一个"贴近 YAML 但更宽容"的迷你语法：
+ * The current implementation is a mini-syntax that is "YAML-like but more lenient":
  *
  * ```text
  * center: [34.05, -118.24]
@@ -111,9 +111,9 @@ function extractInnerText(ctx: ContainerHookContext): string {
   return sourceLines.slice(innerStart, innerEnd).join('\n');
 }
 
-// 注册 Map 容器 hook：
+// Register the Map container hook:
 // - name: 'map'
-// - opaque: true（容器内部 token 不再进入默认 AST 构建流程）
+// - opaque: true (tokens inside the container skip the default AST-building flow)
 registerContainerHook({
   name: 'map',
   opaque: true,

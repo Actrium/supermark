@@ -1,10 +1,12 @@
 import { describe, expect, it, mock } from 'bun:test';
 
-// d2 wasm 在加载时就会通过 globalThis.supramark.measureText 量字宽。
-// 历史 bug: loadWebD2Render 忘记调用 installHostMetricsBridge()，
-// 导致 d2 单独渲染时 fallback 到 size*0.6 启发式，而 mermaid→d2
-// 路径下 bridge 已被 mermaid 装上、走真实测量，两条路径产出不一致。
-// 本测试守住 "d2 loader 必须先装 bridge" 这一不变量。
+// The d2 wasm module measures glyph width via globalThis.supramark.measureText
+// as soon as it loads. Historical bug: loadWebD2Render forgot to call
+// installHostMetricsBridge(), so a standalone d2 render fell back to the
+// size*0.6 heuristic, while the mermaid->d2 path (where mermaid had already
+// installed the bridge and used real measurement) produced different output —
+// the two paths were inconsistent.
+// This test guards the invariant "the d2 loader must install the bridge first."
 
 const installMock = mock(() => {});
 

@@ -1,38 +1,44 @@
 #!/usr/bin/env node
 /**
- * 构建产物冒烟检查:防止 diagram 引擎的 dynamic import specifier 退化成变量。
+ * Build-artifact smoke test: catches diagram-engine dynamic import specifiers
+ * that have degraded into a variable.
  *
- * 背景:echarts/vega-lite loader 若把 `import('echarts/core')` 改成
- * `const spec = 'echarts/core'; import(spec)`,Vite/Rollup 无法静态分析,
- * build 产物里会残留 bare specifier 字符串,浏览器原生 ESM 抛
+ * Background: if the echarts/vega-lite loader turns `import('echarts/core')`
+ * into `const spec = 'echarts/core'; import(spec)`, Vite/Rollup can no longer
+ * statically analyze it, the build output retains the bare specifier string,
+ * and the browser's native ESM loader throws
  * `TypeError: Failed to resolve module specifier "echarts/core"`
- * (upstream issue #80 / #79)。
+ * (upstream issue #80 / #79).
  *
- * 修复后 specifier 为字符串字面量,Rollup 把 echarts 各子模块拆成独立
- * chunk(core-*.js / renderers-*.js / charts-*.js / components-*.js),
- * 产物中不再出现 bare subpath 字符串。
+ * Once the specifier is back to a string literal, Rollup splits the echarts
+ * submodules into separate chunks (core-*.js / renderers-*.js / charts-*.js /
+ * components-*.js), and the bare subpath string no longer shows up in the
+ * build output.
  *
- * 指纹选择:`echarts/renderers` / `echarts/charts` / `echarts/components`
- * —— 这些 subpath 只可能来自 bare specifier 残留,不会作为普通数据出现
- * (`echarts/core` 在合法产物里偶有 1 次良性出现,故避开)。
- * vega / vega-lite 因作为数据 / 包名频繁出现,字符串指纹不可靠,由
- * 源码契约测试(packages/engines/__tests__/dynamic-import-contract.test.ts)
- * 在 specifier 形态层保障。
+ * Fingerprint choice: `echarts/renderers` / `echarts/charts` /
+ * `echarts/components` — these subpaths can only come from a leftover bare
+ * specifier, they never show up as ordinary data
+ * (`echarts/core` can legitimately appear once in a valid build, so it's
+ * excluded). vega / vega-lite show up frequently as data / package names, so
+ * a string fingerprint isn't reliable for them; that case is instead covered
+ * at the specifier-shape level by the source contract test
+ * (packages/engines/__tests__/dynamic-import-contract.test.ts).
  *
- * 用法:bun scripts/check-diagram-bare-specifiers.ts
- *   dist 未构建时 skip(exit 0),构建后若残留 bare specifier 则 exit 1。
+ * Usage: bun scripts/check-diagram-bare-specifiers.ts
+ *   Skips (exit 0) when dist hasn't been built yet; exits 1 if a bare
+ *   specifier remains in the build output.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const distAssets = resolve(import.meta.dir, '..', 'examples', 'react-web-csr', 'dist', 'assets');
 
-// 这些 echarts subpath 只可能源自未被静态分析的 bare specifier。
+// These echarts subpaths can only come from a bare specifier that escaped static analysis.
 const FINGERPRINTS = ['echarts/renderers', 'echarts/charts', 'echarts/components'];
 
 if (!existsSync(distAssets)) {
-  console.warn('[check:diagram-specifiers] skip: examples/react-web-csr/dist 未构建。');
-  console.warn('  本检查在产物构建后生效,运行: bun run docs:preview:build');
+  console.warn('[check:diagram-specifiers] skip: examples/react-web-csr/dist has not been built.');
+  console.warn('  This check only runs after the build output exists. Run: bun run docs:preview:build');
   process.exit(0);
 }
 
@@ -48,19 +54,21 @@ for (const name of jsFiles) {
 }
 
 if (leaks.length > 0) {
-  console.error('[check:diagram-specifiers] FAIL: 产物中检测到 bare specifier 残留:');
+  console.error('[check:diagram-specifiers] FAIL: bare specifier leftovers detected in build output:');
   for (const leak of leaks) {
     console.error(`  ${leak.file}: "${leak.specifier}" x${leak.count}`);
   }
   console.error('');
-  console.error('某处 dynamic import 的 specifier 退化为变量,Vite/Rollup 无法静态分析,');
-  console.error('产物保留了 bare specifier,浏览器会抛 Failed to resolve module specifier。');
-  console.error('检查 packages/engines/src/js-chart-loaders.ts 与 web.ts 的 import(...) 写法:');
-  console.error('  specifier 必须是字符串字面量(可用 `as string` 断言),禁止抽成变量。');
-  console.error('源码契约测试见 packages/engines/__tests__/dynamic-import-contract.test.ts。');
+  console.error('Some dynamic import specifier has degraded into a variable, so Vite/Rollup');
+  console.error('could not statically analyze it; the build output kept the bare specifier,');
+  console.error('and the browser will throw Failed to resolve module specifier.');
+  console.error('Check the import(...) usage in packages/engines/src/js-chart-loaders.ts and web.ts:');
+  console.error('  the specifier must be a string literal (an `as string` assertion is fine),');
+  console.error('  never extract it into a variable.');
+  console.error('See the source contract test: packages/engines/__tests__/dynamic-import-contract.test.ts.');
   process.exit(1);
 }
 
 console.log(
-  `[check:diagram-specifiers] OK: 扫描 ${jsFiles.length} 个产物文件,无 bare specifier 残留。`
+  `[check:diagram-specifiers] OK: scanned ${jsFiles.length} build file(s), no bare specifier leftovers.`
 );

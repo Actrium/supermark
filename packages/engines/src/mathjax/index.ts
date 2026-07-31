@@ -230,14 +230,14 @@ export function getSvgViewBoxSize(svg: string): { width: number; height: number 
 import type { RenderOptions } from '../types.js';
 import { DiagramRenderError } from '../types.js';
 
-/** MathJax engine 的渲染选项。 */
+/** Render options for the MathJax engine. */
 export interface Options extends RenderOptions {
-  /** 是否为块级（$$…$$），默认 false（行内 $…$） */
+  /** Whether this is display mode ($$...$$); defaults to false (inline $...$) */
   displayMode?: boolean;
 }
 
 /**
- * MathJax engine 工厂（用于 math_inline / math_block 节点）。
+ * MathJax engine factory (for math_inline / math_block nodes).
  *
  * @example
  * ```ts

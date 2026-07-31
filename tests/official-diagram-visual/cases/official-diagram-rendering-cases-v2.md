@@ -1,5 +1,7 @@
 ﻿# Official Diagram Rendering Test Cases V2
 
+<!-- cjk-allow-file: this file is parsed as data, not read as prose. official-diagram-visual-workflow.mjs loads it by hard-coded filename and matches its Chinese section headers and category headings with regexes, so renaming it to .zh.md or translating those headers breaks case loading. -->
+
 这份文档是第二组官方图表渲染测试用例。它不会覆盖第一组用例，并且所有代码块都与 `official-diagram-rendering-cases.md` 中的旧用例不同。
 
 生成时间：2026-07-01

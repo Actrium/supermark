@@ -1,7 +1,8 @@
 #pragma once
 
-// ComponentDescriptors.h 是 autolinking.cpp 的 #include 目标。
-// 由于 codegenConfig 设置了 interfaceOnly: true，RN codegen 不会生成该文件，
-// 因此由本库自行提供，转发到实际的手写 ComponentDescriptor 头文件。
+// ComponentDescriptors.h is the #include target reached by autolinking.cpp.
+// Because codegenConfig sets interfaceOnly: true, RN codegen never generates this file,
+// so this library provides it manually, forwarding to the actual hand-written
+// ComponentDescriptor header.
 
 #include <react/renderer/components/selectablerichtext/SelectableRichTextComponentDescriptor.h>

@@ -1,6 +1,6 @@
 /**
- * 自定义 Jest 测试环境
- * 扩展 jest-environment-node 并在初始化前设置 localStorage mock
+ * Custom Jest test environment
+ * Extends jest-environment-node and sets up a localStorage mock before initialization
  */
 
 const NodeEnvironment = require('jest-environment-node').TestEnvironment;
@@ -9,8 +9,8 @@ class CustomEnvironment extends NodeEnvironment {
   constructor(config, context) {
     super(config, context);
 
-    // 在环境初始化时就设置 localStorage mock
-    // 使用普通函数而不是 jest.fn()，因为 jest 在这个阶段还不可用
+    // Set up the localStorage mock during environment initialization
+    // Use a plain function instead of jest.fn(), since jest isn't available at this stage
     const noop = () => {};
 
     this.global.localStorage = {

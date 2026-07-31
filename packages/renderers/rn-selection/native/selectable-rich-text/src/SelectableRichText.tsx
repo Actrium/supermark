@@ -14,7 +14,7 @@ import type {
   SelectableRichTextRef,
 } from './types';
 
-// SelectableRichText 原生命令名称，和 Fabric native commands 保持一致。
+// SelectableRichText's native command names, kept in sync with the Fabric native commands.
 const SELECTABLE_RICH_TEXT_COMMANDS = {
   selectRange: 'selectRange',
   selectParagraphAt: 'selectParagraphAt',
@@ -24,14 +24,15 @@ const SELECTABLE_RICH_TEXT_COMMANDS = {
 
 type NativeSelectableRichTextInstance = HostInstance;
 
-// NativeCommandViewRef 是 codegen Commands 期望的 viewRef 类型。
-// RN 0.83 的 HostComponent 类型让 React.ElementRef 解析成 never，调用 Commands 时需要把
-// HostInstance 强制转换成这个类型；0.85 起 HostComponent 改为 ForwardRefExoticComponent，
-// ElementRef 能正常解析出实例类型，转换仍兼容。
+// NativeCommandViewRef is the viewRef type expected by the codegen'd Commands.
+// In RN 0.83, HostComponent's type makes React.ElementRef resolve to never, so calling Commands
+// requires force-casting the HostInstance to this type; starting in 0.85, HostComponent was
+// changed to ForwardRefExoticComponent, so ElementRef resolves to the real instance type
+// correctly — the cast is still compatible either way.
 type NativeCommandViewRef =
   React.ElementRef<NativeSelectableRichTextComponentType>;
 
-// iOS 和 Android 都使用同名原生 SelectableRichText，其他平台保留 RN Text fallback。
+// iOS and Android both use the identically-named native SelectableRichText; other platforms keep the RN Text fallback.
 const NativeSelectableRichText =
   Platform.OS === 'ios' || Platform.OS === 'android'
     ? (FabricSelectableRichText as React.ComponentType<
@@ -41,38 +42,41 @@ const NativeSelectableRichText =
       >)
     : null;
 
-// 检查 SelectableRichText 子树里是否包含 RN View，避免 View 作为 NSTextAttachment 被整体选中。
+// Checks whether SelectableRichText's subtree contains an RN View, to avoid a View being selected
+// as a whole as an NSTextAttachment.
 function containsUnsupportedViewChild(children: React.ReactNode): boolean {
   let hasUnsupportedView = false;
 
   React.Children.forEach(children, (child) => {
-    // 已经找到 View 时跳过后续检查，避免重复遍历。
+    // Skip further checks once a View has already been found, to avoid redundant traversal.
     if (hasUnsupportedView) {
       return;
     }
 
-    // 空节点和布尔节点不会渲染成文本内容，不需要继续检查。
+    // Null and boolean nodes don't render as text content, so no further check is needed.
     if (child == null || typeof child === 'boolean') {
       return;
     }
 
-    // 字符串和数字会进入文本存储，是 SelectableRichText 支持的内容。
+    // Strings and numbers go into the text storage and are content SelectableRichText supports.
     if (typeof child === 'string' || typeof child === 'number') {
       return;
     }
 
-    // 非 React element 节点无法识别为 RN View，直接跳过。
+    // A non-React-element node can't be identified as an RN View, so skip it.
     if (!React.isValidElement<{ children?: React.ReactNode }>(child)) {
       return;
     }
 
-    // RN View 会被 RN Text 系统转换成 attachment，因此禁止放入 SelectableRichText。
+    // An RN View gets converted into an attachment by the RN Text system, so it's disallowed
+    // inside SelectableRichText.
     if (child.type === View) {
       hasUnsupportedView = true;
       return;
     }
 
-    // 继续检查 Text、Fragment 或自定义元素传入的 children，避免深层 View 绕过限制。
+    // Keep checking children passed into a Text, Fragment, or custom element, to prevent a deeply
+    // nested View from bypassing the restriction.
     if (
       child.props.children != null &&
       containsUnsupportedViewChild(child.props.children)
@@ -84,19 +88,20 @@ function containsUnsupportedViewChild(children: React.ReactNode): boolean {
   return hasUnsupportedView;
 }
 
-// dispatchSelectableRichTextCommand 统一检查 Fabric HostComponent ref 后再执行命令。
+// dispatchSelectableRichTextCommand centralizes checking the Fabric HostComponent ref before
+// executing a command.
 function dispatchSelectableRichTextCommand(
   nativeRef: React.RefObject<NativeSelectableRichTextInstance | null>,
   dispatchCommand: (nativeView: NativeCommandViewRef) => void
 ) {
   const nativeView = nativeRef.current;
 
-  // nativeView 为空时说明原生视图尚未挂载，不能发送 Fabric command。
+  // A null nativeView means the native view hasn't mounted yet, so the Fabric command can't be sent.
   if (nativeView == null) {
     return;
   }
 
-  // HostInstance → NativeCommandViewRef：跨 RN 版本兼容 Commands 的 viewRef 类型。
+  // HostInstance -> NativeCommandViewRef: keeps Commands' viewRef type compatible across RN versions.
   dispatchCommand(nativeView as unknown as NativeCommandViewRef);
 }
 
@@ -117,12 +122,12 @@ const SelectableRichText = React.forwardRef<
     },
     ref
   ): React.JSX.Element => {
-    // 原生命令通过 Fabric HostComponent ref 定位目标原生视图。
+    // Native commands locate the target native view through the Fabric HostComponent ref.
     const nativeRef = React.useRef<NativeSelectableRichTextInstance | null>(
       null
     );
 
-    // 暴露给 RN 菜单调用的原生选区命令。
+    // Native selection commands exposed for the RN menu to call.
     React.useImperativeHandle(
       ref,
       () => ({
@@ -160,14 +165,15 @@ const SelectableRichText = React.forwardRef<
       []
     );
 
-    // SelectableRichText 只允许文本子树，避免 View 进入原生层后变成不可拆分附件。
+    // SelectableRichText only allows a text subtree, to avoid a View becoming an unsplittable
+    // attachment once it reaches the native layer.
     if (containsUnsupportedViewChild(children)) {
       throw new Error(
         'SelectableRichText does not support View children. Use nested Text, or render View outside SelectableRichText.'
       );
     }
 
-    // 未注册原生 SelectableRichText 的平台使用 RN Text 自带 selectable 能力。
+    // Platforms without a registered native SelectableRichText fall back to RN Text's built-in selectable capability.
     if (!NativeSelectableRichText) {
       return (
         <Text selectable={selectable} style={style}>
@@ -176,7 +182,8 @@ const SelectableRichText = React.forwardRef<
       );
     }
 
-    // 必须提供 TextAncestor context，使子 <Text> 按 RN 文本子树合并到同一个原生文本块。
+    // The TextAncestor context must be provided, so that child <Text> elements merge into the same
+    // native text block as an RN text subtree.
     return (
       <NativeSelectableRichText
         ref={nativeRef}

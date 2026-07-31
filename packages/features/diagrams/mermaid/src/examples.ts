@@ -1,14 +1,14 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * Mermaid Feature 使用示例
+ * Mermaid Feature usage examples
  */
 export const mermaidExamples: ExampleDefinition[] = [
   {
-    name: '流程图示例',
-    description: '使用 ```mermaid 围栏代码块定义一个简单流程图。',
+    name: 'Flowchart example',
+    description: 'Uses a ```mermaid fenced code block to define a simple flowchart.',
     markdown: `
-# Mermaid diagram 示例
+# Mermaid diagram example
 
 \`\`\`mermaid
 graph TD

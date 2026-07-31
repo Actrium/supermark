@@ -10,7 +10,7 @@
  *      Rust dep auditing; this only validates first-party crate
  *      manifests).
  *   3. The declared license is on the allow-list documented in
- *      `docs/architecture/LICENSE_COMPATIBILITY.md` and `deny.toml`.
+ *      `docs/architecture/LICENSE_COMPATIBILITY.zh.md` and `deny.toml`.
  *
  * CI runs this as part of `bun run quality`.
  */
@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// ── Allow-list: must match deny.toml and LICENSE_COMPATIBILITY.md §2 ──
+// ── Allow-list: must match deny.toml and LICENSE_COMPATIBILITY.zh.md §2 ──
 // Bare SPDX identifiers; expressions like "Apache-2.0 OR MIT" are
 // expanded by ALLOWED_EXPRESSIONS below.
 const ALLOWED_LICENSES = new Set<string>([
@@ -69,9 +69,9 @@ const SKIP_PATTERNS: Array<{ matcher: (p: string) => boolean; reason: string }> 
   },
   {
     // Upstream graphviz-anywhere's RN example app omits a license
-    // field. Tracked for upstream patch-back via crates/graphviz-anywhere/UPSTREAM.md.
+    // field. Tracked for upstream patch-back via crates/graphviz-anywhere/UPSTREAM.zh.md.
     matcher: p => p === 'crates/graphviz-anywhere/examples/react-native/package.json',
-    reason: 'upstream-merged; private demo app, license patch tracked in UPSTREAM.md',
+    reason: 'upstream-merged; private demo app, license patch tracked in UPSTREAM.zh.md',
   },
   {
     // Private test-only helper inside plantuml-little. Not published;
@@ -226,7 +226,7 @@ for (const pkgPath of findManifests('package.json')) {
   if (!isAllowed(pkg.license)) {
     issues.push(
       `${rel} (${name}): license "${pkg.license}" is not on the allow-list. ` +
-        `Update docs/architecture/LICENSE_COMPATIBILITY.md and deny.toml first.`
+        `Update docs/architecture/LICENSE_COMPATIBILITY.zh.md and deny.toml first.`
     );
     continue;
   }
@@ -259,7 +259,7 @@ for (const cargoPath of findManifests('Cargo.toml')) {
   if (!isAllowed(pkg.license)) {
     issues.push(
       `${rel} (${name}): license "${pkg.license}" is not on the allow-list. ` +
-        `Update docs/architecture/LICENSE_COMPATIBILITY.md and deny.toml first.`
+        `Update docs/architecture/LICENSE_COMPATIBILITY.zh.md and deny.toml first.`
     );
     continue;
   }

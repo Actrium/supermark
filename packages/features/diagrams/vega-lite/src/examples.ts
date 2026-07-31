@@ -1,16 +1,16 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * Diagram (Vega-Lite) Feature 使用示例
+ * Diagram (Vega-Lite) Feature usage examples
  */
 export const diagramVegaLiteExamples: ExampleDefinition[] = [
   {
-    name: 'Vega-Lite 柱状图',
-    description: '使用 ```vega-lite 围栏代码块定义一个最小可用的 Vega-Lite 柱状图。',
+    name: 'Vega-Lite bar chart',
+    description: 'Uses a ```vega-lite fenced code block to define a minimal working Vega-Lite bar chart.',
     markdown: `
-# Vega-Lite diagram 示例
+# Vega-Lite diagram example
 
-下面的围栏代码块会被 supramark 识别为 \`diagram\` 节点（engine = "vega-lite"）：
+The fenced code block below is recognized by supramark as a \`diagram\` node (engine = "vega-lite"):
 
 \`\`\`vega-lite
 {

@@ -13,15 +13,17 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, nullable) RCTDirectEventBlock onMenuAction;
 @property (nonatomic, copy, nullable) RCTDirectEventBlock onTextLongPress;
 
-// setTextStorage 把 Fabric Paragraph state 转换得到的 NSTextStorage 设置到 UITextView，
-// 是 RCTSelectableRichTextComponentView 唯一的文本内容入口。
+// setTextStorage sets the NSTextStorage converted from the Fabric Paragraph state onto the
+// UITextView, and is RCTSelectableRichTextComponentView's sole entry point for text content.
 - (void)setTextStorage:(NSTextStorage *)textStorage;
 
-// selectTextRangeWithStart 选中指定 UTF-16 范围并弹出系统选区菜单。
+// selectTextRangeWithStart selects the given UTF-16 range and shows the system selection menu.
 - (void)selectTextRangeWithStart:(NSInteger)start end:(NSInteger)end;
 
-// selectParagraphAtPoint 根据本地坐标命中长按所在段落，选中段落并弹出系统选区菜单。
-// point 是相对 SelectableRichText 左上角的本地坐标，由宿主 Pressable 的 locationX/locationY 转换得到。
+// selectParagraphAtPoint hit-tests the paragraph at the local coordinates, selects it, then shows
+// the system selection menu.
+// point is the local coordinate relative to SelectableRichText's top-left corner, converted from
+// the host Pressable's locationX/locationY.
 - (void)selectParagraphAtPoint:(CGPoint)point;
 
 - (void)clearTextSelection;

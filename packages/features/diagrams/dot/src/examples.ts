@@ -1,14 +1,14 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * Diagram (DOT / Graphviz) Feature 使用示例
+ * Diagram (DOT / Graphviz) Feature usage examples
  */
 export const diagramDotExamples: ExampleDefinition[] = [
   {
-    name: '有向图示例',
-    description: '使用 ```dot 围栏代码块定义一个简单有向图。',
+    name: 'Directed graph example',
+    description: 'Uses a ```dot fenced code block to define a simple directed graph.',
     markdown: `
-# DOT / Graphviz diagram 示例
+# DOT / Graphviz diagram example
 
 \`\`\`dot
 digraph G {

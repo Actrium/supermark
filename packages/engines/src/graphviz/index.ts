@@ -145,18 +145,19 @@ function isGraphvizImageSize(value: unknown): value is NonNullable<GraphvizDiagr
 }
 
 // ============================================================================
-// v0.2 unified engine factory（见 docs/architecture/ENGINES_AND_CLI_PLAN.md）
+// v0.2 unified engine factory (see docs/architecture/ENGINES_AND_CLI_PLAN.zh.md)
 // ============================================================================
 
 /**
- * Graphviz engine 的渲染选项（在通用 RenderOptions 基础上加平台 / 布局选项）。
+ * Render options for the Graphviz engine (adds platform / layout options on
+ * top of the common RenderOptions).
  */
 export interface Options extends RenderOptions, GraphvizDiagramOptions {}
 
 /**
- * Graphviz engine 工厂。
+ * Graphviz engine factory.
  *
- * `modules` 必须包含至少一个 `GraphvizRenderAdapter`，通常来自：
+ * `modules` must include at least one `GraphvizRenderAdapter`, usually from:
  * - `@supramark/engines/graphviz/web-adapter`
  * - `@supramark/engines/graphviz/rn-adapter`
  *

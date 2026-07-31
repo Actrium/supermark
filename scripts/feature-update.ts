@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * Supramark Feature 增量更新工具
+ * Supramark Feature Incremental Update Tool
  *
- * 用法：
+ * Usage:
  *   bun run feature:update
  *   bun run feature:update <feature-name>
  *   bun run feature:update -- --fix
@@ -30,31 +30,31 @@ interface CheckItem {
 
 const CHECKS: Record<string, CheckItem> = {
   jestConfig: {
-    name: 'Jest 配置',
+    name: 'Jest config',
     file: 'jest.config.cjs',
     severity: 'high',
-    description: '缺少 Jest 配置文件，测试无法运行',
+    description: 'Missing Jest config file, tests cannot run',
   },
   tsConfig: {
-    name: 'TypeScript 配置',
+    name: 'TypeScript config',
     file: 'tsconfig.json',
     severity: 'high',
-    description: '缺少 TypeScript 配置文件',
+    description: 'Missing TypeScript config file',
   },
   srcIndex: {
-    name: '导出入口',
+    name: 'Export entry point',
     file: 'src/index.ts',
     severity: 'high',
-    description: '缺少包导出入口文件',
+    description: 'Missing package export entry file',
   },
   packageJson: {
     name: 'package.json',
     file: 'package.json',
     severity: 'critical',
-    description: '缺少 package.json 文件',
+    description: 'Missing package.json file',
   },
   tsJestDep: {
-    name: 'ts-jest 依赖',
+    name: 'ts-jest dependency',
     check: (pkgPath: string) => {
       const pkgJsonPath = path.join(pkgPath, 'package.json');
       if (!fs.existsSync(pkgJsonPath)) return false;
@@ -63,18 +63,21 @@ const CHECKS: Record<string, CheckItem> = {
       return 'ts-jest' in devDeps;
     },
     severity: 'medium',
-    description: 'package.json 中缺少 ts-jest 依赖',
+    description: 'package.json is missing the ts-jest dependency',
   },
   multiNodeTypeGuidance: {
-    name: '多节点类型指导注释',
+    name: 'Multi-node-type guidance comment',
     check: (pkgPath: string) => {
       const featurePath = path.join(pkgPath, 'src/feature.ts');
       if (!fs.existsSync(featurePath)) return false;
       const content = fs.readFileSync(featurePath, 'utf-8');
-      return content.includes('多节点类型处理') || content.includes('节点类型说明');
+      // Matches the guidance comment that feature-create.ts emits into a new
+      // feature.ts. Both phrasings are accepted because the template wording is
+      // not identical across the features generated from it over time.
+      return content.includes('multi node type handling') || content.includes('Node type notes');
     },
     severity: 'low',
-    description: 'Feature 定义文件缺少多节点类型处理指导',
+    description: 'Feature definition file is missing multi-node-type handling guidance',
   },
 };
 
@@ -152,7 +155,7 @@ function generateReport(results: Array<{ feature: FeatureScanResult; result: Che
   totalWarnings: number;
   totalSuggestions: number;
 } {
-  log('\n📊 Feature 包检查报告\n', 'bright');
+  log('\n📊 Feature package check report\n', 'bright');
   log('='.repeat(60), 'gray');
 
   let totalIssues = 0;
@@ -165,7 +168,7 @@ function generateReport(results: Array<{ feature: FeatureScanResult; result: Che
 
     if (!hasProblems) {
       log(`\n✅ ${feature.name}`, 'green');
-      log('   无需更新，所有检查通过', 'gray');
+      log('   No update needed, all checks passed', 'gray');
       continue;
     }
 
@@ -173,10 +176,10 @@ function generateReport(results: Array<{ feature: FeatureScanResult; result: Che
       `\n${issues.length > 0 ? '❌' : warnings.length > 0 ? '⚠️' : '💡'} ${feature.name}`,
       issues.length > 0 ? 'red' : warnings.length > 0 ? 'yellow' : 'blue'
     );
-    log(`   路径: ${path.relative(process.cwd(), feature.path)}`, 'gray');
+    log(`   Path: ${path.relative(process.cwd(), feature.path)}`, 'gray');
 
     if (issues.length > 0) {
-      log('\n   🚨 关键问题：', 'red');
+      log('\n   🚨 Critical issues:', 'red');
       issues.forEach(issue => {
         log(`      • ${issue.name}: ${issue.description}`, 'reset');
       });
@@ -184,7 +187,7 @@ function generateReport(results: Array<{ feature: FeatureScanResult; result: Che
     }
 
     if (warnings.length > 0) {
-      log('\n   ⚠️  警告：', 'yellow');
+      log('\n   ⚠️  Warnings:', 'yellow');
       warnings.forEach(warning => {
         log(`      • ${warning.name}: ${warning.description}`, 'reset');
       });
@@ -192,7 +195,7 @@ function generateReport(results: Array<{ feature: FeatureScanResult; result: Che
     }
 
     if (suggestions.length > 0) {
-      log('\n   💡 建议：', 'blue');
+      log('\n   💡 Suggestions:', 'blue');
       suggestions.forEach(suggestion => {
         log(`      • ${suggestion.name}: ${suggestion.description}`, 'reset');
       });
@@ -201,11 +204,11 @@ function generateReport(results: Array<{ feature: FeatureScanResult; result: Che
   }
 
   log('\n' + '='.repeat(60), 'gray');
-  log('\n📈 统计汇总：', 'bright');
-  log(`   总包数: ${results.length}`, 'reset');
-  log(`   关键问题: ${totalIssues}`, totalIssues > 0 ? 'red' : 'green');
-  log(`   警告: ${totalWarnings}`, totalWarnings > 0 ? 'yellow' : 'green');
-  log(`   建议: ${totalSuggestions}`, totalSuggestions > 0 ? 'blue' : 'green');
+  log('\n📈 Summary:', 'bright');
+  log(`   Total packages: ${results.length}`, 'reset');
+  log(`   Critical issues: ${totalIssues}`, totalIssues > 0 ? 'red' : 'green');
+  log(`   Warnings: ${totalWarnings}`, totalWarnings > 0 ? 'yellow' : 'green');
+  log(`   Suggestions: ${totalSuggestions}`, totalSuggestions > 0 ? 'blue' : 'green');
 
   return { totalIssues, totalWarnings, totalSuggestions };
 }
@@ -216,7 +219,7 @@ async function autoFix(
 ): Promise<number> {
   const { dryRun = false } = options;
 
-  log('\n🔧 开始自动修复...\n', 'bright');
+  log('\n🔧 Starting auto-fix...\n', 'bright');
 
   let totalFixed = 0;
   let totalSkipped = 0;
@@ -236,7 +239,7 @@ async function autoFix(
       const filePath = CHECKS[problem.key as keyof typeof CHECKS]?.file;
 
       if (!filePath) {
-        log(`   ⏭  跳过: ${problem.name} (需要手动处理)`, 'gray');
+        log(`   ⏭  Skipped: ${problem.name} (requires manual handling)`, 'gray');
         featureSkipped++;
         continue;
       }
@@ -245,8 +248,8 @@ async function autoFix(
       const relativePath = path.relative(process.cwd(), fullPath);
 
       if (dryRun) {
-        log(`   🔍 [DRY-RUN] 将创建: ${relativePath}`, 'yellow');
-        log(`      问题: ${problem.name}`, 'gray');
+        log(`   🔍 [DRY-RUN] Would create: ${relativePath}`, 'yellow');
+        log(`      Issue: ${problem.name}`, 'gray');
         continue;
       }
 
@@ -256,10 +259,10 @@ async function autoFix(
 
         if (problem.key === 'jestConfig') {
           content = generateJestConfig();
-          action = '创建 Jest 配置';
+          action = 'Created Jest config';
         } else if (problem.key === 'tsConfig') {
           content = generateTsConfig();
-          action = '创建 TypeScript 配置';
+          action = 'Created TypeScript config';
         } else if (problem.key === 'srcIndex') {
           const featurePath = path.join(feature.path, 'src/feature.ts');
           if (fs.existsSync(featurePath)) {
@@ -278,10 +281,10 @@ async function autoFix(
 
 export { ${featureName} } from './feature.js';
 `;
-            action = '创建导出入口';
+            action = 'Created export entry point';
           } else {
             content = `export { feature } from './feature.js';\n`;
-            action = '创建导出入口';
+            action = 'Created export entry point';
           }
         }
 
@@ -297,38 +300,38 @@ export { ${featureName} } from './feature.js';
         }
       } catch (error) {
         log(
-          `   ❌ 失败: ${relativePath} (${error instanceof Error ? error.message : String(error)})`,
+          `   ❌ Failed: ${relativePath} (${error instanceof Error ? error.message : String(error)})`,
           'red'
         );
       }
     }
 
     if (featureFixed > 0) {
-      log(`   ─── 已修复 ${featureFixed} 项`, 'gray');
+      log(`   ─── Fixed ${featureFixed} item(s)`, 'gray');
       totalFixed += featureFixed;
     }
     if (featureSkipped > 0) {
-      log(`   ─── 跳过 ${featureSkipped} 项 (需手动处理)`, 'yellow');
+      log(`   ─── Skipped ${featureSkipped} item(s) (requires manual handling)`, 'yellow');
       totalSkipped += featureSkipped;
     }
   }
 
   log('\n' + '='.repeat(60), 'gray');
   if (totalFixed > 0) {
-    log(`\n✅ 修复完成！共修复 ${totalFixed} 项`, 'green');
+    log(`\n✅ Fix complete! Fixed ${totalFixed} item(s)`, 'green');
   }
   if (totalSkipped > 0) {
-    log(`⚠️  跳过 ${totalSkipped} 项 (需手动处理)`, 'yellow');
+    log(`⚠️  Skipped ${totalSkipped} item(s) (requires manual handling)`, 'yellow');
   }
   if (totalFixed === 0 && totalSkipped === 0) {
-    log('\n✅ 无需修复', 'green');
+    log('\n✅ No fixes needed', 'green');
   }
 
   return totalFixed;
 }
 
 async function main(): Promise<void> {
-  log('\n🔍 Supramark Feature 增量更新工具\n', 'bright');
+  log('\n🔍 Supramark Feature Incremental Update Tool\n', 'bright');
 
   try {
     const args = process.argv.slice(2);
@@ -336,24 +339,24 @@ async function main(): Promise<void> {
 
     if (args.includes('--help') || args.includes('-h')) {
       log(`
-${colors.bright}用法：${colors.reset}
-  bun run feature:update              # 交互式选择，自动检查并修复
-  bun run feature:update <name>       # 检查并修复特定 Feature
-  bun run feature:update -- --check-only  # 仅检查，不自动修复
+${colors.bright}Usage:${colors.reset}
+  bun run feature:update              # Interactive selection, auto-checks and fixes
+  bun run feature:update <name>       # Check and fix a specific Feature
+  bun run feature:update -- --check-only  # Check only, no auto-fix
 
-${colors.blue}选项：${colors.reset}
-  --check-only  仅检查，不自动修复（预览模式）
-  --dry-run     预览修复而不实际执行
-  --help, -h    显示此帮助信息
+${colors.blue}Options:${colors.reset}
+  --check-only  Check only, no auto-fix (preview mode)
+  --dry-run     Preview the fix without actually applying it
+  --help, -h    Show this help message
 
-${colors.blue}示例：${colors.reset}
-  ${colors.gray}# 交互式选择并自动修复${colors.reset}
+${colors.blue}Examples:${colors.reset}
+  ${colors.gray}# Interactive selection with auto-fix${colors.reset}
   bun run feature:update
 
-  ${colors.gray}# 检查并修复特定 Feature${colors.reset}
+  ${colors.gray}# Check and fix a specific Feature${colors.reset}
   bun run feature:update gfm
 
-  ${colors.gray}# 仅检查，不修复${colors.reset}
+  ${colors.gray}# Check only, no fixing${colors.reset}
   bun run feature:update -- --check-only
 `);
       process.exit(0);
@@ -365,20 +368,20 @@ ${colors.blue}示例：${colors.reset}
     let selectedFeature: FeaturePackageInfo | null = null;
 
     if (!argFeature) {
-      selectedFeature = await selectFeature('选择要更新的 Feature:');
+      selectedFeature = await selectFeature('Select the Feature to update:');
       if (!selectedFeature) {
-        log('\n已取消。\n', 'yellow');
+        log('\nCancelled.\n', 'yellow');
         return;
       }
     } else {
       selectedFeature = findFeaturePackageByShortName(argFeature);
       if (!selectedFeature) {
-        log(`\n❌ 未找到 Feature: ${argFeature}\n`, 'red');
+        log(`\n❌ Feature not found: ${argFeature}\n`, 'red');
         return;
       }
     }
 
-    log(`正在扫描 Feature: ${selectedFeature.shortName}...`, 'gray');
+    log(`Scanning Feature: ${selectedFeature.shortName}...`, 'gray');
 
     const results = [
       {
@@ -391,10 +394,10 @@ ${colors.blue}示例：${colors.reset}
     const needFix = stats.totalIssues > 0 || stats.totalWarnings > 0;
 
     if (needFix && !checkOnly) {
-      log('\n🔧 自动修复缺失项...\n', 'bright');
+      log('\n🔧 Auto-fixing missing items...\n', 'bright');
       await autoFix(results, { dryRun: dryRunFlag });
 
-      log('\n📦 重新扫描确认...\n', 'gray');
+      log('\n📦 Rescanning to confirm...\n', 'gray');
       const recheck = [
         {
           feature: { name: selectedFeature.shortName, path: selectedFeature.dir },
@@ -406,14 +409,14 @@ ${colors.blue}示例：${colors.reset}
       ];
       generateReport(recheck);
     } else if (needFix) {
-      log('\n💡 提示: 使用 bun run feature:update 自动修复缺失项\n', 'blue');
+      log('\n💡 Tip: run bun run feature:update to auto-fix missing items\n', 'blue');
     }
 
     if (stats.totalIssues === 0 && stats.totalWarnings === 0) {
-      log('\n✨ 所有检查通过，Feature 包符合最新标准！', 'green');
+      log('\n✨ All checks passed, the Feature package meets the latest standard!', 'green');
     }
   } catch (error) {
-    log(`\n❌ 错误: ${error instanceof Error ? error.message : String(error)}\n`, 'red');
+    log(`\n❌ Error: ${error instanceof Error ? error.message : String(error)}\n`, 'red');
     console.error(error);
     process.exit(1);
   }

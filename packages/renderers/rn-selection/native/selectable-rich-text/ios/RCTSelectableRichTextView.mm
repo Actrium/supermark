@@ -3,7 +3,8 @@
 #import <React/RCTTextAttributes.h>
 #import <React/UIView+React.h>
 
-// 记录当前交互中的 SelectableText，用于切换文本块时清理上一个 UITextView 保留的 selectedRange。
+// Tracks the SelectableText currently being interacted with, so switching text blocks clears the
+// selectedRange left behind by the previous UITextView.
 static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
 
 @interface RCTSelectableRichTextView () <UITextViewDelegate, UIEditMenuInteractionDelegate, UIGestureRecognizerDelegate>
@@ -12,50 +13,59 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
 
 @implementation RCTSelectableRichTextView {
   BOOL _rnSelectable;
-  // _commandSelectionActive 表示当前选区由 selectRange/selectParagraphAt 命令打开，
-  // 用于 textViewDidChangeSelection 判断"选区折叠成空"是否需要收回 editable。
+  // _commandSelectionActive indicates the current selection was opened by a selectRange/selectParagraphAt
+  // command, used by textViewDidChangeSelection to decide whether a selection collapsing to empty
+  // should revoke editable.
   BOOL _commandSelectionActive;
-  // _isSettingCommandSelection 保护 selectTextRangeWithStart 的同步设置过程，
-  // 避免 becomeFirstResponder 触发的空选区回调误清刚要设置的命令选区。
+  // _isSettingCommandSelection guards the synchronous setup in selectTextRangeWithStart,
+  // preventing the empty-selection callback triggered by becomeFirstResponder from wrongly clearing
+  // the command selection that is about to be set.
   BOOL _isSettingCommandSelection;
   UIEditMenuInteraction *_selectionEditMenuInteraction API_AVAILABLE(ios(16.0));
-  // _dismissTapGesture 选区激活时挂到 window 上，tap SelectableRichText 外部时清选区，
-  // 等 example menuDismissLayer 的原生实现。cancelsTouchesInView=NO 不影响其他 touch。
+  // _dismissTapGesture is attached to the window while a selection is active; tapping outside
+  // SelectableRichText clears the selection — the native equivalent of the example's menuDismissLayer.
+  // cancelsTouchesInView=NO leaves other touches unaffected.
   UITapGestureRecognizer *_dismissTapGesture;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame
 {
   if (self = [super initWithFrame:frame]) {
-    // 只读配置：editable 默认 NO，避免点击文本出现光标/输入框焦点。
-    // selectRange/selectParagraphAt 命令期间临时开启 editable=YES，让程序化选区的手柄可拖
-    //（iOS 机制：editable=NO 的 UITextView 程序化选区手柄是只读展示态，不响应拖动），
-    // clearTextSelection 时恢复 editable=NO。选区有长度时不显示光标，只有手柄。
+    // Read-only setup: editable defaults to NO so tapping the text never shows a caret or text-field focus.
+    // editable is temporarily switched to YES during selectRange/selectParagraphAt commands so the
+    // programmatic selection handles are draggable
+    // (iOS behavior: on a UITextView with editable=NO, programmatic selection handles are read-only
+    // display and don't respond to dragging),
+    // and reverted to NO in clearTextSelection. When the selection has length, no caret is shown, only the handles.
     self.editable = NO;
-    // 默认 selectable=NO，避免 UITextView 自带长按选词与宿主 Pressable 长按手势冲突。
-    // 宿主通过 ref.selectParagraphAt / selectRange 命令触发选取时，原生临时开启 selectable。
+    // selectable defaults to NO to avoid UITextView's built-in long-press word selection conflicting
+    // with the host's Pressable long-press gesture.
+    // The native side temporarily enables selectable when the host triggers selection via the
+    // ref.selectParagraphAt / selectRange commands.
     [super setSelectable:NO];
     self.scrollEnabled = NO;
     self.delegate = self;
     self.dataDetectorTypes = UIDataDetectorTypeNone;
 
-    // 布局一致性：消除 UITextView 默认的内边距
+    // Layout consistency: remove UITextView's default content insets
     self.textContainerInset = UIEdgeInsetsZero;
     self.textContainer.lineFragmentPadding = 0;
 
-    // 透明背景，避免 UITextView 默认白色背景覆盖气泡底色
+    // Transparent background, so UITextView's default white background doesn't cover the bubble's background color
     self.backgroundColor = [UIColor clearColor];
     self.opaque = NO;
 
-    // 禁用键盘输入相关特性
+    // Disable keyboard input related features
     self.inputView = [[UIView alloc] initWithFrame:CGRectZero];
 
     // accessibility
     self.isAccessibilityElement = YES;
     self.accessibilityTraits |= UIAccessibilityTraitStaticText;
 
-    // 原生长按手势：命中段落并把 range/锚点回传 JS，由宿主决定后续选取动作。
-    // cancelsTouchesInView=NO 保证不拦截 UITextView 的触摸，选区命令建立后手柄拖动 touch 正常到达。
+    // Native long-press gesture: hit-tests the paragraph and reports the range/anchor back to JS,
+    // letting the host decide the follow-up selection action.
+    // cancelsTouchesInView=NO ensures UITextView's touches are not intercepted, so handle-drag touches
+    // still arrive normally once a selection command is active.
     UILongPressGestureRecognizer *paragraphLongPressGesture =
         [[UILongPressGestureRecognizer alloc] initWithTarget:self
                                                      action:@selector(handleParagraphLongPress:)];
@@ -63,9 +73,9 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
     [self addGestureRecognizer:paragraphLongPressGesture];
 
     _rnSelectable = NO;
-    // 默认保留系统复制/全选等菜单项，调用方可通过 showSystemMenuItems 关闭。
+    // System menu items such as copy/select-all are kept by default; callers can turn them off via showSystemMenuItems.
     _showSystemMenuItems = YES;
-    // 默认菜单点击后保留选区，调用方可通过 clearSelectionOnMenuAction 开启自动清空。
+    // The selection is kept after a menu tap by default; callers can enable automatic clearing via clearSelectionOnMenuAction.
     _clearSelectionOnMenuAction = NO;
   }
   return self;
@@ -73,12 +83,14 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
 
 #pragma mark - Selection State
 
-// 当前 SelectableText 开始交互时，清理上一个实例残留的选区，避免再次点击旧位置恢复旧选区。
+// When the current SelectableText starts an interaction, clear the previous instance's leftover
+// selection, so tapping the old location again doesn't restore the old selection.
 - (void)markAsActiveSelectableTextView
 {
   RCTSelectableRichTextView *previousActiveTextView = RCTActiveSelectableRichTextView;
 
-  // 只有切换到另一个实例时才清理，避免影响当前实例内的长按和手柄拖动。
+  // Only clear when switching to a different instance, so long-press and handle-dragging within the
+  // current instance aren't disrupted.
   if (previousActiveTextView != nil && previousActiveTextView != self) {
     [previousActiveTextView clearTextSelection];
   }
@@ -86,34 +98,44 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   RCTActiveSelectableRichTextView = self;
 }
 
-// 清空 UITextView 内部保留的 selectedRange，并恢复 editable/selectable 到 prop 设定的真实状态。
-// selectRange 命令可能临时开启过 editable/selectable，clearSelection 需要把状态收回，避免长期可编辑。
+// Clears the selectedRange retained internally by UITextView, and restores editable/selectable to
+// the real state set by the props.
+// selectRange commands may have temporarily enabled editable/selectable; clearSelection must revoke
+// that state to avoid leaving the view editable long-term.
 - (void)clearTextSelection
 {
-  // 先收回命令选区标志，避免清 selectedRange 时 textViewDidChangeSelection 递归处理。
+  // Revoke the command-selection flags first, so textViewDidChangeSelection doesn't recursively
+  // re-process this when selectedRange is cleared.
   _commandSelectionActive = NO;
   _isSettingCommandSelection = NO;
 
-  // 移除 window tap 监听，选区已清不再需要 dismiss 监听。
+  // Remove the window tap listener — once the selection is cleared, the dismiss listener is no longer needed.
   [self stopDismissTapListener];
 
-  // 收回 editable，让手柄/光标立刻消失，再清选区，避免 editable 仍为 YES 时光标短暂闪烁。
+  // Revoke editable first so the handles/caret disappear immediately, then clear the selection —
+  // this avoids a brief caret flicker while editable is still YES.
   self.editable = NO;
 
-  // 无论选区是否有长度，都清空 selectedRange，消除插入点/手柄/选区高亮的任何残留。
-  // 之前只在 length>0 时清，导致 dismiss 后折叠成 {location, 0} 的插入点残留，看起来选区没清干净。
+  // Clear selectedRange regardless of whether the selection has length, to remove any leftover
+  // insertion point/handles/selection highlight.
+  // Previously this only cleared when length>0, which left a collapsed {location, 0} insertion point
+  // behind after dismiss, making it look like the selection wasn't fully cleared.
   if (self.selectedRange.location != NSNotFound) {
     self.selectedRange = NSMakeRange(0, 0);
   }
 
-  // 恢复 selectable：selectTextRangeWithStart 的 [super setSelectable:YES] 会经 UIKit 回调
-  // 把 _rnSelectable 污染成 1，所以不能信任 _rnSelectable。直接设 NO，收回命令选区的临时开启。
-  // [super setSelectable:NO] 同样会经 UIKit 回调把 _rnSelectable 设回 0，保持一致。
-  // RN prop selectable 的真实值会在下次 updateProps 时由 ComponentView 重新设置。
+  // Restore selectable: the [super setSelectable:YES] in selectTextRangeWithStart goes through a
+  // UIKit callback
+  // that corrupts _rnSelectable to 1, so _rnSelectable cannot be trusted here. Set it to NO directly,
+  // revoking the command selection's temporary enablement.
+  // [super setSelectable:NO] likewise goes through a UIKit callback that sets _rnSelectable back to
+  // 0, keeping things consistent.
+  // The real value of the RN selectable prop will be re-applied by ComponentView on the next updateProps.
   [super setSelectable:NO];
 
-  // 退出 first responder，让 UIKit 的 UITextSelectionDisplayInteraction 彻底移除选区 view/手柄。
-  // 仅设 selectedRange={0,0} 不够，UITextSelectionView 可能在 editable=NO 后仍残留高亮。
+  // Resign first responder so UIKit's UITextSelectionDisplayInteraction fully removes the selection view/handles.
+  // Just setting selectedRange={0,0} is not enough — UITextSelectionView can still leave highlighting
+  // behind even after editable=NO.
   if ([self isFirstResponder]) {
     [self resignFirstResponder];
   }
@@ -131,29 +153,33 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   return [super becomeFirstResponder];
 }
 
-// 根据 selectable prop 同步 UITextView 的真实可选状态。
+// Sync UITextView's real selectable state from the selectable prop.
 - (void)updateNativeSelectableState
 {
   [super setSelectable:_rnSelectable];
 }
 
-// JS 通过 ref.selectRange 触发选取时调用，强制开启选取能力并选中指定范围后弹出系统菜单。
+// Called when JS triggers selection via ref.selectRange: forcibly enables selection, selects the
+// given range, then shows the system menu.
 - (void)selectTextRangeWithStart:(NSInteger)start end:(NSInteger)end
 {
   NSRange range = [self clampedRangeWithStart:start end:end];
 
-  // range 无效时不改变当前选区。
+  // Leave the current selection unchanged if the range is invalid.
   if (range.location == NSNotFound || range.length == 0) {
     return;
   }
 
   [self markAsActiveSelectableTextView];
-  // 命令语义是强制选取，临时开启 editable=YES 让程序化选区的手柄可拖（iOS 机制见 init 注释）。
-  // 选区有长度时不显示光标，只有左右手柄；clearTextSelection 时恢复 editable=NO。
+  // The command's semantics are a forced selection; temporarily enable editable=YES so the
+  // programmatic selection's handles are draggable (see the init comment for the iOS mechanism).
+  // When the selection has length, no caret is shown, only the left/right handles; editable is
+  // reverted to NO in clearTextSelection.
   self.editable = YES;
-  // 即使 _rnSelectable=false 也临时开启 selectable，clearTextSelection 时会恢复。
+  // Temporarily enable selectable even when _rnSelectable=false; it is restored in clearTextSelection.
   [super setSelectable:YES];
-  // 标记命令选区激活 + 同步设置中，避免 becomeFirstResponder 触发的空选区回调误清。
+  // Mark the command selection as active and mid-setup, so the empty-selection callback triggered by
+  // becomeFirstResponder doesn't wrongly clear it.
   _commandSelectionActive = YES;
   _isSettingCommandSelection = YES;
   [self becomeFirstResponder];
@@ -162,13 +188,17 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   [self scrollRangeToVisible:range];
   [self showEditMenuForSelectedRange];
 
-  // 选区激活后挂 window tap 监听，tap SelectableRichText 外部清选区。
-  // 对应 example 的 menuDismissLayer 全屏 dismiss，FlatList 吞 touch 不冒泡时也能收到。
+  // Once the selection is active, attach the window tap listener; tapping outside SelectableRichText
+  // clears the selection.
+  // This mirrors the example's full-screen menuDismissLayer dismiss, and still works even when a
+  // FlatList swallows touches that would otherwise not bubble up.
   [self startDismissTapListener];
 }
 
-// startDismissTapListener 给 window 加一次性 tap gesture，tap 在 SelectableRichText 外部时清选区。
-// cancelsTouchesInView=NO 不拦截其他 view 的 touch（滚动、手柄拖动等正常）。
+// startDismissTapListener adds a one-shot tap gesture to the window; tapping outside
+// SelectableRichText clears the selection.
+// cancelsTouchesInView=NO does not intercept other views' touches (scrolling, handle dragging, etc.
+// keep working normally).
 - (void)startDismissTapListener
 {
   if (_dismissTapGesture != nil) {
@@ -177,25 +207,28 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   _dismissTapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDismissTap:)];
   _dismissTapGesture.cancelsTouchesInView = NO;
   _dismissTapGesture.delegate = self;
-  // 加到 window 而非 self，确保 FlatList 等吞 touch 的容器外的 tap 也能收到。
+  // Attached to the window rather than self, so taps outside touch-swallowing containers like
+  // FlatList are still received.
   UIWindow *window = self.window;
   if (window != nil) {
     [window addGestureRecognizer:_dismissTapGesture];
   }
 }
 
-// handleDismissTap 检查 tap 是否在 SelectableRichText 外部，是则清选区并移除监听。
+// handleDismissTap checks whether the tap is outside SelectableRichText; if so, it clears the
+// selection and removes the listener.
 - (void)handleDismissTap:(UITapGestureRecognizer *)gesture
 {
   CGPoint location = [gesture locationInView:self];
-  // tap 在 SelectableRichText 内部时不清（让手柄/选区内部交互正常）。
+  // Don't clear when the tap is inside SelectableRichText (so handle/selection interactions inside
+  // keep working).
   if (CGRectContainsPoint(self.bounds, location)) {
     return;
   }
   [self clearTextSelection];
 }
 
-// stopDismissTapListener 移除 window tap 监听。
+// stopDismissTapListener removes the window tap listener.
 - (void)stopDismissTapListener
 {
   if (_dismissTapGesture == nil) {
@@ -208,35 +241,42 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   _dismissTapGesture = nil;
 }
 
-// textViewDidChangeSelection 监听选区变化：命令选区期间，用户点击文本非手柄区域会让选区
-// 折叠成插入点（length=0），此时收回 editable 恢复只读，避免光标停留看起来像输入框。
+// textViewDidChangeSelection observes selection changes: during a command selection, tapping the
+// text outside the handle area collapses the selection
+// to an insertion point (length=0); at that point editable is revoked to restore read-only mode,
+// avoiding a lingering caret that looks like a text field.
 - (void)textViewDidChangeSelection:(UITextView *)textView
 {
-  // 同步设置过程或非命令选区期间不处理，避免干扰命令设选区或普通点击。
+  // Skip processing during synchronous setup or when there's no command selection, to avoid
+  // interfering with a command-set selection or a normal tap.
   if (_isSettingCommandSelection || !_commandSelectionActive) {
     return;
   }
 
-  // 选区折叠为空（插入点）时，收回命令选区状态和 editable，光标随之消失。
+  // When the selection collapses to empty (an insertion point), revoke the command-selection state
+  // and editable, and the caret disappears along with it.
   if (textView.selectedRange.location == NSNotFound || textView.selectedRange.length == 0) {
     [self clearTextSelection];
   }
 }
 
-// caretRectForPosition 返回 CGRectNull，UITextView 永不绘制插入光标。
-// dismiss/点别处清选区时 editable 仍为 YES 的一帧不会闪现光标，避免看起来像输入框。
-// 选区手柄走 selection highlight 渲染，不受此影响。
+// caretRectForPosition returns CGRectNull, so UITextView never draws an insertion caret.
+// This avoids the caret briefly flashing during the frame where editable is still YES while
+// dismissing/clearing the selection elsewhere, which would look like a text field.
+// Selection handles are rendered via the selection highlight and are unaffected by this.
 - (CGRect)caretRectForPosition:(UITextPosition *)position
 {
   return CGRectNull;
 }
 
-// JS 通过 ref.selectParagraphAt 触发时调用，根据本地坐标命中段落并选中后弹系统菜单。
+// Called when JS triggers via ref.selectParagraphAt: hit-tests the paragraph at the local
+// coordinates, selects it, then shows the system menu.
 - (void)selectParagraphAtPoint:(CGPoint)point
 {
   NSRange paragraphRange = [self paragraphRangeAtPoint:point];
 
-  // 没有命中文本时不改变当前选区，避免空白区域误触发选取。
+  // Leave the current selection unchanged if no text is hit, to avoid tapping a blank area from
+  // wrongly triggering a selection.
   if (paragraphRange.location == NSNotFound || paragraphRange.length == 0) {
     return;
   }
@@ -244,12 +284,13 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   [self selectTextRangeWithStart:(NSInteger)paragraphRange.location end:(NSInteger)NSMaxRange(paragraphRange)];
 }
 
-// 将本地坐标映射到字符 index，并按换行符切出所在段落 range。
+// Map the local coordinates to a character index, and cut out the paragraph range at that position
+// using newline characters.
 - (NSRange)paragraphRangeAtPoint:(CGPoint)point
 {
   NSString *text = self.text;
 
-  // 文本为空时没有可选段落。
+  // No paragraph to select when the text is empty.
   if (text.length == 0) {
     return NSMakeRange(NSNotFound, 0);
   }
@@ -265,7 +306,7 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
                                                inTextContainer:textContainer
                       fractionOfDistanceBetweenInsertionPoints:&fraction];
 
-  // 点击在文本末尾之后时，按最后一个字符所在段落处理。
+  // When the tap is past the end of the text, treat it as the paragraph containing the last character.
   if (charIndex >= text.length) {
     charIndex = text.length - 1;
   }
@@ -274,7 +315,7 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   NSInteger start = (NSInteger)charIndex;
   NSInteger end = (NSInteger)charIndex;
 
-  // 向前找到当前段落的换行边界。
+  // Scan backward to find the current paragraph's newline boundary.
   while (start > 0) {
     unichar character = [text characterAtIndex:(NSUInteger)(start - 1)];
     if ([newlineSet characterIsMember:character]) {
@@ -283,7 +324,7 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
     start--;
   }
 
-  // 向后找到当前段落的换行边界。
+  // Scan forward to find the current paragraph's newline boundary.
   while ((NSUInteger)end < text.length) {
     unichar character = [text characterAtIndex:(NSUInteger)end];
     if ([newlineSet characterIsMember:character]) {
@@ -292,7 +333,7 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
     end++;
   }
 
-  // 长按命中空行时不返回段落，避免选中零长度内容。
+  // Don't return a paragraph when the long press hits a blank line, to avoid selecting zero-length content.
   if (end <= start) {
     return NSMakeRange(NSNotFound, 0);
   }
@@ -300,28 +341,32 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   return NSMakeRange((NSUInteger)start, (NSUInteger)(end - start));
 }
 
-// handleParagraphLongPress 在原生长按 began 时命中段落，把段落 range 和菜单锚点回传 JS。
-// cancelsTouchesInView=NO，gesture 不拦截触摸，后续选区命令建立的手柄拖动不受影响。
+// handleParagraphLongPress hit-tests the paragraph when the native long press begins, and reports
+// the paragraph range and menu anchor back to JS.
+// cancelsTouchesInView=NO, so the gesture doesn't intercept touches, and subsequent handle-dragging
+// from an established selection command is unaffected.
 - (void)handleParagraphLongPress:(UILongPressGestureRecognizer *)gesture
 {
-  // 只处理长按开始，避免 changed/end 阶段重复回传段落信息。
+  // Only handle the start of the long press, to avoid reporting paragraph info repeatedly during the
+  // changed/end phases.
   if (gesture.state != UIGestureRecognizerStateBegan) {
     return;
   }
 
-  // 没有监听时不计算段落，避免无意义的事件派发。
+  // Skip computing the paragraph when there's no listener, to avoid dispatching pointless events.
   if (self.onTextLongPress == nil) {
     return;
   }
 
   [self markAsActiveSelectableTextView];
-  // 清掉可能残留的命令选区，避免上一段选区与新长按段落并存。
+  // Clear any leftover command selection, so the previous selection and the newly long-pressed
+  // paragraph don't coexist.
   [self clearTextSelection];
 
   CGPoint location = [gesture locationInView:self];
   NSRange paragraphRange = [self paragraphRangeAtPoint:location];
 
-  // 没有命中文本时不回传，避免空白区域误触发业务菜单。
+  // Don't report back when no text is hit, to avoid a blank area wrongly triggering the business menu.
   if (paragraphRange.location == NSNotFound || paragraphRange.length == 0) {
     return;
   }
@@ -340,19 +385,19 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   });
 }
 
-// 程序化设置 selectedRange 后，主动显示系统选中文本菜单。
+// After programmatically setting selectedRange, proactively show the system's selected-text menu.
 - (void)showEditMenuForSelectedRange
 {
   UITextRange *selectedTextRange = self.selectedTextRange;
 
-  // 没有有效 selectedTextRange 时无法计算菜单锚点。
+  // The menu anchor can't be computed without a valid selectedTextRange.
   if (selectedTextRange == nil || selectedTextRange.empty) {
     return;
   }
 
   CGRect targetRect = [self firstRectForRange:selectedTextRange];
 
-  // firstRectForRange 可能返回无效 rect，无法定位菜单时不展示。
+  // firstRectForRange may return an invalid rect; don't show the menu when it can't be positioned.
   if (CGRectIsNull(targetRect) || CGRectIsEmpty(targetRect) || CGRectIsInfinite(targetRect)) {
     return;
   }
@@ -362,8 +407,10 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
       _selectionEditMenuInteraction = [[UIEditMenuInteraction alloc] initWithDelegate:self];
       [self addInteraction:_selectionEditMenuInteraction];
     }
-    // sourcePoint 用选区中点；targetRectForConfiguration: delegate 返回选区真实 frame，
-    // UIKit 据此把菜单显示在选区周围（上方/下方，空间允许），箭头指向选区，自动避让不盖住选中文本。
+    // sourcePoint uses the selection's midpoint; the targetRectForConfiguration: delegate returns the
+    // selection's real frame,
+    // and UIKit uses that to show the menu around the selection (above/below, whichever fits),
+    // pointing its arrow at the selection and automatically avoiding covering the selected text.
     UIEditMenuConfiguration *configuration =
         [UIEditMenuConfiguration configurationWithIdentifier:nil sourcePoint:CGPointMake(CGRectGetMidX(targetRect), CGRectGetMidY(targetRect))];
     [_selectionEditMenuInteraction presentEditMenuWithConfiguration:configuration];
@@ -374,12 +421,12 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   [menuController showMenuFromView:self rect:targetRect];
 }
 
-// JS 通过 ref.copyRange 触发复制时调用，把指定范围文本写入系统剪贴板。
+// Called when JS triggers copy via ref.copyRange: writes the text in the given range to the system clipboard.
 - (void)copyTextRangeWithStart:(NSInteger)start end:(NSInteger)end
 {
   NSRange range = [self clampedRangeWithStart:start end:end];
 
-  // range 无效时不写剪贴板。
+  // Don't write to the clipboard when the range is invalid.
   if (range.location == NSNotFound || range.length == 0) {
     return;
   }
@@ -387,12 +434,12 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   [UIPasteboard generalPasteboard].string = [self.text substringWithRange:range];
 }
 
-// 将 JS 传入的 start/end 裁剪到当前文本范围内，避免越界访问。
+// Clamp the start/end passed in from JS to the current text range, to avoid out-of-bounds access.
 - (NSRange)clampedRangeWithStart:(NSInteger)start end:(NSInteger)end
 {
   NSUInteger textLength = self.text.length;
 
-  // 起止位置非法或反向时返回无效 range。
+  // Return an invalid range when the start/end positions are illegal or reversed.
   if (start < 0 || end <= start || textLength == 0) {
     return NSMakeRange(NSNotFound, 0);
   }
@@ -400,7 +447,7 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   NSUInteger clampedStart = MIN((NSUInteger)start, textLength);
   NSUInteger clampedEnd = MIN((NSUInteger)end, textLength);
 
-  // 裁剪后没有实际长度时返回无效 range。
+  // Return an invalid range when there's no actual length left after clamping.
   if (clampedEnd <= clampedStart) {
     return NSMakeRange(NSNotFound, 0);
   }
@@ -410,7 +457,7 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
 
 #pragma mark - Custom Edit Menu
 
-// 构建 iOS 16+ 文本选中菜单，根据 showSystemMenuItems 决定是否保留系统 suggestedActions。
+// Build the iOS 16+ text-selection menu, keeping the system's suggestedActions or not based on showSystemMenuItems.
 - (UIMenu *)textView:(UITextView *)textView
     editMenuForTextInRange:(NSRange)range
           suggestedActions:(NSArray<UIMenuElement *> *)suggestedActions API_AVAILABLE(ios(16.0))
@@ -418,7 +465,7 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   return [self menuWithSuggestedActions:suggestedActions selectedRange:range];
 }
 
-// 程序化展示 UIEditMenuInteraction 时也复用同一套自定义菜单逻辑。
+// The same custom-menu logic is reused when programmatically presenting UIEditMenuInteraction.
 - (UIMenu *)editMenuInteraction:(UIEditMenuInteraction *)interaction
            menuForConfiguration:(UIEditMenuConfiguration *)configuration
                suggestedActions:(NSArray<UIMenuElement *> *)suggestedActions API_AVAILABLE(ios(16.0))
@@ -426,24 +473,29 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   return [self menuWithSuggestedActions:suggestedActions selectedRange:self.selectedRange];
 }
 
-// targetRectForConfiguration 返回选区真实 frame，UIKit 据此把菜单显示在选区周围（上方/下方，
-// 空间允许），箭头指向选区，自动避让不盖住选中文本。首次 present 和 updateVisibleMenuPosition
-// 都查询此方法。默认（未实现）用 sourcePoint 为中心的零尺寸矩形，菜单直接盖在 sourcePoint 上。
+// targetRectForConfiguration returns the selection's real frame; UIKit uses it to show the menu
+// around the selection (above/below,
+// whichever fits), pointing its arrow at the selection and automatically avoiding covering the
+// selected text. Both the initial present and
+// updateVisibleMenuPosition query this method. The default (when unimplemented) uses a zero-size
+// rect centered on sourcePoint, so the menu sits directly on top of sourcePoint.
 - (CGRect)editMenuInteraction:(UIEditMenuInteraction *)interaction
    targetRectForConfiguration:(UIEditMenuConfiguration *)configuration API_AVAILABLE(ios(16.0))
 {
   UITextRange *selectedTextRange = self.selectedTextRange;
 
-  // 没有有效选区时返回 CGRectNull，UIKit 回退到默认（sourcePoint）。
+  // Return CGRectNull when there's no valid selection; UIKit falls back to the default (sourcePoint).
   if (selectedTextRange == nil || selectedTextRange.empty) {
     return CGRectNull;
   }
 
-  // selectionRectsForRange: 返回选区跨所有行的矩形数组，取 union 得到完整选区 frame。
-  // firstRectForRange: 对多行选区只返回第一行 rect，菜单按第一行定位会压到下方选区行 + 挡末尾手柄。
+  // selectionRectsForRange: returns an array of rects spanning every line of the selection; the
+  // union of these gives the full selection frame.
+  // firstRectForRange: only returns the first line's rect for a multi-line selection, so
+  // positioning the menu off it would overlap the selection lines below it and block the trailing handle.
   NSArray<UITextSelectionRect *> *selectionRects = [self selectionRectsForRange:selectedTextRange];
 
-  // 没有 selection rect 时回退到 firstRectForRange。
+  // Fall back to firstRectForRange when there are no selection rects.
   if (selectionRects.count == 0) {
     CGRect fallback = [self firstRectForRange:selectedTextRange];
     return CGRectIsNull(fallback) || CGRectIsEmpty(fallback) || CGRectIsInfinite(fallback) ? CGRectNull : fallback;
@@ -452,14 +504,14 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   CGRect unionRect = CGRectNull;
   for (UITextSelectionRect *selectionRect in selectionRects) {
     CGRect rect = selectionRect.rect;
-    // 跳过无效 rect，避免污染 union。
+    // Skip invalid rects, to avoid polluting the union.
     if (CGRectIsNull(rect) || CGRectIsEmpty(rect) || CGRectIsInfinite(rect)) {
       continue;
     }
     unionRect = CGRectIsNull(unionRect) ? rect : CGRectUnion(unionRect, rect);
   }
 
-  // union 无效时回退到 firstRectForRange。
+  // Fall back to firstRectForRange when the union is invalid.
   if (CGRectIsNull(unionRect) || CGRectIsEmpty(unionRect) || CGRectIsInfinite(unionRect)) {
     CGRect fallback = [self firstRectForRange:selectedTextRange];
     return CGRectIsNull(fallback) || CGRectIsEmpty(fallback) || CGRectIsInfinite(fallback) ? CGRectNull : fallback;
@@ -468,30 +520,34 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   return unionRect;
 }
 
-// editMenuInteraction:didEndForConfiguration 在系统菜单 dismiss 时触发。
-// 用户点空白/点其他气泡时系统菜单自动 dismiss，此时清掉选区，实现"菜单消失即退出选中"。
-// 这比 FlatList onTouchStart 可靠——FlatList 的 touch 不一定冒泡到父 View。
+// editMenuInteraction:didEndForConfiguration fires when the system menu is dismissed.
+// The system menu auto-dismisses when the user taps blank space or another bubble; at that point
+// the selection is cleared, giving the behavior "menu gone means selection exited".
+// This is more reliable than FlatList's onTouchStart — a FlatList's touch doesn't always bubble up
+// to the parent View.
 - (void)editMenuInteraction:(UIEditMenuInteraction *)interaction
   didEndForConfiguration:(UIEditMenuConfiguration *)configuration API_AVAILABLE(ios(16.0))
 {
   [self clearTextSelection];
 }
 
-// 统一组装系统菜单项和 JS 传入的自定义菜单项，避免不同入口菜单表现不一致。
+// Assemble the system menu items and the custom menu items passed from JS in one place, so
+// different entry points don't produce inconsistent menu behavior.
 - (UIMenu *)menuWithSuggestedActions:(NSArray<UIMenuElement *> *)suggestedActions
                        selectedRange:(NSRange)selectedRange API_AVAILABLE(ios(16.0))
 {
   NSMutableArray<UIMenuElement *> *children =
       self.showSystemMenuItems ? [suggestedActions mutableCopy] : [NSMutableArray new];
 
-  // 如果系统菜单项被保留但 UIKit 未提供 suggestedActions，则从空数组开始构建菜单。
+  // If system menu items are kept but UIKit didn't provide suggestedActions, build the menu starting
+  // from an empty array.
   if (children == nil) {
     children = [NSMutableArray new];
   }
 
   NSArray<UIMenuElement *> *customActions = [self customMenuActionsForSelectedRange:selectedRange];
 
-  // 如果 JS 传入了可用菜单项，则把自定义项追加到当前菜单列表后面。
+  // If JS passed in usable menu items, append the custom items to the end of the current menu list.
   if (customActions.count > 0) {
     [children addObjectsFromArray:customActions];
   }
@@ -499,7 +555,7 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   return [UIMenu menuWithChildren:children];
 }
 
-// 将 JS menuItems 转成 UIKit 的 UIAction，点击时回传当前选中文本和范围。
+// Convert JS menuItems into UIKit UIActions; on tap, report back the currently selected text and range.
 - (NSArray<UIMenuElement *> *)customMenuActionsForSelectedRange:(NSRange)range API_AVAILABLE(ios(16.0))
 {
   NSMutableArray<UIMenuElement *> *actions = [NSMutableArray new];
@@ -509,7 +565,7 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
     NSString *itemId = [item[@"id"] isKindOfClass:[NSString class]] ? item[@"id"] : nil;
     NSString *title = [item[@"title"] isKindOfClass:[NSString class]] ? item[@"title"] : nil;
 
-    // 跳过缺少 id 或 title 的菜单项，避免 UIKit 创建不可识别的 action。
+    // Skip menu items missing an id or title, to avoid UIKit creating an unrecognizable action.
     if (itemId.length == 0 || title.length == 0) {
       continue;
     }
@@ -518,7 +574,9 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
                                            image:nil
                                       identifier:itemId
                                          handler:^(__unused UIAction *selectedAction) {
-                                           // 点击菜单时读取最新选区，保证拖动控制手柄后的范围能正确回传。
+                                           // Read the latest selection at the moment the menu item
+                                           // is tapped, ensuring the range is reported correctly
+                                           // after handles have been dragged.
                                            [weakSelf handleCustomMenuItem:item selectedRange:range];
                                          }];
     [actions addObject:action];
@@ -527,17 +585,17 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   return actions;
 }
 
-// 处理自定义菜单点击，把 action id、标题、选中文本和选区范围发送给 JS。
+// Handle a custom menu tap: send the action id, title, selected text, and selection range to JS.
 - (void)handleCustomMenuItem:(NSDictionary *)item selectedRange:(NSRange)fallbackRange
 {
-  // 如果 JS 没有监听 onMenuAction，则只关闭原生菜单动作，不执行额外业务。
+  // If JS isn't listening to onMenuAction, just dismiss the native menu action without doing anything else.
   if (!self.onMenuAction) {
     return;
   }
 
   NSRange selectedRange = [self validSelectedRangeWithFallbackRange:fallbackRange];
 
-  // 如果当前选区无效，则不向 JS 发送没有文本上下文的菜单事件。
+  // Don't send a menu event to JS without text context if the current selection is invalid.
   if (selectedRange.location == NSNotFound || selectedRange.length == 0) {
     return;
   }
@@ -554,24 +612,27 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
     @"selectionEnd" : @(NSMaxRange(selectedRange)),
   });
 
-  // 菜单回调发给 JS 后再按需清空，确保业务侧能拿到点击时的最终选区。
+  // Clear the selection (if configured) only after the menu callback has been sent to JS, so the
+  // app side can still read the final selection at tap time.
   if (self.clearSelectionOnMenuAction) {
     [self clearTextSelection];
   }
 }
 
-// 取得点击菜单瞬间的有效选区，当前 selectedRange 不可用时使用菜单创建时的范围。
+// Get the valid selection at the moment the menu is tapped; if the current selectedRange isn't
+// usable, fall back to the range captured when the menu was created.
 - (NSRange)validSelectedRangeWithFallbackRange:(NSRange)fallbackRange
 {
   NSRange selectedRange = self.selectedRange;
   NSUInteger textLength = self.text.length;
 
-  // 如果当前 selectedRange 已经越界，则使用 UIKit 生成菜单时提供的 range。
+  // If the current selectedRange is already out of bounds, use the range UIKit provided when it
+  // generated the menu.
   if (selectedRange.location == NSNotFound || NSMaxRange(selectedRange) > textLength || selectedRange.length == 0) {
     selectedRange = fallbackRange;
   }
 
-  // 如果 fallbackRange 也不可用，则返回 NSNotFound 表示没有可执行的选区。
+  // If fallbackRange isn't usable either, return NSNotFound to indicate there's no actionable selection.
   if (selectedRange.location == NSNotFound || NSMaxRange(selectedRange) > textLength || selectedRange.length == 0) {
     return NSMakeRange(NSNotFound, 0);
   }
@@ -588,7 +649,7 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
   [self updateNativeSelectableState];
 }
 
-// 返回 RN 记录的 selectable 状态，和 UITextView 的 isSelectable getter 保持一致。
+// Return the selectable state as recorded by RN, keeping it consistent with UITextView's isSelectable getter.
 - (BOOL)isSelectable
 {
   return _rnSelectable;
@@ -596,10 +657,10 @@ static __weak RCTSelectableRichTextView *RCTActiveSelectableRichTextView = nil;
 
 - (void)setTextStorage:(NSTextStorage *)textStorage
 {
-  // 用 attributedText 设置，UITextView 会自行构建内部 TextKit 管线
+  // Set via attributedText; UITextView builds its internal TextKit pipeline on its own
   self.attributedText = textStorage;
 
-  // 确保 layoutManager 的 usesFontLeading 与 ShadowView 测量一致
+  // Ensure layoutManager's usesFontLeading matches the ShadowView measurement
   self.layoutManager.usesFontLeading = NO;
 }
 

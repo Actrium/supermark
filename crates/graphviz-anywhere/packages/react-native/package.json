@@ -84,7 +84,7 @@
     ]
   },
   "codegenConfig": {
-    "name": "GraphvizAnywhereNativeSpec",
+    "name": "GraphvizNativeSpec",
     "type": "modules",
     "jsSrcsDir": "src",
     "android": {

@@ -29,9 +29,9 @@ feature-depth = 1
 #     (dynamic-link / wasm-import boundary; no source-level mixing with
 #     Apache-2.0 files).
 #   - GPL-* (non-LGPL)   → REJECTED. Add an exception only with an
-#     explicit decision recorded in LICENSE_COMPATIBILITY.md.
+#     explicit decision recorded in LICENSE_COMPATIBILITY.zh.md.
 #
-# See docs/architecture/LICENSE_COMPATIBILITY.md for the rationale.
+# See docs/architecture/LICENSE_COMPATIBILITY.zh.md for the rationale.
 [licenses]
 version = 2
 confidence-threshold = 0.92

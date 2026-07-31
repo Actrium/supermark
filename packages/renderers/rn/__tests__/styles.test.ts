@@ -6,29 +6,31 @@ const stylesModule = await import('../src/styles');
 const { defaultStyles, darkThemeStyles, mergeStyles, themeBackground } = stylesModule;
 
 /**
- * 画布背景职责边界测试。
+ * Tests for the canvas-background responsibility boundary.
  *
- * 契约:组件不在 root 上绘制画布背景 —— 画布由宿主提供。
- * 库只导出与内置主题前景色配套的推荐画布色 (themeBackground) 供宿主选用。
+ * Contract: the component does not paint a canvas background on root — the
+ * canvas is provided by the host. The library only exports the recommended
+ * canvas colors that pair with the built-in theme foreground colors
+ * (themeBackground) for the host to use.
  */
 describe('theme canvas ownership', () => {
   describe('themeBackground', () => {
-    it('导出与内置主题前景色配套的推荐画布色', () => {
+    it('exports recommended canvas colors that pair with the built-in theme foreground colors', () => {
       expect(themeBackground.dark).toBe('#0d1117');
       expect(themeBackground.light).toBe('#ffffff');
     });
   });
 
   describe('darkThemeStyles', () => {
-    it('不在 root 上自带画布背景 (画布由宿主提供)', () => {
+    it('does not carry its own canvas background on root (the canvas is provided by the host)', () => {
       expect(darkThemeStyles.root).toBeUndefined();
     });
 
-    it('已移除 lightThemeStyles (light 等同默认主题)', () => {
+    it('has removed lightThemeStyles (light is equivalent to the default theme)', () => {
       expect((stylesModule as Record<string, unknown>).lightThemeStyles).toBeUndefined();
     });
 
-    it('保留深色友好的前景色与元素装饰色', () => {
+    it('retains dark-friendly foreground colors and decoration colors', () => {
       expect(darkThemeStyles.paragraph?.color).toBe('#e0e0e0');
       expect(darkThemeStyles.codeBlock?.backgroundColor).toBe('#2d2d2d');
       expect(darkThemeStyles.tableHeaderCell?.backgroundColor).toBe('#2d2d2d');
@@ -36,17 +38,17 @@ describe('theme canvas ownership', () => {
   });
 
   describe('mergeStyles', () => {
-    it('无自定义样式时回退到默认样式', () => {
+    it('falls back to the default styles when no custom styles are given', () => {
       const merged = mergeStyles(undefined);
       expect(merged.paragraph).toEqual(defaultStyles.paragraph);
     });
 
-    it('合并后 root 不携带画布背景', () => {
+    it('after merging, root does not carry a canvas background', () => {
       const merged = mergeStyles(undefined);
       expect((merged.root as { backgroundColor?: string }).backgroundColor).toBeUndefined();
     });
 
-    it('用户自定义样式覆盖默认值,且保留未覆盖字段', () => {
+    it('user custom styles override the defaults while keeping fields that were not overridden', () => {
       const merged = mergeStyles({ paragraph: { color: '#ff0000' } });
       expect(merged.paragraph.color).toBe('#ff0000');
       expect(merged.paragraph.lineHeight).toBe(defaultStyles.paragraph.lineHeight);

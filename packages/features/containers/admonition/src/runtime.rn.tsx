@@ -1,7 +1,7 @@
 /**
- * Admonition React Native 渲染器
+ * Admonition React Native renderer
  *
- * 实现 ContainerRNRenderer 接口
+ * Implements the ContainerRNRenderer interface
  *
  * @packageDocumentation
  */
@@ -16,7 +16,7 @@ import type { ContainerRNRenderArgs, FeatureConfig } from '@supramark/core';
 type RNNode = React.ComponentProps<typeof Text>['children'];
 
 /**
- * RN 渲染器 for :::note, :::tip, :::warning 等
+ * RN renderer for :::note, :::tip, :::warning etc.
  */
 export function renderAdmonitionContainerRN({
   node,
@@ -29,7 +29,7 @@ export function renderAdmonitionContainerRN({
   const viewStyle = styles.listItem as StyleProp<ViewStyle>;
   const textStyle = styles.listItemText as StyleProp<TextStyle>;
 
-  // Feature enable 检查：如果禁用，退化为普通样式
+  // Feature enable check: fall back to plain styling when disabled
   const isEnabled =
     !config || !config.features || config.features.length === 0
       ? true

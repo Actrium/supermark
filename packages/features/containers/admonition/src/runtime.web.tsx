@@ -1,7 +1,7 @@
 /**
- * Admonition Web 渲染器
+ * Admonition Web renderer
  *
- * 实现 ContainerWebRenderer 接口
+ * Implements the ContainerWebRenderer interface
  *
  * @packageDocumentation
  */
@@ -10,7 +10,7 @@ import React from 'react';
 import type { ContainerWebRenderArgs, FeatureConfig } from '@supramark/core';
 
 /**
- * Web 渲染器 for :::note, :::tip, :::warning 等
+ * Web renderer for :::note, :::tip, :::warning etc.
  */
 export function renderAdmonitionContainerWeb({
   node,
@@ -22,7 +22,7 @@ export function renderAdmonitionContainerWeb({
   const kind = (node?.data?.kind as string | undefined) ?? 'note';
   const title = node?.data?.title as React.ReactNode;
 
-  // Feature enable 检查：如果禁用，退化为普通段落
+  // Feature enable check: fall back to a plain paragraph when disabled
   const isEnabled =
     !config || !config.features || config.features.length === 0
       ? true

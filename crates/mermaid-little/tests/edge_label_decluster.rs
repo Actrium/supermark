@@ -19,6 +19,10 @@
 //! bind. A red zero-overlap result there always means a regression, never
 //! layout drift.
 
+// cjk-allow-file: CJK strings below are real test input for the CJK label
+// width floor (issue #93) — they exercise actual glyph-width measurement and
+// must not be translated to ASCII.
+
 #![cfg(feature = "metrics-ttf-parser")]
 
 use mermaid_little::{convert_with_id, convert_with_options, RenderOptions};

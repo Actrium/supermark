@@ -10,10 +10,11 @@ export interface SupramarkContainerToken {
 }
 
 /**
- * 容器语法处理上下文。
+ * Container syntax processing context.
  *
- * AST v2 的容器扫描已迁移到 Rust `supramark-markdown`。该上下文只保留给
- * 旧 feature runtime 编译和后处理迁移使用。
+ * Container scanning for AST v2 has moved to the Rust `supramark-markdown` crate.
+ * This context is kept only so old feature runtimes still compile, and for
+ * post-processing migration use.
  */
 export interface ContainerProcessorContext {
   config?: SupramarkConfig;
@@ -28,10 +29,10 @@ export interface ContainerHookContext extends ContainerProcessorContext {
 }
 
 export interface ContainerHook {
-  /** 容器名称，对应 :::name 中的 name。 */
+  /** The container name, corresponding to `name` in :::name. */
   name: string;
 
-  /** 历史字段；AST v2 使用节点上的 `mode` 表达透明/不透明。 */
+  /** A legacy field; AST v2 expresses transparent/opaque via the node's `mode`. */
   opaque?: boolean;
 
   onOpen: (ctx: ContainerHookContext) => void;
@@ -70,7 +71,7 @@ export function createContainerTokenProcessor(
 }
 
 /**
- * 从历史 token.map 信息中提取容器内部原始文本。
+ * Extract the container's raw inner text from legacy token.map information.
  */
 export function extractContainerInnerText(
   token: SupramarkContainerToken,

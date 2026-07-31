@@ -2,7 +2,7 @@
 #
 # This file is the single source of truth for all Rust crates in the
 # repository. Sub-tree merges (per ADR-003 in
-# docs/architecture/LICENSE_COMPATIBILITY.md) bring in upstream history
+# docs/architecture/LICENSE_COMPATIBILITY.zh.md) bring in upstream history
 # under crates/<name>/; their inner [workspace] declarations are
 # replaced by membership listed below — see each
 # crates/<name>/UPSTREAM.md for the rationale.
@@ -46,7 +46,7 @@ exclude = []
 # first-party crates worth aligning. Until then, keep this minimal so
 # upstream-merged crates continue to resolve their own settings.
 [workspace.metadata.supramark]
-plan = "docs/architecture/LICENSE_COMPATIBILITY.md"
+plan = "docs/architecture/LICENSE_COMPATIBILITY.zh.md"
 
 [profile.release]
 opt-level = "z"

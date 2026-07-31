@@ -1,10 +1,10 @@
-// AST 类型定义
+// AST type definitions
 export * from './ast.js';
 
 // Shared diagram streaming state used by Web and React Native renderers.
 export * from './diagram-render-state.js';
 
-// 插件系统类型
+// Plugin system types
 export type {
   SupramarkParseContext,
   SupramarkPlugin,
@@ -12,13 +12,13 @@ export type {
   SupramarkPreset,
 } from './plugin.js';
 
-// Feature Interface - 功能扩展接口系统
+// Feature Interface - the feature extension interface system
 export * from './feature.js';
 
 // Diagram Feature factory (defineDiagramFeature spec helper)
 export * from './diagram-feature.js';
 
-// 语法家族运行时 hook（供 Feature 使用）
+// Syntax family runtime hooks (for use by Features)
 export {
   type ContainerProcessorContext,
   type ContainerHookContext,
@@ -35,10 +35,10 @@ export {
   extractInputInnerText,
 } from './syntax/input.js';
 
-// container 扩展规范（manifest + params parsing）
+// Container extension spec (manifest + params parsing)
 export * from './container-extension.js';
 
-// ContainerFeature 统一接口（精简版）
+// The unified ContainerFeature interface (lean version)
 export {
   type ContainerFeature,
   type ContainerWebRenderArgs,
@@ -51,34 +51,36 @@ export {
 /**
  * AST v2 parser facade.
  *
- * 内部使用 Rust `supramark-markdown` parser，公开合同为
- * `source -> SupramarkRootNode`。
+ * Internally uses the Rust `supramark-markdown` parser; the public contract is
+ * `source -> SupramarkRootNode`.
  *
- * @param source - Markdown 源文本
- * @param options - 解析选项（可选 AST 后处理插件）
+ * @param source - the Markdown source text
+ * @param options - parse options (optional AST post-processing plugins)
  * @returns Supramark AST v2
  */
 export { parse, expandOpaqueContainers } from './plugin.js';
 
 /**
- * 预设（Presets）
+ * Presets.
  *
- * 预设是预配置的选项组合，用于快速设置常见的解析配置。
+ * A preset is a pre-configured bundle of options, used to quickly set up a common
+ * parsing configuration.
  *
- * @param markdown - Markdown 源文本
- * @param options - 解析选项（可选插件）
- * @returns Supramark AST
+ * @param markdown - the Markdown source text
+ * @param options - parse options (optional plugins)
+ * @returns the Supramark AST
  */
 export { presetDefault, presetGFM } from './plugin.js';
 
 /**
- * 缓存工具
+ * Cache utilities.
  *
- * 提供 LRU 缓存实现，用于缓存图表渲染结果等计算密集型操作的结果。
+ * Provides an LRU cache implementation, used to cache the results of
+ * compute-intensive operations such as diagram rendering.
  *
- * @param maxSize - 最大缓存条目数
- * @param ttl - 过期时间（毫秒）
- * @returns LRU 缓存实例
+ * @param maxSize - the maximum number of cache entries
+ * @param ttl - the expiration time (milliseconds)
+ * @returns an LRU cache instance
  */
 export { LRUCache, createCacheKey, simpleHash, type LRUCacheOptions } from './cache.js';
 

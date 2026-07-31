@@ -12,7 +12,8 @@
 
 using namespace facebook::react;
 
-// RCTMenuItemsFromProps 把 C++ props 中的菜单项转换为 UIKit 菜单消费的 NSDictionary 数组。
+// RCTMenuItemsFromProps converts the menu items in the C++ props into the NSDictionary array
+// consumed by UIKit menus.
 static NSArray<NSDictionary *> *RCTMenuItemsFromProps(const std::vector<SelectableRichTextMenuItem> &menuItems)
 {
   NSMutableArray<NSDictionary *> *items = [NSMutableArray new];
@@ -26,10 +27,11 @@ static NSArray<NSDictionary *> *RCTMenuItemsFromProps(const std::vector<Selectab
   return items;
 }
 
-// RCTSelectableRichTextReadRangeCommandArgs 校验并读取 selectRange/copyRange 的 start/end 参数。
+// RCTSelectableRichTextReadRangeCommandArgs validates and reads the start/end arguments for
+// selectRange/copyRange.
 static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, const NSArray *args, NSInteger *start, NSInteger *end)
 {
-  // range command 必须传入 start/end 两个数字参数。
+  // A range command must be passed exactly two numeric arguments: start and end.
   if (args.count != 2) {
     RCTLogError(@"SelectableRichText command %@ received %d arguments, expected 2.", commandName, (int)args.count);
     return NO;
@@ -38,13 +40,13 @@ static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, con
   NSObject *startArg = args[0];
   NSObject *endArg = args[1];
 
-  // start 参数不是 NSNumber 时不能安全转换为 UITextRange。
+  // Can't safely convert to a UITextRange when start isn't an NSNumber.
   if (![startArg isKindOfClass:[NSNumber class]]) {
     RCTLogError(@"SelectableRichText command %@ expected start to be a number.", commandName);
     return NO;
   }
 
-  // end 参数不是 NSNumber 时不能安全转换为 UITextRange。
+  // Can't safely convert to a UITextRange when end isn't an NSNumber.
   if (![endArg isKindOfClass:[NSNumber class]]) {
     RCTLogError(@"SelectableRichText command %@ expected end to be a number.", commandName);
     return NO;
@@ -130,12 +132,12 @@ static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, con
 
 - (void)handleCommand:(const NSString *)commandName args:(const NSArray *)args
 {
-  // selectRange 命令选中 JS 指定的 UTF-16 文本范围。
+  // The selectRange command selects the UTF-16 text range given by JS.
   if ([commandName isEqualToString:@"selectRange"]) {
     NSInteger start = 0;
     NSInteger end = 0;
 
-    // 参数不合法时不改变当前原生选区。
+    // Leave the current native selection unchanged when the arguments are invalid.
     if (!RCTSelectableRichTextReadRangeCommandArgs((NSString *)commandName, args, &start, &end)) {
       return;
     }
@@ -144,9 +146,9 @@ static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, con
     return;
   }
 
-  // selectParagraphAt 命令根据本地坐标命中段落并选中。
+  // The selectParagraphAt command hit-tests the paragraph at the local coordinates and selects it.
   if ([commandName isEqualToString:@"selectParagraphAt"]) {
-    // selectParagraphAt 必须传入 x/y 两个数字参数。
+    // selectParagraphAt must be passed exactly two numeric arguments: x and y.
     if (args.count != 2) {
       RCTLogError(@"SelectableRichText command selectParagraphAt received %d arguments, expected 2.", (int)args.count);
       return;
@@ -155,7 +157,7 @@ static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, con
     NSObject *xArg = args[0];
     NSObject *yArg = args[1];
 
-    // x/y 不是 NSNumber 时无法转换为坐标。
+    // Can't convert to coordinates when x/y aren't NSNumbers.
     if (![xArg isKindOfClass:[NSNumber class]] || ![yArg isKindOfClass:[NSNumber class]]) {
       RCTLogError(@"SelectableRichText command selectParagraphAt expected x/y to be numbers.");
       return;
@@ -167,9 +169,9 @@ static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, con
     return;
   }
 
-  // clearSelection 命令清理当前原生选区。
+  // The clearSelection command clears the current native selection.
   if ([commandName isEqualToString:@"clearSelection"]) {
-    // clearSelection 不接受参数，避免 JS 误传导致行为歧义。
+    // clearSelection takes no arguments, so a stray argument from JS can't create ambiguous behavior.
     if (args.count != 0) {
       RCTLogError(@"SelectableRichText command %@ received %d arguments, expected 0.", commandName, (int)args.count);
       return;
@@ -179,12 +181,12 @@ static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, con
     return;
   }
 
-  // copyRange 命令复制 JS 指定的 UTF-16 文本范围到系统剪贴板。
+  // The copyRange command copies the UTF-16 text range given by JS to the system clipboard.
   if ([commandName isEqualToString:@"copyRange"]) {
     NSInteger start = 0;
     NSInteger end = 0;
 
-    // 参数不合法时不覆盖系统剪贴板。
+    // Don't overwrite the system clipboard when the arguments are invalid.
     if (!RCTSelectableRichTextReadRangeCommandArgs((NSString *)commandName, args, &start, &end)) {
       return;
     }
@@ -198,12 +200,13 @@ static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, con
 
 #pragma mark - State
 
-// updateSelectableRichTextStorageWithState 把 Fabric Paragraph state 转成 UITextView 可选文本存储。
+// updateSelectableRichTextStorageWithState converts the Fabric Paragraph state into UITextView's
+// selectable text storage.
 - (void)updateSelectableRichTextStorageWithState:(const State::Shared &)state
 {
   auto paragraphState = std::static_pointer_cast<const SelectableRichTextShadowNode::ConcreteState>(state);
 
-  // Fabric 还没下发 Paragraph state 时，先清空 UITextView 内容。
+  // Clear the UITextView content first if Fabric hasn't delivered a Paragraph state yet.
   if (!paragraphState) {
     RCTLogInfo(@"[SelectableRichText] updateState: nil paragraphState");
     [_selectableTextView setTextStorage:[[NSTextStorage alloc] initWithString:@""]];
@@ -219,7 +222,7 @@ static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, con
 
 #pragma mark - Events
 
-// configureEventHandlers 把 UIKit 文本交互回调桥接到 Fabric C++ event emitter。
+// configureEventHandlers bridges UIKit text-interaction callbacks to the Fabric C++ event emitter.
 - (void)configureEventHandlers
 {
   __weak RCTSelectableRichTextComponentView *weakSelf = self;
@@ -233,12 +236,12 @@ static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, con
   };
 }
 
-// emitMenuAction 发送自定义菜单点击事件。
+// emitMenuAction sends the custom menu tap event.
 - (void)emitMenuAction:(NSDictionary *)event
 {
   auto eventEmitter = std::static_pointer_cast<const SelectableRichTextEventEmitter>(_eventEmitter);
 
-  // 没有 JS 监听或 eventEmitter 已回收时不发送事件。
+  // Don't send the event when there's no JS listener or the eventEmitter has already been recycled.
   if (!eventEmitter) {
     return;
   }
@@ -252,12 +255,12 @@ static BOOL RCTSelectableRichTextReadRangeCommandArgs(NSString *commandName, con
   eventEmitter->onMenuAction(value);
 }
 
-// emitTextLongPress 发送原生长按命中的段落和菜单锚点事件。
+// emitTextLongPress sends the paragraph and menu-anchor event hit by the native long press.
 - (void)emitTextLongPress:(NSDictionary *)event
 {
   auto eventEmitter = std::static_pointer_cast<const SelectableRichTextEventEmitter>(_eventEmitter);
 
-  // 没有 JS 监听或 eventEmitter 已回收时不发送事件。
+  // Don't send the event when there's no JS listener or the eventEmitter has already been recycled.
   if (!eventEmitter) {
     return;
   }

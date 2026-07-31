@@ -11,20 +11,20 @@ import { makeFeatureConfigHelpers } from '@supramark/core';
 /**
  * Emoji Feature
  *
- * Emoji / 短代码支持（:smile: → 😄）的规范定义。
+ * Canonical definition of Emoji / shortcode support (:smile: → 😄).
  *
- * - 由 supramark-markdown AST v2 parser 将 `:smile:` 等短代码转换为 Unicode emoji；
- * - supramark AST 不引入单独的 emoji 节点，直接体现在 `text.value` 中；
- * - 解析和渲染逻辑由 @supramark/core / RN / Web 渲染器负责。
+ * - The supramark-markdown AST v2 parser converts shortcodes such as `:smile:` into Unicode emoji;
+ * - supramark AST does not introduce a separate emoji node — it's embedded directly in `text.value`;
+ * - Parsing and rendering logic is handled by @supramark/core / the RN / Web renderers.
  *
  * @example
  * ```markdown
- * 支持 GitHub 风格短代码：
+ * GitHub-style shortcodes are supported:
  *
  * - :smile: :joy: :wink:
  * - :rocket: :tada: :warning:
  *
- * 也可以直接输入原生 Emoji 😄🚀🎉。
+ * Native Emoji characters 😄🚀🎉 can also be typed directly.
  * ```
  */
 export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
@@ -33,15 +33,13 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
     name: 'Emoji',
     version: '0.1.0',
     author: 'Supramark Team',
-    description: 'Emoji / 短代码支持（:smile: → 😄）',
+    description: 'Emoji / shortcode support (:smile: → 😄)',
     license: 'Apache-2.0',
     tags: ['emoji', 'shortcode'],
     syntaxFamily: 'main',
   },
-  // Emoji - 无依赖（独立的字符替换功能）
-  // dependencies: [] - 不显式声明空依赖
-  // Emoji - 无依赖（独立的字符替换功能）
-  // dependencies: [] - 不显式声明空依赖
+  // Emoji - no dependencies (a standalone character-substitution feature)
+  // dependencies: [] - do not declare an empty dependency array explicitly
 
   syntax: {
     ast: {
@@ -53,12 +51,12 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
         fields: {
           type: {
             type: 'string',
-            description: '节点类型，固定为 "text"。',
+            description: 'Node type, always "text".',
           },
           value: {
             type: 'string',
             description:
-              '文本内容，其中的 Emoji 已经由 AST v2 parser 从短代码转换为 Unicode 字符。',
+              'Text content, where any Emoji have already been converted from shortcodes to Unicode characters by the AST v2 parser.',
           },
         },
       },
@@ -71,75 +69,75 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
       examples: [
         {
           type: 'text',
-          value: '这是一个包含 Emoji 😄🚀 的文本。',
+          value: 'This is a text containing an Emoji 😄🚀.',
         } as SupramarkTextNode,
       ],
     },
 
-    // 可选：验证规则
+    // Optional: validation rules
     // validator: {
     //   validate: (node) => {
-    //     // TODO: 添加验证逻辑
+    //     // TODO: add validation logic
     //     return { valid: true, errors: [] };
     //   }
     // },
   },
 
-  // 渲染器定义
+  // Renderer definitions
   renderers: {
-    // Web 平台渲染器
+    // Web platform renderer
     web: {
       platform: 'web',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // Web 端使用 Unicode 字符 + 可选 Twemoji CDN
+        // On Web, uses Unicode characters + an optional Twemoji CDN
         needsClientScript: false,
-        // 无需 Worker
+        // No worker needed
         needsWorker: false,
-        // 无需缓存
+        // No cache needed
         needsCache: false,
       },
 
-      // 依赖的外部库（可选）
+      // External library dependencies (optional)
       dependencies: [
         {
           name: 'twemoji',
           version: '^14.0.2',
           type: 'cdn',
           cdnUrl: 'https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js',
-          optional: true, // 可选依赖，默认使用系统 emoji
+          optional: true, // optional dependency, defaults to system emoji
         },
       ],
     },
 
-    // React Native 平台渲染器
+    // React Native platform renderer
     rn: {
       platform: 'rn',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // RN 端使用系统 emoji（Unicode 字符）
+        // On RN, uses system emoji (Unicode characters)
         needsWorker: false,
-        // 无需缓存
+        // No cache needed
         needsCache: false,
       },
 
-      // 无外部依赖（使用系统 emoji）
+      // No external dependencies (uses system emoji)
       dependencies: [],
     },
   },
 
-  // 使用示例
+  // Usage examples
   examples: emojiExamples,
 
-  // 测试定义
+  // Test definitions
   testing: {
-    // Markdown → AST 语法测试
+    // Markdown → AST syntax tests
     syntaxTests: {
       cases: [
         {
-          name: '解析 emoji 短代码为 Unicode',
+          name: 'parses an emoji shortcode into Unicode',
           input: ':smile:',
           expected: {
             type: 'text',
@@ -151,7 +149,7 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
           },
         },
         {
-          name: '解析多个 emoji 短代码',
+          name: 'parses multiple emoji shortcodes',
           input: ':rocket: :tada: :heart:',
           expected: {
             type: 'text',
@@ -163,11 +161,11 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
           },
         },
         {
-          name: '解析文本中的 emoji',
-          input: '我喜欢 :coffee: 和 :tea:',
+          name: 'parses an emoji within text',
+          input: 'I like :coffee: and :tea:',
           expected: {
             type: 'text',
-            value: '我喜欢 ☕ 和 🍵',
+            value: 'I like ☕ and 🍵',
           } as SupramarkTextNode,
           options: {
             typeOnly: false,
@@ -177,11 +175,11 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
       ],
     },
 
-    // AST → 渲染输出测试
+    // AST → render output tests
     renderTests: {
       web: [
         {
-          name: 'Web 渲染 emoji 文本',
+          name: 'Web renders emoji text',
           input: {
             type: 'text',
             value: '😄🚀🎉',
@@ -192,7 +190,7 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
       ],
       rn: [
         {
-          name: 'RN 渲染 emoji 文本',
+          name: 'RN renders emoji text',
           input: {
             type: 'text',
             value: '❤️✨🌟',
@@ -203,12 +201,12 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
       ],
     },
 
-    // 端到端集成测试
+    // End-to-end integration tests
     integrationTests: {
       cases: [
         {
-          name: 'Emoji 端到端：短代码转换',
-          input: '测试 :smile: 和 :rocket:',
+          name: 'Emoji end-to-end: shortcode conversion',
+          input: 'Test :smile: and :rocket:',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -224,8 +222,8 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
           platforms: ['web', 'rn'],
         },
         {
-          name: 'Emoji 端到端：原生 emoji',
-          input: '直接使用 😄🚀',
+          name: 'Emoji end-to-end: native emoji',
+          input: 'Using directly 😄🚀',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -240,7 +238,7 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
       ],
     },
 
-    // 覆盖率要求
+    // Coverage requirements
     coverageRequirements: {
       statements: 80,
       branches: 75,
@@ -249,45 +247,45 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
     },
   },
 
-  // 文档定义
+  // Documentation definitions
   documentation: {
     readme: `
 # Emoji Feature
 
-为 Supramark 提供 Emoji 短代码支持。
+Provides Emoji shortcode support for Supramark.
 
-## 功能
+## Features
 
-- GitHub 风格短代码
-- 原生 Emoji
+- GitHub-style shortcodes
+- Native Emoji
 
-## 使用
+## Usage
 
-查看 examples 目录获取更多示例。
+See the examples directory for more examples.
     `.trim(),
 
     api: {
       interfaces: [
         {
           name: 'EmojiFeatureOptions',
-          description: 'Emoji Feature 的配置选项接口（当前为空，保留用于未来扩展）',
+          description: 'Configuration options interface for the Emoji Feature (currently empty, reserved for future extension)',
           fields: [],
         },
         {
           name: 'SupramarkTextNode (with emoji)',
-          description: '文本 AST 节点接口，Emoji 会被转换为 Unicode 字符嵌入在文本节点中',
+          description: 'Text AST node interface; Emoji are converted to Unicode characters and embedded in the text node',
           fields: [
             {
               name: 'type',
               type: "'text'",
-              description: '节点类型标识，固定为 "text"',
+              description: 'Node type identifier, always "text"',
               required: true,
             },
             {
               name: 'value',
               type: 'string',
               description:
-                '文本内容，其中的 Emoji 已经由 AST v2 parser 从短代码（:smile:）转换为 Unicode 字符（😄）',
+                'Text content, where any Emoji have already been converted from shortcodes (:smile:) to Unicode characters (😄) by the AST v2 parser',
               required: true,
             },
           ],
@@ -298,18 +296,18 @@ export const emojiFeature: SupramarkFeature<SupramarkTextNode> = {
         {
           name: 'createEmojiFeatureConfig',
           description:
-            '创建 Emoji Feature 配置对象，用于在 SupramarkConfig 中启用 Emoji 短代码支持',
+            'Creates an Emoji Feature config object, used to enable Emoji shortcode support in SupramarkConfig',
           parameters: [
             {
               name: 'enabled',
               type: 'boolean',
-              description: '是否启用 Emoji Feature',
+              description: 'Whether to enable the Emoji Feature',
               optional: false,
             },
             {
               name: 'options',
               type: 'EmojiFeatureOptions',
-              description: 'Emoji Feature 配置选项（当前为空对象）',
+              description: 'Emoji Feature configuration options (currently an empty object)',
               optional: true,
             },
           ],
@@ -326,12 +324,12 @@ const config = {
         },
         {
           name: 'getEmojiFeatureOptions',
-          description: '从 SupramarkConfig 中提取 Emoji Feature 的配置选项',
+          description: 'Extracts the Emoji Feature configuration options from a SupramarkConfig',
           parameters: [
             {
               name: 'config',
               type: 'SupramarkConfig',
-              description: 'Supramark 配置对象',
+              description: 'The Supramark configuration object',
               optional: true,
             },
           ],
@@ -348,43 +346,43 @@ const options = getEmojiFeatureOptions(config);`,
         {
           name: 'EmojiFeatureConfig',
           description:
-            'Emoji Feature 配置类型，是 FeatureConfigWithOptions<EmojiFeatureOptions> 的类型别名',
+            'Emoji Feature configuration type, a type alias for FeatureConfigWithOptions<EmojiFeatureOptions>',
           definition: 'type EmojiFeatureConfig = FeatureConfigWithOptions<EmojiFeatureOptions>',
         },
       ],
     },
 
     bestPractices: [
-      '使用 GitHub 风格的短代码格式，例如 :smile: :rocket: :heart:',
-      '短代码使用英文冒号包裹，中间为 emoji 名称',
-      '也可以直接输入原生 Unicode Emoji 字符',
-      '常用 emoji 短代码：:+1: (👍)、:-1: (👎)、:tada: (🎉)、:sparkles: (✨)',
+      'Use GitHub-style shortcode format, e.g. :smile: :rocket: :heart:',
+      'Shortcodes are wrapped in colons, with an emoji name in between',
+      'Native Unicode Emoji characters can also be typed directly',
+      'Common emoji shortcodes: :+1: (👍), :-1: (👎), :tada: (🎉), :sparkles: (✨)',
     ],
 
     faq: [
       {
-        question: 'Emoji Feature 支持哪些短代码？',
+        question: 'Which shortcodes does the Emoji Feature support?',
         answer:
-          '支持 GitHub 风格的 emoji 短代码，完整列表可参考 GitHub Emoji API。',
+          'GitHub-style emoji shortcodes are supported; see the GitHub Emoji API for the full list.',
       },
       {
-        question: 'Emoji 在 AST 中如何表示？',
+        question: 'How is Emoji represented in the AST?',
         answer:
-          'Emoji Feature 不创建单独的 AST 节点类型，而是将短代码转换为 Unicode 字符后嵌入到 text 节点的 value 中。',
+          'The Emoji Feature does not create a separate AST node type — it converts shortcodes to Unicode characters and embeds them in the value of a text node.',
       },
       {
-        question: '可以直接使用 Unicode Emoji 吗？',
-        answer: '可以。除了使用短代码，也可以直接在 Markdown 中输入原生 Unicode Emoji 字符。',
+        question: 'Can Unicode Emoji be used directly?',
+        answer: 'Yes. Besides using shortcodes, native Unicode Emoji characters can also be typed directly in Markdown.',
       },
     ],
   },
 };
 
 /**
- * Emoji Feature 的配置项。
+ * Configuration options for the Emoji Feature.
  */
 export interface EmojiFeatureOptions {
-  // 当前为空，保留用于未来扩展
+  // Currently empty, reserved for future extension
 }
 
 export type EmojiFeatureConfig = FeatureConfigWithOptions<EmojiFeatureOptions>;

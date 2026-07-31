@@ -1,5 +1,5 @@
 /**
- * Feature 配置系统测试
+ * Feature configuration system tests
  */
 
 import {
@@ -44,14 +44,14 @@ function createTestFeature(id: string, type: string): SupramarkFeature<Supramark
   };
 }
 
-describe('Feature 配置系统', () => {
+describe('Feature configuration system', () => {
   beforeEach(() => {
-    // 清空注册表
+    // Clear the registry
     FeatureRegistry.clear();
   });
 
   describe('createConfigFromRegistry', () => {
-    it('应该从空的 Registry 生成空配置', () => {
+    it('generates an empty config from an empty Registry', () => {
       const config = createConfigFromRegistry();
 
       expect(config.features).toEqual([]);
@@ -61,8 +61,8 @@ describe('Feature 配置系统', () => {
       });
     });
 
-    it('应该从 Registry 生成启用所有 Feature 的配置', () => {
-      // 注册两个 Features
+    it('generates a config with all Features enabled from the Registry', () => {
+      // Register two Features
       FeatureRegistry.register(createTestFeature('@test/feature-a', 'test-a'));
 
       FeatureRegistry.register(createTestFeature('@test/feature-b', 'test-b'));
@@ -80,7 +80,7 @@ describe('Feature 配置系统', () => {
       });
     });
 
-    it('应该支持默认禁用所有 Features', () => {
+    it('supports disabling all Features by default', () => {
       FeatureRegistry.register(createTestFeature('@test/feature-a', 'test-a'));
 
       const config = createConfigFromRegistry(false);
@@ -91,14 +91,14 @@ describe('Feature 配置系统', () => {
   });
 
   describe('getEnabledFeatureIds', () => {
-    it('应该返回空数组当没有配置时', () => {
+    it('returns an empty array when there is no config', () => {
       const config: SupramarkConfig = {};
       const ids = getEnabledFeatureIds(config);
 
       expect(ids).toEqual([]);
     });
 
-    it('应该返回所有启用的 Feature IDs', () => {
+    it('returns all enabled Feature IDs', () => {
       const config: SupramarkConfig = {
         features: [
           { id: '@test/feature-a', enabled: true },
@@ -114,22 +114,22 @@ describe('Feature 配置系统', () => {
   });
 
   describe('getEnabledFeatures', () => {
-    it('应该返回空数组当没有配置时', () => {
+    it('returns an empty array when there is no config', () => {
       const config: SupramarkConfig = {};
       const features = getEnabledFeatures(config);
 
       expect(features).toEqual([]);
     });
 
-    it('应该返回所有启用的 Feature 定义', () => {
-      // 注册 Features
+    it('returns all enabled Feature definitions', () => {
+      // Register Features
       const featureA = createTestFeature('@test/feature-a', 'test-a');
       const featureB = createTestFeature('@test/feature-b', 'test-b');
 
       FeatureRegistry.register(featureA);
       FeatureRegistry.register(featureB);
 
-      // 配置：只启用 A
+      // Config: only A is enabled
       const config: SupramarkConfig = {
         features: [
           { id: '@test/feature-a', enabled: true },
@@ -143,7 +143,7 @@ describe('Feature 配置系统', () => {
       expect(enabled[0]).toBe(featureA);
     });
 
-    it('应该过滤掉未注册的 Features', () => {
+    it('filters out unregistered Features', () => {
       const config: SupramarkConfig = {
         features: [
           { id: '@test/non-existent', enabled: true },
@@ -158,13 +158,13 @@ describe('Feature 配置系统', () => {
   });
 
   describe('isFeatureEnabled', () => {
-    it('应该返回 false 当 Feature 未配置时', () => {
+    it('returns false when the Feature is not configured', () => {
       const config: SupramarkConfig = {};
 
       expect(isFeatureEnabled(config, '@test/feature-a')).toBe(false);
     });
 
-    it('应该返回正确的启用状态', () => {
+    it('returns the correct enabled state', () => {
       const config: SupramarkConfig = {
         features: [
           { id: '@test/feature-a', enabled: true },
@@ -179,13 +179,13 @@ describe('Feature 配置系统', () => {
   });
 
   describe('getFeatureOptions', () => {
-    it('应该返回空对象当 Feature 未配置时', () => {
+    it('returns an empty object when the Feature is not configured', () => {
       const config: SupramarkConfig = {};
 
       expect(getFeatureOptions(config, '@test/feature-a')).toEqual({});
     });
 
-    it('应该返回空对象当 Feature 没有 options 时', () => {
+    it('returns an empty object when the Feature has no options', () => {
       const config: SupramarkConfig = {
         features: [{ id: '@test/feature-a', enabled: true }],
       };
@@ -193,7 +193,7 @@ describe('Feature 配置系统', () => {
       expect(getFeatureOptions(config, '@test/feature-a')).toEqual({});
     });
 
-    it('应该返回 Feature 的配置选项', () => {
+    it("returns the Feature's configuration options", () => {
       const options = { theme: 'dark', showLineNumbers: true };
       const config: SupramarkConfig = {
         features: [{ id: '@test/feature-a', enabled: true, options }],
@@ -204,7 +204,7 @@ describe('Feature 配置系统', () => {
   });
 
   describe('diagram family helpers', () => {
-    it('应该将内置 diagram engine 映射到约定的 family', () => {
+    it('maps built-in diagram engines to their conventional family', () => {
       expect(getDiagramFeatureFamily('mermaid')).toBe('mermaid');
       expect(getDiagramFeatureFamily('plantuml')).toBeNull();
       expect(getDiagramFeatureFamily('vega')).toBe('vega-family');
@@ -217,7 +217,7 @@ describe('Feature 配置系统', () => {
       expect(getDiagramFeatureFamily('custom-engine')).toBeNull();
     });
 
-    it('应该返回对应 family 的 feature ids', () => {
+    it('returns the feature ids for the corresponding family', () => {
       expect(getDiagramFeatureIdsForEngine('mermaid')).toEqual(['@supramark/feature-mermaid']);
       expect(getDiagramFeatureIdsForEngine('plantuml')).toEqual([]);
       expect(getDiagramFeatureIdsForEngine('chart')).toEqual([
@@ -227,7 +227,7 @@ describe('Feature 配置系统', () => {
       expect(getDiagramFeatureIdsForEngine('unknown')).toEqual([]);
     });
 
-    it('应该在 feature group 未出现在配置中时默认启用', () => {
+    it('defaults to enabled when the feature group is absent from the config', () => {
       const config: SupramarkConfig = {
         features: [{ id: '@supramark/feature-math', enabled: true }],
       };
@@ -236,7 +236,7 @@ describe('Feature 配置系统', () => {
       expect(isDiagramFeatureEnabled(config, 'mermaid')).toBe(true);
     });
 
-    it('应该在 feature group 被显式禁用时返回 false', () => {
+    it('returns false when the feature group is explicitly disabled', () => {
       const config: SupramarkConfig = {
         features: [{ id: '@supramark/feature-mermaid', enabled: false }],
       };
@@ -245,7 +245,7 @@ describe('Feature 配置系统', () => {
       expect(isDiagramFeatureEnabled(config, 'mermaid')).toBe(false);
     });
 
-    it('应该让 graphviz family 共享同一开关', () => {
+    it('lets the graphviz family share a single switch', () => {
       const config: SupramarkConfig = {
         features: [{ id: '@supramark/feature-diagram-dot', enabled: false }],
       };
@@ -255,9 +255,9 @@ describe('Feature 配置系统', () => {
     });
   });
 
-  describe('集成测试', () => {
-    it('应该支持完整的配置流程', () => {
-      // 1. 注册 Features
+  describe('integration test', () => {
+    it('supports the full configuration flow', () => {
+      // 1. Register Features
       FeatureRegistry.register({
         ...createTestFeature('@test/feature-mermaid', 'diagram'),
         syntax: {
@@ -280,11 +280,11 @@ describe('Feature 配置系统', () => {
         },
       });
 
-      // 2. 生成默认配置
+      // 2. Generate the default config
       const defaultConfig = createConfigFromRegistry(true);
       expect(defaultConfig.features).toHaveLength(2);
 
-      // 3. 用户自定义配置
+      // 3. User-customized config
       const userConfig: SupramarkConfig = {
         features: [
           { id: '@test/feature-mermaid', enabled: true },
@@ -296,15 +296,15 @@ describe('Feature 配置系统', () => {
         ],
       };
 
-      // 4. 查询启用状态
+      // 4. Query the enabled state
       expect(isFeatureEnabled(userConfig, '@test/feature-mermaid')).toBe(true);
       expect(isFeatureEnabled(userConfig, '@test/feature-vega-lite')).toBe(true);
 
-      // 5. 获取配置选项
+      // 5. Get the configuration options
       const vegaOptions = getFeatureOptions(userConfig, '@test/feature-vega-lite');
       expect(vegaOptions).toEqual({ theme: 'dark' });
 
-      // 6. 获取启用的 Features
+      // 6. Get the enabled Features
       const enabledFeatures = getEnabledFeatures(userConfig);
       expect(enabledFeatures).toHaveLength(2);
       expect(enabledFeatures[0].metadata.id).toBe('@test/feature-mermaid');
@@ -313,7 +313,7 @@ describe('Feature 配置系统', () => {
   });
 
   describe('createCodeHighlightCompileManifest', () => {
-    it('应该汇总已启用 Feature 的高亮编译资产', () => {
+    it('aggregates the highlight compile assets of enabled Features', () => {
       const base = createTestFeature('@test/feature-code-highlight', 'code-highlight');
       base.compile = { codeHighlight: { runtime: true } };
 
@@ -341,7 +341,7 @@ describe('Feature 配置系统', () => {
       });
     });
 
-    it('应该把 full preset 合并为全量标记', () => {
+    it('merges the full preset into full-set markers', () => {
       const full = createTestFeature('@test/feature-code-highlight-preset-full', 'full');
       full.compile = {
         codeHighlight: {

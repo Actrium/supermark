@@ -2,19 +2,19 @@ import React from 'react';
 import { Supramark, type SupramarkWebProps } from './Supramark.js';
 
 export interface SupramarkViewProps extends SupramarkWebProps {
-  /** 容器自定义类名 */
+  /** Custom className for the container */
   className?: string;
-  /** 容器自定义样式 */
+  /** Custom style for the container */
   style?: React.CSSProperties;
 }
 
 /**
- * SupramarkView - 标准展示容器
+ * SupramarkView - standard display container
  *
- * 这是一个带有标准排版样式的组件。
+ * A component with standard typography styles applied.
  *
- * 注意：必须通过 `config.features` 传入需要启用的插件列表。
- * 推荐配合 `allFeatures` 使用，或按需加载。
+ * Note: the list of plugins to enable must be passed via `config.features`.
+ * Recommended to pair with `allFeatures`, or load features on demand.
  */
 export const SupramarkView: React.FC<SupramarkViewProps> = ({
   className,

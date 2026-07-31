@@ -87,7 +87,7 @@ export async function compareVisualCases({
           status: 'error',
           error:
             rendererErrorsById.get(testCase.id)?.join('\n') ??
-            'Supramark 生产 Web Renderer 未生成可供截图的实际 HTML。',
+            'The Supramark production web renderer did not produce actual HTML to screenshot.',
         });
         continue;
       }
@@ -97,7 +97,7 @@ export async function compareVisualCases({
         const actualHeight = await measureFixture(page, actualHtml);
         const height = Math.max(expectedHeight, actualHeight, 96);
         if (height > MAX_CAPTURE_HEIGHT) {
-          throw new Error(`渲染高度 ${height}px 超过上限 ${MAX_CAPTURE_HEIGHT}px`);
+          throw new Error(`Rendered height ${height}px exceeds the ${MAX_CAPTURE_HEIGHT}px cap`);
         }
         await page.setViewportSize({ width: VIEWPORT_WIDTH, height });
         const expected = await captureFixture(page, testCase.expected.html, height);
@@ -161,8 +161,8 @@ export async function compareVisualCases({
   const bySection = summarize(results, sectionName);
   return {
     schemaVersion: 1,
-    locale: 'zh-CN',
-    result: failures.length === 0 ? '通过' : '失败',
+    locale: 'en-US',
+    result: failures.length === 0 ? 'pass' : 'fail',
     profile: STYLE_PROFILE,
     browser: { name: 'chromium', version: browserVersion },
     viewport: { width: VIEWPORT_WIDTH, deviceScaleFactor: 1 },
@@ -214,7 +214,7 @@ function summarize(results, sectionName) {
   const summary = {};
   for (const result of results) {
     summary[result.section] ??= {
-      nameZh: sectionName(result.section),
+      sectionLabel: sectionName(result.section),
       total: 0,
       passed: 0,
       failed: 0,
@@ -241,12 +241,12 @@ function numberFromEnvironment(name, fallback) {
   const raw = process.env[name];
   if (raw === undefined) return fallback;
   const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) throw new Error(`${name} 必须是非负数字`);
+  if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be a non-negative number`);
   return value;
 }
 
 function integerFromEnvironment(name, fallback) {
   const value = numberFromEnvironment(name, fallback);
-  if (!Number.isInteger(value)) throw new Error(`${name} 必须是非负整数`);
+  if (!Number.isInteger(value)) throw new Error(`${name} must be a non-negative integer`);
   return value;
 }

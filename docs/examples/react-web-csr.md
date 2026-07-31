@@ -1,117 +1,8 @@
-# React Web CSR 示例
+# React Web CSR Example
 
-这是一个使用 **Supramark** 的浏览器端（CSR - Client-Side Rendering）示例应用，展示如何在 React Web 应用中实现实时 Markdown 编辑器。
+A complete React Web CSR Example, demonstrating how Supramark is used in practice.
 
-## 功能特性
-
-- ✅ **实时预览**：编辑 Markdown 时实时渲染预览
-- ✅ **GFM 支持**：完整支持 GitHub Flavored Markdown
-  - 删除线（`~~text~~`）
-  - 任务列表（`- [ ]` / `- [x]`）
-  - 表格
-- ✅ **代码高亮**：支持代码块渲染
-- ✅ **响应式设计**：适配桌面和移动端
-
-## 技术栈
-
-- **构建工具**: Vite
-- **框架**: React + TypeScript
-- **Markdown 渲染**: @supramark/web (client 入口)
-
-## 快速开始
-
-### 安装依赖
-
-\`\`\`bash
-npm install
-\`\`\`
-
-### 开发模式
-
-\`\`\`bash
-npm run dev
-\`\`\`
-
-然后打开浏览器访问 \`http://localhost:5173\`
-
-### 生产构建
-
-\`\`\`bash
-npm run build
-\`\`\`
-
-构建产物将输出到 \`dist/\` 目录。
-
-### 预览构建结果
-
-\`\`\`bash
-npm run preview
-\`\`\`
-
-## 使用方法
-
-### 基础用法
-
-在 React 组件中导入并使用 Supramark：
-
-\`\`\`typescript
-import { Supramark } from '@supramark/web/client';
-
-function App() {
-const [markdown, setMarkdown] = useState('# Hello World');
-
-return (
-<div>
-<textarea
-value={markdown}
-onChange={(e) => setMarkdown(e.target.value)}
-/>
-<Supramark markdown={markdown} />
-</div>
-);
-}
-\`\`\`
-
-### 预解析优化
-
-如果需要更好的性能，可以预先解析 AST：
-
-\`\`\`typescript
-import { Supramark, parse } from '@supramark/web/client';
-
-// 在组件外或 useEffect 中解析
-const ast = await parse('# Hello World');
-
-function App() {
-return <Supramark ast={ast} markdown="" />;
-}
-\`\`\`
-
-## Vite 配置
-
-本示例使用标准的 Vite 配置，无需特殊设置。\`@supramark/web\` 已通过 package.json 的 \`exports\` 字段正确配置，可以直接导入 \`/client\` 入口。
-
-## 项目结构
-
-\`\`\`
-react-web-csr/
-├── src/
-│ ├── App.tsx # 主应用组件
-│ ├── App.css # 样式文件
-│ ├── main.tsx # 入口文件
-│ └── index.css # 全局样式
-├── package.json
-├── vite.config.ts
-└── tsconfig.json
-\`\`\`
-
-## 了解更多
-
-- [Supramark 文档](../../README.md)
-- [Vite 文档](https://vitejs.dev/)
-- [React 文档](https://react.dev/)
-
-## 快速开始
+## Getting Started
 
 ```bash
 cd examples/react-web-csr
@@ -119,9 +10,9 @@ bun install
 bun run dev
 ```
 
-## 实时 Feature Preview
+## Live Feature Preview
 
-这是当前站点首页挂载的效果预览页面。直接运行下面的命令可以交互式选择 Feature；传入 Feature 名称时会打开指定类型，浏览器里仍然可以通过下拉菜单切换其它图表或示例。
+This is the effect preview page hosted on this site's homepage. Run the command below to interactively pick a Feature; passing a Feature name opens that specific type directly, and you can still switch to other diagrams or examples via the dropdown menu in the browser.
 
 ```bash
 bun run feature:preview:web
@@ -133,62 +24,62 @@ bun run feature:preview:web diagram-echarts
 bun run feature:preview:web diagram-vega-lite
 ```
 
-## Supramark 依赖
+## Supramark Dependencies
 
-- `@supramark/core` - workspace:\*
-- `@supramark/feature-admonition` - workspace:\*
-- `@supramark/feature-core-markdown` - workspace:\*
-- `@supramark/feature-d2` - workspace:\*
-- `@supramark/feature-definition-list` - workspace:\*
-- `@supramark/feature-diagram-dot` - workspace:\*
-- `@supramark/feature-diagram-echarts` - workspace:\*
-- `@supramark/feature-diagram-vega-lite` - workspace:\*
-- `@supramark/feature-emoji` - workspace:\*
-- `@supramark/feature-footnote` - workspace:\*
-- `@supramark/feature-gfm` - workspace:\*
-- `@supramark/feature-html-page` - workspace:\*
-- `@supramark/feature-map` - workspace:\*
-- `@supramark/feature-math` - workspace:\*
-- `@supramark/feature-mermaid` - workspace:\*
-- `@supramark/feature-plantuml` - workspace:\*
-- `@supramark/feature-weather` - workspace:\*
-- `@supramark/web` - workspace:\*
+- `@supramark/core` - workspace:*
+- `@supramark/feature-admonition` - workspace:*
+- `@supramark/feature-core-markdown` - workspace:*
+- `@supramark/feature-d2` - workspace:*
+- `@supramark/feature-definition-list` - workspace:*
+- `@supramark/feature-diagram-dot` - workspace:*
+- `@supramark/feature-diagram-echarts` - workspace:*
+- `@supramark/feature-diagram-vega-lite` - workspace:*
+- `@supramark/feature-emoji` - workspace:*
+- `@supramark/feature-footnote` - workspace:*
+- `@supramark/feature-gfm` - workspace:*
+- `@supramark/feature-html-page` - workspace:*
+- `@supramark/feature-map` - workspace:*
+- `@supramark/feature-math` - workspace:*
+- `@supramark/feature-mermaid` - workspace:*
+- `@supramark/feature-plantuml` - workspace:*
+- `@supramark/feature-weather` - workspace:*
+- `@supramark/web` - workspace:*
 
-## 源代码
+## Source Code
 
 ### App.tsx
 
 ```tsx
 const INITIAL_MARKDOWN = `# Supramark Live Editor
 
-欢迎使用 **Supramark** 的实时 Markdown 编辑器！
+Welcome to the **Supramark** live Markdown editor!
 
-## 功能特性
+## Features
 
-### GFM 扩展支持
+### GFM extensions
 
-- **粗体文本**
-- *斜体文本*
-- \`内联代码\`
-- ~~删除线~~
+- **Bold text**
+- *Italic text*
+- \`Inline code\`
+- ~~Strikethrough~~
 
-### 任务列表
+### Task list
 
-- [x] 支持 GFM 任务列表
-- [x] 实时预览
-- [x] 主题切换
-- [ ] 更多功能开发中
+- [x] GFM task list support
+- [x] Live preview
+- [x] Theme switching
+- [ ] More features in progress
 
-### 表格示例
+### Table example
 
-| 功能 | 状态 | 说明 |
+| Feature | Status | Notes |
 | --- | :---: | ---: |
-| 删除线 | ✅ | 使用 \`~~\` 语法 |
-| 任务列表 | ✅ | \`[ ]\` 和 \`[x]\` |
-| 表格 | ✅ | 标准 GFM 表格 |
-| 主题系统 | ✅ | 支持自定义 className |
+| Strikethrough | ✅ | Uses \`~~\` syntax |
+| Task list | ✅ | \`[ ]\` and \`[x]\` |
+| Table | ✅ | Standard GFM table |
+| Theme system | ✅ | Supports custom className |
 
-### 代码块
+### Code block
 
 \`\`\`javascript
 function hello(name) {
@@ -198,11 +89,11 @@ function hello(name) {
 hello('Supramark');
 \`\`\`
 
-### 链接和图片
+### Links and images
 
-这是一个 [链接示例](https://github.com)
+This is a [link example](https://github.com)
 
-### Weather 卡片
+### Weather card
 
 :::weather
 location: Shanghai
@@ -222,9 +113,10 @@ createRoot(document.getElementById('root')!).render(
     {featureParam ? <FeaturePreview initialFeature={featureParam} /> : <App />}
   </StrictMode>
 );
+
 ```
 
-## 项目结构
+## Project Structure
 
 ```
 examples/react-web-csr/
@@ -234,12 +126,11 @@ examples/react-web-csr/
 └── README.md
 ```
 
-## 相关资源
+## Related Resources
 
-- [快速开始](/guide/getting-started)
-- [API 参考](/api/)
-- [其他示例](/examples/)
+- [Getting Started](/guide/getting-started.zh)
+- [API Reference](/api/)
+- [Other Examples](/examples/)
 
 ---
-
-_此文档由 scripts/doc-gen-example.ts 自动生成_
+*This document is auto-generated by scripts/doc-gen-example.ts*

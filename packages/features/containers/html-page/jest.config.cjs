@@ -1,7 +1,7 @@
 /** @type {import('jest').Config} */
 module.exports = {
-  // 复用仓库根目录的共享 Jest preset
+  // Reuse the shared Jest preset from the repo root
   ...require('../../../../jest.preset.cjs'),
 
-  // 如需在该 Feature 包中覆盖额外配置，可在此追加
+  // Add extra overrides for this Feature package here if needed
 };

@@ -697,11 +697,11 @@ mod klimt_port_tests {
     // Rust has: None, Striped, VerticalStriped (3 values, missing FULL and SMALL_CIRCLE)
     #[test]
     fn upattern_has_at_least_none_and_striped_variants() {
-        // 三个变体彼此不同
+        // The three variants are pairwise distinct
         assert_ne!(UPattern::None, UPattern::Striped);
         assert_ne!(UPattern::None, UPattern::VerticalStriped);
         assert_ne!(UPattern::Striped, UPattern::VerticalStriped);
-        // Default 是 None（对应 Java FULL = solid fill）
+        // Default is None (corresponds to Java's FULL = solid fill)
         assert_eq!(UPattern::default(), UPattern::None);
     }
 

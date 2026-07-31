@@ -11,24 +11,24 @@ import { makeFeatureConfigHelpers } from '@supramark/core';
 /**
  * GFM Feature
  *
- * GitHub Flavored Markdown 扩展（删除线 / 任务列表 / 表格）
+ * GitHub Flavored Markdown extension (strikethrough / task lists / tables)
  *
  * @example
  * ```markdown
- * - [ ] 未完成任务
- * - [x] 已完成任务
+ * - [ ] Incomplete task
+ * - [x] Completed task
  *
- * ~~删除线文本~~
+ * ~~Struck-through text~~
  *
- * | 列 1 | 列 2 |
+ * | Col 1 | Col 2 |
  * | ---- | ---- |
  * |  1   |  2   |
  * ```
  *
- * 节点类型说明：
- * - 如果此 Feature 只处理单一节点类型（如 'diagram'），直接使用当前配置即可
- * - 如果此 Feature 需要处理多个节点类型（如 'math_inline' 和 'math_block'），
- *   请参考下面的"多节点类型处理"注释，定义具体的节点接口和 selector
+ * Node type notes:
+ * - If this Feature only handles a single node type (e.g. 'diagram'), just use the current config as-is
+ * - If this Feature needs to handle multiple node types (e.g. 'math_inline' and 'math_block'),
+ *   see the "multi node type handling" comment below to define concrete node interfaces and a selector
  */
 export const gfmFeature: SupramarkFeature<SupramarkNode> = {
   metadata: {
@@ -36,25 +36,25 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
     name: 'GFM',
     version: '0.1.0',
     author: 'Supramark Team',
-    description: 'GitHub Flavored Markdown 扩展（删除线 / 任务列表 / 表格）',
+    description: 'GitHub Flavored Markdown extension (strikethrough / task lists / tables)',
     license: 'Apache-2.0',
     tags: ['gfm', 'table', 'task-list', 'strikethrough'],
     syntaxFamily: 'main',
   },
-  // GFM 扩展 - 依赖基础 Markdown（删除线、任务列表、表格的 children 都需要 core）
+  // GFM extension - depends on base Markdown (strikethrough, task list, and table children all need core)
   dependencies: ['@supramark/feature-core-markdown'],
 
   syntax: {
     ast: {
       /**
-       * 由于 GFM 涵盖多种节点（delete / 任务列表 / 表格），
-       * 本 Feature 使用一个“虚拟”入口节点类型，并通过 selector 在运行时匹配：
+       * Because GFM covers multiple node types (delete / task list / table),
+       * this Feature uses a "virtual" entry node type and matches at runtime via a selector:
        *
-       * - 删除线：`node.type === 'delete'`
-       * - 任务列表项：`node.type === 'list_item' && node.checked !== undefined`
-       * - 表格相关：`node.type === 'table' | 'table_row' | 'table_cell'`
+       * - Strikethrough: `node.type === 'delete'`
+       * - Task list item: `node.type === 'list_item' && node.checked !== undefined`
+       * - Table related: `node.type === 'table' | 'table_row' | 'table_cell'`
        *
-       * 这里的 type 仅用于标识 Feature 归属，不直接等同于某个 AST 类型。
+       * The `type` here only identifies Feature ownership, it does not map to a single AST type.
        */
       type: 'gfm',
       selector: (node: SupramarkNode) => {
@@ -68,11 +68,11 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
       },
 
       /**
-       * 注意：GFM 是虚拟节点，不对应单一的 AST 节点类型
-       * 它通过 selector 匹配多种实际节点（delete, table, task-list）
-       * 因此不定义具体的 interface
+       * Note: GFM is a virtual node that does not correspond to a single AST node type.
+       * It matches multiple actual node types (delete, table, task-list) via the selector,
+       * so it does not define a concrete interface.
        */
-      // interface: undefined (虚拟节点不需要 interface)
+      // interface: undefined (a virtual node has no interface)
 
       constraints: {
         allowedParents: ['root'],
@@ -80,17 +80,17 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
       },
 
       examples: [
-        // 删除线节点示例
+        // Strikethrough node example
         {
           type: 'delete',
           children: [
             {
               type: 'text',
-              value: '删除的文本',
+              value: 'Deleted text',
             },
           ],
         } as SupramarkNode,
-        // 表格节点示例
+        // Table node example
         {
           type: 'table',
           children: [
@@ -105,7 +105,7 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
             },
           ],
         } as SupramarkNode,
-        // 任务列表项示例
+        // Task list item example
         {
           type: 'list_item',
           checked: true,
@@ -114,66 +114,66 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
       ],
     },
 
-    // 可选：验证规则
+    // Optional: validation rules
     // validator: {
     //   validate: (node) => {
-    //     // TODO: 添加验证逻辑
+    //     // TODO: add validation logic
     //     return { valid: true, errors: [] };
     //   }
     // },
   },
 
-  // 渲染器定义
+  // Renderer definitions
   renderers: {
-    // Web 平台渲染器
+    // Web platform renderer
     web: {
       platform: 'web',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // Web 端使用基础 HTML 渲染（table / del / checkbox）
+        // The web side renders with basic HTML (table / del / checkbox)
         needsClientScript: false,
-        // 无需 Worker
+        // No worker needed
         needsWorker: false,
-        // 无需缓存
+        // No cache needed
         needsCache: false,
       },
 
-      // 无外部依赖（使用标准 HTML 元素）
+      // No external dependencies (uses standard HTML elements)
       dependencies: [],
     },
 
-    // React Native 平台渲染器
+    // React Native platform renderer
     rn: {
       platform: 'rn',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // RN 端使用基础组件渲染
+        // The RN side renders with basic components
         needsWorker: false,
-        // 无需缓存
+        // No cache needed
         needsCache: false,
       },
 
-      // 无外部依赖（使用 View / Text 组件）
+      // No external dependencies (uses View / Text components)
       dependencies: [],
     },
   },
 
-  // 使用示例
+  // Usage examples
   examples: gfmExamples,
 
-  // 测试定义
+  // Test definitions
   testing: {
-    // Markdown → AST 语法测试
+    // Markdown -> AST syntax tests
     syntaxTests: {
       cases: [
         {
-          name: '解析删除线',
-          input: '这是 ~~删除的文本~~ 内容',
+          name: 'parses strikethrough',
+          input: 'This is ~~deleted text~~ content',
           expected: {
             type: 'delete',
-            children: [{ type: 'text', value: '删除的文本' }],
+            children: [{ type: 'text', value: 'deleted text' }],
           } as SupramarkNode,
           options: {
             typeOnly: false,
@@ -181,8 +181,8 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
           },
         },
         {
-          name: '解析任务列表',
-          input: '- [x] 已完成任务\n- [ ] 未完成任务',
+          name: 'parses a task list',
+          input: '- [x] Completed task\n- [ ] Incomplete task',
           expected: [
             {
               type: 'list_item',
@@ -199,8 +199,8 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
           },
         },
         {
-          name: '解析表格',
-          input: '| 列1 | 列2 |\n| --- | --- |\n| A | B |',
+          name: 'parses a table',
+          input: '| Col1 | Col2 |\n| --- | --- |\n| A | B |',
           expected: {
             type: 'table',
             children: [],
@@ -212,24 +212,24 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
       ],
     },
 
-    // AST → 渲染输出测试
+    // AST -> render output tests
     renderTests: {
       web: [
         {
-          name: 'Web 渲染删除线',
+          name: 'Web renders strikethrough',
           input: {
             type: 'delete',
-            children: [{ type: 'text', value: '删除内容' }],
+            children: [{ type: 'text', value: 'deleted content' }],
           } as SupramarkNode,
           expected: (output: unknown) => output !== null && output !== undefined,
           snapshot: true,
         },
         {
-          name: 'Web 渲染任务列表',
+          name: 'Web renders a task list',
           input: {
             type: 'list_item',
             checked: true,
-            children: [{ type: 'text', value: '任务' }],
+            children: [{ type: 'text', value: 'task' }],
           } as SupramarkNode,
           expected: (output: unknown) => output !== null && output !== undefined,
           snapshot: true,
@@ -237,14 +237,14 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
       ],
       rn: [
         {
-          name: 'RN 渲染表格',
+          name: 'RN renders a table',
           input: {
             type: 'table',
             children: [
               {
                 type: 'table_row',
                 children: [
-                  { type: 'table_cell', header: true, children: [{ type: 'text', value: '标题' }] },
+                  { type: 'table_cell', header: true, children: [{ type: 'text', value: 'heading' }] },
                 ],
               },
             ],
@@ -255,12 +255,12 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
       ],
     },
 
-    // 端到端集成测试
+    // End-to-end integration tests
     integrationTests: {
       cases: [
         {
-          name: 'GFM 端到端：删除线 + 任务列表',
-          input: '~~删除~~ 文本\n\n- [x] 任务1\n- [ ] 任务2',
+          name: 'GFM end-to-end: strikethrough + task list',
+          input: '~~deleted~~ text\n\n- [x] task1\n- [ ] task2',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -282,7 +282,7 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
           platforms: ['web', 'rn'],
         },
         {
-          name: 'GFM 端到端：完整表格',
+          name: 'GFM end-to-end: full table',
           input: '| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
@@ -295,7 +295,7 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
       ],
     },
 
-    // 覆盖率要求
+    // Coverage requirements
     coverageRequirements: {
       statements: 80,
       branches: 75,
@@ -304,136 +304,137 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
     },
   },
 
-  // 文档定义
+  // Documentation definitions
   documentation: {
     readme: `
 # GFM Feature
 
-为 Supramark 提供 GitHub Flavored Markdown 扩展支持。
+Provides GitHub Flavored Markdown extension support for Supramark.
 
-## 功能
+## Features
 
-- 删除线
-- 任务列表
-- 表格
+- Strikethrough
+- Task lists
+- Tables
 
-## 使用
+## Usage
 
-查看 examples 目录获取更多示例。
+See the examples directory for more samples.
     `.trim(),
 
     api: {
       interfaces: [
         {
           name: 'GFMFeatureOptions',
-          description: 'GFM Feature 的配置选项接口（当前为空，保留用于未来扩展）',
+          description:
+            'Configuration options interface for the GFM Feature (currently empty, reserved for future extension)',
           fields: [],
         },
         {
           name: 'SupramarkDeleteNode',
-          description: '删除线 AST 节点接口，用于表示被删除的文本（~~...~~）',
+          description: 'Strikethrough AST node interface, representing struck-through text (~~...~~)',
           fields: [
             {
               name: 'type',
               type: "'delete'",
-              description: '节点类型标识，固定为 "delete"',
+              description: 'Node type identifier, always "delete"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '删除线内部的子节点（通常包含 text 节点）',
+              description: 'Child nodes inside the strikethrough (usually text nodes)',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkTableNode',
-          description: '表格 AST 节点接口，用于表示 Markdown 表格',
+          description: 'Table AST node interface, representing a Markdown table',
           fields: [
             {
               name: 'type',
               type: "'table'",
-              description: '节点类型标识，固定为 "table"',
+              description: 'Node type identifier, always "table"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkTableRowNode[]',
-              description: '表格行节点数组',
+              description: 'Array of table row nodes',
               required: true,
             },
             {
               name: 'align',
               type: "Array<'left' | 'right' | 'center' | null>",
-              description: '每列的对齐方式配置',
+              description: 'Alignment configuration for each column',
               required: false,
             },
           ],
         },
         {
           name: 'SupramarkTableRowNode',
-          description: '表格行 AST 节点接口',
+          description: 'Table row AST node interface',
           fields: [
             {
               name: 'type',
               type: "'table_row'",
-              description: '节点类型标识，固定为 "table_row"',
+              description: 'Node type identifier, always "table_row"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkTableCellNode[]',
-              description: '表格单元格节点数组',
+              description: 'Array of table cell nodes',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkTableCellNode',
-          description: '表格单元格 AST 节点接口',
+          description: 'Table cell AST node interface',
           fields: [
             {
               name: 'type',
               type: "'table_cell'",
-              description: '节点类型标识，固定为 "table_cell"',
+              description: 'Node type identifier, always "table_cell"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '单元格内部的子节点',
+              description: 'Child nodes inside the cell',
               required: true,
             },
             {
               name: 'header',
               type: 'boolean',
-              description: '是否为表头单元格',
+              description: 'Whether this is a header cell',
               required: false,
             },
           ],
         },
         {
           name: 'SupramarkListItemNode (with task list)',
-          description: '任务列表项 AST 节点接口，扩展自标准列表项，增加了 checked 属性',
+          description: 'Task list item AST node interface, extends the standard list item with a checked property',
           fields: [
             {
               name: 'type',
               type: "'list_item'",
-              description: '节点类型标识，固定为 "list_item"',
+              description: 'Node type identifier, always "list_item"',
               required: true,
             },
             {
               name: 'checked',
               type: 'boolean | null',
               description:
-                '任务完成状态：true（已完成）、false（未完成）、null/undefined（普通列表项）',
+                'Task completion state: true (done), false (not done), null/undefined (a plain list item)',
               required: false,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '列表项内部的子节点',
+              description: 'Child nodes inside the list item',
               required: true,
             },
           ],
@@ -444,18 +445,18 @@ export const gfmFeature: SupramarkFeature<SupramarkNode> = {
         {
           name: 'createGFMFeatureConfig',
           description:
-            '创建 GFM Feature 配置对象，用于在 SupramarkConfig 中启用 GitHub Flavored Markdown 扩展',
+            'Creates the GFM Feature config object, used to enable GitHub Flavored Markdown extensions in SupramarkConfig',
           parameters: [
             {
               name: 'enabled',
               type: 'boolean',
-              description: '是否启用 GFM Feature',
+              description: 'Whether to enable the GFM Feature',
               optional: false,
             },
             {
               name: 'options',
               type: 'GFMFeatureOptions',
-              description: 'GFM Feature 配置选项（当前为空对象）',
+              description: 'GFM Feature configuration options (currently an empty object)',
               optional: true,
             },
           ],
@@ -472,12 +473,12 @@ const config = {
         },
         {
           name: 'getGFMFeatureOptions',
-          description: '从 SupramarkConfig 中提取 GFM Feature 的配置选项',
+          description: 'Extracts the GFM Feature configuration options from a SupramarkConfig',
           parameters: [
             {
               name: 'config',
               type: 'SupramarkConfig',
-              description: 'Supramark 配置对象',
+              description: 'The Supramark configuration object',
               optional: true,
             },
           ],
@@ -494,41 +495,44 @@ const options = getGFMFeatureOptions(config);`,
         {
           name: 'GFMFeatureConfig',
           description:
-            'GFM Feature 配置类型，是 FeatureConfigWithOptions<GFMFeatureOptions> 的类型别名',
+            'GFM Feature config type, a type alias for FeatureConfigWithOptions<GFMFeatureOptions>',
           definition: 'type GFMFeatureConfig = FeatureConfigWithOptions<GFMFeatureOptions>',
         },
       ],
     },
 
     bestPractices: [
-      '使用 ~~ 包裹需要删除的文本',
-      '任务列表使用 - [ ] 表示未完成，- [x] 表示已完成',
-      '表格使用 | 分隔列，使用 --- 定义表头分隔线',
-      '表格对齐使用 :--- (左对齐)、:---: (居中)、---: (右对齐)',
+      'Wrap text to be struck through with ~~',
+      'For task lists use - [ ] for incomplete and - [x] for completed',
+      'Tables use | to separate columns, and --- to define the header separator row',
+      'Table alignment uses :--- (left), :---: (center), ---: (right)',
     ],
 
     faq: [
       {
-        question: 'GFM Feature 包含哪些功能？',
-        answer: 'GFM Feature 包含删除线（~~text~~）、任务列表（- [ ] / - [x]）和表格三个核心功能。',
+        question: 'What does the GFM Feature include?',
+        answer:
+          'The GFM Feature includes three core capabilities: strikethrough (~~text~~), task lists (- [ ] / - [x]), and tables.',
       },
       {
-        question: '如何创建任务列表？',
-        answer: '使用 - [ ] 创建未完成任务，使用 - [x] 创建已完成任务。注意方括号内的空格。',
+        question: 'How do I create a task list?',
+        answer:
+          'Use - [ ] to create an incomplete task, and - [x] to create a completed task. Note the space inside the brackets.',
       },
       {
-        question: '表格如何设置对齐方式？',
-        answer: '在表头分隔线中使用冒号设置对齐：:--- 左对齐，:---: 居中，---: 右对齐。',
+        question: 'How do I set table alignment?',
+        answer:
+          'Use colons in the header separator row to set alignment: :--- left-aligns, :---: centers, ---: right-aligns.',
       },
     ],
   },
 };
 
 /**
- * GFM Feature 的配置项。
+ * Configuration options for the GFM Feature.
  */
 export interface GFMFeatureOptions {
-  // 当前为空，保留用于未来扩展
+  // Currently empty, reserved for future extension
 }
 
 export type GFMFeatureConfig = FeatureConfigWithOptions<GFMFeatureOptions>;

@@ -1,8 +1,8 @@
 //! supramark-diagram-core: the unified trait and public AST envelope for the
 //! four diagram engines.
 //!
-//! See the design in `docs/architecture/diagram-semantic-ast.md` (§0 decision
-//! log) and `diagram-semantic-ast-impl-plan.md`. This crate has zero engine
+//! See the design in `docs/architecture/diagram-semantic-ast.zh.md` (§0 decision
+//! log) and `diagram-semantic-ast-impl-plan.zh.md`. This crate has zero engine
 //! dependencies, so the four engine crates depend on it in reverse and impl
 //! [`DiagramEngine`], avoiding a dependency cycle.
 

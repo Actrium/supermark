@@ -1,23 +1,23 @@
 /**
- * LRU (Least Recently Used) 缓存实现
- * 用于缓存图表渲染结果等计算密集型操作的结果
+ * LRU (Least Recently Used) cache implementation.
+ * Used to cache the results of compute-intensive operations such as diagram rendering.
  */
 
 export interface LRUCacheOptions {
   /**
-   * 缓存最大容量（条目数量）
+   * Maximum cache capacity (number of entries).
    * @default 100
    */
   maxSize?: number;
 
   /**
-   * 缓存项的 TTL（生存时间，毫秒）
-   * @default undefined（永不过期）
+   * TTL (time to live) of a cache entry, in milliseconds.
+   * @default undefined (never expires)
    */
   ttl?: number;
 
   /**
-   * 可选的值序列化函数（用于估算内存大小）
+   * Optional value size estimator (used to estimate memory footprint).
    * @default (value) => JSON.stringify(value).length
    */
   sizeCalculator?: (value: unknown) => number;
@@ -30,22 +30,22 @@ interface CacheEntry<T> {
 }
 
 /**
- * LRU 缓存类
+ * LRU cache class.
  *
  * @example
  * ```typescript
  * const cache = new LRUCache<string>({ maxSize: 100, ttl: 60000 });
  *
- * // 存入缓存
+ * // Store a value
  * cache.set('key1', 'value1');
  *
- * // 读取缓存
+ * // Read a value
  * const value = cache.get('key1'); // 'value1'
  *
- * // 检查是否存在
+ * // Check existence
  * const exists = cache.has('key1'); // true
  *
- * // 清除缓存
+ * // Clear the cache
  * cache.clear();
  * ```
  */
@@ -72,9 +72,9 @@ export class LRUCache<T> {
   }
 
   /**
-   * 获取缓存项
-   * @param key 缓存键
-   * @returns 缓存值，如果不存在或已过期则返回 undefined
+   * Get a cache entry.
+   * @param key the cache key
+   * @returns the cached value, or undefined if it doesn't exist or has expired
    */
   get(key: string): T | undefined {
     const entry = this.cache.get(key);
@@ -83,14 +83,14 @@ export class LRUCache<T> {
       return undefined;
     }
 
-    // 检查是否过期
+    // Check whether the entry has expired
     if (this.ttl && Date.now() - entry.timestamp > this.ttl) {
       this.cache.delete(key);
       this.totalSize -= entry.size;
       return undefined;
     }
 
-    // LRU: 将访问的项移到最后（Map 的插入顺序）
+    // LRU: move the accessed entry to the end (Map's insertion order)
     this.cache.delete(key);
     this.cache.set(key, entry);
 
@@ -98,12 +98,12 @@ export class LRUCache<T> {
   }
 
   /**
-   * 设置缓存项
-   * @param key 缓存键
-   * @param value 缓存值
+   * Set a cache entry.
+   * @param key the cache key
+   * @param value the value to cache
    */
   set(key: string, value: T): void {
-    // 如果已存在，先删除旧值
+    // If it already exists, remove the old value first
     const existingEntry = this.cache.get(key);
     if (existingEntry) {
       this.totalSize -= existingEntry.size;
@@ -117,11 +117,11 @@ export class LRUCache<T> {
       size,
     };
 
-    // 添加新条目
+    // Add the new entry
     this.cache.set(key, entry);
     this.totalSize += size;
 
-    // 如果超过最大容量，删除最旧的条目（Map 的第一个）
+    // If capacity is exceeded, evict the oldest entry (the first one in the Map)
     while (this.cache.size > this.maxSize) {
       const firstKey = this.cache.keys().next().value;
       if (firstKey !== undefined) {
@@ -135,18 +135,18 @@ export class LRUCache<T> {
   }
 
   /**
-   * 检查缓存中是否存在指定键
-   * @param key 缓存键
-   * @returns 是否存在且未过期
+   * Check whether the given key exists in the cache.
+   * @param key the cache key
+   * @returns whether it exists and has not expired
    */
   has(key: string): boolean {
     return this.get(key) !== undefined;
   }
 
   /**
-   * 删除缓存项
-   * @param key 缓存键
-   * @returns 是否成功删除
+   * Delete a cache entry.
+   * @param key the cache key
+   * @returns whether it was successfully deleted
    */
   delete(key: string): boolean {
     const entry = this.cache.get(key);
@@ -157,7 +157,7 @@ export class LRUCache<T> {
   }
 
   /**
-   * 清空所有缓存
+   * Clear the entire cache.
    */
   clear(): void {
     this.cache.clear();
@@ -165,21 +165,21 @@ export class LRUCache<T> {
   }
 
   /**
-   * 获取当前缓存的条目数量
+   * Get the current number of cache entries.
    */
   get size(): number {
     return this.cache.size;
   }
 
   /**
-   * 获取所有缓存键
+   * Get all cache keys.
    */
   keys(): IterableIterator<string> {
     return this.cache.keys();
   }
 
   /**
-   * 获取缓存统计信息
+   * Get cache statistics.
    */
   getStats(): {
     size: number;
@@ -196,8 +196,8 @@ export class LRUCache<T> {
   }
 
   /**
-   * 清理过期的缓存项
-   * @returns 清理的条目数量
+   * Purge expired cache entries.
+   * @returns the number of entries purged
    */
   purgeExpired(): number {
     if (!this.ttl) {
@@ -220,9 +220,9 @@ export class LRUCache<T> {
 }
 
 /**
- * 生成缓存键的辅助函数
- * @param parts 键的组成部分
- * @returns 缓存键
+ * Helper function for generating a cache key.
+ * @param parts the components that make up the key
+ * @returns the cache key
  */
 export function createCacheKey(...parts: (string | number | boolean | undefined | null)[]): string {
   return parts
@@ -232,9 +232,9 @@ export function createCacheKey(...parts: (string | number | boolean | undefined 
 }
 
 /**
- * 简单的哈希函数（用于生成短缓存键）
- * @param str 输入字符串
- * @returns 哈希值
+ * A simple hash function (used to generate short cache keys).
+ * @param str the input string
+ * @returns the hash value
  */
 export function simpleHash(str: string): string {
   let hash = 0;

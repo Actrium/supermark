@@ -1,7 +1,7 @@
 import React, { Component, type ReactNode } from 'react';
 
 /**
- * 错误信息接口
+ * Error info interface
  */
 export interface ErrorInfo {
   type: 'parse' | 'render' | 'diagram' | 'unknown';
@@ -11,26 +11,26 @@ export interface ErrorInfo {
 }
 
 /**
- * ErrorBoundary 属性
+ * ErrorBoundary props
  */
 export interface ErrorBoundaryProps {
   children: ReactNode;
   /**
-   * 错误回调（可选）
+   * Error callback (optional)
    */
   onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
   /**
-   * 自定义错误展示组件（可选）
+   * Custom error display component (optional)
    */
   fallback?: (error: ErrorInfo) => ReactNode;
   /**
-   * CSS 类名前缀，默认 'sm-error'
+   * CSS class name prefix, defaults to 'sm-error'
    */
   classNamePrefix?: string;
 }
 
 /**
- * ErrorBoundary 状态
+ * ErrorBoundary state
  */
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -38,9 +38,9 @@ interface ErrorBoundaryState {
 }
 
 /**
- * Web 错误边界组件
+ * Web error boundary component
  *
- * 捕获子组件树中的渲染错误，展示友好的错误信息
+ * Catches rendering errors in the child component tree and shows a friendly error message
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
@@ -52,7 +52,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    // 分析错误类型
+    // Categorize the error type
     const errorType = ErrorBoundary.categorizeError(error);
 
     return {
@@ -67,19 +67,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // 调用错误回调
+    // Invoke the error callback
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
     }
 
-    // 在开发环境打印错误信息
+    // Log the error in development
     if (process.env.NODE_ENV === 'development') {
       console.error('Supramark Error Boundary caught an error:', error, errorInfo);
     }
   }
 
   /**
-   * 根据错误信息分类错误类型
+   * Categorize the error type based on the error info
    */
   private static categorizeError(error: Error): ErrorInfo['type'] {
     const message = error.message.toLowerCase();
@@ -99,7 +99,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.hasError && this.state.error) {
-      // 使用自定义 fallback 或默认错误展示组件
+      // Use a custom fallback or the default error display component
       if (this.props.fallback) {
         return this.props.fallback(this.state.error);
       }
@@ -111,7 +111,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 }
 
 /**
- * 默认错误展示组件
+ * Default error display component
  */
 export function ErrorDisplay({
   error,
@@ -121,10 +121,10 @@ export function ErrorDisplay({
   classNamePrefix?: string;
 }) {
   const errorTypeText = {
-    parse: '解析错误',
-    render: '渲染错误',
-    diagram: '图表错误',
-    unknown: '未知错误',
+    parse: 'Parse error',
+    render: 'Render error',
+    diagram: 'Diagram error',
+    unknown: 'Unknown error',
   };
 
   const errorTypeColor = {
@@ -156,7 +156,7 @@ export function ErrorDisplay({
           </p>
           {error.details && (
             <details className={`${classNamePrefix}-details`} style={styles.detailsContainer}>
-              <summary style={styles.detailsSummary}>详细信息</summary>
+              <summary style={styles.detailsSummary}>Details</summary>
               <pre className={`${classNamePrefix}-details-text`} style={styles.detailsText}>
                 <code>{error.details}</code>
               </pre>
@@ -164,7 +164,7 @@ export function ErrorDisplay({
           )}
           {isDev && error.stack && (
             <details className={`${classNamePrefix}-stack`} style={styles.stackContainer}>
-              <summary style={styles.stackSummary}>堆栈跟踪（开发模式）</summary>
+              <summary style={styles.stackSummary}>Stack trace (development mode)</summary>
               <pre className={`${classNamePrefix}-stack-text`} style={styles.stackText}>
                 <code>{error.stack}</code>
               </pre>
@@ -176,7 +176,7 @@ export function ErrorDisplay({
   );
 }
 
-// 内联样式（作为默认样式，可通过 className 覆盖）
+// Inline styles (used as defaults, can be overridden via className)
 const styles: Record<string, React.CSSProperties> = {
   container: {
     padding: '12px',

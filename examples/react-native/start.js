@@ -16,13 +16,13 @@ function run(command, args, cwd) {
   }
 }
 
-// 确保根目录依赖已安装（只在缺少 node_modules 时执行）
+// Make sure root dependencies are installed (only runs when node_modules is missing)
 if (!existsSync(resolve(rootDir, 'node_modules'))) {
-  console.log('[supramark/native] 未检测到根目录 node_modules，正在执行 bun install...');
+  console.log('[supramark/native] root node_modules not found, running bun install...');
   run('bun', ['install'], rootDir);
 }
 
-// 启动 Expo 开发服务器
-console.log('[supramark/native] 启动 Expo（expo start）...');
+// Start the Expo dev server
+console.log('[supramark/native] starting Expo (expo start)...');
 run('bunx', ['expo', 'start'], here);
 

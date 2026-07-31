@@ -9,8 +9,8 @@ import { type VisonComponent } from '../shared/types';
 type RNNode = React.ComponentProps<typeof Text>['children'];
 
 /**
- * 生产级 React Native 渲染器
- * 增加特性：图片占位符、错误捕获、性能优化 (Memo)
+ * Production-grade React Native renderer
+ * Adds: image placeholders, error capture, performance optimization (Memo)
  */
 
 const VisonImage: React.FC<{ props: Record<string, unknown>; style: StyleProp<ViewStyle> }> = ({ props, style }) => {
@@ -37,7 +37,7 @@ const VisonImage: React.FC<{ props: Record<string, unknown>; style: StyleProp<Vi
 export const VisonRNRenderer: React.FC<{ data: VisonComponent }> = React.memo(({ data }) => {
   const { type, props = {}, style = {}, children } = data;
 
-  // 使用 useMemo 避免多余重绘
+  // Use useMemo to avoid redundant re-renders
   const containerStyle = useMemo(() => style as StyleProp<ViewStyle & TextStyle>, [style]);
 
   try {

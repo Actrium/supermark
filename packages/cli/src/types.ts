@@ -1,7 +1,7 @@
 /**
- * supramark.config.json 的 TypeScript 形状（与 src/schema/config.v1.json 对齐）。
+ * TypeScript shape of supramark.config.json (kept aligned with src/schema/config.v1.json).
  *
- * 字段级注释见 schema 文件；这里只保留类型结构。
+ * See the schema file for field-level comments; only the type structure is kept here.
  */
 
 export type Platform = 'web' | 'rn';

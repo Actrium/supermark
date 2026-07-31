@@ -129,7 +129,7 @@ const WebDiagramNode: React.FC<WebDiagramNodeProps> = ({ node, classNames, rende
         className={classNames.diagram}
       >
         <pre className={classNames.diagramPre}>
-          <code className={classNames.diagramCode}>正在接收图表（{node.engine}）…</code>
+          <code className={classNames.diagramCode}>Receiving diagram ({node.engine})…</code>
         </pre>
       </div>
     );
@@ -155,8 +155,8 @@ const WebDiagramNode: React.FC<WebDiagramNodeProps> = ({ node, classNames, rende
   );
 };
 
-// Admonition 默认主题（仅在未给出自定义 className 时生效）。
-// key 对应 SUPRAMARK_ADMONITION_KINDS：note / tip / info / warning / danger。
+// Default admonition theme (only takes effect when no custom className is given).
+// Keys correspond to SUPRAMARK_ADMONITION_KINDS: note / tip / info / warning / danger.
 const ADMONITION_STYLES: Record<string, { border: string; background: string; icon: string }> = {
   note: { border: '#3b82f6', background: '#eff6ff', icon: 'ℹ️' },
   tip: { border: '#10b981', background: '#ecfdf5', icon: '💡' },
@@ -222,11 +222,12 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
         });
 
         const parsed = ast ?? (await parse(markdown, { config }));
-        // Post-process：递归解析 opaque container 的 value。
-        // 新 AST v2 的 opaque container children 为空，正文在 value（原始 markdown）。
-        // Rust parser 不认 feature 插件 JS 侧注册的 registerContainerHook，
-        // 把所有 :::xxx 当 opaque 处理。这里在主组件异步上下文里把 value 解析成
-        // AST 子树填回 children，renderNode 就能正常渲染。
+        // Post-process: recursively parse the value of opaque containers.
+        // In AST v2, opaque container children are empty and the body text lives in
+        // value (the raw markdown). The Rust parser is unaware of registerContainerHook
+        // registered on the JS side by feature plugins, so it treats every :::xxx as
+        // opaque. Here, in the main component's async context, we parse value into
+        // an AST subtree and fill it back into children so renderNode can render it normally.
         await expandOpaqueContainers(parsed);
         const renderTasks = collectRenderTasks(parsed.children, config, sourceState);
         const highlightTasks = collectCodeHighlightTasks(
@@ -268,7 +269,7 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
           const err = error as Error;
           setParseError({
             type: 'parse',
-            message: err.message || '解析 Markdown 失败',
+            message: err.message || 'Failed to parse Markdown',
             details: err.toString(),
             stack: err.stack,
           });
@@ -923,9 +924,9 @@ function renderNode(
         });
       }
 
-      // Admonition 可能以两种形态到达这里：
-      //   1. 直接用 kind 作为 name（container.ts 内置解析）→ containerName ∈ SUPRAMARK_ADMONITION_KINDS
-      //   2. 来自 @supramark/feature-admonition（feature 注册的 hook）→ name='admonition', data.kind=实际种类
+      // An admonition may arrive here in two shapes:
+      //   1. kind used directly as name (built-in parsing in container.ts) → containerName ∈ SUPRAMARK_ADMONITION_KINDS
+      //   2. From @supramark/feature-admonition (a hook registered by the feature) → name='admonition', data.kind=actual kind
       const kindFromData = container.data?.kind as string | undefined;
       const isAdmonition =
         SUPRAMARK_ADMONITION_KINDS.includes(
@@ -938,7 +939,7 @@ function renderNode(
           ));
       if (isAdmonition) {
         const kind = (kindFromData as string) || containerName;
-        // title 优先使用 data.title（已剥离 kind 名），否则退回 params（可能含 kind 前缀）
+        // Prefer data.title (kind name already stripped); otherwise fall back to params (may include a kind prefix)
         const title =
           (container.data?.title as string | undefined) ||
           (containerName === 'admonition' ? undefined : container.params);
@@ -1034,23 +1035,23 @@ function renderNode(
         const zoom = data.zoom as number | undefined;
         const marker = data.marker as { lat: number; lng: number } | undefined;
 
-        const centerText = center ? `${center[0]}, ${center[1]}` : '未指定';
+        const centerText = center ? `${center[0]}, ${center[1]}` : 'Not specified';
         const zoomText =
-          typeof zoom === 'number' && !Number.isNaN(zoom) ? `缩放级别：${zoom}` : null;
+          typeof zoom === 'number' && !Number.isNaN(zoom) ? `Zoom level: ${zoom}` : null;
         const markerText =
           marker && typeof marker.lat === 'number' && typeof marker.lng === 'number'
-            ? `标记：${marker.lat}, ${marker.lng}`
+            ? `Marker: ${marker.lat}, ${marker.lng}`
             : null;
 
         return (
           <div key={key} className={classNames.paragraph}>
             <p>
-              <strong>地图卡片</strong>
+              <strong>Map card</strong>
             </p>
             <p>
-              中心：{centerText}
-              {zoomText ? `；${zoomText}` : ''}
-              {markerText ? `；${markerText}` : ''}
+              Center: {centerText}
+              {zoomText ? `; ${zoomText}` : ''}
+              {markerText ? `; ${markerText}` : ''}
             </p>
           </div>
         );
@@ -1207,10 +1208,11 @@ function renderNode(
     }
     case 'footnote_definition': {
       const def = node;
-      // def.children 是块级节点（通常是单个 paragraph），不能直接喂给 renderInlineNodes。
-      // 常见形态 `[^1]: 内容。` → children = [{ type: 'paragraph', children: [text] }]
-      // 做一次扁平化：若 children 就是单个 paragraph，把其 inline 内容直接铺出来；
-      // 否则按块级节点渲染（允许多段脚注）。
+      // def.children are block-level nodes (usually a single paragraph) and can't be
+      // fed to renderInlineNodes directly.
+      // Common shape `[^1]: content.` → children = [{ type: 'paragraph', children: [text] }]
+      // Flatten once: if children is a single paragraph, spread its inline content
+      // directly; otherwise render as block-level nodes (allows multi-paragraph footnotes).
       const soleParagraph =
         def.children.length === 1 && def.children[0]?.type === 'paragraph'
           ? def.children[0]
@@ -1252,8 +1254,10 @@ function renderNode(
     case 'image':
     case 'break':
     case 'footnote_reference':
-      // Rust parser 把 list_item.children 等场景的 inline 节点扁平铺开（非 paragraph 包裹），
-      // renderNode 遍历到这些类型时委托给 renderInlineNode，避免走 default 返回 null 吞掉内容。
+      // In cases like list_item.children, the Rust parser spreads inline nodes flat
+      // (not wrapped in a paragraph). When renderNode walks into these types it
+      // delegates to renderInlineNode, avoiding the default branch that would return
+      // null and swallow the content.
       return renderInlineNode(node, key, classNames, rendered, highlighted, config);
     case 'raw':
       // Raw HTML is opt-in. When the host has not enabled
@@ -1869,7 +1873,7 @@ function renderDisabledDiagram(
   key: number,
   classNames: SupramarkClassNames
 ): React.ReactNode {
-  const header = `[diagram engine="${diagram.engine}" 已被禁用]\n\n`;
+  const header = `[diagram engine="${diagram.engine}" is disabled]\n\n`;
   return (
     <pre key={key} className={classNames.codeBlock}>
       <code className={classNames.code}>{header + diagram.code}</code>

@@ -13,7 +13,7 @@ export {
 } from './feature.js';
 export { coreMarkdownExamples } from './examples.js';
 
-// 重新导出所有基础 Markdown 节点类型（方便用户使用）
+// Re-export all base Markdown node types (for user convenience)
 export type {
   // Root
   SupramarkRootNode,

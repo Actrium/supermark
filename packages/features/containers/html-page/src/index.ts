@@ -13,5 +13,5 @@ export {
 } from './feature.js';
 export { htmlPageExamples } from './examples.js';
 
-// 运行时：注册 :::html 容器 hook
+// Runtime: registers the :::html container hook
 import './runtime.js';

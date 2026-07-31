@@ -1,6 +1,6 @@
 /**
- * 聚合所有 Feature 的示例数据
- * 每个 Feature 现在自包含其示例，这里只负责聚合和导出
+ * Aggregates example data from every feature.
+ * Each feature now owns its examples; this file only aggregates and re-exports them.
  */
 
 import { mathExamples } from '@supramark/feature-math';
@@ -13,7 +13,7 @@ import { coreMarkdownExamples } from '@supramark/feature-core-markdown';
 import { htmlPageExamples } from '@supramark/feature-html-page';
 import { mapExamples } from '@supramark/feature-map';
 
-// 聚合所有示例，添加 id 字段
+// Aggregate all examples and attach an id field
 export const DEMOS = [
   ...coreMarkdownExamples.map((ex, idx) => ({ ...ex, id: `core-${idx}` })),
   ...mathExamples.map(ex => ({ ...ex, id: 'math' })),
