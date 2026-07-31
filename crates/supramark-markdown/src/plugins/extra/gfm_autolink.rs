@@ -7,6 +7,7 @@
 //! extension runs as a postprocess over already-parsed text nodes: emphasis,
 //! images and other inline constructs apply first, then URLs inside the
 //! resulting text are linkified (matching cmark-gfm's own postprocess pass).
+use crate::common::sourcemap::SourcePos;
 use crate::parser::core::CoreRule;
 use crate::parser::inline::{Text, TextSpecial};
 use crate::supramark::{AstV2Ctx, SupramarkNode};
@@ -66,9 +67,13 @@ fn process_node(node: &mut Node, in_link: bool, md: &MarkdownParser) {
         // code node. Mirror that here to keep bare URLs inside `...` literal.
         let is_code = is_code_node(&node.children[i]);
         if !child_in_link && !is_code {
+            // Borrow the child once for both the cast and the srcmap; the
+            // values we need (content clone, the Copy srcmap) outlive the
+            // borrow, so splice below is fine.
+            let orig_srcmap = node.children[i].srcmap;
             if let Some(text) = node.children[i].cast::<Text>() {
                 let content = text.content.clone();
-                if let Some(splice) = autolink_split(&content, md) {
+                if let Some(splice) = autolink_split(&content, orig_srcmap, md) {
                     node.children.splice(i..=i, splice);
                     // Re-scan from the new node at index i (the trailing text
                     // fragment, if any) so consecutive URLs are linkified.
@@ -90,8 +95,26 @@ fn is_code_node(node: &Node) -> bool {
 
 /// Outcome of scanning one text node: a list of replacement nodes (text +
 /// link fragments) that splice in place of the original.
-fn autolink_split(content: &str, md: &MarkdownParser) -> Option<Vec<Node>> {
+///
+/// `base_start` is the original text node's source byte offset (start of its
+/// `srcmap`), if any. When present, each split fragment and autolink node
+/// carries a `srcmap` derived as `base_start + fragment_byte_range`, so
+/// source positions survive the split instead of all dropping to `None`.
+/// The text node's content is a contiguous run of the source
+/// (`srcmap.end - srcmap.start == content.len()`), so byte offsets in
+/// `content` map 1:1 onto source byte offsets — the same invariant
+/// `map_inline_text` relies on.
+fn autolink_split(
+    content: &str,
+    orig_srcmap: Option<SourcePos>,
+    md: &MarkdownParser,
+) -> Option<Vec<Node>> {
     let bytes = content.as_bytes();
+    let base_start = orig_srcmap.map(|p| p.get_byte_offsets().0);
+    // For a content slice [lo..hi], the source span [base_start+lo, base_start+hi).
+    let pos = |lo: usize, hi: usize| -> Option<SourcePos> {
+        base_start.map(|b| SourcePos::new(b + lo, b + hi))
+    };
     let mut out: Vec<Node> = Vec::new();
     let mut text_start = 0usize;
     let mut i = 0usize;
@@ -118,13 +141,13 @@ fn autolink_split(content: &str, md: &MarkdownParser) -> Option<Vec<Node>> {
         };
         // flush text before the match
         if m.start > text_start {
-            push_text(&mut out, &content[text_start..m.start]);
+            push_text(&mut out, &content[text_start..m.start], pos(text_start, m.start));
         } else if m.start < text_start {
             // match rewinds into already-flushed text — shouldn't happen, but
             // bail to avoid corrupting the tree.
             return None;
         }
-        push_link(&mut out, &m.url, &m.display, md);
+        push_link(&mut out, &m.url, &m.display, pos(m.start, m.end), md);
         text_start = m.end;
         i = m.end;
     }
@@ -132,7 +155,7 @@ fn autolink_split(content: &str, md: &MarkdownParser) -> Option<Vec<Node>> {
         return None;
     }
     if text_start < bytes.len() {
-        push_text(&mut out, &content[text_start..]);
+        push_text(&mut out, &content[text_start..], pos(text_start, bytes.len()));
     }
     // Drop empty trailing/leading text nodes that cmark-gfm would also drop.
     out.retain(|n| !(n.cast::<Text>().is_some_and(|t| t.content.is_empty())));
@@ -160,29 +183,37 @@ enum EmailScan {
     Skip(usize),
 }
 
-fn push_text(out: &mut Vec<Node>, s: &str) {
+fn push_text(out: &mut Vec<Node>, s: &str, pos: Option<SourcePos>) {
     let mut node = Node::new(Text {
         content: s.to_owned(),
     });
-    node.srcmap = None;
+    node.srcmap = pos;
     out.push(node);
 }
 
-fn push_link(out: &mut Vec<Node>, url: &str, display: &str, md: &MarkdownParser) {
+fn push_link(
+    out: &mut Vec<Node>,
+    url: &str,
+    display: &str,
+    pos: Option<SourcePos>,
+    md: &MarkdownParser,
+) {
     let full_url = md.link_formatter.normalize_link(url);
     if md.link_formatter.validate_link(&full_url).is_none() {
         // Disallowed protocol: render as plain text instead of a link.
-        push_text(out, display);
+        push_text(out, display, pos);
         return;
     }
-    let inner = Node::new(TextSpecial {
+    let mut inner = Node::new(TextSpecial {
         content: display.to_owned(),
         markup: display.to_owned(),
         info: "autolink",
     });
+    inner.srcmap = pos;
     let mut node = Node::new(GfmAutolink {
         url: full_url,
     });
+    node.srcmap = pos;
     node.children.push(inner);
     out.push(node);
 }

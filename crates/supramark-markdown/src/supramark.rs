@@ -428,7 +428,7 @@ fn map_children(children: &[Node], index: &OffsetIndex, base_offset: usize) -> V
         .iter()
         .flat_map(|child| map_node(child, index, base_offset))
         .collect();
-    let mapped = reassemble_split_footnote_refs(mapped);
+    let mapped = reassemble_split_footnote_refs(mapped, index);
     rescan_adjacent_text_runs(mapped, index)
 }
 
@@ -671,18 +671,32 @@ fn map_inline_text(
 /// `Raw(html)`/`Text` siblings up to the closing `]`. Without this, the
 /// raw-HTML inline rule consumes the `<…>` before the footnote post-process
 /// sees the full `[^…]`, leaking the tag into the output (an XSS vector).
-fn reassemble_split_footnote_refs(nodes: Vec<SupramarkNode>) -> Vec<SupramarkNode> {
+fn reassemble_split_footnote_refs(
+    nodes: Vec<SupramarkNode>,
+    index: &OffsetIndex,
+) -> Vec<SupramarkNode> {
     let mut out = Vec::with_capacity(nodes.len());
     let mut i = 0;
     while i < nodes.len() {
-        let split = match &nodes[i] {
-            SupramarkNode::Text { value, .. } => find_unclosed_footnote_open(value),
-            _ => None,
-        };
-        let Some((text_before, after_caret)) = split else {
-            out.push(nodes[i].clone());
-            i += 1;
-            continue;
+        let (text_before, after_caret, open_pos, open_value_len, open_k) = match &nodes[i] {
+            SupramarkNode::Text { value, position } => {
+                match find_unclosed_footnote_open(value) {
+                    Some((tb, ac)) => {
+                        let k = value.len() - ac.len() - 2; // index of '['
+                        (tb, ac, position.clone(), value.len(), k)
+                    }
+                    None => {
+                        out.push(nodes[i].clone());
+                        i += 1;
+                        continue;
+                    }
+                }
+            }
+            _ => {
+                out.push(nodes[i].clone());
+                i += 1;
+                continue;
+            }
         };
         let mut label = after_caret.to_owned();
         let mut found_close = None;
@@ -693,10 +707,16 @@ fn reassemble_split_footnote_refs(nodes: Vec<SupramarkNode>) -> Vec<SupramarkNod
                     label.push_str(value);
                     j += 1;
                 }
-                SupramarkNode::Text { value, .. } => match value.find(']') {
+                SupramarkNode::Text { value, position } => match value.find(']') {
                     Some(br) => {
                         label.push_str(&value[..br]);
-                        found_close = Some((j, &value[br + 1..]));
+                        found_close = Some(Close {
+                            idx: j,
+                            br,
+                            value_len: value.len(),
+                            text_after: value[br + 1..].to_owned(),
+                            position: position.clone(),
+                        });
                         break;
                     }
                     None => {
@@ -708,26 +728,46 @@ fn reassemble_split_footnote_refs(nodes: Vec<SupramarkNode>) -> Vec<SupramarkNod
             }
         }
         match found_close {
-            Some((close_idx, text_after)) => {
+            Some(close) => {
                 if !text_before.is_empty() {
                     out.push(SupramarkNode::Text {
                         value: text_before.to_owned(),
-                        position: None,
+                        position: sub_text_position(
+                            index,
+                            open_pos.as_ref(),
+                            open_value_len,
+                            0,
+                            open_k,
+                        ),
                     });
                 }
                 out.push(SupramarkNode::FootnoteReference {
                     index: 0,
                     identifier: normalize_footnote_identifier(&label),
                     label,
-                    position: None,
+                    position: ref_position(
+                        index,
+                        open_pos.as_ref(),
+                        open_value_len,
+                        open_k,
+                        close.position.as_ref(),
+                        close.value_len,
+                        close.br,
+                    ),
                 });
-                if !text_after.is_empty() {
+                if !close.text_after.is_empty() {
                     out.push(SupramarkNode::Text {
-                        value: text_after.to_owned(),
-                        position: None,
+                        value: close.text_after,
+                        position: sub_text_position(
+                            index,
+                            close.position.as_ref(),
+                            close.value_len,
+                            close.br + 1,
+                            close.value_len,
+                        ),
                     });
                 }
-                i = close_idx + 1;
+                i = close.idx + 1;
             }
             None => {
                 out.push(nodes[i].clone());
@@ -736,6 +776,60 @@ fn reassemble_split_footnote_refs(nodes: Vec<SupramarkNode>) -> Vec<SupramarkNod
         }
     }
     out
+}
+
+struct Close {
+    idx: usize,
+    br: usize,
+    value_len: usize,
+    text_after: String,
+    position: Option<SourcePosition>,
+}
+
+/// Slice a parent Text node's position to cover `value[lo..hi]`. Only valid
+/// when the value's byte length equals the position span (the invariant
+/// `map_inline_text` relies on); otherwise `None` is safer than a wrong
+/// sub-position.
+fn sub_text_position(
+    index: &OffsetIndex,
+    parent: Option<&SourcePosition>,
+    value_len: usize,
+    lo: usize,
+    hi: usize,
+) -> Option<SourcePosition> {
+    let parent = parent?;
+    if parent.end.byte_offset.saturating_sub(parent.start.byte_offset) != value_len {
+        return None;
+    }
+    Some(SourcePosition {
+        start: index.point_at(parent.start.byte_offset + lo),
+        end: index.point_at(parent.start.byte_offset + hi),
+    })
+}
+
+/// Position for a reassembled `[^…]` footnote reference: from the `[` in the
+/// opening text node to just past the closing `]` in the closing text node.
+fn ref_position(
+    index: &OffsetIndex,
+    open: Option<&SourcePosition>,
+    open_value_len: usize,
+    open_k: usize,
+    close: Option<&SourcePosition>,
+    close_value_len: usize,
+    close_br: usize,
+) -> Option<SourcePosition> {
+    let open = open?;
+    let close = close?;
+    if open.end.byte_offset.saturating_sub(open.start.byte_offset) != open_value_len {
+        return None;
+    }
+    if close.end.byte_offset.saturating_sub(close.start.byte_offset) != close_value_len {
+        return None;
+    }
+    Some(SourcePosition {
+        start: index.point_at(open.start.byte_offset + open_k),
+        end: index.point_at(close.start.byte_offset + close_br + 1),
+    })
 }
 
 /// If `value` contains a `[^` whose remainder has no closing `]` in the same
@@ -1901,6 +1995,121 @@ mod tests {
             link_children.first(),
             Some(SupramarkNode::Text { value, .. }) if value == "https://example.com"
         ));
+    }
+
+    /// Walk the paragraph children and return (value, byte-offset span) for
+    /// text fragments and autolink links produced by a bare-URL/email split.
+    fn autolink_split_spans(input: &str) -> Vec<(String, Option<(usize, usize)>)> {
+        let ast = parse(input);
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root");
+        };
+        let SupramarkNode::Paragraph { children: p, .. } = &children[0] else {
+            panic!("expected paragraph");
+        };
+        p.iter()
+            .filter_map(|n| match n {
+                SupramarkNode::Text { value, position } => {
+                    Some((value.clone(), byte_span(position)))
+                }
+                SupramarkNode::Link { children, position, .. } => {
+                    let text = children
+                        .iter()
+                        .filter_map(|c| match c {
+                            SupramarkNode::Text { value, .. } => Some(value.clone()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("");
+                    Some((text, byte_span(position)))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn byte_span(position: &Option<SourcePosition>) -> Option<(usize, usize)> {
+        position
+            .as_ref()
+            .map(|p| (p.start.byte_offset, p.end.byte_offset))
+    }
+
+    #[test]
+    fn bare_email_autolink_preserves_source_positions() {
+        // "see foo@bar.baz now" -> Text("see ") | Link("foo@bar.baz") | Text(" now")
+        // The original text node's srcmap must be sliced onto each fragment;
+        // before the fix every split node carried position: None.
+        assert_eq!(
+            autolink_split_spans("see foo@bar.baz now"),
+            vec![
+                ("see ".to_owned(), Some((0, 4))),
+                ("foo@bar.baz".to_owned(), Some((4, 15))),
+                (" now".to_owned(), Some((15, 19))),
+            ]
+        );
+    }
+
+    #[test]
+    fn bare_www_autolink_preserves_source_positions() {
+        // "go www.example.com here" -> Text("go ") | Link | Text(" here")
+        assert_eq!(
+            autolink_split_spans("go www.example.com here"),
+            vec![
+                ("go ".to_owned(), Some((0, 3))),
+                ("www.example.com".to_owned(), Some((3, 18))),
+                (" here".to_owned(), Some((18, 23))),
+            ]
+        );
+    }
+
+    #[test]
+    fn chained_at_skipped_region_keeps_text_position() {
+        // `a@a@a@a post b@c.d`: the `a@a@a@a` chain finds no email (no dot),
+        // so it is skipped as plain text and the `b@c.d` link is matched.
+        // The pre-link text fragment must still carry a contiguous position
+        // spanning from the start through the link's start.
+        assert_eq!(
+            autolink_split_spans("a@a@a@a post b@c.d"),
+            vec![
+                ("a@a@a@a post ".to_owned(), Some((0, 13))),
+                ("b@c.d".to_owned(), Some((13, 18))),
+            ]
+        );
+    }
+
+    #[test]
+    fn reassembled_footnote_ref_carries_position() {
+        // The `[^…<…>]` footnote reference is reassembled across an inline
+        // raw-HTML split; the resulting FootnoteReference (and the text-before
+        // / text-after fragments) must carry source positions, not None.
+        let ast = parse("Hi[^\"><script>alert(1)</script>]\n\n[^\"><script>alert(1)</script>]: x\n");
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root");
+        };
+        let SupramarkNode::Paragraph { children: p, .. } = &children[0] else {
+            panic!("expected paragraph");
+        };
+        let spans: Vec<Option<(usize, usize)>> = p
+            .iter()
+            .filter_map(|n| match n {
+                SupramarkNode::Text { position, .. } => Some(byte_span(position)),
+                SupramarkNode::FootnoteReference { position, .. } => Some(byte_span(position)),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            spans.iter().all(Option::is_some),
+            "no node should lose its position: {spans:?}"
+        );
+        let r#ref = p
+            .iter()
+            .find_map(|n| match n {
+                SupramarkNode::FootnoteReference { position, .. } => byte_span(position),
+                _ => None,
+            })
+            .expect("reassembled footnote reference");
+        // Spans from the `[` (offset 2, after "Hi") to just past the closing `]`.
+        assert_eq!(r#ref, (2, 32));
     }
 
     #[test]
