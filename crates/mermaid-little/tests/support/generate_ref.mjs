@@ -78,7 +78,15 @@ for (const k of [
   'Image',
   'CSS',
 ]) {
-  if (W[k] !== undefined) globalThis[k] = W[k];
+  // Node >=21 ships a built-in globalThis.navigator as a read-only,
+  // non-configurable getter. ESM is strict mode, so the bare assignment
+  // below throws TypeError there. Guard it so the generator runs on both
+  // Node 20 (assignment succeeds, jsdom's navigator wins) and Node >=21
+  // (assignment skipped, Node's native navigator remains). Output parity
+  // across the two is verified at reference-regeneration time.
+  if (W[k] !== undefined) {
+    try { globalThis[k] = W[k]; } catch {}
+  }
 }
 if (!globalThis.screen) globalThis.screen = { availWidth: 1024, availHeight: 768, width: 1024, height: 768 };
 
