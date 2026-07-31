@@ -6,9 +6,23 @@
   "caseCount": 652,
   "parserProfile": "supramark-default",
   "comparisonTarget": "production-web-renderer-dom",
-  "semanticFailureIds": [],
-  "visualFailureIds": [],
+  "semanticFailureIds": [
+    "commonmark-0.31.2-0602",
+    "commonmark-0.31.2-0608",
+    "commonmark-0.31.2-0611",
+    "commonmark-0.31.2-0612"
+  ],
+  "visualFailureIds": [
+    "commonmark-0.31.2-0602",
+    "commonmark-0.31.2-0608",
+    "commonmark-0.31.2-0611",
+    "commonmark-0.31.2-0612"
+  ],
   "notes": {
-    "_summary": "Clean CommonMark 0.31.2 baseline. The commonmark source is parsed with the GFM autolink extension disabled (parser `--no-gfm-autolink` flag, see scripts/run.mjs) because the CommonMark spec has no bare-URL/email autolink extension — bare `https://`, `www.` and `foo@bar` must stay literal. The cmark-gfm source disables the extension for its core \"Autolinks\" section too (CommonMark-core cases expect literal) and keeps it on only for the \"Autolinks (extension)\" section. See issue #144."
+    "_summary": "CommonMark 0.31.2 baseline measured against Supramark's DEFAULT parser config (issue #144 premise). The default config ships the GFM bare-URL/email autolink extension ON, so bare `https://`, `www.` and `foo@bar` are linkified. CommonMark 0.31.2 has no such extension — its Autolinks section expects bare URLs/emails to stay literal — so the 4 cases listed here diverge. These are legitimate GFM-vs-CommonMark spec differences, not parser bugs: 0602 (`<https://foo.bar/baz bim>`, invalid bracketed autolink whose inner bare URL supramark linkifies), 0608 (`< https://foo.bar >`, same), 0611 (`https://example.com` bare URL), 0612 (`foo@bar.example.com` bare email). They are baselined rather than hidden: the gate parses every case with the default config and surfaces these as expected divergences. The parallel cmark-gfm spec-* Autolinks cases (spec-0610/0616/0619/0620) carry the same caveat in baselines/cmark-gfm.json.",
+    "commonmark-0.31.2-0602": "Autolinks: DIVERGENCE — CommonMark expects the invalid bracketed autolink `<https://foo.bar/baz bim>` to render literal (`&lt;…&gt;`); Supramark's default config (GFM autolink on) linkifies the bare `https://foo.bar/baz` inside. Legitimate GFM-vs-CommonMark difference, baselined.",
+    "commonmark-0.31.2-0608": "Autolinks: DIVERGENCE — `< https://foo.bar >` expected literal; Supramark default linkifies the bare `https://foo.bar`. Legitimate GFM-vs-CommonMark difference, baselined.",
+    "commonmark-0.31.2-0611": "Autolinks: DIVERGENCE — bare `https://example.com` expected literal; Supramark default (GFM autolink on) linkifies it. Legitimate GFM-vs-CommonMark difference, baselined.",
+    "commonmark-0.31.2-0612": "Autolinks: DIVERGENCE — bare `foo@bar.example.com` expected literal; Supramark default (GFM autolink on) linkifies it as a mailto. Legitimate GFM-vs-CommonMark difference, baselined."
   }
 }

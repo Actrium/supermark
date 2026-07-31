@@ -71,23 +71,17 @@ const DEFAULT_BINARY = path.join(
   process.platform === 'win32' ? 'supramark-markdown.exe' : 'supramark-markdown'
 );
 const parserBinary = path.resolve(process.env.SUPRAMARK_MARKDOWN_BIN ?? DEFAULT_BINARY);
-// The GFM bare-URL/email autolink extension is gated per case:
-//  - CommonMark spec has no bare-URL autolink, so the whole commonmark source
-//    is parsed with the extension off (bare URLs stay literal).
-//  - cmark-gfm ships two autolink sections. In spec.txt the core "Autolinks"
-//    section (case IDs `spec-*`) tests CommonMark and expects bare URLs to stay
-//    literal, so the extension is disabled there. The extensions.txt "Autolinks"
-//    section (case IDs `extensions-*`) and spec.txt's "Autolinks (extension)"
-//    section both exercise GFM linkification and keep the extension on.
-function parserArgsFor(testCase) {
-  if (sourceName === 'commonmark') {
-    return ['--no-gfm-autolink', '-'];
-  }
-  if (sourceName === 'cmark-gfm'
-    && testCase.source?.section === 'Autolinks'
-    && testCase.id.includes('-spec-')) {
-    return ['--no-gfm-autolink', '-'];
-  }
+// Issue #144's premise is that Supramark ships its DEFAULT parser config, and
+// the gate must measure exactly that — not a per-section toggle of the GFM
+// autolink extension. The default config has GFM bare-URL/email autolink ON
+// (crates/supramark-markdown/src/supramark.rs), so bare `https://`, `www.`
+// and `foo@bar` are linkified. CommonMark 0.31.2 has no such extension, and
+// cmark-gfm's CommonMark-core "Autolinks" section expects them literal — so
+// the small set of cases that contain bare URLs diverge under the default
+// config. Those divergences are legitimate GFM-vs-CommonMark differences,
+// not parser bugs; they are recorded in each baseline's failure lists with a
+// caveat rather than hidden by toggling the extension off here.
+function parserArgsFor() {
   return ['-'];
 }
 const failOnFailures = process.env.FAIL_ON_FAILURES !== '0';
