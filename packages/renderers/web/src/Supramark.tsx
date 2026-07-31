@@ -19,7 +19,6 @@ import type {
   SupramarkDefinitionDescriptionNode,
   SupramarkRawNode,
   SupramarkFootnoteReferenceNode,
-  SupramarkFootnoteDefinitionNode,
   SupramarkDiagramConfig,
   SupramarkConfig,
   SupramarkCodeHighlightResult,
@@ -468,7 +467,7 @@ function isTagfilterEnabled(config?: SupramarkConfig): boolean {
 // Replace the leading `<` of every disallowed tag (open or close,
 // case-insensitive) with `&lt;`; allowed tags and non-tag `<` pass through.
 function tagfilterEscape(html: string): string {
-  return html.replace(/<(\/?)([a-zA-Z][a-zA-Z0-9-]*)/g, (match, slash, name) =>
+  return html.replace(/<(\/?)([a-zA-Z][a-zA-Z0-9-]*)/g, (match: string, slash: string, name: string) =>
     TAGFILTER_DISALLOWED_TAGS.has(name.toLowerCase()) ? `&lt;${slash}${name}` : match
   );
 }
@@ -539,7 +538,7 @@ function buildFootnoteMeta(root: SupramarkRootNode): FootnoteMeta {
   const collectDefs = (list: SupramarkNode[]) => {
     for (const n of list) {
       if (n.type === 'footnote_definition') {
-        const d = n as SupramarkFootnoteDefinitionNode;
+        const d = n;
         defsById.set(d.identifier, {
           index: d.index,
           label: d.label,
@@ -559,7 +558,7 @@ function buildFootnoteMeta(root: SupramarkRootNode): FootnoteMeta {
   const walkRefs = (list: SupramarkNode[]) => {
     for (const n of list) {
       if (n.type === 'footnote_reference') {
-        const r = n as SupramarkFootnoteReferenceNode;
+        const r = n;
         const def = defsById.get(r.identifier);
         if (def) {
           const k = (occCount.get(r.identifier) ?? 0) + 1;
