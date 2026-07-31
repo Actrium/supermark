@@ -509,6 +509,19 @@ function isGfmFootnoteStyle(config?: SupramarkConfig): boolean {
   return config?.options?.gfmFootnoteStyle === true;
 }
 
+// cmark-gfm 0.29's HTML renderer (html.c, CMARK_NODE_STRONG) suppresses the
+// inner `<strong>` wrapper when a strong node's parent is also strong, so
+// `__foo, __bar__, baz__` flattens to `<strong>foo, bar, baz</strong>` instead
+// of the nested `<strong>foo, <strong>bar</strong>, baz</strong>` the
+// delimiter-run algorithm produces. CommonMark 0.31 does NOT do this — its
+// spec (and reference cmark) keep the nesting. The two references diverge on
+// the same input, so the flattening is opt-in via `options.flattenNestedStrong`;
+// the cmark-gfm conformance harness enables it, the default (and CommonMark)
+// stays nested. Only STRONG is suppressed; nested <em> always emits.
+function isFlattenNestedStrongEnabled(config?: SupramarkConfig): boolean {
+  return config?.options?.flattenNestedStrong === true;
+}
+
 // Mirror cmark-gfm's URL-fragment escaping for footnote identifiers: keep
 // URL-safe chars (including `/`, `(`, `)`, alphanumerics) literal and
 // percent-encode the rest, so `"`, `<`, `>` become %22/%3C/%3E. `encodeURIComponent`
@@ -1782,8 +1795,8 @@ function serializeInlineNode(
       // strong emits no wrapper at all, so `****foo****` flattens to a
       // single <strong>foo</strong>. (Children are still recursed with
       // parentType='strong' since the suppressed node is still a strong
-      // ancestor to its own children.)
-      if (parentType === 'strong') return inner;
+      // ancestor to its own children.) Opt-in (CommonMark 0.31 keeps nesting).
+      if (parentType === 'strong' && isFlattenNestedStrongEnabled(config)) return inner;
       return `<strong${cls(classNames.strong)}>${inner}</strong>`;
     }
     case 'emphasis': {
@@ -1963,7 +1976,8 @@ function renderInlineNode(
       // collapsing `****foo****` to a single `<strong>foo</strong>` instead
       // of the nested `<strong><strong>foo</strong></strong>` the delimiter
       // algorithm produces. Only STRONG is suppressed — nested <em> stays.
-      if (parentType === 'strong') {
+      // Opt-in (CommonMark 0.31 keeps the nesting).
+      if (parentType === 'strong' && isFlattenNestedStrongEnabled(config)) {
         return (
           <React.Fragment key={key}>
             {renderInlineNodes(strongNode.children, classNames, rendered, highlighted, config, 'strong')}

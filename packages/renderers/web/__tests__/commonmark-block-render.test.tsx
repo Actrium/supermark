@@ -38,7 +38,7 @@ function createContainer(): TestContainer {
 
 async function renderAst(
   ast: SupramarkRootNode,
-  options?: { allowDangerousHtml?: boolean; gfmTagfilter?: boolean }
+  options?: { allowDangerousHtml?: boolean; gfmTagfilter?: boolean; flattenNestedStrong?: boolean }
 ): Promise<TestContainer> {
   const container = createContainer();
   const opts = options
@@ -46,6 +46,7 @@ async function renderAst(
         options: {
           ...(options.allowDangerousHtml ? { allowDangerousHtml: true } : {}),
           ...(options.gfmTagfilter ? { gfmTagfilter: true } : {}),
+          ...(options.flattenNestedStrong ? { flattenNestedStrong: true } : {}),
         },
       }
     : undefined;
@@ -158,12 +159,15 @@ describe('CommonMark block rendering', () => {
   });
 });
 
-describe('CommonMark emphasis delimiter flattening', () => {
-  // cmark-gfm's HTML renderer suppresses the <strong> wrapper when a strong
-  // node's parent is itself strong (html.c, CMARK_NODE_STRONG), collapsing
-  // the nested `<strong><strong>foo</strong></strong>` that the delimiter
-  // run algorithm produces into a single flat `<strong>foo</strong>`. Only
-  // STRONG is suppressed; nested <em> stays nested. See issue #144.
+describe('cmark-gfm nested-strong flattening (opt-in)', () => {
+  // cmark-gfm 0.29's HTML renderer suppresses the <strong> wrapper when a
+  // strong node's parent is itself strong (html.c, CMARK_NODE_STRONG),
+  // collapsing the nested `<strong><strong>foo</strong></strong>` that the
+  // delimiter run algorithm produces into a single flat `<strong>foo</strong>`.
+  // CommonMark 0.31 does NOT do this — its spec keeps the nesting — so the
+  // flattening is opt-in via `options.flattenNestedStrong` (the cmark-gfm
+  // conformance harness enables it; the default stays nested). Only STRONG is
+  // suppressed; nested <em> always stays nested. See issue #144.
 
   function strong(children: SupramarkRootNode['children']) {
     return { type: 'strong', children } as const;
@@ -172,17 +176,26 @@ describe('CommonMark emphasis delimiter flattening', () => {
     return { type: 'emphasis', children } as const;
   }
 
-  test('flattens nested strong-strong to a single <strong>', async () => {
-    // `****foo****` -> <p><strong>foo</strong></p>
+  test('default keeps nested strong-strong (CommonMark 0.31 behavior)', async () => {
+    // `****foo****` -> <p><strong><strong>foo</strong></strong></p> by default
     const ast = makeRoot([
       { type: 'paragraph', children: [strong([strong([text('foo')])])] },
     ]);
     const container = await renderAst(ast);
+    expect(container.innerHTML).toContain('<strong><strong>foo</strong></strong>');
+  });
+
+  test('flattens nested strong-strong to a single <strong> when opted in', async () => {
+    // `****foo****` -> <p><strong>foo</strong></p>
+    const ast = makeRoot([
+      { type: 'paragraph', children: [strong([strong([text('foo')])])] },
+    ]);
+    const container = await renderAst(ast, { flattenNestedStrong: true });
     expect(container.innerHTML).toContain('<strong>foo</strong>');
     expect(container.innerHTML).not.toContain('<strong><strong>');
   });
 
-  test('flattens strong child of strong but keeps intervening text', async () => {
+  test('flattens strong child of strong but keeps intervening text (opted in)', async () => {
     // `__foo, __bar__, baz__` -> <p><strong>foo, bar, baz</strong></p>
     const ast = makeRoot([
       {
@@ -192,12 +205,12 @@ describe('CommonMark emphasis delimiter flattening', () => {
         ],
       },
     ]);
-    const container = await renderAst(ast);
+    const container = await renderAst(ast, { flattenNestedStrong: true });
     expect(container.innerHTML).toContain('<strong>foo, bar, baz</strong>');
     expect(container.innerHTML).not.toContain('<strong><strong>');
   });
 
-  test('preserves nested emphasis (only strong is suppressed)', async () => {
+  test('preserves nested emphasis (only strong is suppressed, opted in)', async () => {
     // `*(*foo*)*` -> <p><em>(<em>foo</em>)</em></p>
     const ast = makeRoot([
       {
@@ -207,11 +220,11 @@ describe('CommonMark emphasis delimiter flattening', () => {
         ],
       },
     ]);
-    const container = await renderAst(ast);
+    const container = await renderAst(ast, { flattenNestedStrong: true });
     expect(container.innerHTML).toContain('<em>(<em>foo</em>)</em>');
   });
 
-  test('keeps inner strong whose parent is emphasis, not strong', async () => {
+  test('keeps inner strong whose parent is emphasis, not strong (opted in)', async () => {
     // `**_**b**_**` -> <p><strong><em><strong>b</strong></em></strong></p>
     const ast = makeRoot([
       {
@@ -219,11 +232,11 @@ describe('CommonMark emphasis delimiter flattening', () => {
         children: [strong([emph([strong([text('b')])])])],
       },
     ]);
-    const container = await renderAst(ast);
+    const container = await renderAst(ast, { flattenNestedStrong: true });
     expect(container.innerHTML).toContain('<strong><em><strong>b</strong></em></strong>');
   });
 
-  test('flattens strong-strong inside a raw-HTML paragraph (serialize path)', async () => {
+  test('flattens strong-strong inside a raw-HTML paragraph (serialize path, opted in)', async () => {
     // `****foo**** <b>x</b>` -> the paragraph contains raw HTML, so it goes
     // through serializeInlineNode; the inner strong must still suppress.
     const ast = makeRoot([
@@ -232,7 +245,7 @@ describe('CommonMark emphasis delimiter flattening', () => {
         children: [strong([strong([text('foo')])]), raw('<b>x</b>', false), text(' ')],
       },
     ]);
-    const container = await renderAst(ast, { allowDangerousHtml: true });
+    const container = await renderAst(ast, { allowDangerousHtml: true, flattenNestedStrong: true });
     expect(container.innerHTML).toContain('<strong>foo</strong>');
     expect(container.innerHTML).not.toContain('<strong><strong>');
   });

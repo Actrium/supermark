@@ -71,9 +71,14 @@ export async function renderWithProductionWebRenderer({ cases, astById }) {
         const sectionName = testCase.source?.section ?? '';
         const gfmFootnoteStyle =
           testCase.id.startsWith('cmark-gfm-') && sectionName.toLowerCase().includes('footnote');
+        // cmark-gfm 0.29's HTML renderer flattens nested strong (a strong
+        // whose parent is strong emits no <strong> wrapper), while CommonMark
+        // 0.31 keeps the nesting. The two references diverge on the same
+        // input, so the flattening is enabled only for the cmark-gfm source.
+        const flattenNestedStrong = testCase.id.startsWith('cmark-gfm-');
         const response = await page.evaluate(
           request => window.renderSupramarkCase(request),
-          { id: testCase.id, markdown: testCase.input.markdown, ast, gfmTagfilter, gfmFootnoteStyle }
+          { id: testCase.id, markdown: testCase.input.markdown, ast, gfmTagfilter, gfmFootnoteStyle, flattenNestedStrong }
         );
         const errors = [...response.errors, ...pageErrors.slice(pageErrorOffset)];
         if (errors.length > 0) errorsById.set(testCase.id, errors);

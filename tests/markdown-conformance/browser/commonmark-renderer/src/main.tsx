@@ -8,6 +8,7 @@ type RenderRequest = {
   ast: unknown;
   gfmTagfilter?: boolean;
   gfmFootnoteStyle?: boolean;
+  flattenNestedStrong?: boolean;
 };
 
 type RenderResponse = {
@@ -73,6 +74,7 @@ function RenderCase({
           allowDangerousHtml: true,
           ...(request.gfmTagfilter ? { gfmTagfilter: true } : {}),
           ...(request.gfmFootnoteStyle ? { gfmFootnoteStyle: true } : {}),
+          ...(request.flattenNestedStrong ? { flattenNestedStrong: true } : {}),
         },
       }}
       onError={onError}
