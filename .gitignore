@@ -63,3 +63,4 @@ docs/.vitepress/dist
 docs/.vitepress/cache
 docs/public/typedoc
 docs/public/preview
+docs/public/playground
