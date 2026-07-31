@@ -96,7 +96,22 @@ fn autolink_split(content: &str, md: &MarkdownParser) -> Option<Vec<Node>> {
     let mut text_start = 0usize;
     let mut i = 0usize;
     while i < bytes.len() {
-        let m = match_next(bytes, i);
+        let m = match bytes[i] {
+            b'@' => match email_match(bytes, i) {
+                EmailScan::Found(m) => Some(m),
+                // No email here; jump past the scanned region so the cursor
+                // does not re-trigger email_match at the next '@' (the
+                // quadratic case). Text in the skipped span is still flushed
+                // — either by the next match's `text_start..m.start` slice
+                // or by the trailing flush below — because text_start only
+                // advances on a real match.
+                EmailScan::Skip(skip) => {
+                    i += skip;
+                    continue;
+                }
+            },
+            _ => match_next(bytes, i),
+        };
         let Some(m) = m else {
             i += 1;
             continue;
@@ -129,6 +144,20 @@ struct Match {
     end: usize,
     url: String,
     display: String,
+}
+
+/// Outcome of an email scan at one `@`.
+///
+/// Mirrors cmark-gfm's `postprocess_text` email branch: on a failed match the
+/// outer cursor must advance past the scanned region (the `@` plus the
+/// forward-scanned link_end, or just past the `@` when there is no local
+/// part). Returning that distance here — instead of `None` — is what keeps
+/// the outer `autolink_split` cursor from re-triggering `email_match` at
+/// every subsequent `@`, which was O(n^2) on inputs like `a@a@a@...`.
+enum EmailScan {
+    Found(Match),
+    /// Advance the outer cursor by this many bytes from the `@` position.
+    Skip(usize),
 }
 
 fn push_text(out: &mut Vec<Node>, s: &str) {
@@ -167,9 +196,8 @@ fn match_next(bytes: &[u8], i: usize) -> Option<Match> {
     if b == b':' && bytes.get(i + 1) == Some(&b'/') && bytes.get(i + 2) == Some(&b'/') {
         return url_match(bytes, i);
     }
-    if b == b'@' {
-        return email_match(bytes, i);
-    }
+    // email at '@' is handled inline by autolink_split so the cursor can
+    // consume the skip-distance returned by email_match.
     None
 }
 
@@ -261,107 +289,137 @@ fn is_safe_scheme(scheme: &[u8]) -> bool {
 }
 
 // ---- email (port of postprocess_text) ----------------------------------
+//
+// cmark-gfm's `postprocess_text` (extensions/autolink.c) finds each `@` with
+// memchr, then runs a `found_at:` rewind + forward scan. When the forward scan
+// hits a second `@`, it does `offset += max_rewind + 1; max_rewind = link_end - 1;
+// goto found_at` — rebasing to the later `@` *without* rescanning the bytes
+// between them, and re-running the rewind for the new `@`. A single attempt
+// thus walks the whole `@`-chain in linear time, and on failure advances
+// `offset` past the scanned region so the outer loop does not re-trigger at
+// every `@`. The recursion this was ported as re-scanned via the outer loop,
+// turning `a@a@a@...` into O(n^2). This version restores the loop + skip.
 
-fn email_match(data: &[u8], at_pos: usize) -> Option<Match> {
-    email_match_inner(data, at_pos, 0)
-}
-
-fn email_match_inner(data: &[u8], at_pos: usize, rewind_floor: usize) -> Option<Match> {
-    let max_rewind = at_pos - rewind_floor;
-    let mut rewind = 0usize;
+fn email_match(data: &[u8], at_pos0: usize) -> EmailScan {
+    let orig = at_pos0;
+    let mut at_pos = at_pos0;
+    let mut rewind_floor = 0usize;
+    // Reset once per fresh `@` (cmark's `while(true)` body declarations).
+    // Rebases (cmark's `goto found_at`) do NOT reset these — `auto_mailto`
+    // can only flip true→false across a rebase, exactly as in cmark.
     let mut auto_mailto = true;
     let mut is_xmpp = false;
-    while rewind < max_rewind {
-        let c = data[at_pos - rewind - 1];
-        if c.is_ascii_alphanumeric() {
-            rewind += 1;
-            continue;
-        }
-        if matches!(c, b'.' | b'+' | b'-' | b'_') {
-            rewind += 1;
-            continue;
-        }
-        if c == b':' {
-            if validate_protocol(b"mailto:", data, at_pos, rewind, max_rewind) {
-                auto_mailto = false;
+    loop {
+        let max_rewind = at_pos - rewind_floor;
+        let mut rewind = 0usize;
+        while rewind < max_rewind {
+            let c = data[at_pos - rewind - 1];
+            if c.is_ascii_alphanumeric() {
                 rewind += 1;
                 continue;
             }
-            if validate_protocol(b"xmpp:", data, at_pos, rewind, max_rewind) {
-                auto_mailto = false;
-                is_xmpp = true;
+            if matches!(c, b'.' | b'+' | b'-' | b'_') {
                 rewind += 1;
                 continue;
             }
+            if c == b':' {
+                if validate_protocol(b"mailto:", data, at_pos, rewind, max_rewind) {
+                    auto_mailto = false;
+                    rewind += 1;
+                    continue;
+                }
+                if validate_protocol(b"xmpp:", data, at_pos, rewind, max_rewind) {
+                    auto_mailto = false;
+                    is_xmpp = true;
+                    rewind += 1;
+                    continue;
+                }
+            }
+            break;
         }
-        break;
-    }
-    if rewind == 0 {
-        return None;
-    }
+        if rewind == 0 {
+            // No local-part char before '@': cmark does `offset += max_rewind + 1`,
+            // i.e. advance one byte past the '@'.
+            return EmailScan::Skip(at_pos - orig + 1);
+        }
 
-    // forward scan from after '@'
-    let mut np = 0usize;
-    let mut link_end = 1usize; // skip '@'
-    let after_at = &data[at_pos..];
-    while link_end < after_at.len() {
-        let c = after_at[link_end];
-        if c.is_ascii_alphanumeric() {
-            link_end += 1;
+        // forward scan from after '@'
+        let mut np = 0usize;
+        let mut link_end = 1usize; // skip '@'
+        let after_at = &data[at_pos..];
+        let mut rebased = false;
+        while link_end < after_at.len() {
+            let c = after_at[link_end];
+            if c.is_ascii_alphanumeric() {
+                link_end += 1;
+                continue;
+            }
+            if c == b'@' {
+                // Second '@': rebase (cmark's `goto found_at`). The rewind
+                // floor becomes the char right after the current '@', so the
+                // new `max_rewind = link_end - 1` and the local part of the
+                // later '@' cannot rewind past the current one.
+                rewind_floor = at_pos + 1;
+                at_pos += link_end;
+                rebased = true;
+                break;
+            }
+            if c == b'.'
+                && link_end < after_at.len() - 1
+                && after_at[link_end + 1].is_ascii_alphanumeric()
+            {
+                np += 1;
+                link_end += 1;
+                continue;
+            }
+            if c == b'/' && is_xmpp {
+                link_end += 1;
+                continue;
+            }
+            if c == b'-' || c == b'_' {
+                link_end += 1;
+                continue;
+            }
+            break;
+        }
+        if rebased {
             continue;
         }
-        if c == b'@' {
-            // Found a second '@': rebase to it, forbidding rewind past the
-            // char immediately after the first '@' (mirrors cmark-gfm's
-            // `goto found_at` with `max_rewind = link_end - 1`).
-            return email_match_inner(data, at_pos + link_end, at_pos + 1);
-        }
-        if c == b'.'
-            && link_end < after_at.len() - 1
-            && after_at[link_end + 1].is_ascii_alphanumeric()
-        {
-            np += 1;
-            link_end += 1;
-            continue;
-        }
-        if c == b'/' && is_xmpp {
-            link_end += 1;
-            continue;
-        }
-        if c == b'-' || c == b'_' {
-            link_end += 1;
-            continue;
-        }
-        break;
-    }
 
-    if link_end < 2 || np == 0 {
-        return None;
-    }
-    // last char of domain must be alpha or '.'
-    let last = after_at[link_end - 1];
-    if !(last.is_ascii_alphabetic() || last == b'.') {
-        return None;
-    }
+        if link_end < 2 || np == 0 {
+            // cmark: `offset += max_rewind + link_end` — advance past the
+            // whole forward-scanned region.
+            return EmailScan::Skip(at_pos - orig + link_end);
+        }
+        // last char of domain must be alpha or '.'
+        let last = after_at[link_end - 1];
+        if !(last.is_ascii_alphabetic() || last == b'.') {
+            return EmailScan::Skip(at_pos - orig + link_end);
+        }
 
-    link_end = autolink_delim(after_at, link_end);
-    if link_end == 0 {
-        return None;
-    }
+        link_end = autolink_delim(after_at, link_end);
+        if link_end == 0 {
+            // cmark: `offset += max_rewind + 1` — advance one past the '@'.
+            return EmailScan::Skip(at_pos - orig + 1);
+        }
 
-    let local_and_domain = &data[at_pos - rewind..at_pos + link_end];
-    let matched = std::str::from_utf8(local_and_domain).ok()?;
-    let url = if auto_mailto {
-        format!("mailto:{}", matched)
-    } else {
-        matched.to_owned()
-    };
-    Some(Match {
-        start: at_pos - rewind,
-        end: at_pos + link_end,
-        url,
-        display: matched.to_owned(),
-    })
+        let local_and_domain = &data[at_pos - rewind..at_pos + link_end];
+        let matched = match std::str::from_utf8(local_and_domain) {
+            Ok(s) => s,
+            Err(_) => return EmailScan::Skip(at_pos - orig + link_end),
+        };
+        let url = if auto_mailto {
+            format!("mailto:{}", matched)
+        } else {
+            matched.to_owned()
+        };
+        return EmailScan::Found(Match {
+            start: at_pos - rewind,
+            end: at_pos + link_end,
+            url,
+            display: matched.to_owned(),
+        });
+    }
 }
 
 fn validate_protocol(
@@ -592,27 +650,36 @@ mod tests {
 
     #[test]
     fn email_basic() {
-        let m = email_match(b"foo@bar.baz", 3).unwrap();
+        let EmailScan::Found(m) = email_match(b"foo@bar.baz", 3) else {
+            panic!("expected match");
+        };
         assert_eq!(m.url, "mailto:foo@bar.baz");
         assert_eq!(m.display, "foo@bar.baz");
     }
 
     #[test]
     fn email_trailing_dot_stripped() {
-        let m = email_match(b"a.b-c_d@a.b.", 7).unwrap();
+        let EmailScan::Found(m) = email_match(b"a.b-c_d@a.b.", 7) else {
+            panic!("expected match");
+        };
         assert_eq!(m.display, "a.b-c_d@a.b");
     }
 
     #[test]
     fn email_trailing_dash_rejected() {
         // "a.b-c_d@a.b-" -> last char '-' not alpha/'.' -> no match
-        assert!(email_match(b"a.b-c_d@a.b-", 7).is_none());
+        assert!(matches!(
+            email_match(b"a.b-c_d@a.b-", 7),
+            EmailScan::Skip(_)
+        ));
     }
 
     #[test]
     fn email_mailto_prefix() {
         // "mailto:scyther@pokemon.com" -> '@' at index 14
-        let m = email_match(b"mailto:scyther@pokemon.com", 14).unwrap();
+        let EmailScan::Found(m) = email_match(b"mailto:scyther@pokemon.com", 14) else {
+            panic!("expected match");
+        };
         assert_eq!(m.url, "mailto:scyther@pokemon.com");
         assert_eq!(m.display, "mailto:scyther@pokemon.com");
     }
@@ -620,7 +687,9 @@ mod tests {
     #[test]
     fn email_xmpp_prefix() {
         // "xmpp:scyther@pokemon.com" -> '@' at index 12
-        let m = email_match(b"xmpp:scyther@pokemon.com", 12).unwrap();
+        let EmailScan::Found(m) = email_match(b"xmpp:scyther@pokemon.com", 12) else {
+            panic!("expected match");
+        };
         assert!(m.url.starts_with("xmpp:"));
         assert_eq!(m.display, "xmpp:scyther@pokemon.com");
     }
@@ -630,8 +699,55 @@ mod tests {
         // "mmmmailto:scyther@pokemon.com" -> char before "mailto:" is 'm' (alnum)
         // -> validate_protocol fails -> auto_mailto stays true -> only the bare
         // email is matched, "mmmmailto:" stays as text. '@' at index 17.
-        let m = email_match(b"mmmmailto:scyther@pokemon.com", 17).unwrap();
+        let EmailScan::Found(m) = email_match(b"mmmmailto:scyther@pokemon.com", 17) else {
+            panic!("expected match");
+        };
         assert_eq!(m.url, "mailto:scyther@pokemon.com");
         assert_eq!(m.display, "scyther@pokemon.com");
+    }
+
+    #[test]
+    fn email_rebase_to_last_at() {
+        // `a@b@c.d`: the first '@' rebases to the second; the local part is
+        // just `b` (cmark forbids rewinding past the char after the first
+        // '@'), so the match is `b@c.d`. Verified against cmark-gfm 0.29.0.gfm.13.
+        let EmailScan::Found(m) = email_match(b"a@b@c.d", 1) else {
+            panic!("expected match");
+        };
+        assert_eq!(m.start, 2);
+        assert_eq!(m.end, 7);
+        assert_eq!(m.url, "mailto:b@c.d");
+        assert_eq!(m.display, "b@c.d");
+    }
+
+    #[test]
+    fn email_no_dot_skips_chain() {
+        // `a@a@a@a` has no '.', so every '@' chain bottoms out at np==0.
+        // email_match must return Skip covering the whole chain (not a
+        // per-`@` None), which is what keeps the outer cursor O(n).
+        assert!(matches!(
+            email_match(b"a@a@a@a", 1),
+            EmailScan::Skip(6)
+        ));
+    }
+
+    #[test]
+    fn email_chain_is_linear() {
+        // Regression for the quadratic recursion: an `a@`-repeated input
+        // must finish quickly. There is no email (no dot), so the whole
+        // chain skips. We assert the skip distance equals the full span,
+        // i.e. a single scan handled every '@'.
+        let n = 4000;
+        let mut input = String::with_capacity(2 * n);
+        for _ in 0..n {
+            input.push_str("a@");
+        }
+        input.push('a');
+        let bytes = input.as_bytes();
+        // First '@' at index 1; a single email_match should skip the lot.
+        assert!(matches!(
+            email_match(bytes, 1),
+            EmailScan::Skip(s) if s == 2 * n
+        ));
     }
 }
