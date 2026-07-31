@@ -428,6 +428,7 @@ fn map_children(children: &[Node], index: &OffsetIndex, base_offset: usize) -> V
         .iter()
         .flat_map(|child| map_node(child, index, base_offset))
         .collect();
+    let mapped = reassemble_split_footnote_refs(mapped);
     rescan_adjacent_text_runs(mapped, index)
 }
 
@@ -661,6 +662,99 @@ fn map_inline_text(
     }
 
     nodes
+}
+
+/// Reassemble a footnote reference `[^label]` whose label was split by an
+/// inline raw-HTML token (e.g. `[^"><script>…</script>]`). cmark-gfm treats
+/// the entire `[…]` as the label string — it does not render the embedded
+/// HTML — so the reference is reconstructed by absorbing the intervening
+/// `Raw(html)`/`Text` siblings up to the closing `]`. Without this, the
+/// raw-HTML inline rule consumes the `<…>` before the footnote post-process
+/// sees the full `[^…]`, leaking the tag into the output (an XSS vector).
+fn reassemble_split_footnote_refs(nodes: Vec<SupramarkNode>) -> Vec<SupramarkNode> {
+    let mut out = Vec::with_capacity(nodes.len());
+    let mut i = 0;
+    while i < nodes.len() {
+        let split = match &nodes[i] {
+            SupramarkNode::Text { value, .. } => find_unclosed_footnote_open(value),
+            _ => None,
+        };
+        let Some((text_before, after_caret)) = split else {
+            out.push(nodes[i].clone());
+            i += 1;
+            continue;
+        };
+        let mut label = after_caret.to_owned();
+        let mut found_close = None;
+        let mut j = i + 1;
+        while j < nodes.len() {
+            match &nodes[j] {
+                SupramarkNode::Raw { format, value, .. } if format == "html" => {
+                    label.push_str(value);
+                    j += 1;
+                }
+                SupramarkNode::Text { value, .. } => match value.find(']') {
+                    Some(br) => {
+                        label.push_str(&value[..br]);
+                        found_close = Some((j, &value[br + 1..]));
+                        break;
+                    }
+                    None => {
+                        label.push_str(value);
+                        j += 1;
+                    }
+                },
+                _ => break,
+            }
+        }
+        match found_close {
+            Some((close_idx, text_after)) => {
+                if !text_before.is_empty() {
+                    out.push(SupramarkNode::Text {
+                        value: text_before.to_owned(),
+                        position: None,
+                    });
+                }
+                out.push(SupramarkNode::FootnoteReference {
+                    index: 0,
+                    identifier: normalize_footnote_identifier(&label),
+                    label,
+                    position: None,
+                });
+                if !text_after.is_empty() {
+                    out.push(SupramarkNode::Text {
+                        value: text_after.to_owned(),
+                        position: None,
+                    });
+                }
+                i = close_idx + 1;
+            }
+            None => {
+                out.push(nodes[i].clone());
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// If `value` contains a `[^` whose remainder has no closing `]` in the same
+/// text node, return `(text_before_caret, label_so_far)`. Otherwise `None`
+/// (the reference is either absent or complete within this node, so the
+/// normal per-text scan handles it).
+fn find_unclosed_footnote_open(value: &str) -> Option<(&str, &str)> {
+    let bytes = value.as_bytes();
+    let mut k = 0;
+    while k + 1 < bytes.len() {
+        if bytes[k] == b'[' && bytes[k + 1] == b'^' {
+            let rest = &value[k + 2..];
+            if !rest.contains(']') {
+                return Some((&value[..k], rest));
+            }
+        }
+        k += 1;
+    }
+    None
 }
 
 fn rescan_adjacent_text_runs(nodes: Vec<SupramarkNode>, index: &OffsetIndex) -> Vec<SupramarkNode> {
@@ -1698,6 +1792,45 @@ mod tests {
             &paragraph[3],
             SupramarkNode::FootnoteReference { label, .. } if label == "note"
         ));
+    }
+
+    #[test]
+    fn reassembles_footnote_ref_split_by_inline_raw_html() {
+        // A `[^label]` whose label contains `<` must be tokenized as one
+        // footnote reference — the inline raw-HTML rule must not split it,
+        // otherwise the embedded tag leaks into the output (XSS). cmark-gfm
+        // treats the whole `[…]` as the label string and percent-encodes it.
+        let ast = parse("Hello[^\"><script>alert(1)</script>]\n\n[^\"><script>alert(1)</script>]: pwned\n");
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root");
+        };
+        let SupramarkNode::Paragraph {
+            children: paragraph,
+            ..
+        } = &children[0]
+        else {
+            panic!("expected paragraph");
+        };
+        let reference = paragraph
+            .iter()
+            .find_map(|node| match node {
+                SupramarkNode::FootnoteReference { .. } => Some(node),
+                _ => None,
+            })
+            .expect("footnote reference");
+        match reference {
+            SupramarkNode::FootnoteReference {
+                label,
+                identifier,
+                index,
+                ..
+            } => {
+                assert_eq!(label, "\"><script>alert(1)</script>");
+                assert_eq!(identifier, "\"><script>alert(1)</script>");
+                assert_eq!(*index, 1, "footnote reference should match its definition");
+            }
+            _ => unreachable!(),
+        }
     }
 
     #[test]
