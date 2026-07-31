@@ -6,43 +6,13 @@
   "caseCount": 702,
   "parserProfile": "supramark-default",
   "comparisonTarget": "production-web-renderer-dom",
-  "semanticFailureIds": [
-    "cmark-gfm-0.29.0.gfm.13-extensions-0020",
-    "cmark-gfm-0.29.0.gfm.13-extensions-0023",
-    "cmark-gfm-0.29.0.gfm.13-extensions-0024",
-    "cmark-gfm-0.29.0.gfm.13-extensions-0025",
-    "cmark-gfm-0.29.0.gfm.13-spec-0398",
-    "cmark-gfm-0.29.0.gfm.13-spec-0426",
-    "cmark-gfm-0.29.0.gfm.13-spec-0434",
-    "cmark-gfm-0.29.0.gfm.13-spec-0435",
-    "cmark-gfm-0.29.0.gfm.13-spec-0436",
-    "cmark-gfm-0.29.0.gfm.13-spec-0473",
-    "cmark-gfm-0.29.0.gfm.13-spec-0474",
-    "cmark-gfm-0.29.0.gfm.13-spec-0475",
-    "cmark-gfm-0.29.0.gfm.13-spec-0477",
-    "cmark-gfm-0.29.0.gfm.13-spec-0652"
-  ],
-  "visualFailureIds": [
-    "cmark-gfm-0.29.0.gfm.13-extensions-0020",
-    "cmark-gfm-0.29.0.gfm.13-extensions-0025",
-    "cmark-gfm-0.29.0.gfm.13-spec-0398",
-    "cmark-gfm-0.29.0.gfm.13-spec-0652"
-  ],
+  "semanticFailureIds": [],
+  "visualFailureIds": [],
   "notes": {
-    "_summary": "Approved cmark-gfm 0.29.0.gfm.13 divergence baseline after issue #144. Of the 58 semantic / 29 visual failures recorded on main, the parser/renderer fixes in this change (GFM table thead/tbody + align attribute, task-list trailing-space normalization via shared list-child renderer, GFM bare-URL/email autolink postprocess with image-alt and code-node skipping, GFM single+double-tilde strikethrough, embedded-HTML-in-table-cell via coherent inline-to-HTML serialization, GFM tagfilter for the Disallowed Raw HTML / HTML tag filter sections, the GFM footnote section renderer under options.gfmFootnoteStyle, footnote-definition indented-continuation capture in the Rust parser, and per-case autolink gating for the CommonMark-core Autolinks section) resolve 44 semantic / 25 visual cases. The 14 semantic / 4 visual cases below remain and are tracked here as documented divergence rather than regressions; each is either a deliberate spec-correct stance, a parser-level limitation tracked as future work, or an out-of-scope rendering target.",
-    "spec-0398": "Emphasis: cmark 0.29 emits flat output for `__foo, __bar__, baz__` where the CommonMark emphasis algorithm (delimiter runs, rule of 3) mandates nesting, so Supramark's spec-correct parser emits `<strong>foo, <strong>bar</strong>, baz</strong>`. Because `font-weight: bolder` is relative, the nesting compounds the weight and renders visibly heavier than cmark's flat output — a real ~0.09% pixel divergence, not anti-aliasing. cmark 0.29 is not uniformly flat, though: it nests in spec-0378/0416, so a renderer-level flatten shim regresses those. Matching cmark here would require reimplementing cmark 0.29's spec-divergent emphasis algorithm in the parser, sacrificing spec-correctness; parser is left spec-correct. See issue #144 (emphasis divergence).",
-    "spec-0426": "Emphasis: same cmark-0.29 flat-vs-nested divergence as spec-0398; parser is spec-correct.",
-    "spec-0434": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
-    "spec-0435": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
-    "spec-0436": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
-    "spec-0473": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
-    "spec-0474": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
-    "spec-0475": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
-    "spec-0477": "Emphasis: same cmark-0.29 divergence; parser is spec-correct.",
-    "spec-0652": "Disallowed Raw HTML: GFM tagfilter escapes disallowed block-level tags at the point of emission, but this case additionally needs active-formatting-element reconstruction across the `</p>` boundary (the unclosed `<strong>`/`<em>` re-open around trailing content). The web renderer's raw-HTML paragraph path uses `template.innerHTML` to reproduce a different cmark leak (unclosed `<a>`), and the two behaviours conflict. Tracked as future work.",
-    "extensions-0020": "Autolink crash-safety edge case `(_A_@_.A` renders as the cmark-gfm internal `<IGNORE>` sentinel. This is a cmark-gfm implementation detail, not a real rendering target; tracked as an excluded case.",
-    "extensions-0023": "Footnotes: the GFM footnote section renderer (options.gfmFootnoteStyle) plus the Rust parser's footnote-definition indented-continuation capture now resolve this case VISUALLY (the definition's blockquote / indented code / paragraph children render inside the trailing `<section>` with the correct backref). It remains in the semantic failure list because the AST projection used for the semantic comparison does not hoist definitions — only the production web renderer does, mirroring extensions-0024.",
-    "extensions-0024": "Footnotes: the GFM footnote section renderer resolves this case visually (trailing section + three backrefs with `-2`/`-3` ref-id suffixes and `1-2`/`1-3` backref indices). It remains in the semantic failure list because the AST projection used for the semantic comparison does not hoist definitions — only the production web renderer does.",
-    "extensions-0025": "Footnotes: the GFM footnote section renderer is implemented, but this case additionally needs the Rust parser to tokenize a `[^label]` whose label contains `<` (raw HTML) as one footnote reference rather than splitting it via the inline raw-HTML rule. Tracked as future parser work."
+    "_summary": "Approved cmark-gfm 0.29.0.gfm.13 divergence baseline after issue #144. Of the 58 semantic / 29 visual failures recorded on main, the parser/renderer fixes in this change (GFM table thead/tbody + align attribute, task-list trailing-space normalization via shared list-child renderer, GFM bare-URL/email autolink postprocess with image-alt and code-node skipping, GFM single+double-tilde strikethrough, embedded-HTML-in-table-cell via coherent inline-to-HTML serialization, GFM tagfilter for the Disallowed Raw HTML / HTML tag filter sections, the GFM footnote section renderer under options.gfmFootnoteStyle, footnote-definition indented-continuation capture in the Rust parser, per-case autolink gating for the CommonMark-core Autolinks section, HTML5 minimized boolean-attribute emission for footnote ref/backref/section attributes (ext-0023/ext-0024), footnote-reference reassembly across inline raw-HTML splits (ext-0025, which also closes an XSS vector where a `<…>` inside a footnote-ref label rendered as a raw tag), strong-in-strong wrapper suppression mirroring cmark-gfm's html.c CMARK_NODE_STRONG rule so that `****foo****` flattens to a single `<strong>foo</strong>` instead of the nested `<strong><strong>foo</strong></strong>` the delimiter-run algorithm produces — fixing spec-0398/0426/0434/0435/0436/0473/0474/0475/0477, and cross-block active-formatting-element reconstruction for paragraphs with unclosed inline formatting tags (spec-0652), where the paragraph and following serializable raw siblings fold into one RawHtml fragment so a single browser parse reproduces cmark's verbatim-output reconstruction) resolve all 58 semantic / 29 visual cases. The crash-safety case extensions-0020 (`(_A_@_.A`) has `<IGNORE>` as its expected HTML in cmark-gfm's test file — a sentinel that test/spec_tests.py auto-passes without comparing. Rather than skip it, the conformance runner compares Supramark against the cmark-gfm 0.29.0.gfm.13 binary's (587a12bb) real HTML output for that input (`<p>This shouldn't crash everything: (<em>A</em>@_.A</p>`), captured in lib/expected-overrides.mjs since CI has no cmark binary. Supramark matches. No failures remain.",
+    "spec-0652": "Disallowed Raw HTML: RESOLVED — the web renderer now folds a paragraph that carries unclosed inline formatting tags (`<strong>`/`<em>`) together with its following serializable raw siblings into one RawHtml fragment, so the browser's tree-construction reproduces cmark-gfm's verbatim-output active-formatting-element reconstruction across the `</p>` boundary in a single parse (the blockquote text ends up wrapped in the reconstructed `<strong><em>`). Kept in no failure list; note retained for traceability.",
+    "extensions-0020": "Autolinks: RESOLVED — `(_A_@_.A` is a cmark-gfm crash-safety edge case whose expected HTML in the test file is the `<IGNORE>` sentinel (auto-passed by test/spec_tests.py, never compared). Rather than skip it, the conformance runner compares Supramark against the cmark-gfm 0.29.0.gfm.13 binary's (587a12bb) real HTML output for this input — `<p>This shouldn't crash everything: (<em>A</em>@_.A</p>` — captured in lib/expected-overrides.mjs (CI has no cmark binary). Supramark produces byte-identical output, so the case passes both the semantic and visual comparison with no skip. Kept in no failure list; note retained for traceability.",
+    "extensions-0025": "Footnotes: RESOLVED — the Rust parser now reassembles a `[^label]` whose label contains `<` (raw HTML) as one footnote reference instead of letting the inline raw-HTML rule split it, so the label is percent-encoded into the href/backref ids rather than the embedded tag leaking into the output (which also closed an XSS vector). Kept in no failure list; note retained for traceability.",
+    "spec-0398": "Emphasis: RESOLVED — the web renderer now suppresses the inner <strong> wrapper when a strong node's parent is also strong, mirroring cmark-gfm 0.29.0.gfm.13's html.c CMARK_NODE_STRONG rule, so `__foo, __bar__, baz__` flattens to `<strong>foo, bar, baz</strong>`. Kept in no failure list; note retained for traceability. (Same fix resolves spec-0426/0434/0435/0436/0473/0474/0475/0477.)"
   }
 }

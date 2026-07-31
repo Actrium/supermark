@@ -21,6 +21,7 @@ import {
   findFirstDifference,
   htmlToSemanticTree,
 } from '../lib/semantic/html-semantics.mjs';
+import { effectiveExpected } from '../lib/expected-overrides.mjs';
 // Display names for CommonMark spec sections. The section keys below already
 // match the spec's own English headings, so this map is effectively the
 // identity function today; it is kept as a lookup table (rather than
@@ -454,19 +455,36 @@ function compareProductionCase(testCase) {
 }
 
 function compareHtmlCase(testCase, ast, actualHtml) {
-  const expected = htmlToSemanticTree(testCase.expected.html);
+  // cmark-gfm's test file marks a few crash-safety edge cases with an
+  // `<IGNORE>` sentinel as the expected HTML, and test/spec_tests.py
+  // auto-passes them. The sentinel is not a real rendering target, but the
+  // cmark-gfm 0.29.0.gfm.13 binary does produce real HTML for these inputs;
+  // lib/expected-overrides.mjs captures that real output and we compare
+  // Supramark against it instead of skipping. See issue #144 (extensions-0020).
+  const expected = effectiveExpected(testCase);
+  if (expected.isIgnoreWithoutOverride) {
+    // `<IGNORE>` with no binary override recorded: auto-pass as before.
+    return {
+      id: testCase.id,
+      section: testCase.source.section,
+      status: 'pass',
+      skipped: 'ignore-sentinel',
+    };
+  }
+  const expectedTree = htmlToSemanticTree(expected.html);
   const actual = htmlToSemanticTree(actualHtml);
-  const difference = findFirstDifference(expected, actual);
+  const difference = findFirstDifference(expectedTree, actual);
   const actualSemanticTypes = collectSemanticTypesFromTree(actual);
   const actualNodeTypes = collectAstTypes(ast);
-  const typeDifference = compareTypes(testCase.expected.semanticTypes, actualSemanticTypes);
+  const typeDifference = compareTypes(expected.semanticTypes, actualSemanticTypes);
   return {
     id: testCase.id,
     section: testCase.source.section,
     status: difference || typeDifference ? 'fail' : 'pass',
-    expectedSemanticTypes: testCase.expected.semanticTypes,
+    expectedSemanticTypes: expected.semanticTypes,
     actualSemanticTypes,
     actualNodeTypes,
+    ...(expected.isIgnoreOverride ? { ignoreOverride: true } : {}),
     ...(typeDifference ? { typeDifference } : {}),
     ...(difference ? { difference } : {}),
   };

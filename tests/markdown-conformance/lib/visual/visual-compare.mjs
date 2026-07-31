@@ -3,6 +3,7 @@ import path from 'node:path';
 import pixelmatch from 'pixelmatch';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
+import { effectiveExpected } from '../expected-overrides.mjs';
 
 const VIEWPORT_WIDTH = 800;
 const INITIAL_VIEWPORT_HEIGHT = 600;
@@ -79,6 +80,23 @@ export async function compareVisualCases({
     await page.setContent(DOCUMENT_SHELL, { waitUntil: 'load' });
 
     for (const testCase of cases) {
+      // cmark-gfm's test file marks crash-safety edge cases with an `<IGNORE>`
+      // sentinel as the expected HTML (auto-passed by test/spec_tests.py). The
+      // sentinel is not a real target, but the cmark-gfm binary produces real
+      // HTML for these inputs; lib/expected-overrides.mjs captures that real
+      // output and we screenshot it as the expected. With no recorded override
+      // we fall back to auto-pass. See issue #144 (extensions-0020).
+      const expected = effectiveExpected(testCase);
+      if (expected.isIgnoreWithoutOverride) {
+        results.push({
+          id: testCase.id,
+          section: testCase.source.section,
+          status: 'pass',
+          skipped: 'ignore-sentinel',
+        });
+        continue;
+      }
+      const expectedHtml = expected.html;
       const actualHtml = actualHtmlById.get(testCase.id);
       if (actualHtml === undefined) {
         results.push({
@@ -93,16 +111,16 @@ export async function compareVisualCases({
       }
 
       try {
-        const expectedHeight = await measureFixture(page, testCase.expected.html);
+        const expectedHeight = await measureFixture(page, expectedHtml);
         const actualHeight = await measureFixture(page, actualHtml);
         const height = Math.max(expectedHeight, actualHeight, 96);
         if (height > MAX_CAPTURE_HEIGHT) {
           throw new Error(`Rendered height ${height}px exceeds the ${MAX_CAPTURE_HEIGHT}px cap`);
         }
         await page.setViewportSize({ width: VIEWPORT_WIDTH, height });
-        const expected = await captureFixture(page, testCase.expected.html, height);
+        const expectedShot = await captureFixture(page, expectedHtml, height);
         const actual = await captureFixture(page, actualHtml, height);
-        const expectedPng = PNG.sync.read(expected);
+        const expectedPng = PNG.sync.read(expectedShot);
         const actualPng = PNG.sync.read(actual);
         const diffPng = new PNG({ width: VIEWPORT_WIDTH, height });
         const diffPixels = pixelmatch(
