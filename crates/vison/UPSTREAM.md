@@ -1,7 +1,7 @@
 # Upstream Tracking — vison
 
 ## Source repo
-- **Upstream:** https://github.com/Actrium/vison
+- **Upstream:** https://github.com/kookyleo/vison — no longer developed there; this sub-tree is the live copy
 - **Pinned commit (at merge time):** `7fb2a910e22e6c4a3eb5cb34158b8d0c77e2dbf9`
 - **Pinned tag:** (HEAD of `main`; no tag at merge time)
 - **Merged into supramark on:** 2026-05-09 (step 5 of the super-monorepo plan)
@@ -22,7 +22,7 @@
 ## Sub-tree contents
 | Path | Purpose | License |
 |---|---|---|
-| `crates/vison/SPEC.md` / `ARCHITECTURE.md` / `README.md` | Spec docs | MIT |
+| `crates/vison/SPEC.zh.md` / `ARCHITECTURE.zh.md` / `README.zh.md` | Spec docs | MIT |
 | `crates/vison/example.vison.json` / `playground.html` | Reference example + standalone HTML demo | MIT |
 | `crates/vison/verify.sh` | Helper script | MIT |
 | `crates/vison/vison-core/` | Rust crate `vison-core` — validator + parser + CLI | MIT |

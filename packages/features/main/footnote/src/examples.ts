@@ -1,24 +1,24 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * Footnote Feature 使用示例
+ * Footnote Feature usage examples
  */
 export const footnoteExamples: ExampleDefinition[] = [
   {
-    name: '脚注（Footnote）',
-    description: '展示脚注的引用和定义语法。',
+    name: 'Footnote',
+    description: 'Shows the reference and definition syntax for footnotes.',
     markdown: `
-# 脚注示例
+# Footnote Example
 
-这是一段包含脚注的文本[^1]。你可以在同一段落中添加多个脚注[^2]。
+This is a paragraph of text with a footnote[^1]. You can add multiple footnotes in the same paragraph[^2].
 
-脚注可以让你添加补充说明而不打断正文流程[^note]。
+Footnotes let you add supplementary notes without interrupting the flow of the main text[^note].
 
-[^1]: 这是第一个脚注的内容。
+[^1]: This is the content of the first footnote.
 
-[^2]: 这是第二个脚注，可以包含更详细的解释。
+[^2]: This is the second footnote, which can contain a more detailed explanation.
 
-[^note]: 脚注标识符可以是数字或文本。
+[^note]: A footnote identifier can be a number or text.
     `.trim(),
   },
 ];

@@ -472,6 +472,7 @@ mod tests {
         for ch in ['$', '€', '£', '∑', '→', '∞', '☆'] {
             assert!(is_punct_char(ch), "{ch:?} should be punctuation");
         }
+        // cjk-allow: next line includes a CJK letter to verify it is treated as a Letter, not punctuation
         for ch in ['a', 'Z', '0', '5', ' ', '中', 'α'] {
             assert!(!is_punct_char(ch), "{ch:?} should NOT be punctuation");
         }

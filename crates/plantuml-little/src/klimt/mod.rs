@@ -856,7 +856,7 @@ mod tests {
 
     #[test]
     fn ugroup_sanitize_value_non_ascii_becomes_dot() {
-        let g = UGroup::singleton(UGroupType::DataQualifiedName, "Aé中-B");
+        let g = UGroup::singleton(UGroupType::DataQualifiedName, "Aéü-B");
         assert_eq!(g.entries()[0].1, "A..-B");
     }
 

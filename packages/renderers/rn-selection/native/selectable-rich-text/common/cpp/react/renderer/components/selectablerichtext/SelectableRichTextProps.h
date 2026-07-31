@@ -11,7 +11,7 @@
 
 namespace facebook::react {
 
-// SelectableRichTextMenuItem 保存 JS menuItems 中的单个自定义菜单配置。
+// SelectableRichTextMenuItem holds a single custom menu configuration from the JS menuItems array.
 struct SelectableRichTextMenuItem {
   std::string id;
   std::string title;
@@ -19,7 +19,7 @@ struct SelectableRichTextMenuItem {
   bool operator==(const SelectableRichTextMenuItem &) const = default;
 };
 
-// fromRawValue 把 JS object 形式的 menu item 转成 C++ props 结构。
+// fromRawValue converts a menu item in JS object form into a C++ props struct.
 void fromRawValue(const PropsParserContext &context, const RawValue &value, SelectableRichTextMenuItem &result);
 
 #ifdef RN_SERIALIZABLE_STATE
@@ -38,16 +38,17 @@ class SelectableRichTextProps final : public ParagraphProps {
       const SelectableRichTextProps &sourceProps,
       const RawProps &rawProps);
 
-  // menuItems 是 JS 传入的自定义文本选区菜单项。
+  // menuItems is the custom text-selection menu items passed in from JS.
   std::vector<SelectableRichTextMenuItem> menuItems{};
 
-  // showSystemMenuItems 控制是否保留系统复制、全选等菜单项。
+  // showSystemMenuItems controls whether system menu items such as copy and select-all are kept.
   bool showSystemMenuItems{true};
 
-  // clearSelectionOnMenuAction 控制点击自定义菜单后是否自动清空选区。
+  // clearSelectionOnMenuAction controls whether the selection is cleared automatically after a
+  // custom menu item is tapped.
   bool clearSelectionOnMenuAction{false};
 
-  // setProp 支持 RN C++ props iterator 路径下的增量 prop 更新。
+  // setProp supports incremental prop updates under RN's C++ props iterator path.
   void setProp(const PropsParserContext &context, RawPropsPropNameHash hash, const char *propName, const RawValue &value);
 
 #if RN_DEBUG_STRING_CONVERTIBLE

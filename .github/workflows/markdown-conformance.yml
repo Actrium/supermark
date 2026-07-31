@@ -1,0 +1,280 @@
+name: Markdown Semantic and Visual Conformance Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Data sources to run (comma-separated: commonmark,cmark-gfm; or all)"
+        type: string
+        required: true
+        default: "all"
+      create_issue:
+        description: "Create or update an Issue on failure"
+        type: boolean
+        default: true
+      run_visual:
+        description: "Run browser-based visual conformance tests"
+        type: boolean
+        default: true
+      fail_workflow:
+        description: "Mark the workflow as failed when there are failing cases"
+        type: boolean
+        default: true
+      gate_mode:
+        description: "Gate: regression (fail only on new failures vs baseline) or absolute (fail on any)"
+        type: choice
+        options: [regression, absolute]
+        default: regression
+      issue_repository:
+        description: "Target repository for the Issue (owner/repo; leave empty to use the current repository)"
+        type: string
+        default: ""
+  push:
+    branches: [main, develop]
+    paths:
+      - ".github/workflows/markdown-conformance.yml"
+      - "tests/cases/**"
+      - "tests/markdown-conformance/**"
+      - "crates/supramark-markdown/**"
+      - "packages/core/**"
+      - "packages/renderers/web/**"
+  # Same paths as the push trigger, so a PR that can change conformance is
+  # checked before it merges rather than after. Without this, the workflow
+  # only ever ran post-merge: #121 landed a parser change that broke
+  # tests/public_api.rs, main went red, and nothing had told the PR.
+  #
+  # The issue-filing step already carries a `github.event_name !=
+  # 'pull_request'` guard (dead until now), so PR runs report through the
+  # check and the run artifacts, and never open or update an issue.
+  pull_request:
+    paths:
+      - ".github/workflows/markdown-conformance.yml"
+      - "tests/cases/**"
+      - "tests/markdown-conformance/**"
+      - "crates/supramark-markdown/**"
+      - "packages/core/**"
+      - "packages/renderers/web/**"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: markdown-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  resolve-sources:
+    name: Resolve data sources to test
+    runs-on: ubuntu-latest
+    outputs:
+      sources: ${{ steps.resolve.outputs.sources }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate and resolve data sources
+        id: resolve
+        env:
+          REQUESTED_SOURCES: ${{ github.event_name == 'workflow_dispatch' && inputs.sources || vars.MARKDOWN_CONFORMANCE_SOURCES || 'all' }}
+        shell: bash
+        run: |
+          sources="$(node tests/markdown-conformance/scripts/resolve-sources.mjs "$REQUESTED_SOURCES")"
+          echo "sources=$sources" >> "$GITHUB_OUTPUT"
+          echo "selected_sources=$sources"
+
+  markdown-conformance:
+    name: ${{ matrix.source }} semantic and visual conformance
+    needs: resolve-sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        source: ${{ fromJSON(needs.resolve-sources.outputs.sources) }}
+    env:
+      SOURCE_NAME: ${{ matrix.source }}
+      CREATE_ISSUE: ${{ github.event_name == 'workflow_dispatch' && inputs.create_issue || (github.event_name != 'workflow_dispatch' && vars.MARKDOWN_CONFORMANCE_AUTO_ISSUE != 'false' && vars.COMMONMARK_AUTO_ISSUE != 'false') }}
+      RUN_VISUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.run_visual || (github.event_name != 'workflow_dispatch' && vars.MARKDOWN_CONFORMANCE_RUN_VISUAL != 'false' && vars.COMMONMARK_RUN_VISUAL != 'false') }}
+      FAIL_WORKFLOW: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_workflow || (github.event_name != 'workflow_dispatch' && vars.MARKDOWN_CONFORMANCE_FAIL_WORKFLOW != 'false' && vars.COMMONMARK_FAIL_WORKFLOW != 'false') }}
+      ISSUE_REPOSITORY: ${{ inputs.issue_repository || vars.MARKDOWN_CONFORMANCE_ISSUE_REPOSITORY || vars.COMMONMARK_ISSUE_REPOSITORY || github.repository }}
+      CONFORMANCE_GATE: ${{ github.event_name == 'workflow_dispatch' && inputs.gate_mode || 'regression' }}
+
+    steps:
+      - name: Show run configuration
+        run: |
+          echo "source=$SOURCE_NAME"
+          echo "create_issue=$CREATE_ISSUE"
+          echo "run_visual=$RUN_VISUAL"
+          echo "fail_workflow=$FAIL_WORKFLOW"
+          echo "issue_repository=$ISSUE_REPOSITORY"
+          echo "gate=$CONFORMANCE_GATE"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10.28.2"
+
+      - name: Install test case dependencies
+        working-directory: tests/markdown-conformance
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        if: env.RUN_VISUAL == 'true'
+        working-directory: tests/markdown-conformance
+        run: node node_modules/playwright/cli.js install --with-deps chromium
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.97.0
+
+      - name: Import locked data sources
+        run: node tests/markdown-conformance/scripts/import.mjs "$SOURCE_NAME"
+
+      - name: Validate unified JSON test cases
+        run: node tests/markdown-conformance/scripts/validate.mjs "$SOURCE_NAME"
+
+      - name: Check that import output is reproducible
+        run: git diff --exit-code -- "tests/cases/_fixtures/$SOURCE_NAME/"
+
+      - name: Run Markdown parser regression tests
+        run: cargo test -p supramark-markdown --test public_api
+
+      - name: Build Supramark Markdown CLI
+        run: cargo build -p supramark-markdown --bin supramark-markdown
+
+      - name: Run semantic and visual conformance checks
+        id: conformance_test
+        continue-on-error: true
+        env:
+          FAIL_ON_FAILURES: "1"
+        shell: bash
+        run: |
+          if [ "$RUN_VISUAL" = "true" ]; then
+            node tests/markdown-conformance/scripts/run-visual.mjs "$SOURCE_NAME"
+          else
+            node tests/markdown-conformance/scripts/run.mjs "$SOURCE_NAME"
+          fi
+
+      - name: Upload report and failure details
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: markdown-conformance-${{ matrix.source }}
+          path: tests/markdown-conformance/artifacts/${{ matrix.source }}/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Automatically create or update a failure Issue
+        if: steps.conformance_test.outcome == 'failure' && github.event_name != 'pull_request' && env.CREATE_ISSUE == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.MARKDOWN_CONFORMANCE_ISSUE_TOKEN || secrets.COMMONMARK_ISSUE_TOKEN || github.token }}
+          GH_REPO: ${{ env.ISSUE_REPOSITORY }}
+          ISSUE_BODY: tests/markdown-conformance/artifacts/${{ matrix.source }}/issue.md
+          ISSUE_METADATA: tests/markdown-conformance/artifacts/${{ matrix.source }}/issue-metadata.json
+        shell: bash
+        run: |
+          mapfile -t issue_metadata < <(
+            node -e '
+              const fs = require("node:fs");
+              const metadata = JSON.parse(
+                fs.readFileSync(process.env.ISSUE_METADATA, "utf8")
+              );
+              process.stdout.write([
+                metadata.source,
+                metadata.title,
+                metadata.labels.join(","),
+                metadata.marker,
+              ].join("\n"));
+            '
+          )
+          issue_source="${issue_metadata[0]}"
+          issue_title="${issue_metadata[1]}"
+          issue_labels="${issue_metadata[2]}"
+          issue_marker="${issue_metadata[3]}"
+
+          if [ -z "$issue_source" ] || [ -z "$issue_title" ] || [ -z "$issue_labels" ] || [ -z "$issue_marker" ]; then
+            echo "Issue metadata is incomplete; cannot create or update the Issue."
+            exit 1
+          fi
+
+          existing_labels="$(
+            gh label list \
+              --repo "$GH_REPO" \
+              --limit 1000 \
+              --json name \
+              --jq '.[].name'
+          )"
+          IFS=',' read -ra issue_label_names <<< "$issue_labels"
+          for issue_label in "${issue_label_names[@]}"; do
+            issue_label="$(printf '%s' "$issue_label" | xargs)"
+            if [ -z "$issue_label" ]; then
+              continue
+            fi
+            if ! grep -Fqx -- "$issue_label" <<< "$existing_labels"; then
+              if ! gh label create "$issue_label" \
+                --repo "$GH_REPO" \
+                --color "d73a4a" \
+                --description "Issue found by tests that needs to be fixed"; then
+                if ! gh label list \
+                  --repo "$GH_REPO" \
+                  --limit 1000 \
+                  --json name \
+                  --jq '.[].name' \
+                  | grep -Fqx -- "$issue_label"; then
+                  echo "Failed to create or confirm the Issue label: $issue_label"
+                  exit 1
+                fi
+                echo "Issue label was already created by a parallel job: $issue_label"
+              fi
+            fi
+          done
+
+          issue_number="$(
+            gh issue list \
+              --repo "$GH_REPO" \
+              --state open \
+              --limit 100 \
+              --json number,title,body \
+              | jq -r \
+                  --arg title "$issue_title" \
+                  --arg marker "$issue_marker" \
+                  '.[] | select(.title == $title or ((.body // "") | contains($marker))) | .number' \
+              | head -n 1
+          )"
+
+          if [ -n "$issue_number" ]; then
+            gh issue edit "$issue_number" \
+              --repo "$GH_REPO" \
+              --title "$issue_title" \
+              --body-file "$ISSUE_BODY" \
+              --add-label "$issue_labels"
+            echo "Updated $issue_source Issue #$issue_number: $issue_title"
+          else
+            issue_url="$(
+              gh issue create \
+                --repo "$GH_REPO" \
+                --title "$issue_title" \
+                --body-file "$ISSUE_BODY" \
+                --label "$issue_labels"
+            )"
+            echo "Created $issue_source Issue: $issue_url"
+          fi
+
+      - name: Mark semantic or visual conformance as failed
+        if: always() && steps.conformance_test.outcome == 'failure' && env.FAIL_WORKFLOW == 'true'
+        run: |
+          echo "$SOURCE_NAME has failing semantic or visual conformance cases; the report and Issue content have been generated."
+          exit 1

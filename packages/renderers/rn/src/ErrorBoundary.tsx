@@ -2,7 +2,7 @@ import React, { Component, type ReactNode } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 
 /**
- * 错误信息接口
+ * Error info interface
  */
 export interface ErrorInfo {
   type: 'parse' | 'render' | 'diagram' | 'unknown';
@@ -12,22 +12,22 @@ export interface ErrorInfo {
 }
 
 /**
- * ErrorBoundary 属性
+ * ErrorBoundary props
  */
 export interface ErrorBoundaryProps {
   children: ReactNode;
   /**
-   * 错误回调（可选）
+   * Error callback (optional)
    */
   onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
   /**
-   * 自定义错误展示组件（可选）
+   * Custom error display component (optional)
    */
   fallback?: (error: ErrorInfo) => ReactNode;
 }
 
 /**
- * ErrorBoundary 状态
+ * ErrorBoundary state
  */
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -35,9 +35,9 @@ interface ErrorBoundaryState {
 }
 
 /**
- * React Native 错误边界组件
+ * React Native error boundary component
  *
- * 捕获子组件树中的渲染错误，展示友好的错误信息
+ * Catches rendering errors in the child component tree and shows a friendly error message
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
@@ -49,7 +49,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    // 分析错误类型
+    // Analyze the error type
     const errorType = ErrorBoundary.categorizeError(error);
 
     return {
@@ -64,19 +64,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // 调用错误回调
+    // Invoke the error callback
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
     }
 
-    // 在开发环境打印错误信息
+    // Print the error info in development
     if (__DEV__) {
       console.error('Supramark Error Boundary caught an error:', error, errorInfo);
     }
   }
 
   /**
-   * 根据错误信息分类错误类型
+   * Classifies the error type from the error info
    */
   private static categorizeError(error: Error): ErrorInfo['type'] {
     const message = error.message.toLowerCase();
@@ -96,7 +96,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.hasError && this.state.error) {
-      // 使用自定义 fallback 或默认错误展示组件
+      // Use a custom fallback or the default error display component
       if (this.props.fallback) {
         return this.props.fallback(this.state.error);
       }
@@ -108,14 +108,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 }
 
 /**
- * 默认错误展示组件
+ * Default error display component
  */
 export function ErrorDisplay({ error }: { error: ErrorInfo }) {
   const errorTypeText = {
-    parse: '解析错误',
-    render: '渲染错误',
-    diagram: '图表错误',
-    unknown: '未知错误',
+    parse: 'Parse Error',
+    render: 'Render Error',
+    diagram: 'Diagram Error',
+    unknown: 'Unknown Error',
   };
 
   const errorTypeColor = {
@@ -135,7 +135,7 @@ export function ErrorDisplay({ error }: { error: ErrorInfo }) {
           <Text style={styles.errorMessage}>{error.message}</Text>
           {error.details && (
             <View style={styles.detailsContainer}>
-              <Text style={styles.detailsTitle}>详细信息：</Text>
+              <Text style={styles.detailsTitle}>Details:</Text>
               <ScrollView style={styles.detailsScroll} horizontal>
                 <Text style={styles.detailsText}>{error.details}</Text>
               </ScrollView>
@@ -143,7 +143,7 @@ export function ErrorDisplay({ error }: { error: ErrorInfo }) {
           )}
           {__DEV__ && error.stack && (
             <View style={styles.stackContainer}>
-              <Text style={styles.stackTitle}>堆栈跟踪（开发模式）：</Text>
+              <Text style={styles.stackTitle}>Stack Trace (Dev Mode):</Text>
               <ScrollView style={styles.stackScroll}>
                 <Text style={styles.stackText}>{error.stack}</Text>
               </ScrollView>

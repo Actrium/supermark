@@ -10,22 +10,22 @@ import { makeFeatureConfigHelpers } from '@supramark/core';
 /**
  * Core Markdown Feature
  *
- * 基础 Markdown 语法（段落 / 标题 / 列表等）的规范性 Feature。
+ * The canonical Feature describing the base Markdown syntax (paragraph / heading / list etc.).
  *
- * - 描述「非扩展」的 Markdown 节点集合；
- * - 覆盖 paragraph / heading / list / blockquote / text / strong / emphasis / link 等；
- * - 显式排除 diagram / math / footnote / definition-list / admonition / table / delete 等扩展节点。
+ * - Describes the "non-extension" set of Markdown nodes;
+ * - Covers paragraph / heading / list / blockquote / text / strong / emphasis / link etc.;
+ * - Explicitly excludes extension nodes such as diagram / math / footnote / definition-list / admonition / table / delete.
  *
  * @example
  * ```markdown
- * # 标题
+ * # Heading
  *
- * 段落文本 **粗体** 和 *斜体*，还有 `inline code` 与 [链接](https://example.com)。
+ * Paragraph text **bold** and *italic*, plus `inline code` and [a link](https://example.com).
  *
- * - 列表项 1
- * - 列表项 2
+ * - List item 1
+ * - List item 2
  *
- * > 引用段落
+ * > Quoted paragraph
  * ```
  */
 export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
@@ -34,26 +34,24 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
     name: 'Core Markdown',
     version: '0.1.0',
     author: 'Supramark Team',
-    description: '基础 Markdown 语法（段落 / 标题 / 列表等）',
+    description: 'Base Markdown syntax (paragraph / heading / list etc.)',
     license: 'Apache-2.0',
     tags: ['core', 'markdown', 'block', 'inline'],
     syntaxFamily: 'main',
   },
-  // 基础 Markdown - 无依赖
-  // dependencies: [] - 不显式声明空依赖
-  // 基础 Markdown - 无依赖
-  // dependencies: [] - 不显式声明空依赖
+  // Base Markdown - no dependencies
+  // dependencies: [] - do not declare an empty dependency array explicitly
 
   syntax: {
     ast: {
       /**
-       * 虚拟入口类型："core-markdown"
+       * Virtual entry type: "core-markdown"
        *
-       * 通过 selector 精确匹配「基础语法节点」：
+       * Uses a selector to precisely match "base syntax nodes":
        * - Block: root / paragraph / heading / list / list_item / blockquote / thematic_break / code
        * - Inline: text / strong / emphasis / inline_code / link / image / break
        *
-       * 显式排除：
+       * Explicitly excluded:
        * - diagram / math_* / footnote_* / definition_* / admonition / table_* / delete
        */
       type: 'core-markdown',
@@ -79,11 +77,11 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
       },
 
       /**
-       * 注意：Core Markdown 是虚拟节点，不对应单一的 AST 节点类型
-       * 它通过 selector 匹配基础 Markdown 的多种实际节点
-       * 因此不定义具体的 interface
+       * Note: Core Markdown is a virtual node that does not correspond to a single AST node type.
+       * It matches multiple actual base-Markdown node types via the selector,
+       * so it does not define a concrete interface.
        */
-      // interface: undefined (虚拟节点不需要 interface)
+      // interface: undefined (a virtual node has no interface)
 
       constraints: {
         allowedParents: ['root'],
@@ -100,66 +98,66 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
       ],
     },
 
-    // 可选：验证规则
+    // Optional: validation rules
     // validator: {
     //   validate: (node) => {
-    //     // TODO: 添加验证逻辑
+    //     // TODO: add validation logic
     //     return { valid: true, errors: [] };
     //   }
     // },
   },
 
-  // 渲染器定义
+  // Renderer definitions
   renderers: {
-    // Web 平台渲染器
+    // Web platform renderer
     web: {
       platform: 'web',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // Web 端使用标准 HTML 元素（p / h1-h6 / ul / ol / blockquote 等）
+        // The web side uses standard HTML elements (p / h1-h6 / ul / ol / blockquote etc.)
         needsClientScript: false,
-        // 无需 Worker
+        // No worker needed
         needsWorker: false,
-        // 无需缓存
+        // No cache needed
         needsCache: false,
       },
 
-      // 无外部依赖（使用标准 HTML 元素）
+      // No external dependencies (uses standard HTML elements)
       dependencies: [],
     },
 
-    // React Native 平台渲染器
+    // React Native platform renderer
     rn: {
       platform: 'rn',
 
-      // 基础设施需求
+      // Infrastructure requirements
       infrastructure: {
-        // RN 端使用基础 View + Text 组件
+        // The RN side uses basic View + Text components
         needsWorker: false,
-        // 无需缓存
+        // No cache needed
         needsCache: false,
       },
 
-      // 无外部依赖（使用 View / Text 组件）
+      // No external dependencies (uses View / Text components)
       dependencies: [],
     },
   },
 
-  // 使用示例
+  // Usage examples
   examples: coreMarkdownExamples,
 
-  // 测试定义
+  // Test definitions
   testing: {
-    // Markdown → AST 语法测试
+    // Markdown -> AST syntax tests
     syntaxTests: {
       cases: [
         {
-          name: '解析段落',
-          input: '这是一个段落',
+          name: 'parses a paragraph',
+          input: 'This is a paragraph',
           expected: {
             type: 'paragraph',
-            children: [{ type: 'text', value: '这是一个段落' }],
+            children: [{ type: 'text', value: 'This is a paragraph' }],
           } as SupramarkNode,
           options: {
             typeOnly: false,
@@ -167,12 +165,12 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
           },
         },
         {
-          name: '解析标题',
-          input: '# 一级标题',
+          name: 'parses a heading',
+          input: '# Level-1 heading',
           expected: {
             type: 'heading',
             depth: 1,
-            children: [{ type: 'text', value: '一级标题' }],
+            children: [{ type: 'text', value: 'Level-1 heading' }],
           } as SupramarkNode,
           options: {
             typeOnly: false,
@@ -180,8 +178,8 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
           },
         },
         {
-          name: '解析列表',
-          input: '- 列表项1\n- 列表项2',
+          name: 'parses a list',
+          input: '- List item 1\n- List item 2',
           expected: {
             type: 'list',
             ordered: false,
@@ -192,7 +190,7 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
           },
         },
         {
-          name: '解析代码块',
+          name: 'parses a code block',
           input: '```javascript\nconst x = 1;\n```',
           expected: {
             type: 'code',
@@ -207,33 +205,33 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
       ],
     },
 
-    // AST → 渲染输出测试
+    // AST -> render output tests
     renderTests: {
       web: [
         {
-          name: 'Web 渲染段落',
+          name: 'Web renders a paragraph',
           input: {
             type: 'paragraph',
-            children: [{ type: 'text', value: '段落文本' }],
+            children: [{ type: 'text', value: 'Paragraph text' }],
           } as SupramarkNode,
           expected: (output: unknown) => output !== null && output !== undefined,
           snapshot: true,
         },
         {
-          name: 'Web 渲染标题',
+          name: 'Web renders a heading',
           input: {
             type: 'heading',
             depth: 2,
-            children: [{ type: 'text', value: '二级标题' }],
+            children: [{ type: 'text', value: 'Level-2 heading' }],
           } as SupramarkNode,
           expected: (output: unknown) => output !== null && output !== undefined,
           snapshot: true,
         },
         {
-          name: 'Web 渲染强调',
+          name: 'Web renders emphasis',
           input: {
             type: 'strong',
-            children: [{ type: 'text', value: '粗体' }],
+            children: [{ type: 'text', value: 'Bold' }],
           } as SupramarkNode,
           expected: (output: unknown) => output !== null && output !== undefined,
           snapshot: true,
@@ -241,21 +239,21 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
       ],
       rn: [
         {
-          name: 'RN 渲染列表',
+          name: 'RN renders a list',
           input: {
             type: 'list',
             ordered: false,
-            children: [{ type: 'list_item', children: [{ type: 'text', value: '项目1' }] }],
+            children: [{ type: 'list_item', children: [{ type: 'text', value: 'Item 1' }] }],
           } as SupramarkNode,
           expected: (output: unknown) => output !== null && output !== undefined,
           snapshot: true,
         },
         {
-          name: 'RN 渲染链接',
+          name: 'RN renders a link',
           input: {
             type: 'link',
             url: 'https://example.com',
-            children: [{ type: 'text', value: '链接' }],
+            children: [{ type: 'text', value: 'Link' }],
           } as SupramarkNode,
           expected: (output: unknown) => output !== null && output !== undefined,
           snapshot: true,
@@ -263,12 +261,12 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
       ],
     },
 
-    // 端到端集成测试
+    // End-to-end integration tests
     integrationTests: {
       cases: [
         {
-          name: 'CoreMarkdown 端到端：标题 + 段落',
-          input: '# 标题\n\n这是段落',
+          name: 'CoreMarkdown end-to-end: heading + paragraph',
+          input: '# Heading\n\nThis is a paragraph',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -279,8 +277,8 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
           platforms: ['web', 'rn'],
         },
         {
-          name: 'CoreMarkdown 端到端：列表 + 代码块',
-          input: '- 列表\n\n```js\ncode\n```',
+          name: 'CoreMarkdown end-to-end: list + code block',
+          input: '- list\n\n```js\ncode\n```',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -291,8 +289,8 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
           platforms: ['web', 'rn'],
         },
         {
-          name: 'CoreMarkdown 端到端：行内格式',
-          input: '**粗体** 和 *斜体* 和 `代码`',
+          name: 'CoreMarkdown end-to-end: inline formatting',
+          input: '**bold** and *italic* and `code`',
           validate: result => {
             if (!result || typeof result !== 'object') return false;
             const nodes = (result as SupramarkRootNode).children || [];
@@ -310,7 +308,7 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
       ],
     },
 
-    // 覆盖率要求
+    // Coverage requirements
     coverageRequirements: {
       statements: 80,
       branches: 75,
@@ -319,323 +317,324 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
     },
   },
 
-  // 文档定义
+  // Documentation definitions
   documentation: {
     readme: `
 # Core Markdown Feature
 
-为 Supramark 提供核心 Markdown 语法支持。
+Provides core Markdown syntax support for Supramark.
 
-## 功能
+## Features
 
-- 标题
-- 段落
-- 列表
-- 代码块
-- 强调
+- Headings
+- Paragraphs
+- Lists
+- Code blocks
+- Emphasis
 
-## 使用
+## Usage
 
-查看 examples 目录获取更多示例。
+See the examples directory for more samples.
     `.trim(),
 
     api: {
       interfaces: [
         {
           name: 'CoreMarkdownFeatureOptions',
-          description: 'Core Markdown Feature 的配置选项接口（当前为空，保留用于未来扩展）',
+          description:
+            'Configuration options interface for the Core Markdown Feature (currently empty, reserved for future extension)',
           fields: [],
         },
         {
           name: 'SupramarkRootNode',
-          description: '根节点接口，表示整个 Markdown 文档的根',
+          description: 'Root node interface, representing the root of the whole Markdown document',
           fields: [
             {
               name: 'type',
               type: "'root'",
-              description: '节点类型标识，固定为 "root"',
+              description: 'Node type identifier, always "root"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '文档的顶层节点列表',
+              description: 'List of top-level nodes in the document',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkParagraphNode',
-          description: '段落节点接口，表示一个段落块',
+          description: 'Paragraph node interface, representing a paragraph block',
           fields: [
             {
               name: 'type',
               type: "'paragraph'",
-              description: '节点类型标识，固定为 "paragraph"',
+              description: 'Node type identifier, always "paragraph"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '段落内的行内节点（文本、强调、链接等）',
+              description: 'Inline nodes within the paragraph (text, emphasis, links etc.)',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkHeadingNode',
-          description: '标题节点接口，表示 Markdown 标题（# ... ######）',
+          description: 'Heading node interface, representing a Markdown heading (# ... ######)',
           fields: [
             {
               name: 'type',
               type: "'heading'",
-              description: '节点类型标识，固定为 "heading"',
+              description: 'Node type identifier, always "heading"',
               required: true,
             },
             {
               name: 'depth',
               type: '1 | 2 | 3 | 4 | 5 | 6',
-              description: '标题级别，1 表示一级标题（#），6 表示六级标题（######）',
+              description: 'Heading level, 1 is a level-1 heading (#), 6 is a level-6 heading (######)',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '标题文本的行内节点',
+              description: 'Inline nodes of the heading text',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkCodeNode',
-          description: '代码块节点接口，表示围栏代码块（```...```）',
+          description: 'Code block node interface, representing a fenced code block (```...```)',
           fields: [
             {
               name: 'type',
               type: "'code'",
-              description: '节点类型标识，固定为 "code"',
+              description: 'Node type identifier, always "code"',
               required: true,
             },
             {
               name: 'lang',
               type: 'string',
-              description: '代码语言标识（如 javascript、python 等）',
+              description: 'Code language identifier (e.g. javascript, python etc.)',
               required: false,
             },
             {
               name: 'meta',
               type: 'string',
-              description: '代码块元数据（语言标识后的额外信息）',
+              description: 'Code block metadata (extra info following the language identifier)',
               required: false,
             },
             {
               name: 'value',
               type: 'string',
-              description: '代码内容',
+              description: 'Code content',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkListNode',
-          description: '列表节点接口，表示有序或无序列表',
+          description: 'List node interface, representing an ordered or unordered list',
           fields: [
             {
               name: 'type',
               type: "'list'",
-              description: '节点类型标识，固定为 "list"',
+              description: 'Node type identifier, always "list"',
               required: true,
             },
             {
               name: 'ordered',
               type: 'boolean',
-              description: '是否为有序列表（true）或无序列表（false）',
+              description: 'Whether the list is ordered (true) or unordered (false)',
               required: true,
             },
             {
               name: 'start',
               type: 'number | null',
-              description: '有序列表的起始编号（仅对有序列表有效）',
+              description: 'Starting number of an ordered list (only meaningful for ordered lists)',
               required: false,
             },
             {
               name: 'tight',
               type: 'boolean',
-              description: '是否为紧凑模式（列表项之间无空行）',
+              description: 'Whether the list is tight (no blank lines between items)',
               required: false,
             },
             {
               name: 'children',
               type: 'SupramarkListItemNode[]',
-              description: '列表项节点数组',
+              description: 'Array of list item nodes',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkListItemNode',
-          description: '列表项节点接口',
+          description: 'List item node interface',
           fields: [
             {
               name: 'type',
               type: "'list_item'",
-              description: '节点类型标识，固定为 "list_item"',
+              description: 'Node type identifier, always "list_item"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '列表项内容节点',
+              description: 'Content nodes of the list item',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkBlockquoteNode',
-          description: '引用块节点接口，表示 Markdown 引用（> ...）',
+          description: 'Blockquote node interface, representing a Markdown quote (> ...)',
           fields: [
             {
               name: 'type',
               type: "'blockquote'",
-              description: '节点类型标识，固定为 "blockquote"',
+              description: 'Node type identifier, always "blockquote"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '引用块内的内容节点',
+              description: 'Content nodes within the blockquote',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkTextNode',
-          description: '文本节点接口，表示纯文本内容',
+          description: 'Text node interface, representing plain text content',
           fields: [
             {
               name: 'type',
               type: "'text'",
-              description: '节点类型标识，固定为 "text"',
+              description: 'Node type identifier, always "text"',
               required: true,
             },
             {
               name: 'value',
               type: 'string',
-              description: '文本内容',
+              description: 'Text content',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkStrongNode',
-          description: '粗体节点接口，表示强调文本（**...**）',
+          description: 'Strong node interface, representing bold emphasis (**...**)',
           fields: [
             {
               name: 'type',
               type: "'strong'",
-              description: '节点类型标识，固定为 "strong"',
+              description: 'Node type identifier, always "strong"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '粗体内的行内节点',
+              description: 'Inline nodes within the bold text',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkEmphasisNode',
-          description: '斜体节点接口，表示强调文本（*...*）',
+          description: 'Emphasis node interface, representing italic emphasis (*...*)',
           fields: [
             {
               name: 'type',
               type: "'emphasis'",
-              description: '节点类型标识，固定为 "emphasis"',
+              description: 'Node type identifier, always "emphasis"',
               required: true,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '斜体内的行内节点',
+              description: 'Inline nodes within the italic text',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkInlineCodeNode',
-          description: '行内代码节点接口，表示行内代码（`...`）',
+          description: 'Inline code node interface, representing inline code (`...`)',
           fields: [
             {
               name: 'type',
               type: "'inline_code'",
-              description: '节点类型标识，固定为 "inline_code"',
+              description: 'Node type identifier, always "inline_code"',
               required: true,
             },
             {
               name: 'value',
               type: 'string',
-              description: '代码内容',
+              description: 'Code content',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkLinkNode',
-          description: '链接节点接口，表示 Markdown 链接',
+          description: 'Link node interface, representing a Markdown link',
           fields: [
             {
               name: 'type',
               type: "'link'",
-              description: '节点类型标识，固定为 "link"',
+              description: 'Node type identifier, always "link"',
               required: true,
             },
             {
               name: 'url',
               type: 'string',
-              description: '链接目标 URL',
+              description: 'Link target URL',
               required: true,
             },
             {
               name: 'title',
               type: 'string',
-              description: '链接标题（鼠标悬停时显示）',
+              description: 'Link title (shown on hover)',
               required: false,
             },
             {
               name: 'children',
               type: 'SupramarkNode[]',
-              description: '链接文本的行内节点',
+              description: 'Inline nodes of the link text',
               required: true,
             },
           ],
         },
         {
           name: 'SupramarkImageNode',
-          description: '图片节点接口，表示 Markdown 图片',
+          description: 'Image node interface, representing a Markdown image',
           fields: [
             {
               name: 'type',
               type: "'image'",
-              description: '节点类型标识，固定为 "image"',
+              description: 'Node type identifier, always "image"',
               required: true,
             },
             {
               name: 'url',
               type: 'string',
-              description: '图片 URL',
+              description: 'Image URL',
               required: true,
             },
             {
               name: 'alt',
               type: 'string',
-              description: '图片替代文本',
+              description: 'Image alt text',
               required: false,
             },
             {
               name: 'title',
               type: 'string',
-              description: '图片标题',
+              description: 'Image title',
               required: false,
             },
           ],
@@ -646,18 +645,18 @@ export const coreMarkdownFeature: SupramarkFeature<SupramarkNode> = {
         {
           name: 'createCoreMarkdownFeatureConfig',
           description:
-            '创建 Core Markdown Feature 配置对象，用于在 SupramarkConfig 中启用基础 Markdown 语法支持',
+            'Creates the Core Markdown Feature config object, used to enable base Markdown syntax support in SupramarkConfig',
           parameters: [
             {
               name: 'enabled',
               type: 'boolean',
-              description: '是否启用 Core Markdown Feature',
+              description: 'Whether to enable the Core Markdown Feature',
               optional: false,
             },
             {
               name: 'options',
               type: 'CoreMarkdownFeatureOptions',
-              description: 'Core Markdown Feature 配置选项（当前为空对象）',
+              description: 'Core Markdown Feature configuration options (currently an empty object)',
               optional: true,
             },
           ],
@@ -674,12 +673,12 @@ const config = {
         },
         {
           name: 'getCoreMarkdownFeatureOptions',
-          description: '从 SupramarkConfig 中提取 Core Markdown Feature 的配置选项',
+          description: 'Extracts the Core Markdown Feature configuration options from a SupramarkConfig',
           parameters: [
             {
               name: 'config',
               type: 'SupramarkConfig',
-              description: 'Supramark 配置对象',
+              description: 'The Supramark configuration object',
               optional: true,
             },
           ],
@@ -696,7 +695,7 @@ const options = getCoreMarkdownFeatureOptions(config);`,
         {
           name: 'CoreMarkdownFeatureConfig',
           description:
-            'Core Markdown Feature 配置类型，是 FeatureConfigWithOptions<CoreMarkdownFeatureOptions> 的类型别名',
+            'Core Markdown Feature config type, a type alias for FeatureConfigWithOptions<CoreMarkdownFeatureOptions>',
           definition:
             'type CoreMarkdownFeatureConfig = FeatureConfigWithOptions<CoreMarkdownFeatureOptions>',
         },
@@ -704,40 +703,40 @@ const options = getCoreMarkdownFeatureOptions(config);`,
     },
 
     bestPractices: [
-      '使用 # 表示标题，数量代表标题级别（# 到 ######）',
-      '段落之间使用空行分隔',
-      '列表项使用 - 或 * 表示无序列表，使用数字加点表示有序列表',
-      '代码块使用三个反引号包裹，并指定语言以启用语法高亮',
-      '行内格式：**粗体**、*斜体*、`代码`',
-      '链接格式：[文本](URL "标题")',
-      '图片格式：![替代文本](URL "标题")',
+      'Use # for headings, the count of # indicates the heading level (# through ######)',
+      'Separate paragraphs with a blank line',
+      'Use - or * for unordered list items, and a number followed by a dot for ordered list items',
+      'Wrap code blocks in three backticks and specify the language to enable syntax highlighting',
+      'Inline formatting: **bold**, *italic*, `code`',
+      'Link syntax: [text](URL "title")',
+      'Image syntax: ![alt text](URL "title")',
     ],
 
     faq: [
       {
-        question: 'Core Markdown Feature 包含哪些功能？',
+        question: 'What does the Core Markdown Feature include?',
         answer:
-          'Core Markdown Feature 包含所有基础 Markdown 语法，包括标题、段落、列表、代码块、引用、强调、链接、图片等核心元素。',
+          'The Core Markdown Feature includes all base Markdown syntax, including headings, paragraphs, lists, code blocks, blockquotes, emphasis, links, images and other core elements.',
       },
       {
-        question: 'Core Markdown 与扩展功能有什么区别？',
+        question: 'How does Core Markdown differ from extension features?',
         answer:
-          'Core Markdown 提供标准 Markdown 语法支持，扩展功能（如 GFM、Math、Footnote 等）提供额外的语法能力。',
+          'Core Markdown provides standard Markdown syntax support, while extension features (such as GFM, Math, Footnote etc.) provide additional syntax capabilities.',
       },
       {
-        question: '是否必须启用 Core Markdown Feature？',
+        question: 'Is the Core Markdown Feature mandatory?',
         answer:
-          '是的。Core Markdown Feature 提供了基础的 Markdown 解析能力，是其他扩展功能的基础。',
+          'Yes. The Core Markdown Feature provides the base Markdown parsing capability and is the foundation for all other extension features.',
       },
     ],
   },
 };
 
 /**
- * Core Markdown Feature 的配置项。
+ * Configuration options for the Core Markdown Feature.
  */
 export interface CoreMarkdownFeatureOptions {
-  // 当前为空，保留用于未来扩展
+  // Currently empty, reserved for future extension
 }
 
 export type CoreMarkdownFeatureConfig = FeatureConfigWithOptions<CoreMarkdownFeatureOptions>;

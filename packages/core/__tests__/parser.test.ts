@@ -1,4 +1,5 @@
 import { parse } from '../src/plugin';
+import { CJK_HEADING_SAMPLE } from './fixtures/cjk-samples';
 import type {
   SupramarkNode,
   SupramarkTextNode,
@@ -11,20 +12,20 @@ import type {
 } from '../src/ast';
 
 describe('parse', () => {
-  describe('AST v2 合同', () => {
-    it('应该通过 parse facade 输出 root v2 信息', async () => {
-      const ast = await parse('# 标题 😄');
+  describe('AST v2 contract', () => {
+    it('emits root v2 info via the parse facade', async () => {
+      const ast = await parse(CJK_HEADING_SAMPLE);
 
       expect(ast.type).toBe('root');
       expect(ast.ast_version).toBe(2);
       expect(ast.diagnostics).toEqual([]);
       expect(ast.parser?.name).toBe('supramark-markdown');
       expect(ast.position?.start.utf16_offset).toBe(0);
-      expect(ast.position?.end.utf16_offset).toBe('# 标题 😄'.length);
+      expect(ast.position?.end.utf16_offset).toBe(CJK_HEADING_SAMPLE.length);
       expect(ast.position?.end.byte_offset).toBe(13);
     });
 
-    it('应该省略普通列表项的 v2 可选字段', async () => {
+    it('omits v2 optional fields for a plain list item', async () => {
       const ast = await parse('- plain item');
       const list = ast.children[0] as SupramarkListNode;
       const item = list.children[0] as SupramarkListItemNode;
@@ -34,7 +35,7 @@ describe('parse', () => {
       expect(Object.prototype.hasOwnProperty.call(item, 'checked')).toBe(false);
     });
 
-    it('应该输出 definition list v2 children 结构', async () => {
+    it('emits the definition list v2 children structure', async () => {
       const ast = await parse('Term\n:   Definition');
       const list = ast.children[0] as SupramarkParentNode;
       const item = list.children[0] as SupramarkParentNode;
@@ -50,8 +51,8 @@ describe('parse', () => {
     });
   });
 
-  describe('基础 Markdown 解析', () => {
-    it('应该解析段落', async () => {
+  describe('basic Markdown parsing', () => {
+    it('parses a paragraph', async () => {
       const markdown = 'This is a paragraph.';
       const ast = await parse(markdown);
 
@@ -60,7 +61,7 @@ describe('parse', () => {
       expect(ast.children[0].type).toBe('paragraph');
     });
 
-    it('应该解析标题', async () => {
+    it('parses a heading', async () => {
       const markdown = '# Heading 1\n## Heading 2';
       const ast = await parse(markdown);
 
@@ -71,7 +72,7 @@ describe('parse', () => {
       expect((ast.children[1] as SupramarkHeadingNode).depth).toBe(2);
     });
 
-    it('应该解析列表', async () => {
+    it('parses a list', async () => {
       const markdown = '- Item 1\n- Item 2\n- Item 3';
       const ast = await parse(markdown);
 
@@ -80,7 +81,7 @@ describe('parse', () => {
       expect((ast.children[0] as SupramarkListNode).children).toHaveLength(3);
     });
 
-    it('应该解析代码块', async () => {
+    it('parses a code block', async () => {
       const markdown = '```javascript\nconst x = 1;\n```';
       const ast = await parse(markdown);
 
@@ -90,8 +91,8 @@ describe('parse', () => {
     });
   });
 
-  describe('Inline 元素解析', () => {
-    it('应该解析粗体文本', async () => {
+  describe('inline element parsing', () => {
+    it('parses bold text', async () => {
       const markdown = 'This is **bold** text.';
       const ast = await parse(markdown);
 
@@ -99,7 +100,7 @@ describe('parse', () => {
       expect(paragraph.children.some((node: SupramarkNode) => node.type === 'strong')).toBe(true);
     });
 
-    it('应该解析斜体文本', async () => {
+    it('parses italic text', async () => {
       const markdown = 'This is *italic* text.';
       const ast = await parse(markdown);
 
@@ -107,7 +108,7 @@ describe('parse', () => {
       expect(paragraph.children.some((node: SupramarkNode) => node.type === 'emphasis')).toBe(true);
     });
 
-    it('应该解析链接', async () => {
+    it('parses a link', async () => {
       const markdown = '[Link](https://example.com)';
       const ast = await parse(markdown);
 
@@ -115,7 +116,7 @@ describe('parse', () => {
       expect(paragraph.children.some((node: SupramarkNode) => node.type === 'link')).toBe(true);
     });
 
-    it('应该解析行内代码', async () => {
+    it('parses inline code', async () => {
       const markdown = 'This is `code` inline.';
       const ast = await parse(markdown);
 
@@ -124,8 +125,8 @@ describe('parse', () => {
     });
   });
 
-  describe('GFM 扩展', () => {
-    it('应该解析删除线', async () => {
+  describe('GFM extensions', () => {
+    it('parses strikethrough', async () => {
       const markdown = 'This is ~~deleted~~ text.';
       const ast = await parse(markdown);
 
@@ -133,7 +134,7 @@ describe('parse', () => {
       expect(paragraph.children.some((node: SupramarkNode) => node.type === 'delete')).toBe(true);
     });
 
-    it('应该解析任务列表', async () => {
+    it('parses a task list', async () => {
       const markdown = '- [x] Task 1\n- [ ] Task 2';
       const ast = await parse(markdown);
 
@@ -143,7 +144,7 @@ describe('parse', () => {
       expect((list.children[1] as SupramarkListItemNode).checked).toBe(false);
     });
 
-    it('应该解析表格', async () => {
+    it('parses a table', async () => {
       const markdown = '| Header 1 | Header 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |';
       const ast = await parse(markdown);
 
@@ -152,8 +153,8 @@ describe('parse', () => {
     });
   });
 
-  describe('图表节点', () => {
-    it('应该解析 mermaid 代码块为 diagram 节点', async () => {
+  describe('diagram nodes', () => {
+    it('parses a mermaid code block as a diagram node', async () => {
       const markdown = '```mermaid\ngraph TD;\n  A-->B;\n```';
       const ast = await parse(markdown);
 
@@ -163,7 +164,7 @@ describe('parse', () => {
       expect((ast.children[0] as SupramarkDiagramNode).fence_closed).toBe(true);
     });
 
-    it('应该标记尚未闭合的流式图表围栏', async () => {
+    it('flags a diagram fence that has not been closed yet (streaming)', async () => {
       const markdown = '```mermaid\ngraph TD;\n  A-->B;';
       const ast = await parse(markdown);
 
@@ -172,7 +173,7 @@ describe('parse', () => {
       expect((ast.children[0] as SupramarkDiagramNode).fence_closed).toBe(false);
     });
 
-    it('应该解析 plantuml 代码块为 diagram 节点', async () => {
+    it('parses a plantuml code block as a diagram node', async () => {
       const markdown = '```plantuml\n@startuml\nA -> B\n@enduml\n```';
       const ast = await parse(markdown);
 
@@ -182,8 +183,8 @@ describe('parse', () => {
     });
   });
 
-  describe('Math 节点', () => {
-    it('应该解析行内公式', async () => {
+  describe('Math nodes', () => {
+    it('parses an inline formula', async () => {
       const markdown = 'Inline math: $E = mc^2$';
       const ast = await parse(markdown);
 
@@ -191,7 +192,7 @@ describe('parse', () => {
       expect(paragraph.children.some((node: SupramarkNode) => node.type === 'math_inline')).toBe(true);
     });
 
-    it('应该解析块级公式', async () => {
+    it('parses a block-level formula', async () => {
       const markdown = '$$\n\\int_0^1 x^2 dx\n$$';
       const ast = await parse(markdown);
 
@@ -199,8 +200,8 @@ describe('parse', () => {
     });
   });
 
-  describe('复杂文档', () => {
-    it('应该解析包含多种元素的文档', async () => {
+  describe('a complex document', () => {
+    it('parses a document containing multiple element types', async () => {
       const markdown = `# Title
 
 This is a **paragraph** with *italic* and [link](https://example.com).
@@ -219,7 +220,7 @@ const x = 1;
 
       const ast = await parse(markdown);
 
-      // 验证包含多种节点类型
+      // Verify that multiple node types are present
       expect(ast.children.length).toBeGreaterThan(1);
       expect(ast.children.some(node => node.type === 'heading')).toBe(true);
       expect(ast.children.some(node => node.type === 'paragraph')).toBe(true);
@@ -229,14 +230,14 @@ const x = 1;
     });
   });
 
-  describe('空输入处理', () => {
-    it('应该处理空字符串', async () => {
+  describe('empty input handling', () => {
+    it('handles an empty string', async () => {
       const ast = await parse('');
       expect(ast.type).toBe('root');
       expect(ast.children).toHaveLength(0);
     });
 
-    it('应该处理只有空白的字符串', async () => {
+    it('handles a string containing only whitespace', async () => {
       const ast = await parse('   \n\n   ');
       expect(ast.type).toBe('root');
       expect(ast.children).toHaveLength(0);

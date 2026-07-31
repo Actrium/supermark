@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
-# 编译 supramark-markdown-native 的 iOS / Android 产物，并打包成
-# RN wrapper 包可消费的 xcframework + jniLibs 布局。
+# Build the iOS / Android artifacts for supramark-markdown-native, and
+# package them into the xcframework + jniLibs layout the RN wrapper package
+# consumes.
 #
-# 用法：
-#   scripts/build-native.sh           # 默认构建 iOS + Android（如果环境齐全）
-#   scripts/build-native.sh --ios     # 只构建 iOS
-#   scripts/build-native.sh --android # 只构建 Android
+# Usage:
+#   scripts/build-native.sh           # build iOS + Android by default (if the environment is complete)
+#   scripts/build-native.sh --ios     # build iOS only
+#   scripts/build-native.sh --android # build Android only
 #
-# 前置条件：
-#   - Rust 工具链 + 已安装 target：
+# Prerequisites:
+#   - Rust toolchain with targets installed:
 #       rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 #       rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
-#   - Android 还需要 cargo-ndk（cargo install cargo-ndk）和 $ANDROID_NDK_HOME
-#   - Xcode（用于 xcodebuild / lipo）
+#   - Android also needs cargo-ndk (cargo install cargo-ndk) and $ANDROID_NDK_HOME
+#   - Xcode (for xcodebuild / lipo)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # PKG_DIR = crates/supramark-markdown/packages/react-native
-# 往上 4 级到 repo root: packages → supramark-markdown → crates → root
+# Go up 4 levels to repo root: packages -> supramark-markdown -> crates -> root
 REPO_ROOT="$(cd "${PKG_DIR}/../../../.." && pwd)"
 CRATE_NAME="supramark-markdown-native"
 LIB_NAME="libsupramark_markdown_native.a"
@@ -45,7 +46,7 @@ done
 echo "==> Repo root: ${REPO_ROOT}"
 echo "==> Package:   ${PKG_DIR}"
 
-# 所有 cargo 命令在 repo root 跑，确保找到 workspace Cargo.toml
+# Run all cargo commands from the repo root so the workspace Cargo.toml is found
 cd "${REPO_ROOT}"
 
 # ----------------------------------------------------------------------------

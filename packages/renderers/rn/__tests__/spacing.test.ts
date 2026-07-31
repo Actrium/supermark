@@ -5,46 +5,48 @@ import './support/mock-react-native';
 const { defaultStyles } = await import('../src/styles');
 
 /**
- * block 间距 gap 模型测试。
+ * Tests for the block-spacing gap model.
  *
- * 模型:间距跟着容器走 (gap),不跟着 block 走 (marginBottom)。
- * - root (column + gap:8) 管 top-level block 间距,无 trailing。
- * - list (gap:4) 管 list_item 间距。
- * - 承载 block children 的嵌套容器 (footnote 内层 / definition description / generic container)
- *   各自在渲染处独立加 gap,不复用共享的 listItem / listItemText —— 后者是 row 布局、不带 gap。
+ * Model: spacing follows the container (gap), not the block (marginBottom).
+ * - root (column + gap:8) governs top-level block spacing, with no trailing gap.
+ * - list (gap:4) governs list_item spacing.
+ * - Nested containers that carry block children (footnote's inner content /
+ *   definition description / generic container) each add their own gap at
+ *   the render site, instead of reusing the shared listItem / listItemText —
+ *   the latter are a row layout with no gap.
  */
 describe('block spacing gap model', () => {
-  it('root 用 column + gap 统一 top-level block 间距,无 trailing', () => {
+  it('root uses column + gap to unify top-level block spacing, with no trailing gap', () => {
     expect(defaultStyles.root.flexDirection).toBe('column');
     expect(defaultStyles.root.gap).toBe(8);
   });
 
-  it('list 用 gap 给 list_item 间距', () => {
+  it('list uses gap to space list_item elements', () => {
     expect(defaultStyles.list.gap).toBe(4);
   });
 
-  it('共享 listItem 是 row 布局且不带 gap (不被嵌套容器污染)', () => {
+  it('the shared listItem is a row layout with no gap (not polluted by nested containers)', () => {
     expect(defaultStyles.listItem.flexDirection).toBe('row');
     expect((defaultStyles.listItem as Record<string, unknown>).gap).toBeUndefined();
   });
 
-  it('共享 listItemText 不带 gap (不被嵌套容器污染)', () => {
+  it('the shared listItemText carries no gap (not polluted by nested containers)', () => {
     expect((defaultStyles.listItemText as Record<string, unknown>).gap).toBeUndefined();
   });
 
-  it('block 默认样式不再携带 marginBottom (间距改由容器 gap 管)', () => {
+  it('block default styles no longer carry marginBottom (spacing is now handled by container gap)', () => {
     expect((defaultStyles.paragraph as Record<string, unknown>).marginBottom).toBeUndefined();
     expect((defaultStyles.h1 as Record<string, unknown>).marginBottom).toBeUndefined();
     expect((defaultStyles.codeBlock as Record<string, unknown>).marginBottom).toBeUndefined();
   });
 
-  it('标题用 marginTop 表达"上方比下方宽"的分级 (与 root gap 叠加)', () => {
-    // 上方间距 = root gap(8) + marginTop;下方间距 = root gap(8)
-    expect((defaultStyles.h1 as Record<string, unknown>).marginTop).toBe(8); // 上方 16
-    expect((defaultStyles.h2 as Record<string, unknown>).marginTop).toBe(6); // 上方 14
-    expect((defaultStyles.h3 as Record<string, unknown>).marginTop).toBe(4); // 上方 12
-    expect((defaultStyles.h4 as Record<string, unknown>).marginTop).toBe(2); // 上方 10
-    // h5/h6 不加 marginTop,与上方块等距
+  it('headings use marginTop to express "more space above than below", graded by level (stacks with root gap)', () => {
+    // Space above = root gap(8) + marginTop; space below = root gap(8)
+    expect((defaultStyles.h1 as Record<string, unknown>).marginTop).toBe(8); // 16 above
+    expect((defaultStyles.h2 as Record<string, unknown>).marginTop).toBe(6); // 14 above
+    expect((defaultStyles.h3 as Record<string, unknown>).marginTop).toBe(4); // 12 above
+    expect((defaultStyles.h4 as Record<string, unknown>).marginTop).toBe(2); // 10 above
+    // h5/h6 add no marginTop, spaced the same as the block above
     expect((defaultStyles.h5 as Record<string, unknown>).marginTop).toBeUndefined();
     expect((defaultStyles.h6 as Record<string, unknown>).marginTop).toBeUndefined();
   });

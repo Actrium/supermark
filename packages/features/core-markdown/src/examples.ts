@@ -1,61 +1,61 @@
 import type { ExampleDefinition } from '@supramark/core';
 
 /**
- * Core Markdown Feature 使用示例
+ * Core Markdown Feature usage examples
  */
 export const coreMarkdownExamples: ExampleDefinition[] = [
   {
-    name: '基础文本 / 段落',
-    description: '展示最基础的段落与换行渲染效果。',
+    name: 'Basic text / paragraphs',
+    description: 'Shows the most basic paragraph and line-break rendering.',
     markdown: `
-# supramark 示例
+# supramark example
 
-这是一个基础示例，用来演示多行文本、段落之间的间距等。
+This is a basic example demonstrating multi-line text, spacing between paragraphs, etc.
 
-你可以切换不同类型的示例来查看更多功能。
+You can switch between different example types to see more features.
     `.trim(),
   },
   {
-    name: '标题层级',
-    description: '展示 H1-H4 的渲染样式。',
+    name: 'Heading levels',
+    description: 'Shows the rendering style of H1-H4.',
     markdown: `
-# 一级标题 H1
+# Level-1 heading H1
 
-一些说明文字。
+Some explanatory text.
 
-## 二级标题 H2
+## Level-2 heading H2
 
-更多说明。
+More explanation.
 
-### 三级标题 H3
+### Level-3 heading H3
 
-再多一点说明。
+Even more explanation.
 
-#### 四级标题 H4
+#### Level-4 heading H4
 
-最后一段说明。
+The last bit of explanation.
     `.trim(),
   },
   {
-    name: '列表',
-    description: '展示无序和有序列表。',
+    name: 'Lists',
+    description: 'Shows unordered and ordered lists.',
     markdown: `
-# 列表示例
+# List example
 
-- 无序列表项 1
-- 无序列表项 2
+- Unordered list item 1
+- Unordered list item 2
 
-1. 有序列表项 1
-2. 有序列表项 2
+1. Ordered list item 1
+2. Ordered list item 2
     `.trim(),
   },
   {
-    name: '代码块',
-    description: '展示普通代码块的渲染效果。',
+    name: 'Code block',
+    description: 'Shows the rendering of a plain code block.',
     markdown: `
-# 代码块示例
+# Code block example
 
-下面是一段 JavaScript 代码：
+Here is a snippet of JavaScript code:
 
 \`\`\`js
 function hello(name) {

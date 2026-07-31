@@ -3,20 +3,20 @@ package com.selectableapp.selectabletext
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.uimanager.events.Event
 
-// MenuActionEvent 是 Fabric 事件通道里的自定义菜单点击事件。
+// MenuActionEvent is the custom menu-tap event sent through the Fabric event channel.
 class SelectableRichTextMenuActionEvent(surfaceId: Int, viewId: Int, private val payload: WritableMap) :
     Event<SelectableRichTextMenuActionEvent>(surfaceId, viewId) {
-  // getEventName 返回 Codegen view config 识别的 top-level event 名称。
+  // getEventName returns the top-level event name recognized by the Codegen view config.
   override fun getEventName(): String = EVENT_NAME
 
-  // canCoalesce=false 保证每一次菜单点击都独立送达 JS。
+  // canCoalesce=false ensures every single menu tap is delivered to JS independently.
   override fun canCoalesce(): Boolean = false
 
-  // getEventData 返回原生视图构造好的选区和菜单 payload。
+  // getEventData returns the selection and menu payload built by the native view.
   override fun getEventData(): WritableMap = payload
 
   companion object {
-    // EVENT_NAME 对应 JS prop onMenuAction。
+    // EVENT_NAME corresponds to the JS prop onMenuAction.
     const val EVENT_NAME = "topMenuAction"
   }
 }

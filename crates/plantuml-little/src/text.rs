@@ -1,3 +1,6 @@
+// cjk-allow-file: unit tests below use real CJK/Hangul strings as width-
+// measurement input; translating them to ASCII would defeat the tests.
+
 /// Estimate display width of a string, treating CJK characters as double-width.
 ///
 /// ASCII and most Latin characters count as 1 unit; CJK ideographs and

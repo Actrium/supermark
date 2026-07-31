@@ -1,16 +1,17 @@
 import type { RenderOptions } from '../types.js';
 import { DiagramRenderError } from '../types.js';
 
-/** Vega-Lite 引擎的渲染选项。 */
+/** Render options for the Vega-Lite engine. */
 export interface Options extends RenderOptions {
   /**
-   * 输入类型：'vega' 或 'vega-lite'。
-   * 默认 'vega-lite'；若设为 'vega' 则跳过 vegaLite.compile()，直接渲染 vega spec。
+   * Input type: 'vega' or 'vega-lite'.
+   * Defaults to 'vega-lite'; if set to 'vega', skips vegaLite.compile() and
+   * renders the vega spec directly.
    */
   dialect?: 'vega' | 'vega-lite';
 }
 
-// Vega/VegaLite 的鸭子类型（零硬依赖）。
+// Duck types for Vega/VegaLite (zero hard dependency).
 interface VegaRuntime {
   parse: (spec: Record<string, unknown>) => unknown;
   View: new (runtime: unknown, opts: Record<string, unknown>) => VegaView;
@@ -40,11 +41,11 @@ function isVegaLiteCompiler(value: unknown): value is VegaLiteCompiler {
 }
 
 /**
- * Vega-Lite engine 工厂。
+ * Vega-Lite engine factory.
  *
- * Host 通过 `modules` 注入两个运行时模块：
- * - `vega`（含 `.parse` / `.View`）—— 必需
- * - `vega-lite`（含 `.compile`）—— 如果要渲染 vega-lite spec 则必需；纯 vega spec 可省
+ * The host injects two runtime modules via `modules`:
+ * - `vega` (with `.parse` / `.View`) — required
+ * - `vega-lite` (with `.compile`) — required if rendering vega-lite specs; can be omitted for plain vega specs
  *
  * @example
  * ```ts

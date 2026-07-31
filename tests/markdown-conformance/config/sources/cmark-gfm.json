@@ -1,0 +1,22 @@
+{
+  "name": "cmark-gfm",
+  "displayName": "GitHub cmark-gfm",
+  "repository": "https://github.com/github/cmark-gfm",
+  "version": "0.29.0.gfm.13",
+  "revision": "587a12bb54d95ac37241377e6ddc93ea0e45439b",
+  "license": "CC-BY-SA-4.0",
+  "profile": "gfm",
+  "importer": "cmark-gfm",
+  "inputs": [
+    {
+      "path": "test/spec.txt",
+      "fixtureVersion": "0.29",
+      "caseIdNamespace": "spec"
+    },
+    {
+      "path": "test/extensions.txt",
+      "fixtureVersion": "0.1",
+      "caseIdNamespace": "extensions"
+    }
+  ]
+}

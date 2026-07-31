@@ -15,67 +15,83 @@ import com.facebook.react.views.text.ReactTextShadowNode
 import com.facebook.react.views.text.ReactTextView
 import com.facebook.react.views.text.ReactTextViewManager
 
-// SelectableRichTextViewManager 通过"组合委托"复用 RN Text 的 props、Spannable 和 Fabric state 链路，
-// 而不是继承 ReactTextViewManager。
+// SelectableRichTextViewManager reuses RN Text's props, Spannable, and Fabric state pipeline via
+// "composition over delegation",
+// rather than inheriting from ReactTextViewManager.
 //
-// 背景：RN 0.81~0.84 把 ReactTextViewManager 从 Java 迁到 Kotlin 时漏写 open，变成 final class，
-// library 无法继承（0.85 才补回 open）。同时 0.83 的 TextLayoutManager、ReactTextViewAccessibilityDelegate
-// 等是 internal，library 也拿不到。
+// Background: when RN 0.81~0.84 migrated ReactTextViewManager from Java to Kotlin, they forgot the
+// `open` modifier, making it a final class that
+// a library can't extend (fixed again in 0.85). Meanwhile 0.83's TextLayoutManager,
+// ReactTextViewAccessibilityDelegate, and similar
+// classes are internal, so a library can't reach them either.
 //
-// 解法：
-// 1. 继承 abstract 父类 ReactTextAnchorViewManager（0.83/0.85 都是 public abstract class），
-//    自动获得 17 个 view 层 @ReactProp（numberOfLines/ellipsizeMode/selectable/…），RN 反射调用。
-// 2. 组合一个 ReactTextViewManager 实例作为 delegate，委托 updateState/updateExtraData 等
-//    Fabric state→spannable 链路。delegate 内部对 TextLayoutManager(internal) 的调用都在其自身
-//    module 内消化，library 不需要可见性。
-// 3. Fabric 下 state 下发走 SurfaceMountingManager → ViewManager.updateState → updateExtraData，
-//    是 RN 通用路径，不要求 ViewManager 是 ReactTextViewManager 子类（见 SurfaceMountingManager.java）。
+// Solution:
+// 1. Extend the abstract parent class ReactTextAnchorViewManager (public abstract class in both
+//    0.83 and 0.85),
+//    which automatically provides the 17 view-level @ReactProp entries (numberOfLines/ellipsizeMode/
+//    selectable/…) that RN invokes via reflection.
+// 2. Compose a ReactTextViewManager instance as a delegate, forwarding updateState/updateExtraData
+//    and the rest of the
+//    Fabric state -> spannable pipeline to it. All of the delegate's internal calls into the
+//    internal TextLayoutManager stay
+//    inside its own module, so the library never needs visibility into it.
+// 3. Under Fabric, state delivery goes through SurfaceMountingManager -> ViewManager.updateState ->
+//    updateExtraData,
+//    which is RN's generic path and does not require the ViewManager to be a ReactTextViewManager
+//    subclass (see SurfaceMountingManager.java).
 //
-// 这样 Android 端同时支持 RN 0.83 与 0.85，library 不再依赖 ReactTextViewManager 可继承。
+// This lets the Android side support both RN 0.83 and 0.85, without the library depending on
+// ReactTextViewManager being extendable.
 //
-// 已知行为退化（相对继承 ReactTextViewManager，仅影响边缘场景，不影响选区/菜单/文本渲染核心功能）：
-// - prepareToRecycleView 不调 ReactTextView.recycleView（package-private 不可见），
-//   background/border 重置依赖后续 @ReactProp 重新下发覆盖；
-// - updateViewAccessibility 用 BaseViewManager 默认的 ReactAccessibilityDelegate，
-//   不使用 ReactTextViewAccessibilityDelegate（internal），丢失 link span 的无障碍优化。
-@Suppress("DEPRECATION") // ReactTextShadowNode 在 0.83 标记 @Deprecated（Legacy），Fabric 下仅用于满足基类契约。
-@OptIn(UnstableReactNativeAPI::class) // ReactTextAnchorViewManager / prepareToRecycleView 等标 @UnstableReactNativeAPI，需显式 opt-in。
+// Known behavioral regressions (relative to extending ReactTextViewManager; only affect edge
+// cases, not the core selection/menu/text-rendering functionality):
+// - prepareToRecycleView doesn't call ReactTextView.recycleView (package-private, not visible),
+//   so background/border reset relies on subsequent @ReactProp updates overwriting the old values;
+// - updateViewAccessibility uses BaseViewManager's default ReactAccessibilityDelegate instead of
+//   ReactTextViewAccessibilityDelegate (internal), losing the accessibility optimizations for link spans.
+@Suppress("DEPRECATION") // ReactTextShadowNode is marked @Deprecated (Legacy) in 0.83; under Fabric it's only used to satisfy the base-class contract.
+@OptIn(UnstableReactNativeAPI::class) // ReactTextAnchorViewManager / prepareToRecycleView etc. are marked @UnstableReactNativeAPI and require an explicit opt-in.
 @ReactModule(name = SelectableRichTextViewManager.REACT_CLASS)
 class SelectableRichTextViewManager :
     ReactTextAnchorViewManager<ReactTextShadowNode>(), IViewManagerWithChildren {
 
-  // delegate 承载 ReactTextViewManager 独有的 Fabric state→spannable 转换逻辑。
-  // 其内部依赖的 TextLayoutManager(internal) 调用都在 delegate 自身 module 内消化，
-  // library 通过 public override 方法委托即可。
+  // delegate carries ReactTextViewManager's unique Fabric state -> spannable conversion logic.
+  // All of its calls into the internal TextLayoutManager stay inside the delegate's own module;
+  // the library only needs to delegate through public override methods.
   private val delegate: ReactTextViewManager = ReactTextViewManager()
 
-  // getName 导出给 JS Fabric HostComponent 使用的组件名。
+  // getName exports the component name used by the JS Fabric HostComponent.
   override fun getName(): String = REACT_CLASS
 
-  // createViewInstance 创建真正承载 Android 原生选区能力的 ReactTextView 子类。
+  // createViewInstance creates the ReactTextView subclass that actually carries the native Android
+  // selection capability.
   override fun createViewInstance(context: ThemedReactContext): SelectableRichTextView =
       SelectableRichTextView(context)
 
-  // updateState 是 Fabric state 下发入口：SurfaceMountingManager 调用 ViewManager.updateState，
-  // library 委托 delegate 走 ReactTextViewManager 的 attributedString→spannable 链路。
-  // 返回的 ReactTextUpdate（含 spannable）会由框架继续传给 updateExtraData。
+  // updateState is the entry point for Fabric state delivery: SurfaceMountingManager calls
+  // ViewManager.updateState,
+  // and the library delegates to ReactTextViewManager's attributedString -> spannable pipeline.
+  // The returned ReactTextUpdate (containing the spannable) is passed on to updateExtraData by the framework.
   override fun updateState(
       view: ReactTextView,
       props: ReactStylesDiffMap,
       stateWrapper: StateWrapper
   ): Any? = delegate.updateState(view, props, stateWrapper)
 
-  // updateExtraData 把 delegate 构造好的 spannable 落到 ReactTextView，
-  // 同时处理 inline image span 与 accessibility links，全部委托 delegate。
+  // updateExtraData applies the spannable built by the delegate onto the ReactTextView,
+  // also handling inline image spans and accessibility links, all delegated to the delegate.
   override fun updateExtraData(view: ReactTextView, extraData: Any) {
     delegate.updateExtraData(view, extraData)
   }
 
-  // prepareToRecycleView 在 view 被回收时重置状态。
-  // ReactTextViewManager 的实现调 recycleView（package-private，跨 module 不可见）+ setSelectionColor
-  //（ReactTextAnchorViewManager 的 internal fun，不可见）。这里调 super（BaseViewManager 重置 view 属性）
-  // 后用 DefaultStyleValuesUtil（public）等价重置 selectionColor；background/border 残留由后续
-  // @ReactProp 重新下发覆盖。
+  // prepareToRecycleView resets state when the view is recycled.
+  // ReactTextViewManager's implementation calls recycleView (package-private, not visible across
+  // modules) + setSelectionColor
+  // (an internal fun on ReactTextAnchorViewManager, not visible). Here super is called instead
+  // (BaseViewManager resets view properties),
+  // then DefaultStyleValuesUtil (public) is used to reset selectionColor equivalently;
+  // background/border leftovers are overwritten by
+  // subsequent @ReactProp updates.
   override fun prepareToRecycleView(
       reactContext: ThemedReactContext,
       view: ReactTextView
@@ -85,42 +101,49 @@ class SelectableRichTextViewManager :
     return prepared
   }
 
-  // onAfterUpdateTransaction 在 props 事务提交后刷新 TextView。ReactTextView.updateView 是 public，
-  // library 直接调，行为与 ReactTextViewManager 一致。super（BaseViewManager）会顺带处理 accessibility。
+  // onAfterUpdateTransaction refreshes the TextView after the props transaction commits.
+  // ReactTextView.updateView is public,
+  // so the library calls it directly, matching ReactTextViewManager's behavior. super
+  // (BaseViewManager) also handles accessibility along the way.
   override fun onAfterUpdateTransaction(view: ReactTextView) {
     super.onAfterUpdateTransaction(view)
     view.updateView()
   }
 
-  // needsCustomLayoutForChildren=true 表示 Text 自行处理 children 布局（嵌套 Text 走 spannable，
-  // 不走 yoga 自动布局），与 ReactTextViewManager 保持一致。
+  // needsCustomLayoutForChildren=true means Text handles its children's layout itself (nested Text
+  // goes through spannable,
+  // not yoga's automatic layout), matching ReactTextViewManager.
   override fun needsCustomLayoutForChildren(): Boolean = true
 
-  // createShadowNodeInstance 在 Fabric 下通常不被调用（C++ ShadowNode 由 ComponentDescriptor 创建），
-  // 但 ViewManager 基类默认实现会抛异常，这里委托 delegate 避免意外调用崩溃。
+  // createShadowNodeInstance is generally not called under Fabric (the C++ ShadowNode is created
+  // by the ComponentDescriptor),
+  // but the ViewManager base class's default implementation throws, so it's delegated here to
+  // avoid a crash on an unexpected call.
   override fun createShadowNodeInstance(): ReactTextShadowNode = delegate.createShadowNodeInstance()
 
-  // getShadowNodeClass 是 ViewManager 基类 abstract 方法，返回 ReactTextShadowNode 类型。
+  // getShadowNodeClass is the ViewManager base class's abstract method; returns the
+  // ReactTextShadowNode type.
   override fun getShadowNodeClass(): Class<ReactTextShadowNode> = ReactTextShadowNode::class.java
 
-  // setOverflow 是 ReactTextViewManager 独有的 @ReactProp（ReactTextAnchorViewManager 未提供），
-  // 委托 delegate 保持 overflow prop 行为一致。
+  // setOverflow is a @ReactProp unique to ReactTextViewManager (not provided by
+  // ReactTextAnchorViewManager);
+  // delegated to keep the overflow prop's behavior consistent.
   @ReactProp(name = "overflow")
   fun setOverflow(view: ReactTextView, overflow: String?) {
     delegate.setOverflow(view, overflow)
   }
 
-  // setPadding 走 delegate，保持和 RN Text 一致的 padding 处理。
+  // setPadding goes through the delegate, to keep padding handling consistent with RN Text.
   override fun setPadding(view: ReactTextView, left: Int, top: Int, right: Int, bottom: Int) {
     delegate.setPadding(view, left, top, right, bottom)
   }
 
-  // setMenuItems 把 JS menuItems 数组转换成 Android ActionMode 菜单配置。
+  // setMenuItems converts the JS menuItems array into an Android ActionMode menu configuration.
   @ReactProp(name = "menuItems")
   fun setMenuItems(view: SelectableRichTextView, menuItems: ReadableArray?) {
     val parsedMenuItems = mutableListOf<SelectableRichTextMenuItem>()
 
-    // menuItems 为空时清空自定义菜单配置。
+    // Clear the custom menu configuration when menuItems is null.
     if (menuItems == null) {
       view.menuItems = parsedMenuItems
       return
@@ -129,7 +152,8 @@ class SelectableRichTextViewManager :
     for (index in 0 until menuItems.size()) {
       val item = menuItems.getMap(index)
 
-      // 缺少 id 或 title 的项不传给原生菜单，避免点击后 JS 无法区分动作。
+      // Skip items missing an id or title, since JS wouldn't be able to distinguish the action
+      // after a tap otherwise.
       if (item == null || !item.hasKey("id") || !item.hasKey("title")) {
         continue
       }
@@ -137,7 +161,7 @@ class SelectableRichTextViewManager :
       val id = item.getString("id")
       val title = item.getString("title")
 
-      // id/title 不是有效字符串时跳过该菜单项。
+      // Skip a menu item when id/title isn't a valid string.
       if (id.isNullOrBlank() || title.isNullOrBlank()) {
         continue
       }
@@ -148,23 +172,24 @@ class SelectableRichTextViewManager :
     view.menuItems = parsedMenuItems
   }
 
-  // setShowSystemMenuItems 控制 Android ActionMode 是否保留系统菜单项。
+  // setShowSystemMenuItems controls whether the Android ActionMode keeps its system menu items.
   @ReactProp(name = "showSystemMenuItems", defaultBoolean = true)
   fun setShowSystemMenuItems(view: SelectableRichTextView, showSystemMenuItems: Boolean) {
     view.showSystemMenuItems = showSystemMenuItems
   }
 
-  // setClearSelectionOnMenuAction 控制自定义菜单点击后是否清空选区。
+  // setClearSelectionOnMenuAction controls whether the selection is cleared after a custom menu tap.
   @ReactProp(name = "clearSelectionOnMenuAction", defaultBoolean = false)
   fun setClearSelectionOnMenuAction(view: SelectableRichTextView, clearSelectionOnMenuAction: Boolean) {
     view.clearSelectionOnMenuAction = clearSelectionOnMenuAction
   }
 
-  // receiveCommand 处理 Fabric dispatchCommand 传入的字符串命令。
+  // receiveCommand handles the string commands delivered by Fabric's dispatchCommand.
   override fun receiveCommand(root: ReactTextView, commandId: String, args: ReadableArray?) {
     val selectableTextView = root as? SelectableRichTextView
 
-    // command 只处理本 manager 创建的 SelectableRichTextView，避免错误 view 类型执行选区命令。
+    // Only handle commands for SelectableRichTextView instances created by this manager, to avoid
+    // running a selection command against the wrong view type.
     if (selectableTextView == null) {
       return
     }
@@ -177,9 +202,10 @@ class SelectableRichTextViewManager :
     }
   }
 
-  // handleSelectRangeCommand 校验 selectRange 命令参数并转发给原生视图。
+  // handleSelectRangeCommand validates the selectRange command's arguments and forwards them to
+  // the native view.
   private fun handleSelectRangeCommand(view: SelectableRichTextView, args: ReadableArray?) {
-    // selectRange 必须包含 start/end 两个数字参数。
+    // selectRange must be given exactly two numeric arguments: start and end.
     if (args == null || args.size() < 2) {
       throw JSApplicationIllegalArgumentException("selectRange requires start and end arguments")
     }
@@ -187,9 +213,10 @@ class SelectableRichTextViewManager :
     view.selectRange(args.getInt(0), args.getInt(1))
   }
 
-  // handleSelectParagraphAtCommand 校验 selectParagraphAt 命令参数并转发给原生视图。
+  // handleSelectParagraphAtCommand validates the selectParagraphAt command's arguments and
+  // forwards them to the native view.
   private fun handleSelectParagraphAtCommand(view: SelectableRichTextView, args: ReadableArray?) {
-    // selectParagraphAt 必须包含 x/y 两个数字参数。
+    // selectParagraphAt must be given exactly two numeric arguments: x and y.
     if (args == null || args.size() < 2) {
       throw JSApplicationIllegalArgumentException("selectParagraphAt requires x and y arguments")
     }
@@ -197,9 +224,9 @@ class SelectableRichTextViewManager :
     view.selectParagraphAt(args.getDouble(0).toFloat(), args.getDouble(1).toFloat())
   }
 
-  // handleCopyRangeCommand 校验 copyRange 命令参数并复制指定文本范围。
+  // handleCopyRangeCommand validates the copyRange command's arguments and copies the given text range.
   private fun handleCopyRangeCommand(view: SelectableRichTextView, args: ReadableArray?) {
-    // copyRange 必须包含 start/end 两个数字参数。
+    // copyRange must be given exactly two numeric arguments: start and end.
     if (args == null || args.size() < 2) {
       throw JSApplicationIllegalArgumentException("copyRange requires start and end arguments")
     }
@@ -208,23 +235,24 @@ class SelectableRichTextViewManager :
   }
 
   companion object {
-    // REACT_CLASS 是 Android Fabric 注册名。
-    // FabricNameComponentMapping 不在映射表里的名字会原样透传，
-    // ViewManagerRegistry.get 再尝试加 "RCT" 前缀查找。
-    // 因此 JS viewName "SelectableRichText" 会查 "SelectableRichText" 和 "RCTSelectableRichText"，
-    // 这里注册名用 "RCTSelectableRichText" 命中后者。
+    // REACT_CLASS is the Android Fabric registration name.
+    // A name not present in FabricNameComponentMapping is passed through unchanged, and
+    // ViewManagerRegistry.get then tries again with an "RCT" prefix.
+    // So the JS viewName "SelectableRichText" is looked up as both "SelectableRichText" and
+    // "RCTSelectableRichText",
+    // and the registration name here uses "RCTSelectableRichText" to match the latter.
     const val REACT_CLASS = "RCTSelectableRichText"
 
-    // COMMAND_SELECT_RANGE 是 JS ref.selectRange 派发的 command 名称。
+    // COMMAND_SELECT_RANGE is the command name dispatched by JS's ref.selectRange.
     private const val COMMAND_SELECT_RANGE = "selectRange"
 
-    // COMMAND_SELECT_PARAGRAPH_AT 是 JS ref.selectParagraphAt 派发的 command 名称。
+    // COMMAND_SELECT_PARAGRAPH_AT is the command name dispatched by JS's ref.selectParagraphAt.
     private const val COMMAND_SELECT_PARAGRAPH_AT = "selectParagraphAt"
 
-    // COMMAND_CLEAR_SELECTION 是 JS ref.clearSelection 派发的 command 名称。
+    // COMMAND_CLEAR_SELECTION is the command name dispatched by JS's ref.clearSelection.
     private const val COMMAND_CLEAR_SELECTION = "clearSelection"
 
-    // COMMAND_COPY_RANGE 是 JS ref.copyRange 派发的 command 名称。
+    // COMMAND_COPY_RANGE is the command name dispatched by JS's ref.copyRange.
     private const val COMMAND_COPY_RANGE = "copyRange"
   }
 }

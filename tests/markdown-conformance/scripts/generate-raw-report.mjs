@@ -22,10 +22,10 @@ const fixtureDirectory = path.join(REPOSITORY_ROOT, 'tests', 'cases', '_fixtures
 const document = JSON.parse(await readFile(path.join(fixtureDirectory, 'cases.json'), 'utf8'));
 
 const SECTION_NAMES = {
-  'HTML blocks': 'HTML 块',
-  'Raw HTML': '原始 HTML',
-  Lists: '列表',
-  'Hard line breaks': '硬换行',
+  'HTML blocks': 'HTML blocks',
+  'Raw HTML': 'Raw HTML',
+  Lists: 'Lists',
+  'Hard line breaks': 'Hard line breaks',
 };
 
 const selectedCases = document.cases;
@@ -105,15 +105,15 @@ for (const testCase of selectedCases) {
   const pass = !diff;
   if (pass) passCount += 1;
   const badge = pass
-    ? '<span class="badge pass">语义通过</span>'
-    : '<span class="badge fail">语义差异</span>';
+    ? '<span class="badge pass">Semantic pass</span>'
+    : '<span class="badge fail">Semantic diff</span>';
   const shapes = rawShapes(astById.get(testCase.id));
   const shapeTags = shapes
     .map(s => `<code class="shape ${s}">${s}</code>`)
     .join(' ');
   const note = pass
     ? ''
-    : `<p class="diff">首个差异:<code>${escapeHtml(diff.path ?? '-')}</code><br>raw 节点形状:${shapeTags || '<code>无 raw</code>'}</p>`;
+    : `<p class="diff">First diff:<code>${escapeHtml(diff.path ?? '-')}</code><br>raw node shapes:${shapeTags || '<code>no raw</code>'}</p>`;
   const mdDisplay = escapeHtml(testCase.input.markdown);
   const actualDisplay = errs?.length ? escapeHtml(errs.join('\n')) : escapeHtml(actual);
   cards.push({
@@ -124,25 +124,25 @@ for (const testCase of selectedCases) {
 <article class="case ${pass ? 'pass' : 'fail'}">
   <h3><code>${escapeHtml(testCase.id)}</code> <small>${escapeHtml(sectionName(testCase.source.section))}</small> ${badge}</h3>
   <div class="block">
-    <h4>Markdown 输入</h4>
+    <h4>Markdown input</h4>
     <pre class="md">${mdDisplay}</pre>
   </div>
   <div class="render-grid">
     <figure>
-      <figcaption>官方 expected(CommonMark 0.31.2)</figcaption>
+      <figcaption>Official expected (CommonMark 0.31.2)</figcaption>
       <iframe srcdoc="${escapeAttr(expected)}" sandbox=""></iframe>
     </figure>
     <figure>
-      <figcaption>修复后实际渲染(Supramark web renderer)</figcaption>
+      <figcaption>Actual rendering after the fix (Supramark web renderer)</figcaption>
       <iframe srcdoc="${escapeAttr(actual)}" sandbox=""></iframe>
     </figure>
   </div>
   ${note}
   <details>
-    <summary>HTML 源码对比</summary>
+    <summary>HTML source comparison</summary>
     <div class="html-grid">
-      <div><h5>官方 expected</h5><pre>${escapeHtml(expected)}</pre></div>
-      <div><h5>修复后 actual</h5><pre>${actualDisplay}</pre></div>
+      <div><h5>Official expected</h5><pre>${escapeHtml(expected)}</pre></div>
+      <div><h5>Actual after the fix</h5><pre>${actualDisplay}</pre></div>
     </div>
   </details>
 </article>`,
@@ -160,15 +160,15 @@ function renderGroup(title, groupCards) {
 
 const failCount = selectedCases.length - passCount;
 const html = `<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CommonMark raw HTML 修复用例 · Supramark #107</title>
+<title>CommonMark raw HTML fixed cases &middot; Supramark #107</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  body { font: 14px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; margin: 0; background: #f6f7f9; color: #1f2328; }
+  body { font: 14px/1.6 -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f6f7f9; color: #1f2328; }
   header { background: #1f2328; color: #fff; padding: 28px 32px; }
   header h1 { margin: 0 0 8px; font-size: 22px; }
   header p { margin: 0; color: #adbac7; max-width: 980px; }
@@ -208,28 +208,28 @@ const html = `<!doctype html>
 </head>
 <body>
 <header>
-  <h1>CommonMark raw HTML 修复用例 · 官方对比</h1>
-  <p>对应 <a style="color:#539bf5" href="https://github.com/Actrium/supramark/issues/107">Actrium/supramark#107</a>。本页覆盖 CommonMark 0.31.2 规范全部 652 个用例,逐条展示 markdown 输入、官方预期 HTML、以及修复后的实际渲染。此前 React 组件模型无法承载的孤立开/闭标签、注释、声明、CDATA 等片段已通过根级 <code>&lt;template&gt;</code> 解析 + <code>insertBefore</code> 拼接(RawHtml 通道)全部打通;段落内 active-formatting 泄漏通过整体 <code>&lt;p&gt;…&lt;/p&gt;</code> 片段注入解决。</p>
+  <h1>CommonMark raw HTML fixed cases &middot; official comparison</h1>
+  <p>Companion to <a style="color:#539bf5" href="https://github.com/Actrium/supramark/issues/107">Actrium/supramark#107</a>. This page covers all 652 cases from the CommonMark 0.31.2 spec, showing the Markdown input, the official expected HTML, and the actual rendering after the fix, case by case. Isolated open/close tags, comments, declarations, CDATA, and similar fragments that the previous React component model could not carry are now handled end to end via root-level <code>&lt;template&gt;</code> parsing plus <code>insertBefore</code> splicing (the RawHtml channel); active-formatting leaks inside paragraphs are fixed by injecting the whole <code>&lt;p&gt;&hellip;&lt;/p&gt;</code> fragment at once.</p>
   <div class="stats">
-    <div class="stat"><b>${passCount}/${selectedCases.length}</b><span>本批语义通过</span></div>
-    <div class="stat"><b>${failCount}</b><span>仍失败</span></div>
-    <div class="stat"><b>652/652</b><span>整库 CommonMark 0.31.2</span></div>
-    <div class="stat"><b>${escapeHtml(environment.parser)}</b><span>解析器</span></div>
-    <div class="stat"><b>${escapeHtml(environment.browser.name)} ${escapeHtml(environment.browser.version)}</b><span>渲染浏览器</span></div>
+    <div class="stat"><b>${passCount}/${selectedCases.length}</b><span>Semantic pass in this batch</span></div>
+    <div class="stat"><b>${failCount}</b><span>Still failing</span></div>
+    <div class="stat"><b>652/652</b><span>Full CommonMark 0.31.2 corpus</span></div>
+    <div class="stat"><b>${escapeHtml(environment.parser)}</b><span>Parser</span></div>
+    <div class="stat"><b>${escapeHtml(environment.browser.name)} ${escapeHtml(environment.browser.version)}</b><span>Rendering browser</span></div>
   </div>
   <div class="legend">
-    raw 节点形状:
-    <code class="shape balanced">balanced</code> 平衡元素(同名 host / 片段注入)
-    <code class="shape self-closing">self-closing</code> 自闭合(片段注入)
-    <code class="shape fragment">fragment</code> 不平衡片段(片段注入)
-    <code class="shape comment/decl">comment/decl</code> 注释/声明(片段注入)
+    raw node shapes:
+    <code class="shape balanced">balanced</code> balanced element (same-named host / fragment injection)
+    <code class="shape self-closing">self-closing</code> self-closing (fragment injection)
+    <code class="shape fragment">fragment</code> unbalanced fragment (fragment injection)
+    <code class="shape comment/decl">comment/decl</code> comment/declaration (fragment injection)
   </div>
 </header>
 <main>
-${renderGroup(`已修复(语义通过)`, passCards)}
-${renderGroup(`仍失败(React 结构性死角)`, failCards)}
+${renderGroup(`Fixed (semantic pass)`, passCards)}
+${renderGroup(`Still failing (React structural dead ends)`, failCards)}
 </main>
-<footer>由 <code>tests/markdown-conformance/scripts/generate-raw-report.mjs</code> 生成 · 对照目标 production-web-renderer-dom</footer>
+<footer>Generated by <code>tests/markdown-conformance/scripts/generate-raw-report.mjs</code> &middot; comparison target production-web-renderer-dom</footer>
 </body>
 </html>`;
 

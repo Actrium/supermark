@@ -1,34 +1,24 @@
 /**
- * Weather React Native 渲染器
+ * Weather React Native renderer
  *
- * 实现 ContainerRNRenderer 接口
+ * Implements the ContainerRNRenderer interface
  *
  * @packageDocumentation
  */
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { getMockWeather } from './mock-weather.js';
 import type { ContainerRNRenderArgs } from '@supramark/core';
 import type { WeatherData } from './feature.js';
 
 /**
- * 模拟天气数据（实际应用中应该调用天气 API）
+ * condition index → RN emoji (platform-specific, not in shared layer)
+ *
+ * Shared derivation (temp/humidity/wind/conditionIndex) lives in
+ * mock-weather.ts; this only maps the condition for this platform.
  */
-function getMockWeather(location: string, units: 'metric' | 'imperial' = 'metric') {
-  const hash = location.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const baseTemp = 15 + (hash % 20);
-  const temp = units === 'imperial' ? Math.round(baseTemp * 1.8 + 32) : baseTemp;
-  const unit = units === 'imperial' ? '°F' : '°C';
-
-  const conditions = ['☀️', '☁️', '🌧️'] as const;
-  const condition = conditions[hash % 3];
-
-  const humidity = 40 + (hash % 40);
-  const wind = 5 + (hash % 20);
-  const windUnit = units === 'imperial' ? 'mph' : 'km/h';
-
-  return { temp, unit, condition, humidity, wind, windUnit };
-}
+const RN_CONDITIONS = ['☀️', '☁️', '🌧️'] as const;
 
 const localStyles = StyleSheet.create({
   container: {
@@ -111,7 +101,7 @@ const localStyles = StyleSheet.create({
 });
 
 /**
- * RN 渲染器 for :::weather
+ * RN renderer for :::weather
  */
 export function renderWeatherContainerRN({
   node,
@@ -120,11 +110,11 @@ export function renderWeatherContainerRN({
   const data = (node?.data ?? {}) as unknown as WeatherData;
   const { format, location, units = 'metric', parseError, rawConfig } = data;
 
-  // 解析错误时显示错误信息
+  // Show an error message when parsing failed
   if (parseError) {
     return (
       <View key={key} style={localStyles.error}>
-        <Text style={localStyles.errorTitle}>⚠️ Weather 配置错误</Text>
+        <Text style={localStyles.errorTitle}>⚠️ Weather config error</Text>
         <Text style={localStyles.errorText}>{parseError}</Text>
         {rawConfig && (
           <Text style={localStyles.errorCode}>{rawConfig}</Text>
@@ -133,17 +123,17 @@ export function renderWeatherContainerRN({
     );
   }
 
-  // 缺少必要配置
+  // Missing required config
   if (!location) {
     return (
       <View key={key} style={localStyles.error}>
-        <Text style={localStyles.errorTitle}>⚠️ 缺少 location 配置</Text>
-        <Text style={localStyles.errorText}>请在配置中指定 location 字段</Text>
+        <Text style={localStyles.errorTitle}>⚠️ Missing location config</Text>
+        <Text style={localStyles.errorText}>Please specify the location field in the config</Text>
       </View>
     );
   }
 
-  // 获取模拟天气数据
+  // Fetch mock weather data
   const weather = getMockWeather(location, units);
 
   return (
@@ -153,7 +143,7 @@ export function renderWeatherContainerRN({
         <Text style={localStyles.format}>{format.toUpperCase()}</Text>
       </View>
       <View style={localStyles.main}>
-        <Text style={localStyles.icon}>{weather.condition}</Text>
+        <Text style={localStyles.icon}>{RN_CONDITIONS[weather.conditionIndex]}</Text>
         <Text style={localStyles.temp}>
           {weather.temp}
           <Text style={localStyles.unit}>{weather.unit}</Text>

@@ -1,7 +1,7 @@
 /**
- * Config → generated TypeScript 文件内容。
+ * Config → generated TypeScript file content.
  *
- * 输出形状见 docs/architecture/ENGINES_AND_CLI_PLAN.md §5.5。
+ * See docs/architecture/ENGINES_AND_CLI_PLAN.zh.md §5.5 for the output shape.
  */
 
 import { createHash } from 'node:crypto';
@@ -23,11 +23,11 @@ const ECHARTS_COMPONENTS_ALL: EchartsComponent[] = [
 
 export interface GenerateInput {
   config: SupramarkConfig;
-  /** CLI 版本号 —— 写进文件头便于追溯 */
+  /** CLI version — written into the file header for traceability */
   cliVersion: string;
-  /** 原始 config JSON 字符串（用于算 hash） */
+  /** Raw config JSON string (used to compute the hash) */
   configSource: string;
-  /** 原始 config 文件相对路径（写进文件头） */
+  /** Relative path of the original config file (written into the file header) */
   configPath: string;
 }
 
@@ -37,7 +37,7 @@ export function generate(input: GenerateInput): string {
   const platform = config.platform ?? 'web';
   const supramarkPkg = platform === 'rn' ? '@supramark/rn' : '@supramark/web';
 
-  // 收集所有 import 语句（按组）
+  // Collect all import statements (grouped)
   const coreImports: string[] = [];
   const engineFactoryImports: string[] = [];
   const engineDepImports: string[] = [];
@@ -45,20 +45,20 @@ export function generate(input: GenerateInput): string {
 
   coreImports.push(`import { createRender, createSupramark } from '${supramarkPkg}/createSupramark';`);
 
-  // —— Mermaid
+  // -- Mermaid
   if (truthy(config.mermaid)) {
     engineFactoryImports.push(`import mermaid from '@supramark/engines/mermaid';`);
     engineAssignments.push(`  mermaid: mermaid(),`);
   }
 
-  // —— MathJax（math 特性启用时自动加载）
+  // -- MathJax (auto-loaded when the math feature is enabled)
   const mathOn = config.mathjax === true || truthy(config.features?.math);
   if (mathOn) {
     engineFactoryImports.push(`import mathjax from '@supramark/engines/mathjax';`);
     engineAssignments.push(`  math: mathjax(),`);
   }
 
-  // —— Graphviz
+  // -- Graphviz
   if (config.graphviz === 'web' || config.graphviz === 'rn') {
     const adapterPath =
       config.graphviz === 'rn' ? 'rn-adapter' : 'web-adapter';
@@ -68,7 +68,7 @@ export function generate(input: GenerateInput): string {
     engineAssignments.push(`  graphviz: graphviz([gvAdapter]),`);
   }
 
-  // —— ECharts
+  // -- ECharts
   if (config.echarts) {
     const charts = config.echarts.charts === '*' ? ECHARTS_CHARTS_ALL : config.echarts.charts;
     const components =
@@ -104,7 +104,7 @@ export function generate(input: GenerateInput): string {
     engineAssignments.push(`  echarts:  echarts([${moduleList.join(', ')}]),`);
   }
 
-  // —— Vega-Lite
+  // -- Vega-Lite
   if (truthy(config['vega-lite'])) {
     engineFactoryImports.push(`import vegaLite    from '@supramark/engines/vega-lite';`);
     engineDepImports.push(`import * as Vega     from 'vega';`);
@@ -112,7 +112,7 @@ export function generate(input: GenerateInput): string {
     engineAssignments.push(`  'vega-lite': vegaLite([Vega, VegaLite]),`);
   }
 
-  // features 部分
+  // features section
   const featuresJson = JSON.stringify(config.features ?? {}, null, 2)
     .replace(/^/gm, '  ')
     .trim();

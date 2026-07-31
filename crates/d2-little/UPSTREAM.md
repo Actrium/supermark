@@ -1,7 +1,7 @@
 # Upstream Tracking — d2-little
 
 ## Source repo
-- **Upstream:** https://github.com/Actrium/d2-little
+- **Upstream:** https://github.com/kookyleo/d2-little — no longer developed there; this sub-tree is the live copy
 - **Pinned commit (at merge time):** `a8db3b23f3ba2f89e031e70525ace34b1d3f0226`
 - **Port crate source tag:** `v0.7.2`
 - **Ported Terrastruct D2 version:** `v0.7.1`

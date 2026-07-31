@@ -151,7 +151,7 @@ pub enum SupramarkNode {
         meta: Option<serde_json::Value>,
         /// Semantic AST envelope { engine, kind, data }. None = not parsed or unsupported
         /// (lazy by default; not inlined in the parser main path, filled in on demand by
-        /// downstream). See docs/architecture/diagram-semantic-ast.md.
+        /// downstream). See docs/architecture/diagram-semantic-ast.zh.md.
         #[serde(skip_serializing_if = "Option::is_none")]
         semantic: Option<serde_json::Value>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1532,6 +1532,7 @@ mod tests {
 
     #[test]
     fn parses_inline_positions_with_utf16_offsets() {
+        // cjk-allow: multi-byte CJK + emoji source needed to exercise utf16-offset math
         let ast = parse("# 标题 😄\n\nHello **世界** and `code`.");
         let SupramarkNode::Root { children, .. } = ast else {
             panic!("expected root");

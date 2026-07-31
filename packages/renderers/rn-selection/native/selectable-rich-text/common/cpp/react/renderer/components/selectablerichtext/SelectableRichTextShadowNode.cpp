@@ -31,7 +31,7 @@ const char SelectableRichTextComponentName[] = "SelectableRichText";
 void SelectableRichTextShadowNode::initialize() noexcept
 {
 #ifdef ANDROID
-  // Android 只有 selectable=true 时才把文本节点标记为可键盘聚焦。
+  // On Android, only mark the text node as keyboard-focusable when selectable=true.
   if (getConcreteProps().isSelectable) {
     traits_.set(ShadowNodeTraits::Trait::KeyboardFocusable);
   }
@@ -64,7 +64,7 @@ bool SelectableRichTextShadowNode::shouldNewRevisionDirtyMeasurement(
 
 const Content &SelectableRichTextShadowNode::getContent(const LayoutContext &layoutContext) const
 {
-  // content_ 命中时复用上一次构建的 AttributedString，避免重复遍历文本子树。
+  // Reuse the previously built AttributedString on a content_ cache hit, to avoid re-walking the text subtree.
   if (content_.has_value()) {
     return content_.value();
   }
@@ -93,7 +93,7 @@ Content SelectableRichTextShadowNode::getContentWithMeasuredAttachments(
 {
   auto content = getContent(layoutContext);
 
-  // 没有 attachment 时不需要递归测量嵌入节点。
+  // No need to recursively measure embedded nodes when there are no attachments.
   if (content.attachments.empty()) {
     return content;
   }
@@ -106,7 +106,7 @@ Content SelectableRichTextShadowNode::getContentWithMeasuredAttachments(
   for (const auto &attachment : content.attachments) {
     auto laytableShadowNode = dynamic_cast<const LayoutableShadowNode *>(attachment.shadowNode);
 
-    // attachment 不是可布局节点时跳过，保持 RN Paragraph 的容错行为。
+    // Skip when the attachment isn't a layoutable node, preserving RN Paragraph's fault-tolerant behavior.
     if (laytableShadowNode == nullptr) {
       continue;
     }
@@ -142,7 +142,7 @@ void SelectableRichTextShadowNode::updateStateIfNeeded(
 
   react_native_assert(textLayoutManager_);
 
-  // 状态内容完全一致时不重复 setStateData，避免无意义 mounting 更新。
+  // Skip calling setStateData again when the state content is already fully identical, to avoid a pointless mounting update.
   if (state.measuredLayout.measurement.size == layout.measurement.size &&
       state.attributedString == content.attributedString &&
       state.paragraphAttributes == content.paragraphAttributes) {
@@ -160,7 +160,7 @@ void SelectableRichTextShadowNode::updateStateIfNeeded(const Content &content)
 
   react_native_assert(textLayoutManager_);
 
-  // AttributedString 未变化时不更新 ParagraphState。
+  // Don't update ParagraphState when the AttributedString hasn't changed.
   if (state.attributedString == content.attributedString) {
     return;
   }
@@ -172,11 +172,11 @@ MeasuredPreparedLayout *SelectableRichTextShadowNode::findUsableLayout()
 {
   MeasuredPreparedLayout *ret = nullptr;
 
-  // Prepared layout 只在当前平台支持时复用测量结果。
+  // Prepared layout measurement is only reused when the current platform supports it.
   if constexpr (TextLayoutManagerExtended::supportsPreparedLayout()) {
     auto expectedSize = rawContentSize();
     for (auto &prevLayout : measuredLayouts_) {
-      // 尺寸完全匹配当前 Yoga 结果时，这个 prepared layout 才能用于最终 state。
+      // This prepared layout can only be used for the final state when its size exactly matches the current Yoga result.
       if (floatEquality(prevLayout.measurement.size.width, expectedSize.width) &&
           floatEquality(prevLayout.measurement.size.height, expectedSize.height)) {
         ret = &prevLayout;
@@ -201,10 +201,10 @@ Size SelectableRichTextShadowNode::measureContent(
     const LayoutContext &layoutContext,
     const LayoutConstraints &layoutConstraints) const
 {
-  // 同一约束下已经测量过 prepared layout 时直接复用。
+  // Reuse the prepared layout directly when it was already measured under the same constraints.
   if constexpr (TextLayoutManagerExtended::supportsPreparedLayout()) {
     for (const auto &layout : measuredLayouts_) {
-      // layoutConstraints 相同表示 measure 结果可以直接返回。
+      // Identical layoutConstraints means the measure result can be returned directly.
       if (layout.layoutConstraints == layoutConstraints) {
         return layout.measurement.size;
       }
@@ -218,9 +218,9 @@ Size SelectableRichTextShadowNode::measureContent(
       .surfaceId = getSurfaceId(),
   };
 
-  // RN prepared text layout 开启时，测量阶段同时缓存可复用布局。
+  // When RN's prepared text layout is enabled, cache a reusable layout during the measure step as well.
   if constexpr (TextLayoutManagerExtended::supportsPreparedLayout()) {
-    // feature flag 未开启时回落到普通 TextLayoutManager measure。
+    // Fall back to the plain TextLayoutManager measure when the feature flag is off.
     if (ReactNativeFeatureFlags::enablePreparedTextLayout()) {
       TextLayoutManagerExtended tme(*textLayoutManager_);
 
@@ -256,7 +256,7 @@ Float SelectableRichTextShadowNode::baseline(const LayoutContext &layoutContext,
 
   AttributedStringBox attributedStringBox{content.attributedString};
 
-  // 平台支持 line measurement 时用真实文本 baseline。
+  // Use the real text baseline when the platform supports line measurement.
   if constexpr (TextLayoutManagerExtended::supportsLineMeasurement()) {
     auto lines = TextLayoutManagerExtended(*textLayoutManager_)
                      .measureLines(attributedStringBox, content.paragraphAttributes, size);
@@ -284,7 +284,7 @@ void SelectableRichTextShadowNode::layout(LayoutContext layoutContext)
 
   auto measuredLayout = findUsableLayout();
 
-  // prepared layout 可用时把测量结果一起写入 ParagraphState。
+  // Write the measurement result into ParagraphState together, when a prepared layout is available.
   if constexpr (
       TextLayoutManagerExtended::supportsPreparedLayout() &&
       std::is_constructible_v<
@@ -293,9 +293,9 @@ void SelectableRichTextShadowNode::layout(LayoutContext layoutContext)
           decltype(content.paragraphAttributes),
           decltype(textLayoutManager_),
           decltype(*measuredLayout)>) {
-    // feature flag 开启时确保最终 state 带有 prepared layout。
+    // Make sure the final state carries a prepared layout when the feature flag is enabled.
     if (ReactNativeFeatureFlags::enablePreparedTextLayout()) {
-      // Yoga 尺寸和 measure 约束不一致时，需要在 layout 阶段补一次测量。
+      // When the Yoga size and the measure constraints don't match, an extra measurement pass is needed during layout.
       if (measuredLayout == nullptr) {
         measureContent(layoutContext, layoutConstraints);
         measuredLayout = findUsableLayout();
@@ -315,9 +315,9 @@ void SelectableRichTextShadowNode::layout(LayoutContext layoutContext)
   };
   AttributedStringBox attributedStringBox{content.attributedString};
 
-  // JS 监听 onTextLayout 时，保持 RN Paragraph 的 line measurement 事件。
+  // Keep RN Paragraph's line-measurement event when JS listens to onTextLayout.
   if (getConcreteProps().onTextLayout) {
-    // 当前平台支持 line measurement 时才能发送精确行信息。
+    // Precise line info can only be sent when the current platform supports line measurement.
     if constexpr (TextLayoutManagerExtended::supportsLineMeasurement()) {
       auto linesMeasurements = TextLayoutManagerExtended(*textLayoutManager_)
                                    .measureLines(attributedStringBox, content.paragraphAttributes, size);
@@ -327,7 +327,7 @@ void SelectableRichTextShadowNode::layout(LayoutContext layoutContext)
     }
   }
 
-  // 没有 attachment 时无需布局内嵌 shadow node。
+  // No need to lay out embedded shadow nodes when there are no attachments.
   if (content.attachments.empty()) {
     return;
   }
@@ -345,7 +345,7 @@ void SelectableRichTextShadowNode::layout(LayoutContext layoutContext)
   for (size_t i = 0; i < content.attachments.size(); i++) {
     auto &attachment = content.attachments.at(i);
 
-    // 非 LayoutableShadowNode 的 attachment 不参与布局。
+    // Attachments that aren't a LayoutableShadowNode don't participate in layout.
     if (dynamic_cast<const LayoutableShadowNode *>(attachment.shadowNode) == nullptr) {
       continue;
     }
@@ -363,7 +363,7 @@ void SelectableRichTextShadowNode::layout(LayoutContext layoutContext)
     auto &layoutableShadowNode = dynamic_cast<LayoutableShadowNode &>(*clonedShadowNode);
     const auto &attachmentMeasurement = measurement.attachments[i];
 
-    // 被文本布局裁剪的 attachment 需要隐藏，避免 Fabric 仍然挂载旧 frame。
+    // An attachment clipped by the text layout needs to be hidden, to avoid Fabric still mounting the old frame.
     if (attachmentMeasurement.isClipped) {
       layoutableShadowNode.setLayoutMetrics(LayoutMetrics{.frame = {}, .displayType = DisplayType::None});
       continue;
@@ -385,7 +385,7 @@ void SelectableRichTextShadowNode::layout(LayoutContext layoutContext)
     layoutableShadowNode.setLayoutMetrics(attachmentLayoutMetrics);
   }
 
-  // cloneTree 产生过新的 paragraph 节点时，把最新 children 写回当前节点。
+  // Write the latest children back onto the current node, when cloneTree produced a new paragraph node.
   if (paragraphShadowNode != this) {
     this->children_ = static_cast<const SelectableRichTextShadowNode *>(paragraphShadowNode)->children_;
   }

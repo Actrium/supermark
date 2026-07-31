@@ -21,12 +21,12 @@ interface DeleteResult {
 
 function deleteDirectory(dirPath: string): DeleteResult {
   if (!fs.existsSync(dirPath)) {
-    return { success: true, message: '目录不存在' };
+    return { success: true, message: 'directory does not exist' };
   }
 
   try {
     fs.rmSync(dirPath, { recursive: true, force: true });
-    return { success: true, message: '删除成功' };
+    return { success: true, message: 'deleted successfully' };
   } catch (error) {
     return { success: false, message: error instanceof Error ? error.message : String(error) };
   }
@@ -49,7 +49,7 @@ function removeFromBundles(featureShortName: string): BundleResult[] {
   for (const bundleFile of bundleFiles) {
     const fullPath = path.join(REPO_ROOT, bundleFile);
     if (!fs.existsSync(fullPath)) {
-      results.push({ file: bundleFile, success: true, message: '文件不存在' });
+      results.push({ file: bundleFile, success: true, message: 'file does not exist' });
       continue;
     }
 
@@ -81,7 +81,7 @@ function removeFromBundles(featureShortName: string): BundleResult[] {
       }
 
       fs.writeFileSync(fullPath, content, 'utf-8');
-      results.push({ file: bundleFile, success: true, message: '更新成功' });
+      results.push({ file: bundleFile, success: true, message: 'updated successfully' });
     } catch (error) {
       results.push({
         file: bundleFile,
@@ -111,7 +111,7 @@ function removeFromDocs(featureShortName: string): DocResult[] {
       results.push({
         file: `docs/features/${featureShortName}.md`,
         success: true,
-        message: '删除成功',
+        message: 'deleted successfully',
       });
     } catch (error) {
       results.push({
@@ -124,7 +124,7 @@ function removeFromDocs(featureShortName: string): DocResult[] {
     results.push({
       file: `docs/features/${featureShortName}.md`,
       success: true,
-      message: '文件不存在',
+      message: 'file does not exist',
     });
   }
 
@@ -141,7 +141,7 @@ function removeFromDocs(featureShortName: string): DocResult[] {
       content = content.replace(/\\n\\s*\\n\\s*\\n/g, '\\n\\n');
 
       fs.writeFileSync(indexFile, content, 'utf-8');
-      results.push({ file: 'docs/features/index.md', success: true, message: '更新成功' });
+      results.push({ file: 'docs/features/index.md', success: true, message: 'updated successfully' });
     } catch (error) {
       results.push({
         file: 'docs/features/index.md',
@@ -165,7 +165,7 @@ function showResults(
   results.forEach(result => {
     const color = result.success ? (showSuccess ? 'green' : 'gray') : 'red';
     const status = result.success ? '✓' : '✗';
-    const name = result.file || result.dir || '未知';
+    const name = result.file || result.dir || 'unknown';
     log(`  ${status} ${name}: ${result.message}`, color);
   });
 }
@@ -195,23 +195,23 @@ function parseArgs(): CliOptions {
 
 function showHelp(): void {
   console.log(`
-${colors.bright}Supramark Feature 删除工具${colors.reset}
+${colors.bright}Supramark Feature Deletion Tool${colors.reset}
 
-${colors.blue}用法：${colors.reset}
-  bun run feature:del               # 交互式选择删除
-  bun run feature:del <feature-name> # 直接删除指定 feature
+${colors.blue}Usage:${colors.reset}
+  bun run feature:del               # interactive selection and deletion
+  bun run feature:del <feature-name> # delete the specified feature directly
 
-${colors.blue}示例：${colors.reset}
-  ${colors.gray}# 交互式删除${colors.reset}
+${colors.blue}Examples:${colors.reset}
+  ${colors.gray}# Interactive deletion${colors.reset}
   bun run feature:del
 
-  ${colors.gray}# 直接删除指定 feature${colors.reset}
+  ${colors.gray}# Delete a specific feature directly${colors.reset}
   bun run feature:del gift
 `);
 }
 
 async function main(): Promise<void> {
-  log('\n🗑️  Supramark Feature 删除工具\n', 'bright');
+  log('\n🗑️  Supramark Feature Deletion Tool\n', 'bright');
 
   try {
     const cliOptions = parseArgs();
@@ -228,53 +228,53 @@ async function main(): Promise<void> {
       selectedFeature = findFeaturePackageByShortName(targetName);
 
       if (!selectedFeature) {
-        log(`❌ 未找到 Feature: ${targetName}\n`, 'red');
+        log(`❌ Feature not found: ${targetName}\n`, 'red');
         return;
       }
-      log(`已选择 Feature: ${colors.green}${selectedFeature.shortName}${colors.reset}\n`, 'reset');
+      log(`Selected feature: ${colors.green}${selectedFeature.shortName}${colors.reset}\n`, 'reset');
     } else {
-      selectedFeature = await selectFeature('选择要删除的 Feature:');
+      selectedFeature = await selectFeature('Select the feature to delete:');
     }
 
     if (!selectedFeature) {
-      log('\n已取消。\n', 'yellow');
+      log('\nCancelled.\n', 'yellow');
       return;
     }
 
     const selectedShortName = selectedFeature.shortName;
 
-    log('\n⚠️  警告：此操作将永久删除 Feature 及其所有相关文件！\n', 'red');
-    log('将要删除的内容：', 'yellow');
-    log(`  • Feature 目录: ${selectedFeature.dir}`, 'gray');
-    log(`  • 包名: @supramark/feature-${selectedShortName}`, 'gray');
-    log(`  • 文档文件: docs/features/${selectedShortName}.md`, 'gray');
+    log('\n⚠️  Warning: this operation will permanently delete the feature and all its related files!\n', 'red');
+    log('The following will be deleted:', 'yellow');
+    log(`  • Feature directory: ${selectedFeature.dir}`, 'gray');
+    log(`  • Package name: @supramark/feature-${selectedShortName}`, 'gray');
+    log(`  • Documentation file: docs/features/${selectedShortName}.md`, 'gray');
 
     const confirmName = await question(
-      `\n请输入 Feature 名称 "${selectedShortName}" 确认删除 (或按 Enter 取消): `
+      `\nType the feature name "${selectedShortName}" to confirm deletion (or press Enter to cancel): `
     );
     if (confirmName !== selectedShortName) {
-      log('\n名称不匹配，已取消删除。\n', 'yellow');
+      log('\nName mismatch, deletion cancelled.\n', 'yellow');
       return;
     }
 
-    log('\n🔄 开始删除 Feature...\n', 'gray');
+    log('\n🔄 Deleting feature...\n', 'gray');
 
     const deleteResult = deleteDirectory(selectedFeature.dir);
-    showResults('Feature 目录删除', [{ dir: selectedFeature.dir, ...deleteResult }]);
+    showResults('Feature directory deletion', [{ dir: selectedFeature.dir, ...deleteResult }]);
 
     const bundleResults = removeFromBundles(selectedShortName);
-    showResults('Bundle 文件更新', bundleResults);
+    showResults('Bundle file update', bundleResults);
 
     const docResults = removeFromDocs(selectedShortName);
-    showResults('文档清理', docResults);
+    showResults('Documentation cleanup', docResults);
 
-    log('\n📝 手动操作建议:', 'yellow');
-    log('  1. 运行 bun install 重新安装依赖', 'reset');
-    log('  2. 运行 bun run features:sync 同步注册表', 'reset');
+    log('\n📝 Manual follow-up steps:', 'yellow');
+    log('  1. Run bun install to reinstall dependencies', 'reset');
+    log('  2. Run bun run features:sync to sync the registry', 'reset');
 
-    log('\n✨ Feature 删除完成！\n', 'bright');
+    log('\n✨ Feature deletion complete!\n', 'bright');
   } catch (error) {
-    log(`\n❌ 错误: ${error instanceof Error ? error.message : String(error)}\n`, 'red');
+    log(`\n❌ Error: ${error instanceof Error ? error.message : String(error)}\n`, 'red');
     process.exit(1);
   } finally {
     closeRL();

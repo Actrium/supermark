@@ -1,5 +1,7 @@
 ﻿# Official Diagram Rendering Test Cases
 
+<!-- cjk-allow-file: this file is parsed as data, not read as prose. official-diagram-visual-workflow.mjs loads it by hard-coded filename and matches its Chinese section headers and category headings with regexes, so renaming it to .zh.md or translating those headers breaks case loading. -->
+
 这份文档整理 D2、PlantUML、Mermaid 官方文档中的典型代码片段，并附上官方渲染器/官方文档站产生的参考 SVG。用途是把 Supramark 的渲染结果与外部官方结果对比，而不是与 Supramark 自己的产物互相比较。
 
 生成时间：2026-07-01

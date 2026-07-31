@@ -8,7 +8,7 @@ async function loadExtensionSpec(featurePath: string): Promise<ContainerExtensio
   const extTs = path.join(featurePath, 'src', 'extension.ts');
   if (!fs.existsSync(extTs)) return null;
 
-  // 直接 import TS 源码：由 bunx tsx 执行，支持 ts/esm
+  // Import the TS source directly: executed via bunx tsx, which supports ts/esm
   const mod = (await import(pathToFileURL(extTs).href)) as { extension?: ContainerExtensionSpec };
   const spec = mod.extension as ContainerExtensionSpec | undefined;
   return spec ?? null;
@@ -33,14 +33,15 @@ async function main() {
   for (const feature of allFeatures) {
     const spec = await loadExtensionSpec(feature.dir);
     if (!spec) continue;
-    spec.featureDir = feature.shortName; // shortName 现在是 'admonition' 这种
+    spec.featureDir = feature.shortName; // shortName is now a plain slug like 'admonition'
     validateSpec(spec, `${feature.dir}/src/extension.ts`);
     specs.push(spec);
   }
 
-  // 之前的 codegen 逻辑已被彻底移除。
-  // 现在的架构采用“被动型”渲染器：Supramark 组件直接从 config.features 中动态解析渲染逻辑，
-  // 无需在库级别维护一个全局的注册表或中间件代码。
+  // The previous codegen logic has been removed entirely.
+  // The current architecture uses "passive" renderers: the Supramark component resolves
+  // rendering logic dynamically from config.features, so there is no need to maintain a
+  // global registry or middleware code at the library level.
 
   console.log(
     `[features:sync] Scanned ${specs.length} container extension(s). Document synchronization triggered.`

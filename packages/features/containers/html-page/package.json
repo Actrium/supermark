@@ -16,7 +16,7 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.zh.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json --emitDeclarationOnly",

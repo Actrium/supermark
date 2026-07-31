@@ -1,13 +1,13 @@
 import type { RenderOptions } from '../types.js';
 import { DiagramRenderError } from '../types.js';
 
-/** ECharts 引擎的渲染选项。 */
+/** Render options for the ECharts engine. */
 export interface Options extends RenderOptions {
-  /** 画布背景色，透明用 `"transparent"`。 */
+  /** Canvas background color; use `"transparent"` for a transparent canvas. */
   backgroundColor?: string;
 }
 
-// ECharts 核心对象的鸭子类型（避免硬依赖 `echarts` 包）。
+// Duck type for the ECharts core object (avoids a hard dependency on the `echarts` package).
 interface EChartsCore {
   init(dom: unknown, theme: unknown, opts: Record<string, unknown>): EChartsInstance;
   use(modules: unknown[]): void;
@@ -28,11 +28,11 @@ function isEchartsCore(value: unknown): value is EChartsCore {
 }
 
 /**
- * ECharts engine 工厂。
+ * ECharts engine factory.
  *
- * **Host 必须通过 `modules` 至少传入 ECharts core 实例**
- * （通常来自 `echarts/core`），其余为 chart type / component / renderer
- * 等 ECharts 模块，会被 `core.use(...)` 注册。
+ * **The host must pass at least an ECharts core instance via `modules`**
+ * (usually from `echarts/core`); the rest are ECharts modules such as chart
+ * type / component / renderer, which get registered via `core.use(...)`.
  *
  * @example
  * ```ts
@@ -46,15 +46,16 @@ function isEchartsCore(value: unknown): value is EChartsCore {
  * const svg    = await render('{"xAxis":{"type":"category","data":["A","B"]}, ...}');
  * ```
  *
- * 上面的写法让 bundler 的静态分析精确到"只带 LineChart + 三个 component + SVGRenderer"，
- * 其他 chart type 被 tree-shake 砍掉。
+ * The pattern above lets the bundler's static analysis narrow the bundle to
+ * "just LineChart + the three components + SVGRenderer" — every other chart
+ * type gets tree-shaken away.
  */
 export default function echarts(modules?: unknown[]) {
   const items = modules ?? [];
   const core = items.find(isEchartsCore);
   const rest = items.filter(m => m !== core);
 
-  // 模块注册只需一次（echarts.use 幂等），放在工厂外部。
+  // Module registration only needs to happen once (echarts.use is idempotent); done outside the factory.
   if (core && rest.length > 0) {
     core.use(rest);
   }

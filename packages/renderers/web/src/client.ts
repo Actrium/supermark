@@ -1,10 +1,10 @@
 /**
  * @supramark/web/client
  *
- * 客户端（浏览器）渲染专用导出。
+ * Client-side (browser) rendering exports.
  *
- * 此模块提供 React 组件，用于在浏览器中动态渲染 Markdown。
- * 适用于 CSR（客户端渲染）场景和 SPA（单页应用）。
+ * This module provides React components for dynamically rendering Markdown in the browser.
+ * Suitable for CSR (client-side rendering) scenarios and SPAs (single-page applications).
  *
  * @example
  * ```typescript
@@ -23,7 +23,7 @@
  *
  * @example
  * ```typescript
- * // 预解析 AST 然后传入（性能优化）
+ * // Pre-parse the AST and pass it in (performance optimization)
  * import { Supramark, parse } from '@supramark/web/client';
  *
  * const ast = await parse('# Hello World');
@@ -34,13 +34,13 @@
  * ```
  */
 
-// React 组件
+// React components
 export { Supramark } from './Supramark.js';
 export type { SupramarkRenderState, SupramarkWebProps } from './Supramark.js';
 export { DiagramEngineProvider } from './DiagramEngineProvider.js';
 export type { DiagramEngineProviderProps } from './DiagramEngineProvider.js';
 
-// ClassName 系统
+// className system
 export type { SupramarkClassNames } from './classNames.js';
 export {
   defaultClassNames,
@@ -49,6 +49,6 @@ export {
   minimalClassNames,
 } from './classNames.js';
 
-// 核心解析功能（可选，浏览器中也可以解析 Markdown）
+// Core parsing functionality (optional; Markdown can also be parsed in the browser)
 export { parse } from '@supramark/core';
 export type { SupramarkRootNode, SupramarkNode } from '@supramark/core';

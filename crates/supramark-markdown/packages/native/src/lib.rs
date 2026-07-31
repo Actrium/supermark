@@ -128,9 +128,10 @@ pub unsafe extern "C" fn supramark_markdown_parse_json(
         Err(_) => return SUPRAMARK_MARKDOWN_ERR_NULL_INPUT,
     };
 
-    // 主 crate 的 `parse` 不返回 Result：内部解析失败会以 diagnostics
-    // 字段的形式挂到 AST 上，不会抛错。所以这里只可能因 serde_json
-    // 序列化失败而报错（实际几乎不会发生）。
+    // The core crate's `parse` does not return a `Result`: internal parse
+    // failures are attached to the AST as a `diagnostics` field rather than
+    // raising an error. So the only failure mode here is `serde_json`
+    // serialization failing (which in practice basically never happens).
     let node = supramark_markdown::parse(input_str);
     let json_bytes = match serde_json::to_vec(&node) {
         Ok(bytes) => bytes,
@@ -191,7 +192,7 @@ mod tests {
     use super::*;
     use std::ffi::CString;
 
-    /// 最小 Markdown 输入 → 期望返回合法 JSON。
+    /// Minimal Markdown input -> expect valid JSON back.
     #[test]
     fn parse_roundtrip_simple() {
         let src = CString::new("# Hello").unwrap();
@@ -212,7 +213,7 @@ mod tests {
 
         let json = unsafe { slice::from_raw_parts(out_buf as *const u8, out_len) };
         let json_str = std::str::from_utf8(json).expect("JSON must be UTF-8");
-        // AST v2 root 节点带 type 字段
+        // AST v2 root node carries a `type` field
         assert!(json_str.contains("\"type\""), "expected type field in JSON");
 
         unsafe { supramark_markdown_free(out_buf, out_len) };
@@ -248,7 +249,7 @@ mod tests {
         }
     }
 
-    /// 显式长度路径（input 不需要 NUL 结尾）。
+    /// Explicit-length path (`input` does not need to be NUL-terminated).
     #[test]
     fn parse_with_explicit_length() {
         let src = b"# Hello";
@@ -267,7 +268,7 @@ mod tests {
         unsafe { supramark_markdown_free(out_buf, out_len) };
     }
 
-    /// NULL input（strlen 路径）→ ERR_NULL_INPUT，out-params 保持原状。
+    /// NULL input (strlen path) -> ERR_NULL_INPUT, out-params left untouched.
     #[test]
     fn parse_null_input() {
         let mut out_buf: *mut c_char = ptr::null_mut();
@@ -285,9 +286,10 @@ mod tests {
         assert_eq!(out_len, 0);
     }
 
-    /// 空文档（显式长度 0）→ OK，返回合法 root JSON，且不解引用 input。
-    /// 这是 iOS / Android bridge 对空字符串源的真实调用形态
-    /// （`[sourceData length]` / `GetArrayLength` 都为 0）。
+    /// Empty document (explicit length 0) -> OK, returns valid root JSON,
+    /// and does not dereference `input`. This is the real calling shape iOS /
+    /// Android bridges use for empty-string sources (`[sourceData length]` /
+    /// `GetArrayLength` both come back as 0).
     #[test]
     fn parse_empty_input_explicit_len() {
         let src = b"";
@@ -312,8 +314,9 @@ mod tests {
         unsafe { supramark_markdown_free(out_buf, out_len) };
     }
 
-    /// 空文档 + NULL 指针（len 0）→ OK：len 0 时不解引用 input，
-    /// 覆盖 iOS `[emptyData bytes]` 可能返回 NULL 的情况。
+    /// Empty document + NULL pointer (len 0) -> OK: `input` is not
+    /// dereferenced when len is 0, covering the case where iOS's
+    /// `[emptyData bytes]` may return NULL.
     #[test]
     fn parse_empty_input_null_ptr() {
         let mut out_buf: *mut c_char = ptr::null_mut();
@@ -348,7 +351,7 @@ mod tests {
         assert_eq!(out_len, 0);
     }
 
-    /// NULL out-params → ERR_NULL_INPUT（不崩溃）。
+    /// NULL out-params -> ERR_NULL_INPUT (does not crash).
     #[test]
     fn parse_null_outparams() {
         let src = CString::new("a").unwrap();
@@ -358,13 +361,13 @@ mod tests {
         assert_eq!(rc, SUPRAMARK_MARKDOWN_ERR_NULL_INPUT);
     }
 
-    /// Free of (NULL, 0) 是 no-op（不能崩）。
+    /// Freeing (NULL, 0) is a no-op (must not crash).
     #[test]
     fn free_null_is_noop() {
         unsafe { supramark_markdown_free(ptr::null_mut(), 0) };
     }
 
-    /// Version 字符串非空，且与 crate 版本一致。
+    /// Version string is non-empty and matches the crate version.
     #[test]
     fn version_string() {
         let p = supramark_markdown_version();
@@ -373,7 +376,8 @@ mod tests {
         assert_eq!(s, env!("CARGO_PKG_VERSION"));
     }
 
-    /// 解析出的 JSON 能被 serde_json 还原成同样的结构（round-trip）。
+    /// The parsed JSON can be round-tripped back to the same structure via
+    /// `serde_json`.
     #[test]
     fn json_is_parseable() {
         let src = CString::new("# Title\n\nparagraph **bold**").unwrap();

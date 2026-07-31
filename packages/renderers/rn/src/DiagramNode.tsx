@@ -89,8 +89,10 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
     deferRender ? null : (diagramCache?.get(diagramCacheKey)?.svg ?? null)
   );
   const [error, setError] = useState<string | null>(null);
-  // 容器实际宽度：图表应跟随父容器（如聊天气泡等窄容器）渲染，而非直接
-  // 按屏宽，否则会右偏 / 溢出。0 表示尚未测量，渲染时回退屏宽。
+  // Actual container width: the diagram should follow its parent container
+  // (e.g. a narrow container like a chat bubble) rather than rendering
+  // straight to the screen width, otherwise it would drift right or
+  // overflow. 0 means not yet measured; rendering falls back to the screen width.
   const [measuredWidth, setMeasuredWidth] = useState<number>(0);
 
   const handleLayout = (event: LayoutChangeEvent) => {
@@ -178,7 +180,7 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
     return (
       <View style={styles.placeholder} onLayout={handleLayout} testID="supramark-diagram-receiving">
         <ActivityIndicator size="small" />
-        <Text style={styles.placeholderText}>正在接收图表（{node.engine}）…</Text>
+        <Text style={styles.placeholderText}>Receiving diagram ({node.engine})…</Text>
       </View>
     );
   }
@@ -187,7 +189,7 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
     return (
       <View style={styles.placeholder} onLayout={handleLayout} testID="supramark-diagram-rendering">
         <ActivityIndicator size="small" />
-        <Text style={styles.placeholderText}>正在渲染图表（{node.engine}）…</Text>
+        <Text style={styles.placeholderText}>Rendering diagram ({node.engine})…</Text>
       </View>
     );
   }
@@ -195,7 +197,7 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
   if (error) {
     return (
       <View style={styles.placeholder} onLayout={handleLayout} testID="supramark-diagram-error">
-        <Text style={styles.errorText}>图表渲染错误：{error}</Text>
+        <Text style={styles.errorText}>Diagram render error: {error}</Text>
       </View>
     );
   }
@@ -206,8 +208,9 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
     const heightAttrMatch = svg.match(/<svg[^>]*\bheight="([^"]+)"/);
 
     const { width: screenWidth } = Dimensions.get('window');
-    // 图表宽度上限：屏宽的 90%，给气泡 padding 留空间，避免图表贴边。
-    // 用百分比而非固定像素，自适应不同宿主的 padding。
+    // Diagram width cap: 90% of the screen width, leaving room for the
+    // bubble's padding so the diagram doesn't touch the edge.
+    // Uses a percentage rather than a fixed pixel value to adapt to different hosts' padding.
     const maxChartWidth = screenWidth * 0.9;
     let svgWidth = 0;
     let svgHeight = 0;
@@ -223,10 +226,14 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
     if (svgWidth <= 0 && widthAttrMatch) svgWidth = parseFloat(widthAttrMatch[1]);
     if (svgHeight <= 0 && heightAttrMatch) svgHeight = parseFloat(heightAttrMatch[1]);
 
-    // 图表显示宽度：取 svg 内在宽度，clamp 到 [maxChartWidth×0.6, maxChartWidth]。
-    // 图表主动声明宽度撑开气泡（解决 width:100% 在纯图表消息里气泡无撑开
-    // 动力导致塌缩）；值基于 svg 内在属性，不依赖 onLayout，不与父容器形成
-    // 反馈循环（区别于旧代码 width:containerWidth 用 onLayout 回测父宽度）。
+    // Diagram display width: take the SVG's intrinsic width, clamped to
+    // [maxChartWidth×0.6, maxChartWidth].
+    // The diagram proactively declares a width to expand the bubble (solving
+    // the collapse that happens because width:100% has nothing to expand
+    // against in a diagram-only message bubble); the value is derived from
+    // the SVG's intrinsic attributes, doesn't depend on onLayout, and forms
+    // no feedback loop with the parent container (unlike the old code, which
+    // used width:containerWidth measured back from the parent via onLayout).
     const minChartWidth = maxChartWidth * 0.6;
     const intrinsicWidth = svgWidth > 0
       ? svgWidth

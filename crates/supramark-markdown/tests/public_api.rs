@@ -2,6 +2,7 @@ use supramark_markdown::{parse, DiagnosticSeverity, ExtensionMode, SupramarkNode
 
 #[test]
 fn public_api_outputs_ast_v2_with_positions() {
+    // cjk-allow: multi-byte CJK + emoji source needed to exercise utf16-offset math
     let ast = parse("# 标题 😄\n\nHello **世界** and `code`.");
     let SupramarkNode::Root {
         ast_version,
@@ -663,4 +664,45 @@ fn nests_footnote_definition_inside_blockquote() {
         panic!("expected footnote definition nested in blockquote, got {bq:?}");
     };
     assert_eq!(label, "a");
+}
+
+#[test]
+fn public_api_maps_emphasis_spanning_an_escape_inside_a_table_cell() {
+    // The table cell scanner hands the inline parser the *unescaped* cell content (`_x|y_`),
+    // which is shorter than the source range it came from (`_x\|y_`). Emphasis matching used to
+    // measure the token in source coordinates and apply it to content coordinates, which
+    // underflowed and aborted the parse. Regression guard for cmark-gfm's "Embedded pipes" case.
+    let source = "| a |\n| - |\n| _x\\|y_ |\n";
+    let ast = parse(source);
+
+    let SupramarkNode::Root { children, .. } = &ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Table { children, .. } = &children[0] else {
+        panic!("expected table, got {:?}", &children[0]);
+    };
+    let SupramarkNode::TableRow { children, .. } = &children[1] else {
+        panic!("expected body row, got {:?}", &children[1]);
+    };
+    let SupramarkNode::TableCell { children, .. } = &children[0] else {
+        panic!("expected cell, got {:?}", &children[0]);
+    };
+    let SupramarkNode::Emphasis {
+        children, position, ..
+    } = &children[0]
+    else {
+        panic!("expected emphasis, got {:?}", &children[0]);
+    };
+
+    // The emphasis must be mapped back onto the escaped source text, not the unescaped content.
+    let position = position.as_ref().expect("emphasis position");
+    assert_eq!(
+        &source[position.start.byte_offset..position.end.byte_offset],
+        "_x\\|y_"
+    );
+
+    let SupramarkNode::Text { value, .. } = &children[0] else {
+        panic!("expected text, got {:?}", &children[0]);
+    };
+    assert_eq!(value, "x|y");
 }

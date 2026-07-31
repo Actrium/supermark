@@ -1,13 +1,14 @@
 /**
- * Container Feature 统一接口
+ * Unified Container Feature interface.
  *
- * 为 :::xxx 容器类型的 Feature 定义精简、实用的接口规范。
- * 合并了原来分散在 feature.ts / extension.ts / syntax.ts 中的定义。
+ * Defines a lean, practical interface specification for Features that implement a
+ * :::xxx container type. Consolidates definitions that used to be spread across
+ * feature.ts / extension.ts / syntax.ts.
  *
- * ## 设计原则
- * - 每个字段都有明确的消费方
- * - 没有冗余，没有废话
- * - containerNames 全局唯一，由 feature:lint 检查
+ * ## Design principles
+ * - Every field has a clear consumer
+ * - No redundancy, no filler
+ * - containerNames must be globally unique, checked by feature:lint
  *
  * @packageDocumentation
  */
@@ -16,13 +17,13 @@ import type { ExampleDefinition, SupramarkConfig } from './feature.js';
 import type { SupramarkContainerNode, SupramarkNode } from './ast.js';
 
 // ============================================================================
-// ContainerFeature 接口
+// ContainerFeature interface
 // ============================================================================
 
 /**
- * Container 类型 Feature 的统一接口
+ * The unified interface for a container-type Feature.
  *
- * 每个 :::xxx 容器 Feature 必须实现此接口。
+ * Every :::xxx container Feature must implement this interface.
  *
  * @example
  * ```typescript
@@ -30,7 +31,7 @@ import type { SupramarkContainerNode, SupramarkNode } from './ast.js';
  *   id: '@supramark/feature-admonition',
  *   name: 'Admonition',
  *   version: '0.1.0',
- *   description: '提示框容器（note/tip/warning 等）',
+ *   description: 'Callout container (note/tip/warning, etc.)',
  *   containerNames: ['note', 'tip', 'info', 'warning', 'danger'],
  *   registerParser: () => { ... },
  *   webRendererExport: 'renderAdmonitionContainerWeb',
@@ -40,170 +41,170 @@ import type { SupramarkContainerNode, SupramarkNode } from './ast.js';
  */
 export interface ContainerFeature {
   // ============================================================================
-  // 元数据（必填）
+  // Metadata (required)
   // ============================================================================
 
   /**
-   * Feature 唯一标识符
+   * Unique Feature identifier.
    *
-   * 格式: @scope/feature-name
-   * 示例: @supramark/feature-admonition
+   * Format: @scope/feature-name
+   * Example: @supramark/feature-admonition
    *
-   * 消费方: feature:lint, FeatureRegistry, 配置系统
+   * Consumers: feature:lint, FeatureRegistry, the configuration system
    */
   id: string;
 
   /**
-   * Feature 显示名称
+   * Feature display name.
    *
-   * 示例: 'Admonition', 'Weather'
+   * Example: 'Admonition', 'Weather'
    *
-   * 消费方: 文档生成, UI 展示
+   * Consumers: documentation generation, UI display
    */
   name: string;
 
   /**
-   * 版本号（语义化版本）
+   * Version number (semantic versioning).
    *
-   * 格式: x.y.z
-   * 示例: '0.1.0', '1.0.0'
+   * Format: x.y.z
+   * Example: '0.1.0', '1.0.0'
    *
-   * 消费方: 版本检查, 文档
+   * Consumers: version checks, documentation
    */
   version: string;
 
   /**
-   * 简短描述（可选）
+   * Short description (optional).
    *
-   * 消费方: 文档生成, package.json description
+   * Consumers: documentation generation, package.json description
    */
   description?: string;
 
   // ============================================================================
-  // 容器定义（必填）
+  // Container definition (required)
   // ============================================================================
 
   /**
-   * 支持的 :::xxx 容器名称列表
+   * The list of supported :::xxx container names.
    *
-   * 示例: ['note', 'tip', 'info', 'warning', 'danger']
+   * Example: ['note', 'tip', 'info', 'warning', 'danger']
    *
-   * **重要**: 这些名称必须全局唯一，不能与其他 Feature 冲突。
-   * feature:lint 会检查全局唯一性。
+   * **Important**: these names must be globally unique and must not conflict with
+   * other Features. feature:lint checks global uniqueness.
    *
-   * 消费方: 解析器注册, feature:lint 唯一性检查
+   * Consumers: parser registration, feature:lint uniqueness checks
    */
   containerNames: string[];
 
   // ============================================================================
-  // 解析器注册（必填）
+  // Parser registration (required)
   // ============================================================================
 
   /**
-   * 注册解析器的函数
+   * The function that registers the parser.
    *
-   * 调用此函数会注册所有 containerNames 对应的解析 hook。
-   * 通常内部调用 registerContainerHook()。
+   * Calling this function registers the parsing hooks for all containerNames.
+   * Usually calls registerContainerHook() internally.
    *
-   * 消费方: 生成的 registry 文件
+   * Consumers: the generated registry file
    */
   registerParser: () => void;
 
   // ============================================================================
-  // 渲染器导出（可选，供 registry 生成）
+  // Renderer exports (optional, for registry generation)
   // ============================================================================
 
   /**
-   * Web 渲染函数的导出名
+   * The export name of the Web render function.
    *
-   * 示例: 'renderAdmonitionContainerWeb'
+   * Example: 'renderAdmonitionContainerWeb'
    *
-   * 消费方: feature-sync.ts 生成 web registry
+   * Consumers: feature-sync.ts, generating the web registry
    */
   webRendererExport?: string;
 
   /**
-   * React Native 渲染函数的导出名
+   * The export name of the React Native render function.
    *
-   * 示例: 'renderAdmonitionContainerRN'
+   * Example: 'renderAdmonitionContainerRN'
    *
-   * 消费方: feature-sync.ts 生成 rn registry
+   * Consumers: feature-sync.ts, generating the rn registry
    */
   rnRendererExport?: string;
 }
 
 // ============================================================================
-// 渲染器接口
+// Renderer interfaces
 // ============================================================================
 
 /**
- * Container Web 渲染函数的参数
+ * Arguments for a Container Web render function.
  */
 export interface ContainerWebRenderArgs {
-  /** AST 节点 */
+  /** The AST node */
   node: SupramarkContainerNode;
   /** React key */
   key: number;
-  /** CSS 类名映射 */
+  /** CSS class name mapping */
   classNames: Record<string, string>;
-  /** Supramark 配置 */
+  /** Supramark configuration */
   config?: SupramarkConfig;
-  /** 渲染子节点的函数 */
+  /** Function for rendering child nodes */
   renderChildren: (children: SupramarkNode[]) => unknown;
 }
 
 /**
- * Container Web 渲染函数类型
+ * The Container Web render function type.
  *
- * 每个 runtime.web.tsx 的渲染函数必须符合此签名。
+ * Every runtime.web.tsx render function must match this signature.
  */
 export type ContainerWebRenderer = (args: ContainerWebRenderArgs) => unknown;
 
 /**
- * Container RN 渲染函数的参数
+ * Arguments for a Container RN render function.
  */
 export interface ContainerRNRenderArgs {
-  /** AST 节点 */
+  /** The AST node */
   node: SupramarkContainerNode;
   /** React key */
   key: number;
-  /** RN 样式映射 */
+  /** RN style mapping */
   styles: Record<string, unknown>;
-  /** Supramark 配置 */
+  /** Supramark configuration */
   config?: SupramarkConfig;
-  /** 渲染子节点的函数 */
+  /** Function for rendering child nodes */
   renderChildren: (children: SupramarkNode[]) => unknown;
 }
 
 /**
- * Container RN 渲染函数类型
+ * The Container RN render function type.
  *
- * 每个 runtime.rn.tsx 的渲染函数必须符合此签名。
+ * Every runtime.rn.tsx render function must match this signature.
  */
 export type ContainerRNRenderer = (args: ContainerRNRenderArgs) => unknown;
 
 // ============================================================================
-// Examples 接口（重导出）
+// Examples interface (re-exported)
 // ============================================================================
 
 /**
- * 示例定义
+ * Example definition.
  *
- * 每个 examples.ts 必须导出 ExampleDefinition[] 类型的数组。
+ * Every examples.ts must export an array of type ExampleDefinition[].
  *
- * 重导出自 feature.ts 以保持兼容。
+ * Re-exported from feature.ts for compatibility.
  */
 export type { ExampleDefinition };
 
 // ============================================================================
-// 验证函数
+// Validation function
 // ============================================================================
 
 /**
- * 验证 ContainerFeature 实现的完整性
+ * Validate the completeness of a ContainerFeature implementation.
  *
- * @param feature - Feature 定义
- * @returns 验证结果
+ * @param feature - the Feature definition
+ * @returns the validation result
  */
 export function validateContainerFeature(feature: Partial<ContainerFeature>): {
   valid: boolean;
@@ -211,7 +212,7 @@ export function validateContainerFeature(feature: Partial<ContainerFeature>): {
 } {
   const errors: Array<{ code: string; message: string }> = [];
 
-  // 必填字段检查
+  // Check required fields
   if (!feature.id) {
     errors.push({ code: 'id-required', message: 'Feature must have an id' });
   } else if (!/^@[\w-]+\/feature-[\w-]+$/.test(feature.id)) {

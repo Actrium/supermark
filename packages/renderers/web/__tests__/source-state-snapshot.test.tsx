@@ -41,12 +41,12 @@ describe('parsed source snapshots', () => {
     const completeAst = createDiagramAst('{"series": []}', true);
 
     await renderSource(controlled.engine, 'open', openAst, 'streaming');
-    expect(container.textContent).toContain('正在接收图表（echarts）…');
+    expect(container.textContent).toContain('Receiving diagram (echarts)…');
 
     await renderSource(controlled.engine, 'complete', completeAst, 'complete');
     expect(controlled.render).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain('正在接收图表（echarts）…');
-    expect(container.textContent).not.toContain('正在渲染图表（echarts）…');
+    expect(container.textContent).toContain('Receiving diagram (echarts)…');
+    expect(container.textContent).not.toContain('Rendering diagram (echarts)…');
 
     await act(async () => {
       controlled.finish('{"series": []}', successfulResult('complete'));
@@ -61,11 +61,11 @@ describe('parsed source snapshots', () => {
 
     await renderSource(controlled.engine, 'same', eofClosedAst, 'streaming');
     expect(controlled.render).not.toHaveBeenCalled();
-    expect(container.textContent).toContain('正在接收图表（echarts）…');
+    expect(container.textContent).toContain('Receiving diagram (echarts)…');
 
     await renderSource(controlled.engine, 'same', eofClosedAst, 'complete');
     expect(controlled.render).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain('正在接收图表（echarts）…');
+    expect(container.textContent).toContain('Receiving diagram (echarts)…');
 
     await act(async () => {
       controlled.finish('{"series": []}', successfulResult('eof-complete'));
@@ -105,7 +105,7 @@ describe('parsed source snapshots', () => {
 
     await renderSource(controlled.engine, 'open', openAst, 'streaming');
     await renderSource(controlled.engine, 'invalid', invalidAst, 'complete');
-    expect(container.textContent).toContain('正在接收图表（echarts）…');
+    expect(container.textContent).toContain('Receiving diagram (echarts)…');
 
     await act(async () => {
       controlled.finish('{"series": [', failedResult('invalid'));
