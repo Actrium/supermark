@@ -1,8 +1,8 @@
-import React, { useState, useSyncExternalStore } from 'react';
+import React, { useState } from 'react';
 import { Text, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
-import { computeToolbarPlacement, type Size, type SelectionToolbarItem } from './toolbar';
+import { computeToolbarPlacement, type Size } from './toolbar';
 import { useSelectionRects } from './SelectionOverlay';
-import { useSelectionContext } from './useDocumentSelection';
+import { useSelectionContext, useSelectionSnapshot } from './useDocumentSelection';
 
 export interface SelectionToolbarProps {
   /** Visible area in `SelectionRoot` space, used to keep the bar on screen. */
@@ -33,7 +33,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
   zIndex = 12,
 }) => {
   const { store, toolbarItems, runToolbarItem } = useSelectionContext();
-  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const snapshot = useSelectionSnapshot(store);
   const rects = useSelectionRects();
   const [size, setSize] = useState<Size | null>(null);
 
@@ -71,7 +71,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
         <TouchableOpacity
           key={item.id}
           accessibilityRole="button"
-          onPress={() => runToolbarItem(item as SelectionToolbarItem)}
+          onPress={() => runToolbarItem(item)}
           style={{ paddingHorizontal: 12, paddingVertical: 8 }}
         >
           <Text style={{ color: textColor, fontSize: 14 }}>{item.title}</Text>
