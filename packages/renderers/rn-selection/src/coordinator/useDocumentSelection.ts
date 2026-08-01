@@ -28,6 +28,15 @@ export function useDocumentSelection(store: SelectionStore): {
   return { snapshot, ...actions };
 }
 
+/**
+ * Subscribe to just the snapshot. Same `useSyncExternalStore` contract as
+ * `useDocumentSelection`, without minting the action object — for the several
+ * internal components that only need to know what is selected.
+ */
+export function useSelectionSnapshot(store: SelectionStore): SelectionSnapshot {
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+}
+
 /** Read the selection context; throws when used outside a `SelectionRoot`. */
 export function useSelectionContext(): SelectionContextValue {
   const value = useContext(SelectionContext);

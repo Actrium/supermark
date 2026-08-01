@@ -6,6 +6,7 @@ import type {
   SelectionTextUnit,
   SelectionUnit,
 } from '../../model';
+import { buildTextMetrics } from '../../metrics';
 import {
   SelectionRegistry,
   type LayoutRect,
@@ -257,5 +258,53 @@ describe('setUnits drops blocks whose units no longer exist', () => {
     reg.register({ nodeId: 'a', unitIds: ['a#0', 'a#1'], kind: 'text' });
     reg.setUnits([tUnit('a#0', 'a', 'a')]);
     expect(reg.getBlock('a')).toBeDefined();
+  });
+});
+
+describe('SelectionRegistry metrics', () => {
+  const metrics = buildTextMetrics([{ text: 'hello', x: 0, y: 0, width: 50, height: 20 }]);
+
+  test('setMetrics stores the line table and bumps the version', () => {
+    const reg = new SelectionRegistry([tUnit('a#0', 'a', 'hello')]);
+    reg.register({ nodeId: 'a', unitIds: ['a#0'], kind: 'text' });
+    const before = reg.getVersion();
+    reg.setMetrics('a', metrics);
+    expect(reg.getBlock('a')?.metrics?.textLength).toBe(5);
+    // The overlay repaints off the version, so a re-measure has to move it.
+    expect(reg.getVersion()).toBeGreaterThan(before);
+  });
+
+  test('setMetrics on an unknown block is a no-op', () => {
+    const reg = new SelectionRegistry([tUnit('a#0', 'a', 'hello')]);
+    expect(() => reg.setMetrics('missing', metrics)).not.toThrow();
+  });
+
+  test('re-registering preserves measured geometry', () => {
+    // A React block re-registers on effect cleanup + re-run while neither
+    // onLayout nor onTextLayout re-fires for an unchanged layout. Losing the
+    // line table here would blank the highlight until the next reflow.
+    const reg = new SelectionRegistry([tUnit('a#0', 'a', 'hello')]);
+    reg.register({ nodeId: 'a', unitIds: ['a#0'], kind: 'text' });
+    reg.updateLayout('a', { x: 0, y: 0, w: 50, h: 20 });
+    reg.setMetrics('a', metrics);
+    reg.setContentOffset('a', { x: 4, y: 2 });
+
+    reg.register({ nodeId: 'a', unitIds: ['a#0'], kind: 'text' });
+    expect(reg.getBlock('a')?.rect).toEqual({ x: 0, y: 0, w: 50, h: 20 });
+    expect(reg.getBlock('a')?.metrics?.textLength).toBe(5);
+    expect(reg.getBlock('a')?.contentOffset).toEqual({ x: 4, y: 2 });
+  });
+
+  test('a re-registration carrying its own metrics wins', () => {
+    const reg = new SelectionRegistry([tUnit('a#0', 'a', 'hello')]);
+    reg.register({ nodeId: 'a', unitIds: ['a#0'], kind: 'text' });
+    reg.setMetrics('a', metrics);
+    reg.register({
+      nodeId: 'a',
+      unitIds: ['a#0'],
+      kind: 'text',
+      metrics: buildTextMetrics([{ text: 'hi', x: 0, y: 0, width: 20, height: 20 }]),
+    });
+    expect(reg.getBlock('a')?.metrics?.textLength).toBe(2);
   });
 });

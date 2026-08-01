@@ -5,12 +5,15 @@
  * async and routes through the linked native Rust markdown lib, which is
  * fragile to await inside an automated screenshot harness, and its exact
  * `nodeId` / unit granularity would then have to be reverse-engineered to
- * build matching `SelectableBlock`s and native segment spans. A literal
- * fixture keeps the programmatic "Select A..B" button deterministic (known
- * `unitId`s) and needs no native binary. `linearizeForSelection` remains
- * available for real documents; this fixture mirrors its output shape (text
- * units + trailing block `break`s, whole-unit `payload.markdown` on
- * bold/heading units).
+ * build matching `SelectableBlock`s. A literal fixture keeps the programmatic
+ * "Select A..B" button deterministic (known `unitId`s) and needs no native
+ * binary. `linearizeForSelection` remains available for real documents; this
+ * fixture mirrors its output shape (text units + trailing block `break`s,
+ * whole-unit `payload.markdown` on bold/heading units).
+ *
+ * The selection UI here is entirely self-drawn: long-press to select a word,
+ * drag to extend, drag either handle to refine, tap to dismiss, and act from
+ * the bar that appears. No native selection component is involved.
  */
 
 import React, { useState, useSyncExternalStore } from 'react';
@@ -30,6 +33,7 @@ import {
   serializeSelectionUnits,
   type SelectionUnit,
   type SelectionCopyRequest,
+  type SelectionToolbarItem,
 } from '@supramark/rn-selection';
 import type { SupramarkNode } from '@supramark/core';
 
@@ -69,24 +73,28 @@ const UNITS: SelectionUnit[] = [
   brk('p2#1', 'p2'),
 ];
 
+// The bar is ours, so its items are just data. A product would add its own
+// actions here ("Quote", "Ask AI", ...) and handle them by id in `onCopy`.
+const TOOLBAR_ITEMS: SelectionToolbarItem[] = [
+  { id: 'copy', title: 'Copy', format: 'plainText' },
+  { id: 'copy-md', title: 'Copy MD', format: 'markdown' },
+  { id: 'quote', title: 'Quote' },
+];
+
 export default function SelectionDemo({ onBack }: { onBack: () => void }) {
   const [status, setStatus] = useState('idle');
 
   const onCopy = (req: SelectionCopyRequest) => {
-    setStatus(`copy ${req.format}: ${req.text}`);
+    setStatus(`${req.id} (${req.format}): ${req.text}`);
   };
 
   return (
     <SafeAreaView style={s.root}>
       <TouchableOpacity onPress={onBack}>
-        <Text style={s.back}>‹ back</Text>
+        <Text style={s.back}>back</Text>
       </TouchableOpacity>
       <ScrollView contentContainerStyle={s.body}>
-        <SelectionRoot
-          units={UNITS}
-          onCopy={onCopy}
-          formatForAction={id => (id === 'copy-md' ? 'markdown' : 'plainText')}
-        >
+        <SelectionRoot units={UNITS} onCopy={onCopy} toolbarItems={TOOLBAR_ITEMS}>
           <SelectableBlock nodeId="h" unitIds={['h#0']} style={s.h1}>
             Selection Demo
           </SelectableBlock>
@@ -112,17 +120,16 @@ function SelectionControls({ onStatus }: { onStatus: (status: string) => void })
   const store = useSelectionStore();
   const snap = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
+  // Programmatic cross-block selection: the highlight spans both blocks and
+  // carries handles and the action bar, exactly like a gesture-driven one.
   const selectAB = () => {
     store.beginAt({ nodeId: 'h', unitId: 'h#0', offset: 0 });
     store.extendTo({ nodeId: 'p1', unitId: 'p1#2', offset: 3 });
     store.commit();
   };
 
-  // Single-block commit: the native bridge answers with the vendored
-  // `selectRange`, so on device this pops native selection handles + the
-  // system menu inside p1 ("Hello world"). The cross-block Select A..B above
-  // stays overlay-only by design.
-  const selectNative = () => {
+  // Within a single block, for comparing against the cross-block case.
+  const selectInBlock = () => {
     store.beginAt({ nodeId: 'p1', unitId: 'p1#0', offset: 0 });
     store.extendTo({ nodeId: 'p1', unitId: 'p1#1', offset: 5 });
     store.commit();
@@ -143,8 +150,8 @@ function SelectionControls({ onStatus }: { onStatus: (status: string) => void })
       <TouchableOpacity style={s.button} onPress={selectAB}>
         <Text style={s.buttonText}>Select A..B</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={s.button} onPress={selectNative}>
-        <Text style={s.buttonText}>Select native</Text>
+      <TouchableOpacity style={s.button} onPress={selectInBlock}>
+        <Text style={s.buttonText}>Select in block</Text>
       </TouchableOpacity>
       <TouchableOpacity style={s.button} onPress={copyMarkdown}>
         <Text style={s.buttonText}>Copy markdown</Text>

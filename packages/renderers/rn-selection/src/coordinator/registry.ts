@@ -1,6 +1,6 @@
 import type { SelectionNodeId, SelectionUnit } from '../model';
+import type { SegmentTextMetrics } from '../metrics';
 import { buildUnitIndex, type SelectionUnitIndex } from '../resolve';
-import type { TextSegmentHandle } from '../nativePrimitive';
 
 /** A block's laid-out box in the `SelectionRoot`'s coordinate space. */
 export interface LayoutRect {
@@ -10,31 +10,32 @@ export interface LayoutRect {
   h: number;
 }
 
-/**
- * Optional, injectable per-block character mapping: a segment-local point maps
- * to a segment-local UTF-16 offset. Real device text metrics are deferred; the
- * coordinator falls back to before/after when a block supplies no measure. Kept
- * pure so tests can inject fakes.
- */
-export interface SegmentMeasure {
-  localOffsetAt(localX: number, localY: number): number;
+/** Offset of a block's text content box from the block's own top-left. */
+export interface ContentOffset {
+  x: number;
+  y: number;
 }
 
 /**
- * A rendered document block registered upward into the registry. `handle` and
- * `measure` are present only for native text segments; atoms/boundaries carry
- * neither.
+ * A rendered document block registered upward into the registry.
+ *
+ * `metrics` and `contentOffset` are what a text block contributes to the
+ * self-drawn selection: the line table it laid out, and where that table's
+ * origin sits inside the block's box. Both are absent until the block's text
+ * has been measured (and always absent for atoms/boundaries), so every consumer
+ * has to degrade gracefully — hit-testing falls back to before/after, and the
+ * highlight falls back to the whole block rect.
  */
 export interface RegisteredBlock {
   nodeId: SelectionNodeId;
   unitIds: readonly SelectionNodeId[];
   kind: 'text' | 'atom' | 'boundary';
   rect?: LayoutRect;
-  handle?: TextSegmentHandle;
-  measure?: SegmentMeasure;
+  metrics?: SegmentTextMetrics;
+  contentOffset?: ContentOffset;
 }
 
-export type RegistryChange = 'register' | 'unregister' | 'layout' | 'units';
+export type RegistryChange = 'register' | 'unregister' | 'layout' | 'units' | 'metrics';
 
 /** Blocks whose units are absent from the index sort after every indexed one. */
 const ORDER_LAST = Number.MAX_SAFE_INTEGER;
@@ -123,15 +124,18 @@ export class SelectionRegistry {
    * back to `unregister` as an identity guard — see that method.
    */
   register(block: RegisteredBlock): RegisteredBlock {
-    // Preserve a previously measured rect when a re-registration carries none.
-    // A React block re-registers (effect cleanup + re-run) with no rect while
-    // its `onLayout` does not re-fire on an unchanged layout; without this the
-    // measured box would be lost and the overlay/hit-test would go blank.
+    // Preserve previously measured geometry when a re-registration carries
+    // none. A React block re-registers (effect cleanup + re-run) with no rect
+    // and no metrics while its `onLayout` / `onTextLayout` do not re-fire on an
+    // unchanged layout; without this the measured box and line table would be
+    // lost and the overlay/hit-test would go blank.
     const existing = this.blocks.get(block.nodeId);
-    const next =
-      existing?.rect !== undefined && block.rect === undefined
-        ? { ...block, rect: existing.rect }
-        : block;
+    const next = { ...block };
+    if (existing !== undefined) {
+      if (next.rect === undefined) next.rect = existing.rect;
+      if (next.metrics === undefined) next.metrics = existing.metrics;
+      if (next.contentOffset === undefined) next.contentOffset = existing.contentOffset;
+    }
     this.blocks.set(block.nodeId, next);
     this.orderCache = null;
     this.unitToNode = null;
@@ -179,6 +183,31 @@ export class SelectionRegistry {
     if (!block) return;
     block.rect = rect;
     this.notify('layout', nodeId);
+  }
+
+  /**
+   * Record the line table a text block laid out. Re-measured on every text or
+   * width change, so this is the hot path for streaming Markdown: it mutates in
+   * place and bumps the version rather than re-registering, keeping the block's
+   * rect and unit ids intact.
+   */
+  setMetrics(nodeId: SelectionNodeId, metrics: SegmentTextMetrics): void {
+    const block = this.blocks.get(nodeId);
+    if (!block) return;
+    block.metrics = metrics;
+    this.notify('metrics', nodeId);
+  }
+
+  /**
+   * Record where a block's text content box starts relative to the block's own
+   * box. Line coordinates are relative to the text, block rects to the root, so
+   * without this every highlight would be off by the block's padding.
+   */
+  setContentOffset(nodeId: SelectionNodeId, offset: ContentOffset): void {
+    const block = this.blocks.get(nodeId);
+    if (!block) return;
+    block.contentOffset = offset;
+    this.notify('metrics', nodeId);
   }
 
   getBlock(nodeId: SelectionNodeId): RegisteredBlock | undefined {

@@ -1,4 +1,5 @@
 import type { SelectionPoint } from '../model';
+import { offsetAtLocalPoint } from '../metrics';
 import type { SelectionUnitIndex } from '../resolve';
 import { buildSegmentSpans, segmentOffsetToPoint } from '../native/segmentAdapter';
 import type { LayoutRect, RegisteredBlock } from './registry';
@@ -102,10 +103,15 @@ function blockEndPoint(block: RegisteredBlock, index: SelectionUnitIndex): Selec
 }
 
 /**
- * Localize a point inside a chosen block to a `SelectionPoint`. Precise text
- * char-hit needs an injected `block.measure` (device metrics deferred); without
- * one this degrades to a coarse before/after by the point's position relative to
- * the rect's mid-lines. Null when the block renders no units.
+ * Localize a point inside a chosen block to a `SelectionPoint`.
+ *
+ * With a line table (`block.metrics`) this is a real character hit-test: the
+ * root-space point is moved into the block's text content box and resolved
+ * through `offsetAtLocalPoint`, then mapped back onto the document unit stream.
+ * A block that has not been measured yet — or one that is not text at all —
+ * degrades to a coarse before/after by the point's position relative to the
+ * rect's mid-lines, which is what the whole layer did before metrics existed.
+ * Null when the block renders no units.
  */
 export function localizePoint(
   block: RegisteredBlock,
@@ -113,8 +119,13 @@ export function localizePoint(
   index: SelectionUnitIndex
 ): SelectionPoint | null {
   const rect = block.rect as LayoutRect;
-  if (block.measure) {
-    const offset = block.measure.localOffsetAt(p.x - rect.x, p.y - rect.y);
+  if (block.metrics && block.metrics.lines.length > 0) {
+    const origin = block.contentOffset ?? { x: 0, y: 0 };
+    const offset = offsetAtLocalPoint(
+      block.metrics,
+      p.x - rect.x - origin.x,
+      p.y - rect.y - origin.y
+    );
     return segmentOffsetToPoint(buildSegmentSpans(block, index), offset);
   }
   const after =

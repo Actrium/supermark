@@ -31,7 +31,6 @@
     "expo": "~54",
     "expo-status-bar": "~1.12.1",
     "@actrium/graphviz-anywhere-rn": "workspace:*",
-    "@boomsi/react-native-selectable-text": "workspace:*",
     "@actrium/supramark-d2-native-rn": "workspace:*",
     "@actrium/supramark-mermaid-native-rn": "workspace:*",
     "@actrium/supramark-plantuml-native-rn": "workspace:*",

@@ -2,18 +2,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { create, act, type ReactTestRenderer } from 'react-test-renderer';
 
-// react-native's JS entry contains Flow syntax bun cannot load, and the
-// vendored native component needs a real native view; both are mocked as host
-// strings so react-test-renderer can render the tree and we can read props off
-// it. bun's `mock.module` registry is process-wide, so both mocks live here,
-// in the only file that renders React.
+// react-native's JS entry contains Flow syntax bun cannot load, so its
+// components are mocked as host strings: react-test-renderer can then render
+// the tree and we can read props off it and invoke them. bun's `mock.module`
+// registry is process-wide, so the mock lives here, in the only file that
+// renders React.
 mock.module('react-native', () => ({
   View: 'View',
   Text: 'Text',
   StyleSheet: { create: (s: unknown) => s },
-}));
-mock.module('@boomsi/react-native-selectable-text', () => ({
-  SelectableRichText: 'SelectableRichText',
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -47,7 +44,10 @@ function makeContext(units: SelectionUnitLike[]): NonNullable<ContextValue> {
     },
     updateLayout: (nodeId, rect) => registry.updateLayout(nodeId, rect),
     updateUnits: (nodeId, unitIds) => registry.updateUnits(nodeId, unitIds),
-    createBlockSink: () => ({}),
+    setMetrics: (nodeId, metrics) => registry.setMetrics(nodeId, metrics),
+    setContentOffset: (nodeId, offset) => registry.setContentOffset(nodeId, offset),
+    toolbarItems: [],
+    runToolbarItem: () => {},
   };
 }
 
@@ -75,26 +75,55 @@ function renderBlock(
   return r;
 }
 
-describe('SelectableBlock native props', () => {
-  test('does not force `selectable` on the vendored view', () => {
+describe('SelectableBlock rendering', () => {
+  test('renders a plain Text, not a native selection component', () => {
+    // The whole point of the self-drawn direction: no vendored native view, no
+    // `selectable` prop, nothing on the platform side holding selection state.
+    // A plain `<Text>` is what removes the Fabric-only / Android >= 0.85 floors.
     const r = renderBlock();
-    const native = r.root.findByType('SelectableRichText' as unknown as React.ElementType);
-
-    // The vendored component defaults `selectable` to false on purpose: with it
-    // on, UITextView / Android TextView run their own long-press word selection
-    // alongside `onTextLongPress`, painting a second native highlight under the
-    // coordinator overlay. The commands turn it on transiently instead
-    // (`selectTextRangeWithStart` / `clearTextSelection`), so passing it here
-    // would defeat that discipline. Assert the prop is absent, not merely
-    // falsy — passing `selectable={false}` explicitly would also be wrong,
-    // because it would override a future default change.
-    expect('selectable' in native.props).toBe(false);
-
-    // Sanity: the rest of the wiring is still attached, so this is not passing
-    // because the component failed to render.
-    expect(typeof native.props.onTextLongPress).toBe('function');
-    expect(typeof native.props.onMenuAction).toBe('function');
+    const text = r.root.findByType('Text' as unknown as React.ElementType);
+    expect('selectable' in text.props).toBe(false);
+    // The two measurements the coordinator needs are both wired.
+    expect(typeof text.props.onTextLayout).toBe('function');
+    expect(typeof text.props.onLayout).toBe('function');
     expect(renderer).not.toBeNull();
+  });
+
+  test('onTextLayout publishes a line table into the registry', () => {
+    const ctx = makeContext([textUnit('p1#0', 'hello world')]);
+    const { registry } = ctx;
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <SelectionContext.Provider value={ctx}>
+          <SelectableBlock nodeId="p1" unitIds={['p1#0']}>
+            hello world
+          </SelectableBlock>
+        </SelectionContext.Provider>
+      );
+    });
+    renderer = r;
+    const text = r.root.findByType('Text' as unknown as React.ElementType);
+
+    act(() => {
+      text.props.onLayout({ nativeEvent: { layout: { x: 4, y: 2, width: 100, height: 20 } } });
+      text.props.onTextLayout({
+        nativeEvent: {
+          lines: [
+            { text: 'hello ', x: 0, y: 0, width: 60, height: 20 },
+            { text: 'world', x: 0, y: 20, width: 50, height: 20 },
+          ],
+        },
+      });
+    });
+
+    const block = registry.getBlock('p1');
+    expect(block?.contentOffset).toEqual({ x: 4, y: 2 });
+    expect(block?.metrics?.textLength).toBe(11);
+    expect(block?.metrics?.lines.map(l => [l.start, l.end])).toEqual([
+      [0, 6],
+      [6, 11],
+    ]);
   });
 });
 
