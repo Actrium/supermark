@@ -84,6 +84,27 @@ describe('computeToolbarPlacement', () => {
     expect(placement?.y).toBe(300 - 20 - BAR.h);
   });
 
+  test('keeps an above bar clear of the start handle knob', () => {
+    const placement = computeToolbarPlacement([{ x: 100, y: 300, w: 100, h: 20 }], BAR, SCREEN, {
+      avoidRects: [{ x: 94, y: 288, w: 12, h: 12 }],
+    });
+
+    expect(placement?.side).toBe('above');
+    expect((placement?.y ?? 0) + BAR.h).toBe(288 - TOOLBAR_GAP);
+  });
+
+  test('keeps a below bar clear of the end handle knob after flipping', () => {
+    const placement = computeToolbarPlacement([{ x: 100, y: 56, w: 100, h: 20 }], BAR, SCREEN, {
+      avoidRects: [
+        { x: 94, y: 44, w: 12, h: 12 },
+        { x: 194, y: 76, w: 12, h: 12 },
+      ],
+    });
+
+    expect(placement?.side).toBe('below');
+    expect(placement?.y).toBe(88 + TOOLBAR_GAP);
+  });
+
   test('anchors to the union of a multi-line selection', () => {
     const placement = computeToolbarPlacement(
       [

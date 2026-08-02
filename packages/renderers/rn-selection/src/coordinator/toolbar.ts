@@ -66,6 +66,12 @@ export interface ToolbarPlacementOptions {
   margin?: number;
   /** Half-width of the arrow, used to keep it off the bar's corners. */
   arrowInset?: number;
+  /**
+   * Extra root-space rectangles the bar should not cover, such as the two
+   * visible handle knobs. The selection rects remain the arrow anchor; these
+   * only move the bar farther away on the chosen vertical side.
+   */
+  avoidRects?: readonly LocalRect[];
 }
 
 export const TOOLBAR_GAP = 8;
@@ -121,9 +127,15 @@ export function computeToolbarPlacement(
   const gap = options.gap ?? TOOLBAR_GAP;
   const margin = options.margin ?? TOOLBAR_MARGIN;
   const arrowInset = options.arrowInset ?? TOOLBAR_ARROW_INSET;
+  const avoidRects = options.avoidRects ?? [];
+  const obstacleTop = avoidRects.reduce((top, rect) => Math.min(top, rect.y), anchor.y);
+  const obstacleBottom = avoidRects.reduce(
+    (bottom, rect) => Math.max(bottom, rect.y + rect.h),
+    anchor.y + anchor.h
+  );
 
-  const above = anchor.y - gap - size.h;
-  const below = anchor.y + anchor.h + gap;
+  const above = obstacleTop - gap - size.h;
+  const below = obstacleBottom + gap;
   let side: ToolbarSide;
   let y: number;
   if (above >= margin) {

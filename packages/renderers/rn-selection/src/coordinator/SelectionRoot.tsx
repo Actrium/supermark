@@ -204,8 +204,17 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   }, []);
   useEffect(() => clearTimer, [clearTimer]);
 
+  const refreshRootOrigin = useCallback(() => {
+    rootRef.current?.measureInWindow((x, y) => {
+      originRef.current = { x, y };
+    });
+  }, []);
+
   const toRootSpace = useCallback((e: GestureResponderEvent): Point => {
-    const { pageX, pageY } = e.nativeEvent;
+    const { locationX, locationY, pageX, pageY } = e.nativeEvent;
+    if (Number.isFinite(locationX) && Number.isFinite(locationY)) {
+      return { x: locationX, y: locationY };
+    }
     return { x: pageX - originRef.current.x, y: pageY - originRef.current.y };
   }, []);
 
@@ -214,6 +223,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   const onTouchStart = useCallback(
     (e: GestureResponderEvent) => {
       if (!enabled) return;
+      refreshRootOrigin();
       gesture.touchStart(toRootSpace(e), Date.now());
       clearTimer();
       if (gesture.isPending()) {
@@ -223,35 +233,45 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
         }, longPressMs ?? undefined);
       }
     },
-    [enabled, gesture, toRootSpace, clearTimer, longPressMs]
+    [enabled, refreshRootOrigin, gesture, toRootSpace, clearTimer, longPressMs]
   );
 
   const onTouchMove = useCallback(
     (e: GestureResponderEvent) => {
       if (!enabled) return;
+      refreshRootOrigin();
       gesture.touchMove(toRootSpace(e), Date.now());
       if (!gesture.isPending()) clearTimer();
     },
-    [enabled, gesture, toRootSpace, clearTimer]
+    [enabled, refreshRootOrigin, gesture, toRootSpace, clearTimer]
   );
 
   const onTouchEnd = useCallback(
     (e: GestureResponderEvent) => {
       if (!enabled) return;
+      refreshRootOrigin();
       clearTimer();
       gesture.touchEnd(toRootSpace(e), Date.now());
     },
-    [enabled, gesture, toRootSpace, clearTimer]
+    [enabled, refreshRootOrigin, gesture, toRootSpace, clearTimer]
   );
 
-  const onLayout = useCallback((e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    setViewport(prev => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
-    // Window origin, so a touch's pageX/pageY can be moved into root space.
-    rootRef.current?.measureInWindow((x, y) => {
-      originRef.current = { x, y };
-    });
-  }, []);
+  const onLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const { width, height } = e.nativeEvent.layout;
+      setViewport(prev => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
+      refreshRootOrigin();
+    },
+    [refreshRootOrigin]
+  );
+
+  const onStartShouldSetResponder = useCallback(
+    (e: GestureResponderEvent) => {
+      if (!enabled) return false;
+      return gesture.isActive() || handleAt(toRootSpace(e)) !== null;
+    },
+    [enabled, gesture, handleAt, toRootSpace]
+  );
 
   // Reference-stable: depends only on the memoized registry + store.
   const ctx = useMemo<SelectionContextValue>(
@@ -286,12 +306,11 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       onTouchCancel={() => gesture.cancel()}
-      // Claim the touch only once we are actually selecting, so an enclosing
-      // ScrollView keeps scrolling until then — and stops competing with a
-      // handle drag afterwards. These callbacks are side-effect free: the
-      // machine is driven entirely by the onTouch* handlers above, which fire
-      // whether or not we hold the responder.
-      onStartShouldSetResponder={() => enabled && gesture.isActive()}
+      // Claim handle grabs immediately: responder negotiation asks before
+      // `onTouchStart` drives the gesture machine, so `gesture.isActive()` is
+      // still false at the start of a handle drag. Ordinary long-presses remain
+      // scroll-friendly until the machine becomes active.
+      onStartShouldSetResponder={onStartShouldSetResponder}
       onMoveShouldSetResponder={() => enabled && gesture.isActive()}
       onResponderTerminationRequest={() => !gesture.isActive()}
       onResponderTerminate={() => gesture.cancel()}
