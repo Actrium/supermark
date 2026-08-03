@@ -68,7 +68,7 @@ export interface ToolbarPlacementOptions {
   arrowInset?: number;
   /**
    * Extra root-space rectangles the bar should not cover, such as the two
-   * visible handle knobs. The selection rects remain the arrow anchor; these
+   * handle touch targets. The selection rects remain the arrow anchor; these
    * only move the bar farther away on the chosen vertical side.
    */
   avoidRects?: readonly LocalRect[];
@@ -83,6 +83,12 @@ function clamp(value: number, min: number, max: number): number {
   if (value < min) return min;
   if (value > max) return max;
   return value;
+}
+
+function overlapArea(a: LocalRect, b: LocalRect): number {
+  const xOverlap = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const yOverlap = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return xOverlap > 0 && yOverlap > 0 ? xOverlap * yOverlap : 0;
 }
 
 /** Bounding box of every rect, or null when there are none. */
@@ -133,6 +139,8 @@ export function computeToolbarPlacement(
     (bottom, rect) => Math.max(bottom, rect.y + rect.h),
     anchor.y + anchor.h
   );
+  const centre = anchor.x + anchor.w / 2;
+  const x = clamp(centre - size.w / 2, margin, Math.max(margin, viewport.w - margin - size.w));
 
   const above = obstacleTop - gap - size.h;
   const below = obstacleBottom + gap;
@@ -145,13 +153,26 @@ export function computeToolbarPlacement(
     side = 'below';
     y = below;
   } else {
-    // Neither side fits: keep it on the preferred side and clamp inside.
-    side = 'above';
-    y = clamp(above, margin, Math.max(margin, viewport.h - margin - size.h));
+    // Neither side fits: clamp inside, then choose the side that covers the
+    // least handle touch target area. Ties keep the platform-like above bias.
+    const minY = margin;
+    const maxY = Math.max(margin, viewport.h - margin - size.h);
+    const aboveY = clamp(above, minY, maxY);
+    const belowY = clamp(below, minY, maxY);
+    const overlapScore = (candidateY: number) =>
+      avoidRects.reduce(
+        (score, rect) => score + overlapArea({ x, y: candidateY, w: size.w, h: size.h }, rect),
+        0
+      );
+    if (overlapScore(belowY) < overlapScore(aboveY)) {
+      side = 'below';
+      y = belowY;
+    } else {
+      side = 'above';
+      y = aboveY;
+    }
   }
 
-  const centre = anchor.x + anchor.w / 2;
-  const x = clamp(centre - size.w / 2, margin, Math.max(margin, viewport.w - margin - size.w));
   const arrowX = clamp(centre - x, arrowInset, Math.max(arrowInset, size.w - arrowInset));
 
   return { x, y, side, arrowX };

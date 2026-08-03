@@ -30,16 +30,15 @@ const UNITS: SelectionUnit[] = [
   },
 ];
 
-function eventAt(x: number, y: number) {
+function eventAt(x: number, y: number, location = { x: -500, y: -500 }) {
   return {
     nativeEvent: {
-      locationX: x,
-      locationY: y,
-      // Deliberately wrong. The root should use local touch coordinates when
-      // RN supplies them, so a stale measured window origin cannot skew a touch
-      // after a ScrollView moves.
-      pageX: 9999,
-      pageY: 9999,
+      // Deliberately child-space. The root must ignore locationX/Y because RN
+      // reports them relative to the deepest target, not SelectionRoot.
+      locationX: location.x,
+      locationY: location.y,
+      pageX: x,
+      pageY: y,
     },
   };
 }
@@ -55,7 +54,9 @@ afterEach(() => {
   renderer = null;
 });
 
-function renderSelectedRoot(props: { gestures?: boolean } = {}) {
+function renderRootWithBlock(
+  props: { gestures?: boolean; longPressMs?: number; selected?: boolean } = {}
+) {
   let store: SelectionStore | null = null;
 
   const RegisterBlock: React.FC = () => {
@@ -81,6 +82,7 @@ function renderSelectedRoot(props: { gestures?: boolean } = {}) {
         handles={false}
         toolbar={false}
         gestures={props.gestures}
+        longPressMs={props.longPressMs}
       >
         <RegisterBlock />
       </SelectionRoot>
@@ -89,31 +91,49 @@ function renderSelectedRoot(props: { gestures?: boolean } = {}) {
   renderer = r;
 
   if (store === null) throw new Error('test did not capture the selection store');
-  act(() => {
-    store.beginAt({ nodeId: 'p1', unitId: 'p1#0', offset: 0 });
-    store.extendTo({ nodeId: 'p1', unitId: 'p1#0', offset: 5 });
-    store.commit();
-  });
+  if (props.selected !== false) {
+    act(() => {
+      store.beginAt({ nodeId: 'p1', unitId: 'p1#0', offset: 0 });
+      store.extendTo({ nodeId: 'p1', unitId: 'p1#0', offset: 5 });
+      store.commit();
+    });
+  }
 
-  return r.root.findByType('View' as unknown as React.ElementType);
+  return { root: r.root.findByType('View' as unknown as React.ElementType), store };
 }
 
 describe('SelectionRoot responder negotiation', () => {
   test('claims a handle touch at start before the gesture becomes active', () => {
-    const root = renderSelectedRoot();
+    const { root } = renderRootWithBlock();
 
     expect(root.props.onStartShouldSetResponder(eventAt(10, 94))).toBe(true);
   });
 
   test('does not claim an ordinary selected-text touch at start', () => {
-    const root = renderSelectedRoot();
+    const { root } = renderRootWithBlock();
 
     expect(root.props.onStartShouldSetResponder(eventAt(40, 110))).toBe(false);
   });
 
   test('honours gestures=false even over a handle', () => {
-    const root = renderSelectedRoot({ gestures: false });
+    const { root } = renderRootWithBlock({ gestures: false });
 
     expect(root.props.onStartShouldSetResponder(eventAt(10, 94))).toBe(false);
+  });
+
+  test('long press resolves from page coordinates, not child location', async () => {
+    const { root, store } = renderRootWithBlock({ longPressMs: 1, selected: false });
+
+    await act(async () => {
+      root.props.onTouchStart(eventAt(40, 110));
+      await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    const snapshot = store.getSnapshot();
+    expect(snapshot.phase).toBe('selected');
+    expect(snapshot.range).toEqual({
+      anchor: { nodeId: 'p1', unitId: 'p1#0', offset: 0 },
+      focus: { nodeId: 'p1', unitId: 'p1#0', offset: 5 },
+    });
   });
 });

@@ -211,10 +211,9 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   }, []);
 
   const toRootSpace = useCallback((e: GestureResponderEvent): Point => {
-    const { locationX, locationY, pageX, pageY } = e.nativeEvent;
-    if (Number.isFinite(locationX) && Number.isFinite(locationY)) {
-      return { x: locationX, y: locationY };
-    }
+    const { pageX, pageY } = e.nativeEvent;
+    // RN's locationX/Y are target-relative and may be in a child Text's space.
+    // Everything downstream is in SelectionRoot space, so use page coordinates.
     return { x: pageX - originRef.current.x, y: pageY - originRef.current.y };
   }, []);
 

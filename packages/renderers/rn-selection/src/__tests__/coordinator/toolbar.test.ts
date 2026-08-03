@@ -105,6 +105,26 @@ describe('computeToolbarPlacement', () => {
     expect(placement?.y).toBe(88 + TOOLBAR_GAP);
   });
 
+  test('chooses the clamped side with less handle overlap when neither side fits', () => {
+    const placement = computeToolbarPlacement(
+      [{ x: 100, y: 20, w: 100, h: 70 }],
+      BAR,
+      {
+        w: 375,
+        h: 80,
+      },
+      {
+        avoidRects: [
+          { x: 78, y: -8, w: 44, h: 44 },
+          { x: 178, y: 68, w: 44, h: 44 },
+        ],
+      }
+    );
+
+    expect(placement?.side).toBe('below');
+    expect(placement?.y).toBe(80 - TOOLBAR_MARGIN - BAR.h);
+  });
+
   test('anchors to the union of a multi-line selection', () => {
     const placement = computeToolbarPlacement(
       [
