@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildTextMetrics,
   lineAtY,
+  offsetInsideLineX,
   offsetAtLineX,
   offsetAtLocalPoint,
   rectsForRange,
@@ -66,6 +67,12 @@ describe('xForOffset / offsetAtLineX without per-character data', () => {
     expect(offsetAtLineX(line, 26)).toBe(9); // right half of char 2
   });
 
+  test('a point can resolve to the character it sits inside', () => {
+    expect(offsetInsideLineX(line, 24)).toBe(8);
+    expect(offsetInsideLineX(line, 26)).toBe(8);
+    expect(offsetInsideLineX(line, 500)).toBe(10);
+  });
+
   test('a point outside the line clamps to its ends', () => {
     expect(offsetAtLineX(line, -50)).toBe(6);
     expect(offsetAtLineX(line, 500)).toBe(11);
@@ -94,6 +101,13 @@ describe('xForOffset / offsetAtLineX with per-character data', () => {
     expect(offsetAtLineX(line, 9)).toBe(1); // right half of the narrow 'i'
     expect(offsetAtLineX(line, 25)).toBe(1); // left half of the wide 'W'
     expect(offsetAtLineX(line, 45)).toBe(2); // right half of the wide 'W'
+  });
+
+  test('inside-character hit-testing uses glyph bounds from the table', () => {
+    expect(offsetInsideLineX(line, 9)).toBe(0);
+    expect(offsetInsideLineX(line, 25)).toBe(1);
+    expect(offsetInsideLineX(line, 45)).toBe(1);
+    expect(offsetInsideLineX(line, 55)).toBe(2);
   });
 
   test('a table of the wrong length is ignored rather than misread', () => {

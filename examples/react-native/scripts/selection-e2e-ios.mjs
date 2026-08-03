@@ -12,14 +12,18 @@ const maestroDir = path.join(projectDir, 'maestro');
 const artifactDir = path.join(maestroDir, 'artifacts');
 const gestureFlowFile = path.join(maestroDir, 'selection-ios.yaml');
 const cjkFlowFile = path.join(maestroDir, 'selection-cjk-ios.yaml');
+const flatListFlowFile = path.join(maestroDir, 'selection-flatlist-ios.yaml');
 const scrollFlowFile = path.join(maestroDir, 'selection-scroll-ios.yaml');
 const visualAssertScript = path.join(projectDir, 'scripts', 'assert-selection-visual.mjs');
 const port = process.env.SUPRAMARK_RN_E2E_PORT ?? '8090';
 const bundleURL =
   process.env.SUPRAMARK_RN_E2E_BUNDLE_URL ??
   `http://localhost:${port}/.expo/.virtual-metro-entry.bundle?platform=ios&dev=true&minify=false`;
-const gestureScreenshot = path.join(artifactDir, 'selection-gesture.png');
-const cjkScreenshot = path.join(artifactDir, 'selection-cjk-half.png');
+const screenshotPath = (flowFile, name) =>
+  path.join(artifactDir, path.basename(flowFile, '.yaml'), 'takeScreenshot', `${name}.png`);
+const gestureScreenshot = screenshotPath(gestureFlowFile, 'selection-gesture');
+const cjkScreenshot = screenshotPath(cjkFlowFile, 'selection-cjk-half');
+const flatListScreenshot = screenshotPath(flatListFlowFile, 'selection-flatlist');
 const generatedFiles = [
   'ios/Podfile.lock',
   'ios/supramarkexamplereactnative.xcodeproj/project.pbxproj',
@@ -69,9 +73,8 @@ function restoreGeneratedFiles() {
 }
 
 function prepareArtifacts() {
+  rmSync(artifactDir, { recursive: true, force: true });
   mkdirSync(artifactDir, { recursive: true });
-  rmSync(gestureScreenshot, { force: true });
-  rmSync(cjkScreenshot, { force: true });
 }
 
 function runMaestro(maestro, udid, flowFile) {
@@ -81,15 +84,11 @@ function runMaestro(maestro, udid, flowFile) {
     'test',
     '-e',
     `BUNDLE_URL=${bundleURL}`,
-    flowFile,
-    '--test-output-dir',
+    '--debug-output',
     artifactDir,
     '--flatten-debug-output',
+    flowFile,
   ]);
-}
-
-function takeSimulatorScreenshot(udid, file) {
-  run('xcrun', ['simctl', 'io', udid, 'screenshot', file], { env: process.env });
 }
 
 function assertScreenshot(mode, file) {
@@ -184,12 +183,13 @@ async function main() {
 
     run('bunx', ['expo', 'run:ios', '--device', udid, '--no-bundler']);
     runMaestro(maestro, udid, gestureFlowFile);
-    takeSimulatorScreenshot(udid, gestureScreenshot);
     assertScreenshot('gesture', gestureScreenshot);
 
     runMaestro(maestro, udid, cjkFlowFile);
-    takeSimulatorScreenshot(udid, cjkScreenshot);
     assertScreenshot('cjk', cjkScreenshot);
+
+    runMaestro(maestro, udid, flatListFlowFile);
+    assertScreenshot('gesture', flatListScreenshot);
 
     runMaestro(maestro, udid, scrollFlowFile);
   } finally {

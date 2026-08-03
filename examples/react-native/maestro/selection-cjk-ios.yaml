@@ -10,3 +10,4 @@ env:
 - tapOn: Select CJK half
 - waitForAnimationToEnd
 - assertVisible: cjk half
+- takeScreenshot: selection-cjk-half

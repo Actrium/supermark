@@ -60,6 +60,7 @@ function makeContext(units: SelectionUnitLike[]): NonNullable<ContextValue> {
       return () => registry.unregister(block.nodeId, registered);
     },
     updateLayout: (nodeId, rect) => registry.updateLayout(nodeId, rect),
+    refreshLayouts: () => {},
     updateUnits: (nodeId, unitIds) => registry.updateUnits(nodeId, unitIds),
     setMetrics: (nodeId, metrics) => registry.setMetrics(nodeId, metrics),
     setContentOffset: (nodeId, offset) => registry.setContentOffset(nodeId, offset),

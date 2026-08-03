@@ -6,7 +6,7 @@ import {
   type LayoutChangeEvent,
   type PanResponderGestureState,
 } from 'react-native';
-import { lineAtY, offsetAtLineX } from '../metrics';
+import { lineAtY, offsetInsideLineX } from '../metrics';
 import type { SelectionNodeId, SelectionRange, SelectionUnit } from '../model';
 import {
   buildSegmentSpans,
@@ -53,6 +53,11 @@ type NativeViewHandle = {
     onFail?: () => void
   ) => void;
 };
+
+interface LayoutTarget {
+  node: unknown;
+  fallback: LayoutRect;
+}
 
 function eventTime(e: GestureResponderEvent): number {
   const timestamp = (e.nativeEvent as GestureResponderEvent['nativeEvent'] & { timestamp?: number })
@@ -159,6 +164,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
 
   const rootRef = useRef<View | null>(null);
   const originRef = useRef<Point>({ x: 0, y: 0 });
+  const layoutTargetsRef = useRef(new Map<SelectionNodeId, LayoutTarget>());
   const [viewport, setViewport] = useState<Size>({ w: 0, h: 0 });
 
   // Re-index when the unit stream changes (streaming markdown).
@@ -177,6 +183,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       const snapshot = store.getSnapshot();
       if (snapshot.range === null) return;
       onCopyRef.current?.(buildCopyRequest(item, snapshot.units, snapshot.range));
+      store.clear();
     },
     [store]
   );
@@ -221,7 +228,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       ) {
         return null;
       }
-      const offset = offsetAtLineX(line, localX);
+      const offset = offsetInsideLineX(line, localX);
       const bounds = wordBoundsAt(segmentTextFromSpans(registry.index, spans), offset);
       if (bounds.end <= bounds.start) return wholeBlock();
       return segmentSelectionToRange(spans, bounds.start, bounds.end);
@@ -392,8 +399,13 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   );
 
   const onStartShouldSetResponder = useCallback(
-    () => enabled,
-    [enabled]
+    (e: GestureResponderEvent) => {
+      if (!enabled) return false;
+      const point = toRootSpace(e);
+      if (handleAt(point) !== null) return true;
+      return containingBlock(registry.getBlocks(), point) !== null;
+    },
+    [enabled, handleAt, registry, toRootSpace]
   );
 
   const onResponderTerminationRequest = useCallback(
@@ -433,25 +445,87 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
     ]
   );
 
-  const measureLayout = useCallback(
+  const measureBlockLayout = useCallback(
     (nodeId: SelectionNodeId, node: unknown, fallback: LayoutRect) => {
       const target = node as NativeViewHandle | null;
       const root = rootRef.current as NativeViewHandle | null;
       const updateFallback = () => registry.updateLayout(nodeId, fallback);
-      if (!target?.measureLayout || root === null) {
-        updateFallback();
+      const updateMeasured = (x: number, y: number, width: number, height: number) => {
+        if (
+          Number.isFinite(x) &&
+          Number.isFinite(y) &&
+          Number.isFinite(width) &&
+          Number.isFinite(height)
+        ) {
+          registry.updateLayout(nodeId, { x, y, w: width, h: height });
+        } else {
+          updateFallback();
+        }
+      };
+      const measureAgainstRoot = () => {
+        if (!target?.measureLayout || root === null) return false;
+        target.measureLayout(
+          root,
+          (x, y, width, height) => {
+            updateMeasured(x, y, width, height);
+          },
+          updateFallback
+        );
+        return true;
+      };
+      const measureTargetInRootWindow = (origin: Point) => {
+        if (target?.measureInWindow) {
+          target.measureInWindow((x, y, width, height) => {
+            updateMeasured(x - origin.x, y - origin.y, width, height);
+          });
+          return true;
+        }
+        if (target?.measure) {
+          target.measure((_x, _y, width, height, pageX, pageY) => {
+            updateMeasured(pageX - origin.x, pageY - origin.y, width, height);
+          });
+          return true;
+        }
+        return false;
+      };
+      const afterRootMeasured = (x: number, y: number) => {
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          const origin = { x, y };
+          originRef.current = origin;
+          if (measureTargetInRootWindow(origin)) return;
+        }
+        if (!measureAgainstRoot()) updateFallback();
+      };
+      const canMeasureTargetInWindow = Boolean(target?.measureInWindow || target?.measure);
+      if (canMeasureTargetInWindow && root?.measureInWindow) {
+        root.measureInWindow((x, y) => afterRootMeasured(x, y));
         return;
       }
-      target.measureLayout(
-        root,
-        (x, y, width, height) => {
-          registry.updateLayout(nodeId, { x, y, w: width, h: height });
-        },
-        updateFallback
-      );
+      if (canMeasureTargetInWindow && root?.measure) {
+        root.measure((_x, _y, _width, _height, pageX, pageY) =>
+          afterRootMeasured(pageX, pageY)
+        );
+        return;
+      }
+      if (!measureAgainstRoot()) updateFallback();
     },
     [registry]
   );
+
+  const measureLayout = useCallback(
+    (nodeId: SelectionNodeId, node: unknown, fallback: LayoutRect) => {
+      layoutTargetsRef.current.set(nodeId, { node, fallback });
+      measureBlockLayout(nodeId, node, fallback);
+    },
+    [measureBlockLayout]
+  );
+
+  const refreshLayouts = useCallback(() => {
+    refreshRootOrigin();
+    for (const [nodeId, target] of layoutTargetsRef.current) {
+      measureBlockLayout(nodeId, target.node, target.fallback);
+    }
+  }, [measureBlockLayout, refreshRootOrigin]);
 
   // Reference-stable: depends only on the memoized registry + store.
   const ctx = useMemo<SelectionContextValue>(
@@ -463,10 +537,16 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
         // a stale instance's cleanup cannot delete a live registration that
         // reused the same nodeId. See `SelectionRegistry.unregister`.
         const registered = registry.register(block);
-        return () => registry.unregister(block.nodeId, registered);
+        return () => {
+          if (registry.getBlock(block.nodeId) === registered) {
+            layoutTargetsRef.current.delete(block.nodeId);
+          }
+          registry.unregister(block.nodeId, registered);
+        };
       },
       updateLayout: (nodeId, rect) => registry.updateLayout(nodeId, rect),
       measureLayout,
+      refreshLayouts,
       updateUnits: (nodeId, unitIds) => registry.updateUnits(nodeId, unitIds),
       setMetrics: (nodeId, metrics) => registry.setMetrics(nodeId, metrics),
       setContentOffset: (nodeId, offset) => registry.setContentOffset(nodeId, offset),
@@ -475,7 +555,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       },
       runToolbarItem,
     }),
-    [registry, store, runToolbarItem, measureLayout]
+    [registry, store, runToolbarItem, measureLayout, refreshLayouts]
   );
 
   return (

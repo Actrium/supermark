@@ -21,6 +21,7 @@ const bundleURL =
 const gestureStartScreenshot = path.join(artifactDir, 'selection-gesture-start-android.png');
 const gestureScreenshot = path.join(artifactDir, 'selection-gesture-android.png');
 const cjkScreenshot = path.join(artifactDir, 'selection-cjk-half-android.png');
+const flatListScreenshot = path.join(artifactDir, 'selection-flatlist-android.png');
 const androidAssetsDir = path.join(projectDir, 'android', 'app', 'src', 'main', 'assets');
 const androidResDir = path.join(projectDir, 'android', 'app', 'src', 'main', 'res');
 const androidEntryFile = path.join(projectDir, 'index.js');
@@ -235,6 +236,7 @@ function prepareArtifacts() {
   rmSync(gestureStartScreenshot, { force: true });
   rmSync(gestureScreenshot, { force: true });
   rmSync(cjkScreenshot, { force: true });
+  rmSync(flatListScreenshot, { force: true });
 }
 
 function bundleAndroidApp() {
@@ -398,6 +400,11 @@ function selectedUnitsFromUi(xml) {
   return match ? Number(match[1]) : null;
 }
 
+function flatOffsetFromUi(xml) {
+  const match = xml.match(/(?:text|content-desc)="flat offset (\d+)"/);
+  return match ? Number(match[1]) : null;
+}
+
 function waitForSelectedUnits(serial, minUnits, timeoutMs = 20000) {
   const started = Date.now();
   let latest = '';
@@ -417,11 +424,35 @@ function waitForSelectedUnits(serial, minUnits, timeoutMs = 20000) {
   throw new Error(`Timed out waiting for Android selected units >= ${minUnits}`);
 }
 
-function tapText(serial, screen, text) {
+function waitForFlatOffset(serial, minOffset, timeoutMs = 20000) {
+  const started = Date.now();
+  let latest = '';
+  while (Date.now() - started < timeoutMs) {
+    latest = dumpUi(serial);
+    const offset = flatOffsetFromUi(latest);
+    if (offset !== null && offset >= minOffset) return offset;
+    sleepMs(500);
+  }
+  const name = `flat-offset-at-least-${minOffset}`;
+  const hierarchyFile = path.join(artifactDir, `android-ui-${name}.xml`);
+  const screenshotFile = path.join(artifactDir, `android-ui-${name}.png`);
+  const logcatFile = path.join(artifactDir, `android-ui-${name}.log`);
+  writeFileSync(hierarchyFile, latest);
+  takeScreenshot(serial, screenshotFile);
+  captureLogcat(serial, logcatFile);
+  throw new Error(`Timed out waiting for Android FlatList offset >= ${minOffset}`);
+}
+
+function boundsForText(serial, text) {
   const xml = waitForUiText(serial, text);
   const node = nodeWithText(xml, text);
   const bounds = node === null ? null : nodeBounds(node);
   if (bounds === null) throw new Error(`Could not find bounds for Android UI text: ${text}`);
+  return bounds;
+}
+
+function tapText(serial, screen, text) {
+  const bounds = boundsForText(serial, text);
   adbTap(serial, screen, (bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2);
 }
 
@@ -491,6 +522,10 @@ function pixelAt(image, index) {
 
 function isHandleBlue({ r, g, b, a }) {
   return a > 200 && r >= 20 && r <= 90 && g >= 115 && g <= 190 && b >= 215;
+}
+
+function isHighlightBlue({ r, g, b, a }) {
+  return a > 200 && r >= 135 && r <= 230 && g >= 180 && g <= 245 && b >= 225 && b - r >= 25;
 }
 
 function findComponents(image, predicate) {
@@ -586,6 +621,27 @@ function findEndHandlePoint(file) {
   return point;
 }
 
+function assertHighlightTracksText(file, bounds, label) {
+  const image = readPng(file);
+  const highlights = findComponents(image, isHighlightBlue).filter(
+    component => component.area > 150 && boxWidth(component) > 12 && boxHeight(component) > 8
+  );
+  if (highlights.length === 0) {
+    throw new Error(`Expected visible highlight near ${label} in ${file}`);
+  }
+  const highlight = highlights[0];
+  const highlightCenterY = (highlight.y0 + highlight.y1) / 2;
+  const textCenterY = (bounds.top + bounds.bottom) / 2;
+  const verticalDrift = Math.abs(highlightCenterY - textCenterY);
+  if (verticalDrift > Math.max(40, (bounds.bottom - bounds.top) * 1.2)) {
+    throw new Error(
+      `Selection highlight drifted away from ${label}: highlight ${summarizeBox(
+        highlight
+      )}, text [${bounds.left},${bounds.top}][${bounds.right},${bounds.bottom}]`
+    );
+  }
+}
+
 function runGestureFlow(serial, screen) {
   launchApp(serial);
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -627,6 +683,36 @@ function runGapFlow(serial, screen) {
   tapText(serial, screen, 'Select in block');
   waitForUiText(serial, 'selected 2 units');
   adbLongPress(serial, screen, 900, 300);
+  waitForUiText(serial, 'idle 0 units');
+}
+
+function runFlatListFlow(serial, screen) {
+  launchApp(serial);
+  sleepMs(1000);
+  const rowText = 'Flat row 03 selection target.';
+  let rowBounds = boundsForText(serial, rowText);
+  const press = {
+    x: Math.round((rowBounds.left + rowBounds.right) / 2),
+    y: Math.round((rowBounds.top + rowBounds.bottom) / 2),
+  };
+  adbSwipeRaw(serial, press, { x: press.x + 1, y: press.y }, 1200);
+  waitForUiText(serial, 'selected 1 units');
+  waitForUiText(serial, 'Copy');
+
+  const scrollX = Math.round(screen.w * 0.86);
+  const scrollStartY = Math.min(screen.h - 200, rowBounds.bottom + 100);
+  adbDragRaw(
+    serial,
+    { x: scrollX, y: scrollStartY },
+    { x: scrollX, y: Math.max(0, scrollStartY - 140) },
+    550
+  );
+  waitForFlatOffset(serial, 40);
+  sleepMs(750);
+  rowBounds = boundsForText(serial, rowText);
+  takeScreenshot(serial, flatListScreenshot);
+  assertHighlightTracksText(flatListScreenshot, rowBounds, rowText);
+  tapText(serial, screen, 'Copy');
   waitForUiText(serial, 'idle 0 units');
 }
 
@@ -673,6 +759,7 @@ async function main() {
     runGestureFlow(serial, screen);
     runCjkFlow(serial, screen);
     runGapFlow(serial, screen);
+    runFlatListFlow(serial, screen);
     runScrollFlow(serial, screen);
   } finally {
     if (metro) metro.kill('SIGINT');

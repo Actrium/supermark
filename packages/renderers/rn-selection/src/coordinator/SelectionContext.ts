@@ -32,6 +32,12 @@ export interface SelectionContextValue {
    * without a native view handle.
    */
   measureLayout?: (nodeId: SelectionNodeId, node: unknown, fallback: LayoutRect) => void;
+  /**
+   * Re-measure blocks whose native handles have been seen. Hosts should call
+   * this from ScrollView / FlatList `onScroll`, because scrolling changes a
+   * block's root-space position without firing `onLayout`.
+   */
+  refreshLayouts?: () => void;
   /** Update a registered block's unit ids in place (streaming markdown growth). */
   updateUnits: (nodeId: SelectionNodeId, unitIds: readonly SelectionNodeId[]) => void;
   /** Publish the line table a block laid out (`onTextLayout`). */

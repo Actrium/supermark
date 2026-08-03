@@ -16,12 +16,21 @@
  * the bar that appears. No native selection component is involved.
  */
 
-import React, { useState, useSyncExternalStore } from 'react';
-import { SafeAreaView, ScrollView, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useCallback, useState, useSyncExternalStore } from 'react';
+import {
+  FlatList,
+  SafeAreaView,
+  ScrollView,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
 
 import {
   SelectionRoot,
   SelectableBlock,
+  useSelectionLayoutRefresh,
   useSelectionStore,
   serializeSelectionUnits,
   type SelectionUnit,
@@ -32,6 +41,15 @@ import type { SupramarkNode } from '@supramark/core';
 
 const NODE = { type: 'text', value: '' } as unknown as SupramarkNode;
 const CJK_TEXT = String.fromCodePoint(0x6f22, 0x5b57, 0x6e2c, 0x8a66);
+const FLAT_ROWS = Array.from({ length: 16 }, (_, index) => {
+  const n = String(index + 1).padStart(2, '0');
+  return {
+    nodeId: `flat-${n}`,
+    unitId: `flat-${n}#0`,
+    breakId: `flat-${n}#1`,
+    text: `Flat row ${n} selection target.`,
+  };
+});
 
 function t(unitId: string, nodeId: string, text: string, markdown?: string): SelectionUnit {
   return {
@@ -67,6 +85,7 @@ const UNITS: SelectionUnit[] = [
   brk('p2#1', 'p2'),
   t('cjk#0', 'cjk', CJK_TEXT),
   brk('cjk#1', 'cjk'),
+  ...FLAT_ROWS.flatMap(row => [t(row.unitId, row.nodeId, row.text), brk(row.breakId, row.nodeId)]),
 ];
 
 // The bar is ours, so its items are just data. A product would add its own
@@ -81,12 +100,14 @@ interface SelectionDemoProps {
   onBack: () => void;
   e2e?: boolean;
   scrollSentinel?: boolean;
+  flatList?: boolean;
 }
 
 export default function SelectionDemo({
   onBack,
   e2e = false,
   scrollSentinel = false,
+  flatList = false,
 }: SelectionDemoProps) {
   const [status, setStatus] = useState('idle');
 
@@ -99,7 +120,7 @@ export default function SelectionDemo({
       <TouchableOpacity onPress={onBack}>
         <Text style={s.back}>back</Text>
       </TouchableOpacity>
-      <ScrollView contentContainerStyle={s.body}>
+      <ScrollView nestedScrollEnabled contentContainerStyle={s.body}>
         <SelectionRoot units={UNITS} onCopy={onCopy} toolbarItems={TOOLBAR_ITEMS}>
           <SelectableBlock nodeId="h" unitIds={['h#0']} style={s.h1}>
             Selection Demo
@@ -116,6 +137,7 @@ export default function SelectionDemo({
             {CJK_TEXT}
           </SelectableBlock>
           <SelectionControls e2e={e2e} onStatus={setStatus} />
+          {flatList && <FlatListSelectionFixture />}
         </SelectionRoot>
         <View style={s.statusPanel}>
           <Text testID="selection-status">{status}</Text>
@@ -127,6 +149,52 @@ export default function SelectionDemo({
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function FlatListSelectionFixture() {
+  const refreshSelectionLayouts = useSelectionLayoutRefresh();
+  const [offset, setOffset] = useState(0);
+  const refreshSelectionLayoutsSoon = useCallback(() => {
+    refreshSelectionLayouts();
+    requestAnimationFrame(refreshSelectionLayouts);
+    setTimeout(refreshSelectionLayouts, 0);
+  }, [refreshSelectionLayouts]);
+
+  return (
+    <View style={s.flatPanel}>
+      <Text style={s.flatTitle}>Nested selection list</Text>
+      <Text testID="selection-flat-offset" style={s.e2eStatus}>
+        flat offset {offset}
+      </Text>
+      <FlatList
+        testID="selection-flat-list"
+        data={FLAT_ROWS}
+        keyExtractor={item => item.nodeId}
+        nestedScrollEnabled
+        style={s.flatList}
+        contentContainerStyle={s.flatContent}
+        scrollEventThrottle={16}
+        onLayout={refreshSelectionLayoutsSoon}
+        onContentSizeChange={refreshSelectionLayoutsSoon}
+        onScroll={e => {
+          const next = Math.round(e.nativeEvent.contentOffset.y);
+          setOffset(prev => (prev === next ? prev : next));
+          refreshSelectionLayoutsSoon();
+        }}
+        renderItem={({ item }) => (
+          <SelectableBlock
+            nodeId={item.nodeId}
+            unitIds={[item.unitId]}
+            style={s.flatRowText}
+            containerStyle={s.flatRow}
+          >
+            {item.text}
+          </SelectableBlock>
+        )}
+        ItemSeparatorComponent={() => <View style={s.flatSeparator} />}
+      />
+    </View>
   );
 }
 
@@ -231,6 +299,18 @@ const s = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   e2eStatus: { color: '#595959', fontSize: 12 },
+  flatPanel: { marginTop: 8 },
+  flatTitle: { fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  flatList: {
+    height: 220,
+    borderWidth: 1,
+    borderColor: '#d9d9d9',
+    borderRadius: 4,
+  },
+  flatContent: { padding: 8 },
+  flatRow: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 8 },
+  flatRowText: { fontSize: 16, lineHeight: 22 },
+  flatSeparator: { height: 4 },
   back: { color: '#2f54eb', padding: 8 },
   controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   button: {

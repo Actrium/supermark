@@ -7,15 +7,15 @@ env:
     arguments:
       supramarkBundleURL: ${BUNDLE_URL}
 - assertVisible: Selection Demo
-- longPressOn:
-    point: 18%,17%
+- assertVisible: Flat row 01 selection target.
+- swipe:
+    start: 86%,45%
+    end: 86%,28%
+    duration: 700
+- waitForAnimationToEnd
+- assertVisible: Flat row 08 selection target.
+- longPressOn: Flat row 08 selection target.
 - waitForAnimationToEnd
 - assertVisible: selected 1 units
 - assertVisible: Copy
-- swipe:
-    start: 24%,19%
-    end: 56%,20%
-    duration: 900
-- waitForAnimationToEnd
-- assertVisible: selected 4 units
-- takeScreenshot: selection-gesture
+- takeScreenshot: selection-flatlist

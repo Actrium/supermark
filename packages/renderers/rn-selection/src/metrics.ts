@@ -178,6 +178,30 @@ export function offsetAtLineX(line: TextLineMetrics, x: number): number {
 }
 
 /**
+ * Segment-local offset for the character under a point on `line`.
+ *
+ * Caret placement uses nearest edge (`offsetAtLineX`), but long-press word
+ * selection needs the character the finger is actually over. With nearest-edge
+ * rounding, pressing the right half of a CJK glyph picks the following glyph,
+ * which reads as a systematic one-character skew.
+ */
+export function offsetInsideLineX(line: TextLineMetrics, x: number): number {
+  const span = line.visibleEnd - line.start;
+  if (span <= 0) return line.start;
+  if (x <= line.x) return line.start;
+  if (x >= line.x + line.w) return line.visibleEnd - 1;
+
+  const charXs = line.charXs;
+  if (charXs && charXs.length > span) {
+    for (let i = 0; i < span; i++) {
+      if (x < charXs[i + 1]) return line.start + i;
+    }
+    return line.visibleEnd - 1;
+  }
+  return line.start + clamp(Math.floor(((x - line.x) / line.w) * span), 0, span - 1);
+}
+
+/**
  * The line a segment-local y falls on. A y above the first line resolves to
  * it, and a y below the last line resolves to that one, so a drag that leaves
  * the block vertically still yields a sensible endpoint instead of nothing.

@@ -137,10 +137,10 @@ describe('SelectionRoot responder negotiation', () => {
     expect(root.props.onStartShouldSetResponderCapture(eventAt(40, 110))).toBe(false);
   });
 
-  test('claims blank root touches so tap-dismiss and blank long-press can run', () => {
+  test('does not claim touches outside selectable blocks so nested scroll views can scroll', () => {
     const { root } = renderRootWithBlock({ selected: false });
 
-    expect(root.props.onStartShouldSetResponder(eventAt(40, 200))).toBe(true);
+    expect(root.props.onStartShouldSetResponder(eventAt(40, 200))).toBe(false);
   });
 
   test('honours gestures=false even over a handle', () => {
@@ -208,6 +208,64 @@ describe('SelectionRoot responder negotiation', () => {
 
     expect(store.getSnapshot().range).toBeNull();
     expect(store.getSnapshot().phase).toBe('idle');
+  });
+
+  test('long press picks the character under the finger rather than the nearest edge', async () => {
+    let store: SelectionStore | null = null;
+    const text = '!!!!';
+    const units: SelectionUnit[] = [
+      {
+        kind: 'text',
+        unitId: 'punct#0',
+        nodeId: 'punct',
+        text,
+        node: NODE,
+      },
+    ];
+
+    const RegisterPunctuationBlock: React.FC = () => {
+      const ctx = useSelectionContext();
+      useEffect(() => {
+        store = ctx.store;
+        return ctx.registerBlock({
+          nodeId: 'punct',
+          unitIds: ['punct#0'],
+          kind: 'text',
+          rect: { x: 10, y: 100, w: 40, h: 20 },
+          metrics: {
+            textLength: text.length,
+            lines: [{ start: 0, end: 4, visibleEnd: 4, x: 0, y: 0, w: 40, h: 20 }],
+          },
+        });
+      }, [ctx]);
+      return null;
+    };
+
+    act(() => {
+      renderer = create(
+        <SelectionRoot
+          units={units}
+          overlay={false}
+          handles={false}
+          toolbar={false}
+          longPressMs={1}
+        >
+          <RegisterPunctuationBlock />
+        </SelectionRoot>
+      );
+    });
+    if (store === null) throw new Error('test did not capture the selection store');
+
+    const root = renderer.root.findByType('View' as unknown as React.ElementType);
+    await act(async () => {
+      root.props.onResponderGrant(eventAt(39, 110));
+      await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    expect(store.getSnapshot().range).toEqual({
+      anchor: { nodeId: 'punct', unitId: 'punct#0', offset: 2 },
+      focus: { nodeId: 'punct', unitId: 'punct#0', offset: 3 },
+    });
   });
 
   test('touchEnd commits when Android does not deliver responderRelease', async () => {
@@ -433,6 +491,165 @@ describe('SelectionRoot responder negotiation', () => {
 
     expect(measuredAgainstRoot).toBe(true);
     expect(registry?.getBlock('p1')?.rect).toEqual({ x: 7, y: 9, w: 30, h: 11 });
+  });
+
+  test('refreshLayouts remeasures cached block layout after nested scroll', () => {
+    let registry: ReturnType<typeof useSelectionContext>['registry'] | null = null;
+    let refreshLayouts: (() => void) | null = null;
+    let nextRect = { x: 7, y: 9, w: 30, h: 11 };
+    const blockHandle = {
+      measureLayout: (
+        _relativeToNativeNode: unknown,
+        onSuccess: (x: number, y: number, width: number, height: number) => void
+      ) => {
+        onSuccess(nextRect.x, nextRect.y, nextRect.w, nextRect.h);
+      },
+    };
+
+    const RegisterMeasuredBlock: React.FC = () => {
+      const ctx = useSelectionContext();
+      useEffect(() => {
+        registry = ctx.registry;
+        refreshLayouts = ctx.refreshLayouts ?? null;
+        const dispose = ctx.registerBlock({
+          nodeId: 'p1',
+          unitIds: ['p1#0'],
+          kind: 'text',
+        });
+        ctx.measureLayout?.('p1', blockHandle, { x: 1, y: 2, w: 3, h: 4 });
+        return dispose;
+      }, [ctx]);
+      return null;
+    };
+
+    act(() => {
+      renderer = create(
+        <SelectionRoot units={UNITS} overlay={false} handles={false} toolbar={false}>
+          <RegisterMeasuredBlock />
+        </SelectionRoot>,
+        {
+          createNodeMock: element => (element.type === 'View' ? { measure: () => {} } : null),
+        }
+      );
+    });
+
+    expect(registry?.getBlock('p1')?.rect).toEqual({ x: 7, y: 9, w: 30, h: 11 });
+    nextRect = { x: 17, y: 19, w: 31, h: 12 };
+    act(() => {
+      refreshLayouts?.();
+    });
+    expect(registry?.getBlock('p1')?.rect).toEqual({ x: 17, y: 19, w: 31, h: 12 });
+  });
+
+  test('prefers window-space measurement for nested scrollers', () => {
+    let registry: ReturnType<typeof useSelectionContext>['registry'] | null = null;
+    let refreshLayouts: (() => void) | null = null;
+    let targetWindow = { x: 37, y: 59, w: 30, h: 11 };
+    const rootWindow = { x: 30, y: 50 };
+    const blockHandle = {
+      measureInWindow: (
+        onSuccess: (x: number, y: number, width: number, height: number) => void
+      ) => {
+        onSuccess(targetWindow.x, targetWindow.y, targetWindow.w, targetWindow.h);
+      },
+      measureLayout: (
+        _relativeToNativeNode: unknown,
+        onSuccess: (x: number, y: number, width: number, height: number) => void
+      ) => {
+        onSuccess(999, 999, 999, 999);
+      },
+    };
+
+    const RegisterMeasuredBlock: React.FC = () => {
+      const ctx = useSelectionContext();
+      useEffect(() => {
+        registry = ctx.registry;
+        refreshLayouts = ctx.refreshLayouts ?? null;
+        const dispose = ctx.registerBlock({
+          nodeId: 'p1',
+          unitIds: ['p1#0'],
+          kind: 'text',
+        });
+        ctx.measureLayout?.('p1', blockHandle, { x: 1, y: 2, w: 3, h: 4 });
+        return dispose;
+      }, [ctx]);
+      return null;
+    };
+
+    act(() => {
+      renderer = create(
+        <SelectionRoot units={UNITS} overlay={false} handles={false} toolbar={false}>
+          <RegisterMeasuredBlock />
+        </SelectionRoot>,
+        {
+          createNodeMock: element =>
+            element.type === 'View'
+              ? {
+                  measureInWindow: (
+                    onSuccess: (x: number, y: number, width: number, height: number) => void
+                  ) => onSuccess(rootWindow.x, rootWindow.y, 100, 100),
+                }
+              : null,
+        }
+      );
+    });
+
+    expect(registry?.getBlock('p1')?.rect).toEqual({ x: 7, y: 9, w: 30, h: 11 });
+    targetWindow = { x: 37, y: 19, w: 31, h: 12 };
+    act(() => {
+      refreshLayouts?.();
+    });
+    expect(registry?.getBlock('p1')?.rect).toEqual({ x: 7, y: -31, w: 31, h: 12 });
+  });
+
+  test('running a toolbar action dismisses the selection menu', () => {
+    let store: SelectionStore | null = null;
+    let runToolbarItem: ReturnType<typeof useSelectionContext>['runToolbarItem'] | null = null;
+    let copied = '';
+
+    const RegisterBlockAndAction: React.FC = () => {
+      const ctx = useSelectionContext();
+      useEffect(() => {
+        store = ctx.store;
+        runToolbarItem = ctx.runToolbarItem;
+        return ctx.registerBlock({
+          nodeId: 'p1',
+          unitIds: ['p1#0'],
+          kind: 'text',
+          rect: { x: 10, y: 100, w: 60, h: 20 },
+        });
+      }, [ctx]);
+      return null;
+    };
+
+    act(() => {
+      renderer = create(
+        <SelectionRoot
+          units={UNITS}
+          overlay={false}
+          handles={false}
+          toolbar={false}
+          onCopy={req => {
+            copied = req.text;
+          }}
+        >
+          <RegisterBlockAndAction />
+        </SelectionRoot>
+      );
+    });
+    if (store === null || runToolbarItem === null) {
+      throw new Error('test did not capture the selection context');
+    }
+    act(() => {
+      store.beginAt({ nodeId: 'p1', unitId: 'p1#0', offset: 0 });
+      store.extendTo({ nodeId: 'p1', unitId: 'p1#0', offset: 5 });
+      store.commit();
+      runToolbarItem({ id: 'copy', title: 'Copy', format: 'plainText' });
+    });
+
+    expect(copied).toBe('hello');
+    expect(store.getSnapshot().phase).toBe('idle');
+    expect(store.getSnapshot().range).toBeNull();
   });
 
   test('handle drags resolve from page coordinates through the root origin', () => {
