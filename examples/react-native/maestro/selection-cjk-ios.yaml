@@ -7,14 +7,6 @@ env:
     arguments:
       supramarkBundleURL: ${BUNDLE_URL}
 - assertVisible: Selection Demo
-- longPressOn:
-    point: 18%,17%
+- tapOn: Select CJK half
 - waitForAnimationToEnd
-- assertVisible: selected 1 units
-- assertVisible: Copy
-- swipe:
-    start: 24%,19%
-    end: 56%,20%
-    duration: 900
-- waitForAnimationToEnd
-- assertVisible: selected 4 units
+- assertVisible: cjk half

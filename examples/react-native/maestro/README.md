@@ -9,8 +9,10 @@ MAESTRO_DEVICE_UDID=<simulator-udid> bun --filter @supramark/example-react-nativ
 ```
 
 The runner sets `SUPRAMARK_RN_E2E=selection`, starts the Expo dev server,
-builds and installs the selection-only iOS harness, runs the Maestro flow, and
-restores generated CocoaPods/Xcode files before exiting.
+builds and installs the selection-only iOS harness, runs the Maestro flows,
+captures simulator screenshots for gesture and CJK selection states, checks
+their highlight / handle / toolbar pixels, and restores generated CocoaPods /
+Xcode files before exiting.
 
 If macOS system proxying is enabled, make sure `localhost` and `127.0.0.1` are
 in the bypass list. The iOS simulator loads the Metro bundle through that local

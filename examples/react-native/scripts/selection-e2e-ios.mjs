@@ -1,18 +1,25 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
 import http from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDir = path.resolve(here, '..');
-const flowFile = path.join(projectDir, 'maestro', 'selection-ios.yaml');
+const maestroDir = path.join(projectDir, 'maestro');
+const artifactDir = path.join(maestroDir, 'artifacts');
+const gestureFlowFile = path.join(maestroDir, 'selection-ios.yaml');
+const cjkFlowFile = path.join(maestroDir, 'selection-cjk-ios.yaml');
+const scrollFlowFile = path.join(maestroDir, 'selection-scroll-ios.yaml');
+const visualAssertScript = path.join(projectDir, 'scripts', 'assert-selection-visual.mjs');
 const port = process.env.SUPRAMARK_RN_E2E_PORT ?? '8090';
 const bundleURL =
   process.env.SUPRAMARK_RN_E2E_BUNDLE_URL ??
   `http://localhost:${port}/.expo/.virtual-metro-entry.bundle?platform=ios&dev=true&minify=false`;
+const gestureScreenshot = path.join(artifactDir, 'selection-gesture.png');
+const cjkScreenshot = path.join(artifactDir, 'selection-cjk-half.png');
 const generatedFiles = [
   'ios/Podfile.lock',
   'ios/supramarkexamplereactnative.xcodeproj/project.pbxproj',
@@ -59,6 +66,34 @@ function dirty(files) {
 
 function restoreGeneratedFiles() {
   run('git', ['restore', '--', ...generatedFiles], { env: process.env });
+}
+
+function prepareArtifacts() {
+  mkdirSync(artifactDir, { recursive: true });
+  rmSync(gestureScreenshot, { force: true });
+  rmSync(cjkScreenshot, { force: true });
+}
+
+function runMaestro(maestro, udid, flowFile) {
+  run(maestro, [
+    '--udid',
+    udid,
+    'test',
+    '-e',
+    `BUNDLE_URL=${bundleURL}`,
+    flowFile,
+    '--test-output-dir',
+    artifactDir,
+    '--flatten-debug-output',
+  ]);
+}
+
+function takeSimulatorScreenshot(udid, file) {
+  run('xcrun', ['simctl', 'io', udid, 'screenshot', file], { env: process.env });
+}
+
+function assertScreenshot(mode, file) {
+  run(process.execPath, [visualAssertScript, mode, file], { env: process.env });
 }
 
 function chooseUDID() {
@@ -133,6 +168,7 @@ async function main() {
 
   const maestro = commandPath('maestro', path.join(os.homedir(), '.maestro', 'bin', 'maestro'));
   const udid = chooseUDID();
+  prepareArtifacts();
   warnAboutProxyBypass();
 
   let metro;
@@ -147,17 +183,15 @@ async function main() {
     await waitForBundle(bundleURL);
 
     run('bunx', ['expo', 'run:ios', '--device', udid, '--no-bundler']);
-    run(maestro, [
-      '--udid',
-      udid,
-      'test',
-      '-e',
-      `BUNDLE_URL=${bundleURL}`,
-      flowFile,
-      '--test-output-dir',
-      path.join(projectDir, 'maestro', 'artifacts'),
-      '--flatten-debug-output',
-    ]);
+    runMaestro(maestro, udid, gestureFlowFile);
+    takeSimulatorScreenshot(udid, gestureScreenshot);
+    assertScreenshot('gesture', gestureScreenshot);
+
+    runMaestro(maestro, udid, cjkFlowFile);
+    takeSimulatorScreenshot(udid, cjkScreenshot);
+    assertScreenshot('cjk', cjkScreenshot);
+
+    runMaestro(maestro, udid, scrollFlowFile);
   } finally {
     if (metro) metro.kill('SIGINT');
     restoreGeneratedFiles();

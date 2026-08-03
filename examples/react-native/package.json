@@ -47,6 +47,7 @@
   "devDependencies": {
     "@react-native-community/cli": "^20.0.2",
     "@types/react": "~18.2.79",
+    "pngjs": "3.4.0",
     "typescript": "~5.3.3"
   }
 }

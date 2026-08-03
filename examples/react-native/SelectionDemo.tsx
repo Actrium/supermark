@@ -31,6 +31,7 @@ import {
 import type { SupramarkNode } from '@supramark/core';
 
 const NODE = { type: 'text', value: '' } as unknown as SupramarkNode;
+const CJK_TEXT = String.fromCodePoint(0x6f22, 0x5b57, 0x6e2c, 0x8a66);
 
 function t(unitId: string, nodeId: string, text: string, markdown?: string): SelectionUnit {
   return {
@@ -64,6 +65,8 @@ const UNITS: SelectionUnit[] = [
   brk('p1#3', 'p1'),
   t('p2#0', 'p2', 'Second paragraph for range selection.'),
   brk('p2#1', 'p2'),
+  t('cjk#0', 'cjk', CJK_TEXT),
+  brk('cjk#1', 'cjk'),
 ];
 
 // The bar is ours, so its items are just data. A product would add its own
@@ -109,6 +112,9 @@ export default function SelectionDemo({
           <SelectableBlock nodeId="p2" unitIds={['p2#0']} style={s.p}>
             Second paragraph for range selection.
           </SelectableBlock>
+          <SelectableBlock nodeId="cjk" unitIds={['cjk#0']} style={s.cjk}>
+            {CJK_TEXT}
+          </SelectableBlock>
           <SelectionControls e2e={e2e} onStatus={setStatus} />
         </SelectionRoot>
         <View style={s.statusPanel}>
@@ -133,25 +139,41 @@ function SelectionControls({
 }) {
   const store = useSelectionStore();
   const snap = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const afterControlTap = (select: () => void) => {
+    setTimeout(select, 0);
+  };
 
   // Programmatic cross-block selection: the highlight spans both blocks and
   // carries handles and the action bar, exactly like a gesture-driven one.
   const selectAB = () => {
-    store.beginAt({ nodeId: 'h', unitId: 'h#0', offset: 0 });
-    store.extendTo({ nodeId: 'p1', unitId: 'p1#2', offset: 3 });
-    store.commit();
+    afterControlTap(() => {
+      store.beginAt({ nodeId: 'h', unitId: 'h#0', offset: 0 });
+      store.extendTo({ nodeId: 'p1', unitId: 'p1#2', offset: 3 });
+      store.commit();
+    });
   };
 
   // Within a single block, for comparing against the cross-block case.
   const selectInBlock = () => {
-    store.beginAt({ nodeId: 'p1', unitId: 'p1#0', offset: 0 });
-    store.extendTo({ nodeId: 'p1', unitId: 'p1#1', offset: 5 });
-    store.commit();
+    afterControlTap(() => {
+      store.beginAt({ nodeId: 'p1', unitId: 'p1#0', offset: 0 });
+      store.extendTo({ nodeId: 'p1', unitId: 'p1#1', offset: 5 });
+      store.commit();
+    });
   };
 
   const copyMarkdown = () => {
     const md = serializeSelectionUnits(snap.units, 'markdown');
     onStatus(typeof md === 'string' ? md : '');
+  };
+
+  const selectCjkHalf = () => {
+    afterControlTap(() => {
+      store.beginAt({ nodeId: 'cjk', unitId: 'cjk#0', offset: 0 });
+      store.extendTo({ nodeId: 'cjk', unitId: 'cjk#0', offset: CJK_TEXT.length / 2 });
+      store.commit();
+      onStatus('cjk half');
+    });
   };
 
   const clear = () => {
@@ -170,6 +192,11 @@ function SelectionControls({
       <TouchableOpacity style={s.button} onPress={copyMarkdown}>
         <Text style={s.buttonText}>Copy markdown</Text>
       </TouchableOpacity>
+      {e2e && (
+        <TouchableOpacity style={s.button} onPress={selectCjkHalf}>
+          <Text style={s.buttonText}>Select CJK half</Text>
+        </TouchableOpacity>
+      )}
       <TouchableOpacity style={s.button} onPress={clear}>
         <Text style={s.buttonText}>Clear</Text>
       </TouchableOpacity>
@@ -190,6 +217,7 @@ const s = StyleSheet.create({
   body: { padding: 16, gap: 12 },
   h1: { fontSize: 22, fontWeight: '600' },
   p: { fontSize: 15, lineHeight: 22 },
+  cjk: { fontSize: 26, lineHeight: 34 },
   bold: { fontWeight: '700' },
   statusPanel: {
     marginTop: 16,
