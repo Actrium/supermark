@@ -241,7 +241,11 @@ export function getRendererCache<T>(
  * serializer is O(depth) rather than the pre-#124 O(depth²) that allocated a
  * new Set per node.
  */
-const nonPlainIdentities = new WeakMap<object | symbol, number>();
+// Functions are objects (WeakMap-keyable). Symbols are primitives, so they
+// cannot key a WeakMap on older TS lib targets — keep a separate Map for
+// them. Config symbol values are rare, so the unbounded Map is acceptable.
+const nonPlainIdentities = new WeakMap<object, number>();
+const symbolIdentities = new Map<symbol, number>();
 let nextNonPlainId = 1;
 
 function isPlainObject(value: object): boolean {
@@ -252,6 +256,15 @@ function isPlainObject(value: object): boolean {
 }
 
 function nonPlainIdentity(value: object | symbol): string {
+  if (typeof value === 'symbol') {
+    const existing = symbolIdentities.get(value);
+    if (existing !== undefined) {
+      return `obj:${existing}`;
+    }
+    const next = nextNonPlainId++;
+    symbolIdentities.set(value, next);
+    return `obj:${next}`;
+  }
   const existing = nonPlainIdentities.get(value);
   if (existing !== undefined) {
     return `obj:${existing}`;
