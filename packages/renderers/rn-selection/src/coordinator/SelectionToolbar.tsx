@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Text, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
 import type { LocalRect } from '../metrics';
-import { computeHandles, HANDLE_KNOB_RADIUS } from './handles';
+import { computeHandles, HANDLE_TOUCH_RADIUS } from './handles';
 import { computeToolbarPlacement, type Size } from './toolbar';
 import { useSelectionRects } from './SelectionOverlay';
 import { useSelectionContext, useSelectionSnapshot } from './useDocumentSelection';
@@ -14,13 +14,13 @@ export interface SelectionToolbarProps {
   zIndex?: number;
 }
 
-function handleKnobAvoidRects(rects: readonly LocalRect[]): LocalRect[] {
+function handleTouchAvoidRects(rects: readonly LocalRect[]): LocalRect[] {
   const handles = computeHandles(rects);
   if (handles === null) return [];
-  const diameter = HANDLE_KNOB_RADIUS * 2;
+  const diameter = HANDLE_TOUCH_RADIUS * 2;
   return [handles.start, handles.end].map(handle => ({
-    x: handle.knobX - HANDLE_KNOB_RADIUS,
-    y: handle.knobY - HANDLE_KNOB_RADIUS,
+    x: handle.knobX - HANDLE_TOUCH_RADIUS,
+    y: handle.knobY - HANDLE_TOUCH_RADIUS,
     w: diameter,
     h: diameter,
   }));
@@ -67,7 +67,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
     size === null
       ? null
       : computeToolbarPlacement(rects, size, viewport, {
-          avoidRects: handleKnobAvoidRects(rects),
+          avoidRects: handleTouchAvoidRects(rects),
         });
 
   return (

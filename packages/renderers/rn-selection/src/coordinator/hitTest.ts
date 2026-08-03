@@ -72,6 +72,21 @@ export function chooseBlock(blocks: readonly RegisteredBlock[], p: Point): Regis
 }
 
 /**
+ * Pick only a block whose measured rect directly contains the point. Long-press
+ * selection uses this stricter hit-test so pressing unregistered UI, fixture
+ * text, or whitespace does not select some unrelated nearest block.
+ */
+export function containingBlock(
+  blocks: readonly RegisteredBlock[],
+  p: Point
+): RegisteredBlock | null {
+  for (const block of blocks) {
+    if (block.rect !== undefined && pointInRect(p, block.rect)) return block;
+  }
+  return null;
+}
+
+/**
  * The point just before a block's first unit, or null when the block renders no
  * units at all (a registration whose `updateUnits` has not landed yet). Callers
  * return null rather than emitting `{unitId: undefined}`, which

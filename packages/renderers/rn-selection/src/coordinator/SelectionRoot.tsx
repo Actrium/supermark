@@ -12,7 +12,7 @@ import { wordBoundsAt } from '../words';
 import { SelectionContext, type SelectionContextValue } from './SelectionContext';
 import { createSelectionGesture, type SelectionGesture } from './gesture';
 import { computeHandles, hitTestHandle, type HandleEdge } from './handles';
-import { chooseBlock, resolvePointToSelection, type Point } from './hitTest';
+import { containingBlock, resolvePointToSelection, type Point } from './hitTest';
 import { computeSelectionRects, type OverlayRect } from './overlay';
 import { SelectionRegistry } from './registry';
 import { SelectionHandles } from './SelectionHandles';
@@ -150,7 +150,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
    */
   const wordAt = useCallback(
     (point: Point): SelectionRange | null => {
-      const block = chooseBlock(registry.getBlocks(), point);
+      const block = containingBlock(registry.getBlocks(), point);
       if (block === null || block.rect === undefined) return null;
       const spans = buildSegmentSpans(block, registry.index);
       if (spans.length === 0) return null;

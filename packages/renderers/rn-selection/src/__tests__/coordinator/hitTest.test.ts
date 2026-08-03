@@ -6,6 +6,7 @@ import { buildUnitIndex } from '../../resolve';
 import type { LayoutRect, RegisteredBlock } from '../../coordinator/registry';
 import {
   chooseBlock,
+  containingBlock,
   localizePoint,
   pointInRect,
   resolvePointToSelection,
@@ -50,6 +51,14 @@ describe('hitTest primitives', () => {
     expect(verticalGap({ x: 0, y: 10 }, rectA)).toBe(0);
     expect(verticalGap({ x: 0, y: -5 }, rectA)).toBe(5);
     expect(verticalGap({ x: 0, y: 25 }, rectA)).toBe(5);
+  });
+
+  test('containingBlock requires a direct rect hit', () => {
+    expect(containingBlock(blocks(), { x: 50, y: 10 })?.nodeId).toBe('A');
+    expect(containingBlock(blocks(), { x: 50, y: 24 })).toBeNull();
+    expect(
+      containingBlock([{ nodeId: 'A', unitIds: ['A#0'], kind: 'text' }], { x: 10, y: 10 })
+    ).toBeNull();
   });
 });
 
@@ -144,9 +153,7 @@ describe('resolvePointToSelection', () => {
     // One 100pt line holding 'AAAAA': each character occupies 20pt, so x=65
     // sits in the left half of the fourth character and snaps back to 3.
     const measured = blocks();
-    measured[0].metrics = buildTextMetrics([
-      { text: 'AAAAA', x: 0, y: 0, width: 100, height: 20 },
-    ]);
+    measured[0].metrics = buildTextMetrics([{ text: 'AAAAA', x: 0, y: 0, width: 100, height: 20 }]);
     expect(resolvePointToSelection(measured, { x: 65, y: 10 }, index)).toEqual({
       nodeId: 'A',
       unitId: 'A#0',
@@ -158,9 +165,7 @@ describe('resolvePointToSelection', () => {
     // Block B starts at y=30 and pads its text by 4pt: the same local x/y as
     // the test above must resolve identically once both are subtracted.
     const measured = blocks();
-    measured[1].metrics = buildTextMetrics([
-      { text: 'BBBBB', x: 0, y: 0, width: 100, height: 12 },
-    ]);
+    measured[1].metrics = buildTextMetrics([{ text: 'BBBBB', x: 0, y: 0, width: 100, height: 12 }]);
     measured[1].contentOffset = { x: 8, y: 4 };
     expect(resolvePointToSelection(measured, { x: 73, y: 40 }, index)).toEqual({
       nodeId: 'B',
