@@ -17,14 +17,7 @@
  */
 
 import React, { useState, useSyncExternalStore } from 'react';
-import {
-  SafeAreaView,
-  ScrollView,
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-} from 'react-native';
+import { SafeAreaView, ScrollView, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 import {
   SelectionRoot,
@@ -81,7 +74,17 @@ const TOOLBAR_ITEMS: SelectionToolbarItem[] = [
   { id: 'quote', title: 'Quote' },
 ];
 
-export default function SelectionDemo({ onBack }: { onBack: () => void }) {
+interface SelectionDemoProps {
+  onBack: () => void;
+  e2e?: boolean;
+  scrollSentinel?: boolean;
+}
+
+export default function SelectionDemo({
+  onBack,
+  e2e = false,
+  scrollSentinel = false,
+}: SelectionDemoProps) {
   const [status, setStatus] = useState('idle');
 
   const onCopy = (req: SelectionCopyRequest) => {
@@ -106,17 +109,28 @@ export default function SelectionDemo({ onBack }: { onBack: () => void }) {
           <SelectableBlock nodeId="p2" unitIds={['p2#0']} style={s.p}>
             Second paragraph for range selection.
           </SelectableBlock>
-          <SelectionControls onStatus={setStatus} />
+          <SelectionControls e2e={e2e} onStatus={setStatus} />
         </SelectionRoot>
         <View style={s.statusPanel}>
           <Text testID="selection-status">{status}</Text>
         </View>
+        {scrollSentinel && (
+          <View style={s.scrollSentinel}>
+            <Text testID="selection-scroll-sentinel">Scroll sentinel</Text>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function SelectionControls({ onStatus }: { onStatus: (status: string) => void }) {
+function SelectionControls({
+  e2e,
+  onStatus,
+}: {
+  e2e: boolean;
+  onStatus: (status: string) => void;
+}) {
   const store = useSelectionStore();
   const snap = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
@@ -162,6 +176,11 @@ function SelectionControls({ onStatus }: { onStatus: (status: string) => void })
       <Text testID="selection-phase">
         {snap.phase} · {snap.units.length} units
       </Text>
+      {e2e && (
+        <Text testID="selection-phase-ascii" style={s.e2eStatus}>
+          {snap.phase} {snap.units.length} units
+        </Text>
+      )}
     </View>
   );
 }
@@ -179,6 +198,11 @@ const s = StyleSheet.create({
     borderColor: '#ccc',
     borderRadius: 4,
   },
+  scrollSentinel: {
+    height: 1200,
+    justifyContent: 'flex-end',
+  },
+  e2eStatus: { color: '#595959', fontSize: 12 },
   back: { color: '#2f54eb', padding: 8 },
   controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   button: {
