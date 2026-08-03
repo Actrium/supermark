@@ -113,18 +113,14 @@ function deepFreezeAst(node: SupramarkNode): void {
   if (node === null || typeof node !== 'object') {
     return;
   }
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      deepFreezeAst(child);
-    }
-  } else {
-    const proto = Object.getPrototypeOf(node);
-    if (proto === null || proto === Object.prototype) {
-      const child = node as { children?: SupramarkNode[] };
-      if (child.children) {
-        for (const descendant of child.children) {
-          deepFreezeAst(descendant);
-        }
+  // Object.getPrototypeOf is typed `any` in the ES5 lib, so assert the return
+  // to keep the type-aware lint (no-unsafe-assignment) happy.
+  const proto = Object.getPrototypeOf(node) as object | null;
+  if (proto === null || proto === Object.prototype) {
+    const child = node as { children?: SupramarkNode[] };
+    if (child.children) {
+      for (const descendant of child.children) {
+        deepFreezeAst(descendant);
       }
     }
   }
