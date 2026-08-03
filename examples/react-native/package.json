@@ -10,6 +10,7 @@
     "start": "node start.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "e2e:selection:android": "node scripts/selection-e2e-android.mjs",
     "e2e:selection:ios": "node scripts/selection-e2e-ios.mjs",
     "web": "expo start --web"
   },

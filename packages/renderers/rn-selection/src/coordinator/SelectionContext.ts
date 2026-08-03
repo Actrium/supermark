@@ -26,6 +26,12 @@ export interface SelectionContextValue {
   /** Register a block; the returned disposer unregisters it. Call from useEffect. */
   registerBlock: (block: RegisteredBlock) => () => void;
   updateLayout: (nodeId: SelectionNodeId, rect: LayoutRect) => void;
+  /**
+   * Publish a block layout measured against SelectionRoot when the platform
+   * exposes native measurement. Falls back to `updateLayout` in tests or hosts
+   * without a native view handle.
+   */
+  measureLayout?: (nodeId: SelectionNodeId, node: unknown, fallback: LayoutRect) => void;
   /** Update a registered block's unit ids in place (streaming markdown growth). */
   updateUnits: (nodeId: SelectionNodeId, unitIds: readonly SelectionNodeId[]) => void;
   /** Publish the line table a block laid out (`onTextLayout`). */

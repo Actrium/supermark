@@ -98,6 +98,15 @@ describe('long press', () => {
     expect(gesture.phase()).toBe('idle');
   });
 
+  test('a blank long press clears an existing selection when the timer wins', () => {
+    const { store, gesture } = harness({ wordAt: () => null });
+    store.setRange({ anchor: point(0), focus: point(5) });
+    gesture.touchStart({ x: 10, y: 0 }, 0);
+    gesture.tick(DEFAULT_LONG_PRESS_MS);
+    expect(store.calls).toEqual(['clear']);
+    expect(gesture.phase()).toBe('idle');
+  });
+
   test('moving beyond the tolerance abandons the press, so a scroll stays a scroll', () => {
     const { store, gesture } = harness();
     gesture.touchStart({ x: 10, y: 0 }, 0);
@@ -116,11 +125,44 @@ describe('long press', () => {
     expect(store.calls).toEqual(['beginAt:10', 'extendTo:15', 'commit']);
   });
 
+  test('a stationary move after the press lands does not collapse the selected word', () => {
+    const { store, gesture } = harness();
+    gesture.touchStart({ x: 10, y: 0 }, 0);
+    gesture.tick(DEFAULT_LONG_PRESS_MS);
+    store.calls.length = 0;
+
+    gesture.touchMove({ x: 12, y: 2 }, DEFAULT_LONG_PRESS_MS + 20);
+
+    expect(store.calls).toEqual([]);
+    expect(gesture.phase()).toBe('extending');
+  });
+
+  test('a drag after the press lands extends only after leaving the hold slop', () => {
+    const { store, gesture } = harness();
+    gesture.touchStart({ x: 10, y: 0 }, 0);
+    gesture.tick(DEFAULT_LONG_PRESS_MS);
+    store.calls.length = 0;
+
+    gesture.touchMove({ x: 25, y: 0 }, DEFAULT_LONG_PRESS_MS + 20);
+
+    expect(store.calls).toEqual(['extendTo:25']);
+  });
+
   test('a move past the threshold fires the press without waiting for a tick', () => {
     const { store, gesture } = harness();
     gesture.touchStart({ x: 10, y: 0 }, 0);
     gesture.touchMove({ x: 10, y: 0 }, DEFAULT_LONG_PRESS_MS);
     expect(store.calls).toEqual(['beginAt:10', 'extendTo:15', 'commit']);
+  });
+
+  test('a move after a delayed threshold starts selection instead of discarding it', () => {
+    const { store, gesture } = harness();
+    gesture.touchStart({ x: 10, y: 0 }, 0);
+
+    gesture.touchMove({ x: 25, y: 0 }, DEFAULT_LONG_PRESS_MS + 20);
+
+    expect(store.calls).toEqual(['beginAt:10', 'extendTo:15', 'commit', 'extendTo:25']);
+    expect(gesture.phase()).toBe('extending');
   });
 });
 
@@ -195,6 +237,26 @@ describe('handle drag', () => {
     expect(gesture.isActive()).toBe(true);
 
     gesture.touchMove({ x: 30, y: 0 }, 20);
+    expect(store.calls).toEqual(['beginAt:4', 'extendTo:30']);
+  });
+
+  test('a dedicated handle responder can start a drag without root hit-testing', () => {
+    const { store, gesture } = harness({ handleAt: () => null });
+    store.setRange(existing);
+    gesture.handleStart('end', 0);
+    gesture.touchMove({ x: 30, y: 0 }, 20);
+    expect(store.calls).toEqual(['beginAt:4', 'extendTo:30']);
+  });
+
+  test('a duplicate root touchStart during a handle drag does not reset to pending', () => {
+    const { store, gesture } = harness({ handleAt: () => null });
+    store.setRange(existing);
+    gesture.handleStart('end', 0);
+
+    gesture.touchStart({ x: 100, y: 0 }, 5);
+    gesture.touchMove({ x: 30, y: 0 }, 20);
+
+    expect(gesture.phase()).toBe('handle');
     expect(store.calls).toEqual(['beginAt:4', 'extendTo:30']);
   });
 

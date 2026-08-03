@@ -67,6 +67,8 @@ export interface SelectionGesture {
   /** True when a press is being timed; the React layer arms its timer on this. */
   isPending(): boolean;
   touchStart(point: Point, timeMs: number): void;
+  /** Start dragging a known handle edge from a dedicated handle responder. */
+  handleStart(edge: HandleEdge, timeMs: number): void;
   touchMove(point: Point, timeMs: number): void;
   touchEnd(point: Point, timeMs: number): void;
   /** Advance the long-press timer. Safe to call at any time. */
@@ -121,6 +123,7 @@ export function createSelectionGesture(deps: SelectionGestureDeps): SelectionGes
     }
     const word = deps.wordAt(at);
     if (word === null) {
+      if (deps.store.getSnapshot().range !== null) deps.store.clear();
       reset();
       return false;
     }
@@ -132,6 +135,19 @@ export function createSelectionGesture(deps: SelectionGestureDeps): SelectionGes
     deps.store.commit();
     setPhase('extending');
     return true;
+  };
+
+  const beginHandleDrag = (edge: HandleEdge): void => {
+    const range = deps.store.getSnapshot().range;
+    // Grabbing the start handle drags the range's leading edge, so the focus
+    // becomes the anchor and vice versa.
+    fixedPoint = range === null ? null : edge === 'start' ? range.focus : range.anchor;
+    if (fixedPoint === null) {
+      reset();
+      return;
+    }
+    pressPoint = null;
+    setPhase('handle');
   };
 
   const tick = (timeMs: number): void => {
@@ -147,19 +163,15 @@ export function createSelectionGesture(deps: SelectionGestureDeps): SelectionGes
     isActive: () => phase === 'extending' || phase === 'handle',
     isPending: () => phase === 'pending',
 
+    handleStart(edge) {
+      beginHandleDrag(edge);
+    },
+
     touchStart(point, timeMs) {
+      if (phase === 'extending' || phase === 'handle') return;
       const edge = deps.handleAt(point);
       if (edge !== null) {
-        const range = deps.store.getSnapshot().range;
-        // Grabbing the start handle drags the range's leading edge, so the
-        // focus becomes the anchor and vice versa.
-        fixedPoint = range === null ? null : edge === 'start' ? range.focus : range.anchor;
-        if (fixedPoint === null) {
-          reset();
-          return;
-        }
-        pressPoint = point;
-        setPhase('handle');
+        beginHandleDrag(edge);
         return;
       }
       pressPoint = point;
@@ -170,6 +182,12 @@ export function createSelectionGesture(deps: SelectionGestureDeps): SelectionGes
     touchMove(point, timeMs) {
       if (phase === 'pending') {
         if (pressPoint !== null && distanceSquared(point, pressPoint) > toleranceSquared) {
+          if (timeMs - pressTime >= longPressMs && beginWordSelection()) {
+            pressPoint = null;
+            const at = deps.pointAt(point);
+            if (at !== null) deps.store.extendTo(at);
+            return;
+          }
           // The finger is travelling: this is a scroll, not a press. Give up
           // silently — we never claimed the responder, so the scroll continues.
           reset();
@@ -180,6 +198,10 @@ export function createSelectionGesture(deps: SelectionGestureDeps): SelectionGes
         return;
       }
       if (phase === 'extending') {
+        if (pressPoint !== null) {
+          if (distanceSquared(point, pressPoint) <= toleranceSquared) return;
+          pressPoint = null;
+        }
         const at = deps.pointAt(point);
         if (at !== null) deps.store.extendTo(at);
         return;

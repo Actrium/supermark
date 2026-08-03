@@ -1,7 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native';
-import { offsetAtLocalPoint } from '../metrics';
-import type { SelectionRange, SelectionUnit } from '../model';
+import {
+  PanResponder,
+  View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+  type PanResponderGestureState,
+} from 'react-native';
+import { lineAtY, offsetAtLineX } from '../metrics';
+import type { SelectionNodeId, SelectionRange, SelectionUnit } from '../model';
 import {
   buildSegmentSpans,
   segmentSelectionToRange,
@@ -10,17 +16,59 @@ import {
 import { buildCopyRequest, type SelectionCopyRequest } from './actions';
 import { wordBoundsAt } from '../words';
 import { SelectionContext, type SelectionContextValue } from './SelectionContext';
-import { createSelectionGesture, type SelectionGesture } from './gesture';
+import {
+  createSelectionGesture,
+  DEFAULT_LONG_PRESS_MS,
+  DEFAULT_MOVE_TOLERANCE,
+  type SelectionGesture,
+} from './gesture';
 import { computeHandles, hitTestHandle, type HandleEdge } from './handles';
 import { containingBlock, resolvePointToSelection, type Point } from './hitTest';
 import { computeSelectionRects, type OverlayRect } from './overlay';
-import { SelectionRegistry } from './registry';
+import { SelectionRegistry, type LayoutRect } from './registry';
 import { SelectionHandles } from './SelectionHandles';
 import { SelectionOverlay, useSelectionRects } from './SelectionOverlay';
 import { SelectionToolbar } from './SelectionToolbar';
 import { createSelectionStore } from './state';
 import { DEFAULT_TOOLBAR_ITEMS, type Size, type SelectionToolbarItem } from './toolbar';
 import { useSelectionContext, useSelectionSnapshot } from './useDocumentSelection';
+
+type NativeViewHandle = {
+  measure?: (
+    callback: (
+      x: number,
+      y: number,
+      width: number,
+      height: number,
+      pageX: number,
+      pageY: number
+    ) => void
+  ) => void;
+  measureInWindow?: (
+    callback: (x: number, y: number, width: number, height: number) => void
+  ) => void;
+  measureLayout?: (
+    relativeToNativeNode: unknown,
+    onSuccess: (x: number, y: number, width: number, height: number) => void,
+    onFail?: () => void
+  ) => void;
+};
+
+function eventTime(e: GestureResponderEvent): number {
+  const timestamp = (e.nativeEvent as GestureResponderEvent['nativeEvent'] & { timestamp?: number })
+    .timestamp;
+  return Number.isFinite(timestamp) ? Number(timestamp) : Date.now();
+}
+
+function movedBeyondTolerance(
+  gestureState: PanResponderGestureState,
+  moveTolerance: number
+): boolean {
+  const dx = Number(gestureState.dx);
+  const dy = Number(gestureState.dy);
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
+  return dx * dx + dy * dy > moveTolerance * moveTolerance;
+}
 
 /** What a host `renderToolbar` receives; enough to place and drive its own bar. */
 export interface SelectionToolbarRenderProps {
@@ -69,8 +117,9 @@ export function pointToSelectionForRoot(registry: SelectionRegistry, point: Poin
  * React component. The store is the single source of truth throughout — there
  * is no second selection state anywhere in the tree to reconcile with.
  *
- * Touch points are converted to root space through the root's window origin, so
- * they stay correct wherever the root sits on screen. Gesture *wiring* (touch
+ * Touch points are converted to root space through the root's native page
+ * origin, so they stay correct wherever the root sits on screen and match the
+ * coordinate system RN reports on `pageX/pageY`. Gesture *wiring* (touch
  * dispatch, responder negotiation with an enclosing ScrollView) is the one part
  * of this layer that only a device can really exercise; the decision-making it
  * feeds is the pure machine in `gesture.ts`.
@@ -160,11 +209,19 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       if (!metrics || metrics.lines.length === 0) return wholeBlock();
 
       const origin = block.contentOffset ?? { x: 0, y: 0 };
-      const offset = offsetAtLocalPoint(
-        metrics,
-        point.x - block.rect.x - origin.x,
-        point.y - block.rect.y - origin.y
-      );
+      const localX = point.x - block.rect.x - origin.x;
+      const localY = point.y - block.rect.y - origin.y;
+      const line = lineAtY(metrics, localY);
+      if (
+        line === null ||
+        localY < line.y ||
+        localY > line.y + line.h ||
+        localX < line.x ||
+        localX > line.x + line.w
+      ) {
+        return null;
+      }
+      const offset = offsetAtLineX(line, localX);
       const bounds = wordBoundsAt(segmentTextFromSpans(registry.index, spans), offset);
       if (bounds.end <= bounds.start) return wholeBlock();
       return segmentSelectionToRange(spans, bounds.start, bounds.end);
@@ -175,21 +232,27 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   const handleAt = useCallback(
     (point: Point): HandleEdge | null => {
       if (store.getSnapshot().range === null) return null;
-      return hitTestHandle(point, computeHandles(currentRects()));
+      const handles = computeHandles(currentRects());
+      return hitTestHandle(point, handles);
     },
     [currentRects, store]
+  );
+
+  const pointAt = useCallback(
+    (point: Point) => resolvePointToSelection(registry.getBlocks(), point, registry.index),
+    [registry]
   );
 
   const gesture = useMemo<SelectionGesture>(
     () =>
       createSelectionGesture({
         store,
-        pointAt: point => resolvePointToSelection(registry.getBlocks(), point, registry.index),
+        pointAt,
         wordAt,
         handleAt,
         config: { longPressMs, moveTolerance },
       }),
-    [store, registry, wordAt, handleAt, longPressMs, moveTolerance]
+    [store, pointAt, wordAt, handleAt, longPressMs, moveTolerance]
   );
 
   // The long-press threshold has to fire while the finger is still, i.e. with
@@ -205,54 +268,108 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   useEffect(() => clearTimer, [clearTimer]);
 
   const refreshRootOrigin = useCallback(() => {
-    rootRef.current?.measureInWindow((x, y) => {
-      originRef.current = { x, y };
+    const root = rootRef.current as NativeViewHandle | null;
+    if (root?.measure) {
+      root.measure((_x, _y, _width, _height, pageX, pageY) => {
+        if (Number.isFinite(pageX) && Number.isFinite(pageY)) {
+          originRef.current = { x: pageX, y: pageY };
+        }
+      });
+      return;
+    }
+    root?.measureInWindow?.((x, y) => {
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        originRef.current = { x, y };
+      }
     });
   }, []);
 
-  const toRootSpace = useCallback((e: GestureResponderEvent): Point => {
-    const { pageX, pageY } = e.nativeEvent;
+  const pointFromPage = useCallback((page: Point, origin: Point = originRef.current): Point => {
     // RN's locationX/Y are target-relative and may be in a child Text's space.
     // Everything downstream is in SelectionRoot space, so use page coordinates.
-    return { x: pageX - originRef.current.x, y: pageY - originRef.current.y };
+    return { x: page.x - origin.x, y: page.y - origin.y };
   }, []);
 
-  const enabled = gestures !== false;
+  const toRootSpace = useCallback(
+    (e: GestureResponderEvent): Point => {
+      const { pageX, pageY } = e.nativeEvent;
+      return pointFromPage({ x: pageX, y: pageY });
+    },
+    [pointFromPage]
+  );
 
-  const onTouchStart = useCallback(
+  const enabled = gestures !== false;
+  const longPressDelay = longPressMs ?? DEFAULT_LONG_PRESS_MS;
+  const activeMoveTolerance = moveTolerance ?? DEFAULT_MOVE_TOLERANCE;
+
+  const onResponderGrant = useCallback(
     (e: GestureResponderEvent) => {
       if (!enabled) return;
       refreshRootOrigin();
-      gesture.touchStart(toRootSpace(e), Date.now());
+      if (gesture.isActive()) return;
+      const point = toRootSpace(e);
+      gesture.touchStart(point, eventTime(e));
       clearTimer();
       if (gesture.isPending()) {
         timerRef.current = setTimeout(() => {
           timerRef.current = null;
           gesture.tick(Date.now());
-        }, longPressMs ?? undefined);
+        }, longPressDelay);
       }
     },
-    [enabled, refreshRootOrigin, gesture, toRootSpace, clearTimer, longPressMs]
+    [enabled, refreshRootOrigin, gesture, toRootSpace, clearTimer, longPressDelay]
   );
 
-  const onTouchMove = useCallback(
+  const onResponderMove = useCallback(
     (e: GestureResponderEvent) => {
       if (!enabled) return;
       refreshRootOrigin();
-      gesture.touchMove(toRootSpace(e), Date.now());
+      const point = toRootSpace(e);
+      gesture.touchMove(point, eventTime(e));
       if (!gesture.isPending()) clearTimer();
     },
     [enabled, refreshRootOrigin, gesture, toRootSpace, clearTimer]
   );
 
-  const onTouchEnd = useCallback(
+  const onResponderRelease = useCallback(
     (e: GestureResponderEvent) => {
       if (!enabled) return;
       refreshRootOrigin();
       clearTimer();
-      gesture.touchEnd(toRootSpace(e), Date.now());
+      const point = toRootSpace(e);
+      gesture.touchEnd(point, eventTime(e));
     },
     [enabled, refreshRootOrigin, gesture, toRootSpace, clearTimer]
+  );
+
+  const onResponderTerminate = useCallback(() => {
+    clearTimer();
+    gesture.cancel();
+  }, [clearTimer, gesture]);
+
+  const onHandleGrant = useCallback(
+    (edge: HandleEdge) => {
+      if (!enabled) return;
+      clearTimer();
+      gesture.handleStart(edge, Date.now());
+    },
+    [enabled, clearTimer, gesture]
+  );
+
+  const onHandleMove = useCallback(
+    (point: Point) => {
+      if (!enabled) return;
+      gesture.touchMove(point, Date.now());
+    },
+    [enabled, gesture]
+  );
+
+  const onHandleRelease = useCallback(
+    (point: Point) => {
+      if (!enabled) return;
+      gesture.touchEnd(point, Date.now());
+    },
+    [enabled, gesture]
   );
 
   const onLayout = useCallback(
@@ -264,12 +381,76 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
     [refreshRootOrigin]
   );
 
-  const onStartShouldSetResponder = useCallback(
+  const onStartShouldSetResponderCapture = useCallback(
     (e: GestureResponderEvent) => {
       if (!enabled) return false;
-      return gesture.isActive() || handleAt(toRootSpace(e)) !== null;
+      const point = toRootSpace(e);
+      if (handleAt(point) !== null) return false;
+      return gesture.isActive();
     },
     [enabled, gesture, handleAt, toRootSpace]
+  );
+
+  const onStartShouldSetResponder = useCallback(
+    () => enabled,
+    [enabled]
+  );
+
+  const onResponderTerminationRequest = useCallback(
+    (_e: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+      if (!enabled) return true;
+      if (gesture.isActive()) return false;
+      const release = movedBeyondTolerance(gestureState, activeMoveTolerance);
+      return release;
+    },
+    [activeMoveTolerance, enabled, gesture]
+  );
+
+  const rootPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: onStartShouldSetResponder,
+        onStartShouldSetPanResponderCapture: onStartShouldSetResponderCapture,
+        onMoveShouldSetPanResponder: () => enabled && gesture.isActive(),
+        onMoveShouldSetPanResponderCapture: () => enabled && gesture.isActive(),
+        onPanResponderGrant: onResponderGrant,
+        onPanResponderMove: onResponderMove,
+        onPanResponderRelease: onResponderRelease,
+        onPanResponderTerminate: onResponderTerminate,
+        onPanResponderTerminationRequest: onResponderTerminationRequest,
+        onShouldBlockNativeResponder: () => gesture.isPending() || gesture.isActive(),
+      }),
+    [
+      enabled,
+      gesture,
+      onResponderGrant,
+      onResponderMove,
+      onResponderRelease,
+      onResponderTerminate,
+      onResponderTerminationRequest,
+      onStartShouldSetResponder,
+      onStartShouldSetResponderCapture,
+    ]
+  );
+
+  const measureLayout = useCallback(
+    (nodeId: SelectionNodeId, node: unknown, fallback: LayoutRect) => {
+      const target = node as NativeViewHandle | null;
+      const root = rootRef.current as NativeViewHandle | null;
+      const updateFallback = () => registry.updateLayout(nodeId, fallback);
+      if (!target?.measureLayout || root === null) {
+        updateFallback();
+        return;
+      }
+      target.measureLayout(
+        root,
+        (x, y, width, height) => {
+          registry.updateLayout(nodeId, { x, y, w: width, h: height });
+        },
+        updateFallback
+      );
+    },
+    [registry]
   );
 
   // Reference-stable: depends only on the memoized registry + store.
@@ -285,6 +466,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
         return () => registry.unregister(block.nodeId, registered);
       },
       updateLayout: (nodeId, rect) => registry.updateLayout(nodeId, rect),
+      measureLayout,
       updateUnits: (nodeId, unitIds) => registry.updateUnits(nodeId, unitIds),
       setMetrics: (nodeId, metrics) => registry.setMetrics(nodeId, metrics),
       setContentOffset: (nodeId, offset) => registry.setContentOffset(nodeId, offset),
@@ -293,7 +475,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       },
       runToolbarItem,
     }),
-    [registry, store, runToolbarItem]
+    [registry, store, runToolbarItem, measureLayout]
   );
 
   return (
@@ -301,23 +483,25 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       ref={rootRef}
       collapsable={false}
       onLayout={onLayout}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={() => gesture.cancel()}
-      // Claim handle grabs immediately: responder negotiation asks before
-      // `onTouchStart` drives the gesture machine, so `gesture.isActive()` is
-      // still false at the start of a handle drag. Ordinary long-presses remain
-      // scroll-friendly until the machine becomes active.
-      onStartShouldSetResponder={onStartShouldSetResponder}
-      onMoveShouldSetResponder={() => enabled && gesture.isActive()}
-      onResponderTerminationRequest={() => !gesture.isActive()}
-      onResponderTerminate={() => gesture.cancel()}
+      onTouchEnd={onResponderRelease}
+      onTouchCancel={onResponderTerminate}
+      // Claim touches that can become a selection so Android sends us the whole
+      // responder stream. A pending press still lets ScrollView take over on
+      // movement; active selection/handle drags keep ownership.
+      {...rootPanResponder.panHandlers}
     >
       <SelectionContext.Provider value={ctx}>
         {children}
         {overlay !== false && <SelectionOverlay />}
-        {handles !== false && <SelectionHandles />}
+        {handles !== false && (
+          <SelectionHandles
+            onHandleGrant={onHandleGrant}
+            onHandleMove={onHandleMove}
+            onHandleRelease={onHandleRelease}
+            onHandleCancel={() => gesture.cancel()}
+            toRootPoint={pointFromPage}
+          />
+        )}
         {toolbar !== false &&
           (renderToolbar ? (
             <ToolbarSlot viewport={viewport} render={renderToolbar} />

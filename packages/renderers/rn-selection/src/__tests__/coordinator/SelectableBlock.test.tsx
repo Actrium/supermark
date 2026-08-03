@@ -10,7 +10,24 @@ import { create, act, type ReactTestRenderer } from 'react-test-renderer';
 mock.module('react-native', () => ({
   View: 'View',
   Text: 'Text',
-  StyleSheet: { create: (s: unknown) => s },
+  TouchableOpacity: 'TouchableOpacity',
+  PanResponder: {
+    create: (config: Record<string, unknown>) => ({
+      panHandlers: {
+        onStartShouldSetResponder: config.onStartShouldSetPanResponder,
+        onStartShouldSetResponderCapture: config.onStartShouldSetPanResponderCapture,
+        onMoveShouldSetResponder: config.onMoveShouldSetPanResponder,
+        onMoveShouldSetResponderCapture: config.onMoveShouldSetPanResponderCapture,
+        onResponderGrant: config.onPanResponderGrant,
+        onResponderMove: config.onPanResponderMove,
+        onResponderRelease: config.onPanResponderRelease,
+        onResponderTerminate: config.onPanResponderTerminate,
+        onResponderTerminationRequest: config.onPanResponderTerminationRequest,
+        onShouldBlockNativeResponder: config.onShouldBlockNativeResponder,
+      },
+    }),
+  },
+  StyleSheet: { absoluteFill: {}, create: (s: unknown) => s },
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -124,6 +141,31 @@ describe('SelectableBlock rendering', () => {
       [0, 6],
       [6, 11],
     ]);
+  });
+
+  test('onLayout publishes a fallback rect while native root measurement is pending', () => {
+    const ctx = {
+      ...makeContext([textUnit('p1#0', 'hello')]),
+      measureLayout: () => {},
+    };
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <SelectionContext.Provider value={ctx}>
+          <SelectableBlock nodeId="p1" unitIds={['p1#0']}>
+            hello
+          </SelectableBlock>
+        </SelectionContext.Provider>
+      );
+    });
+    renderer = r;
+    const view = r.root.findByType('View' as unknown as React.ElementType);
+
+    act(() => {
+      view.props.onLayout({ nativeEvent: { layout: { x: 8, y: 13, width: 55, height: 21 } } });
+    });
+
+    expect(ctx.registry.getBlock('p1')?.rect).toEqual({ x: 8, y: 13, w: 55, h: 21 });
   });
 });
 

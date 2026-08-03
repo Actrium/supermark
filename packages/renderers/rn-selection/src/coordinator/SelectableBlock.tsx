@@ -9,8 +9,9 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { buildTextMetrics } from '../metrics';
+import { buildTextMetrics, type SegmentTextMetrics } from '../metrics';
 import type { SelectionNodeId } from '../model';
+import type { ContentOffset, LayoutRect } from './registry';
 import { useSelectionContext } from './useDocumentSelection';
 
 declare const __DEV__: boolean | undefined;
@@ -67,9 +68,9 @@ export interface SelectableBlockProps {
  *
  * Two measurements are published upward:
  *
- * - `onLayout` on the wrapper gives the block's box in root space (this assumes
- *   the block is laid out directly in the `SelectionRoot`'s coordinate column,
- *   which the demo does);
+ * - `onLayout` on the wrapper triggers a native measurement against
+ *   `SelectionRoot`, so nested parents such as FlatList cells do not leak their
+ *   local coordinate space into the registry;
  * - `onLayout` on the `<Text>` gives the content offset inside it, so padding
  *   on `containerStyle` does not shift every highlight rectangle.
  */
@@ -81,6 +82,10 @@ export const SelectableBlock: React.FC<SelectableBlockProps> = ({
   containerStyle,
 }) => {
   const ctx = useSelectionContext();
+  const blockRef = useRef<View | null>(null);
+  const layoutRef = useRef<LayoutRect | null>(null);
+  const metricsRef = useRef<SegmentTextMetrics | null>(null);
+  const contentOffsetRef = useRef<ContentOffset | null>(null);
 
   // Latest unitIds, read by the mount effect so its initial registration is not
   // frozen to the first render's value.
@@ -92,6 +97,9 @@ export const SelectableBlock: React.FC<SelectableBlockProps> = ({
       nodeId,
       unitIds: [...unitIdsRef.current],
       kind: 'text',
+      rect: layoutRef.current ?? undefined,
+      metrics: metricsRef.current ?? undefined,
+      contentOffset: contentOffsetRef.current ?? undefined,
     });
     return dispose;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -139,20 +147,29 @@ export const SelectableBlock: React.FC<SelectableBlockProps> = ({
 
   const onBlockLayout = (e: LayoutChangeEvent) => {
     const { x, y, width, height } = e.nativeEvent.layout;
-    ctx.updateLayout(nodeId, { x, y, w: width, h: height });
+    const fallback = { x, y, w: width, h: height };
+    layoutRef.current = fallback;
+    ctx.updateLayout(nodeId, fallback);
+    if (ctx.measureLayout) {
+      ctx.measureLayout(nodeId, blockRef.current, fallback);
+    }
   };
 
   const onTextBoxLayout = (e: LayoutChangeEvent) => {
     const { x, y } = e.nativeEvent.layout;
-    ctx.setContentOffset(nodeId, { x, y });
+    const offset = { x, y };
+    contentOffsetRef.current = offset;
+    ctx.setContentOffset(nodeId, offset);
   };
 
   const onTextLayout = (e: NativeSyntheticEvent<TextLayoutEventData>) => {
-    ctx.setMetrics(nodeId, buildTextMetrics(e.nativeEvent.lines));
+    const metrics = buildTextMetrics(e.nativeEvent.lines);
+    metricsRef.current = metrics;
+    ctx.setMetrics(nodeId, metrics);
   };
 
   return (
-    <View style={containerStyle} onLayout={onBlockLayout}>
+    <View ref={blockRef} collapsable={false} style={containerStyle} onLayout={onBlockLayout}>
       <Text style={style} onLayout={onTextBoxLayout} onTextLayout={onTextLayout}>
         {/* Cast: react-native resolves its own copy of @types/react, whose
             ReactNode differs from ours by `bigint`. Structurally identical for
