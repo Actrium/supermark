@@ -44,11 +44,96 @@ import {
 
 type RenderedNode = React.ComponentProps<typeof Text>['children'];
 
+// Dev mode: __DEV__ in React Native bundles, NODE_ENV elsewhere (web/tests).
+// Deep-freeze of the shared cached AST only runs in dev so production keeps
+// the freeze cost off the render path while the read-only contract holds.
+const globalRecord = globalThis as Record<string, unknown> & {
+  process?: { env?: Record<string, string | undefined> };
+};
+const isDevMode: boolean =
+  (typeof globalRecord.__DEV__ !== 'undefined' && globalRecord.__DEV__ === true) ||
+  (typeof globalRecord.process !== 'undefined' &&
+    typeof globalRecord.process.env !== 'undefined' &&
+    globalRecord.process.env.NODE_ENV !== 'production');
+
+
 interface ParsedDocument {
   /** Immutable after expansion; cached snapshots may be shared by multiple renderer instances. */
   readonly root: SupramarkRootNode;
   readonly highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>;
   readonly sourceState: SupramarkSourceState;
+}
+
+/**
+ * Estimates the byte footprint of a cached parsed document for the
+ * byte-aware cache cap. Walks the AST summing string `value`/`code`/`text`
+ * lengths plus a small fixed overhead per node; ignores the highlighted Map
+ * (its entries are keyed by source slice and bounded by the AST size).
+ * Runs only on a cache miss (one `set()`), so an O(nodes) walk is acceptable.
+ */
+function estimateParsedDocumentBytes(document: ParsedDocument): number {
+  let bytes = 0;
+  const stack: SupramarkNode[] = [...document.root.children];
+  while (stack.length > 0) {
+    const node = stack.pop() as SupramarkNode & {
+      value?: unknown;
+      code?: unknown;
+      text?: unknown;
+      children?: SupramarkNode[];
+    };
+    bytes += 64; // node object overhead (fields, prototype, refs).
+    const text =
+      typeof node.value === 'string'
+        ? node.value
+        : typeof node.code === 'string'
+          ? node.code
+          : typeof node.text === 'string'
+            ? node.text
+            : undefined;
+    if (text !== undefined) {
+      bytes += text.length;
+    }
+    if (node.children) {
+      for (const child of node.children) {
+        stack.push(child);
+      }
+    }
+  }
+  return Math.max(bytes, 1);
+}
+
+/**
+ * Recursively freezes plain objects/arrays in dev mode so a host
+ * `containerRenderers` annotating AST nodes in place cannot silently
+ * cross-contaminate other rows sharing the cached snapshot. Production keeps
+ * the freeze off the render path; the read-only contract still applies by
+ * convention. Skips class instances, Maps, and other non-plain values.
+ */
+function deepFreezeAst(node: SupramarkNode): void {
+  if (node === null || typeof node !== 'object') {
+    return;
+  }
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      deepFreezeAst(child);
+    }
+  } else {
+    const proto = Object.getPrototypeOf(node);
+    if (proto === null || proto === Object.prototype) {
+      const child = node as { children?: SupramarkNode[] };
+      if (child.children) {
+        for (const descendant of child.children) {
+          deepFreezeAst(descendant);
+        }
+      }
+    }
+  }
+  // Object.freeze is idempotent and a no-op on non-objects; safe to call.
+  try {
+    Object.freeze(node);
+  } catch {
+    // Some environments throw on exotic objects; the freeze is best-effort.
+  }
 }
 
 // Highlighter identities keep parsed-document cache entries separated when a host swaps services.
@@ -214,7 +299,11 @@ export const Supramark: React.FC<SupramarkProps> = ({
 }) => {
   // Global options.cache provides the least-specific cache default.
   const documentCachePolicy = useMemo(() => resolveDocumentCachePolicy(config), [config]);
-  const documentCache = getRendererCache<ParsedDocument>('parsed-document', documentCachePolicy);
+  const documentCache = getRendererCache<ParsedDocument>(
+    'parsed-document',
+    documentCachePolicy,
+    estimateParsedDocumentBytes
+  );
   const codeHighlightEnabled = isFeatureGroupEnabled(config, ['@supramark/feature-code-highlight']);
   // Completed documents can share parsing/highlighting only when every input is equivalent.
   // Config is intentionally omitted because parse currently derives no plugins or AST transforms
@@ -313,6 +402,12 @@ export const Supramark: React.FC<SupramarkProps> = ({
               )
             : await buildParsedDocument();
         if (!cancelled) {
+          // Dev-only deep freeze enforces the read-only AST contract on the
+          // shared cached snapshot; see deepFreezeAst. containerRenderers that
+          // annotate in place would otherwise cross-contaminate sibling rows.
+          if (isDevMode) {
+            deepFreezeAst(nextDocument.root);
+          }
           setParsedDocument(nextDocument);
           setParseError(null);
         }
