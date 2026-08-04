@@ -1530,7 +1530,7 @@ export function validateFeature<TNode extends SupramarkNode = SupramarkNode>(
     // Absence is treated as a defect (mirroring the `testing` check below) so that a
     // Partial feature omitting `renderers` cannot slip through the production gate.
     const renderers = feature.renderers as RendererDefinitions<SupramarkNode> | undefined;
-    const hasRenderer = !!renderers && (renderers.rn || renderers.web || renderers.cli);
+    const hasRenderer = Boolean(renderers && (renderers.rn || renderers.web || renderers.cli));
     if (!hasRenderer) {
       errors.push({
         code: 'renderers-required-production',
