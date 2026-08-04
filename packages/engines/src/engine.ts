@@ -123,7 +123,17 @@ class LocalDiagramEngine implements DiagramRenderService {
     }
 
     if (!this.graphvizAdapterPromise) {
-      this.graphvizAdapterPromise = this.options.graphviz.loadAdapter();
+      // Drop the cached promise on rejection so a transient load failure
+      // (chunk 404, wasm init error) is retried on the next render instead
+      // of permanently bricking the engine. Same pattern in every loader
+      // getter below. See #161.
+      const promise = this.options.graphviz.loadAdapter();
+      promise.catch(() => {
+        if (this.graphvizAdapterPromise === promise) {
+          this.graphvizAdapterPromise = null;
+        }
+      });
+      this.graphvizAdapterPromise = promise;
     }
 
     return this.graphvizAdapterPromise;
@@ -133,7 +143,13 @@ class LocalDiagramEngine implements DiagramRenderService {
     if (this.options.echarts?.render) return this.options.echarts.render;
     if (!this.options.echarts?.loadRender) return null;
     if (!this.echartsRenderPromise) {
-      this.echartsRenderPromise = this.options.echarts.loadRender();
+      const promise = this.options.echarts.loadRender();
+      promise.catch(() => {
+        if (this.echartsRenderPromise === promise) {
+          this.echartsRenderPromise = null;
+        }
+      });
+      this.echartsRenderPromise = promise;
     }
     return this.echartsRenderPromise;
   }
@@ -142,7 +158,13 @@ class LocalDiagramEngine implements DiagramRenderService {
     if (this.options.vegaLite?.render) return this.options.vegaLite.render;
     if (!this.options.vegaLite?.loadRender) return null;
     if (!this.vegaLiteRenderPromise) {
-      this.vegaLiteRenderPromise = this.options.vegaLite.loadRender();
+      const promise = this.options.vegaLite.loadRender();
+      promise.catch(() => {
+        if (this.vegaLiteRenderPromise === promise) {
+          this.vegaLiteRenderPromise = null;
+        }
+      });
+      this.vegaLiteRenderPromise = promise;
     }
     return this.vegaLiteRenderPromise;
   }
@@ -151,7 +173,13 @@ class LocalDiagramEngine implements DiagramRenderService {
     if (this.options.plantuml?.render) return this.options.plantuml.render;
     if (!this.options.plantuml?.loadRender) return null;
     if (!this.plantumlRenderPromise) {
-      this.plantumlRenderPromise = this.options.plantuml.loadRender();
+      const promise = this.options.plantuml.loadRender();
+      promise.catch(() => {
+        if (this.plantumlRenderPromise === promise) {
+          this.plantumlRenderPromise = null;
+        }
+      });
+      this.plantumlRenderPromise = promise;
     }
     return this.plantumlRenderPromise;
   }
@@ -160,7 +188,13 @@ class LocalDiagramEngine implements DiagramRenderService {
     if (this.options.d2?.render) return this.options.d2.render;
     if (!this.options.d2?.loadRender) return null;
     if (!this.d2RenderPromise) {
-      this.d2RenderPromise = this.options.d2.loadRender();
+      const promise = this.options.d2.loadRender();
+      promise.catch(() => {
+        if (this.d2RenderPromise === promise) {
+          this.d2RenderPromise = null;
+        }
+      });
+      this.d2RenderPromise = promise;
     }
     return this.d2RenderPromise;
   }
