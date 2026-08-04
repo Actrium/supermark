@@ -80,6 +80,22 @@ describe('Feature configuration system', () => {
       });
     });
 
+    it('re-registering an existing id is idempotent and does not throw (HMR re-import)', () => {
+      const feature = createTestFeature('@test/feature-a', 'test-a');
+      FeatureRegistry.register(feature);
+
+      // Re-registering the same object reference is a no-op.
+      expect(() => FeatureRegistry.register(feature)).not.toThrow();
+
+      // A fresh object with the same id (what Vite HMR produces on hot
+      // update) replaces the previous entry instead of throwing.
+      const refreshed = createTestFeature('@test/feature-a', 'test-a-updated');
+      expect(() => FeatureRegistry.register(refreshed)).not.toThrow();
+
+      expect(FeatureRegistry.get('@test/feature-a')).toBe(refreshed);
+      expect(FeatureRegistry.list()).toHaveLength(1);
+    });
+
     it('supports disabling all Features by default', () => {
       FeatureRegistry.register(createTestFeature('@test/feature-a', 'test-a'));
 

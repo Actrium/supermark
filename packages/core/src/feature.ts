@@ -1238,14 +1238,21 @@ export class FeatureRegistry {
   /**
    * Register a Feature.
    *
+   * Idempotent: a feature whose id is already in the registry replaces the
+   * previous entry instead of throwing. This is required for Vite HMR — when
+   * a feature module is hot-updated it re-evaluates the top-level
+   * `FeatureRegistry.register(...)` call with a fresh feature object, and
+   * throwing during module evaluation breaks the hot-reload loop with an
+   * uncaught error that only a full page reload can clear. Re-registering
+   * the exact same object reference is a no-op.
+   *
    * @param feature - the Feature definition
-   * @throws if the Feature ID already exists
    */
   static register<TNode extends SupramarkNode>(feature: SupramarkFeature<TNode>): void {
     const id = feature.metadata.id;
 
-    if (this.features.has(id)) {
-      throw new Error(`Feature "${id}" is already registered`);
+    if (this.features.get(id) === (feature as unknown)) {
+      return;
     }
 
     // A feature is registered for a specific node subtype (e.g. SupramarkDiagramNode),
