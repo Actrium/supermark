@@ -318,6 +318,32 @@ describe('validateFeature', () => {
       expect(result.errors.some(e => e.code === 'renderers-required-production')).toBe(true);
     });
 
+    it('fails production mode when renderers is omitted entirely', () => {
+      const feature = {
+        metadata: {
+          id: '@supramark/feature-test',
+          name: 'Test Feature',
+          version: '1.0.0',
+        },
+        syntax: {
+          ast: {
+            type: 'test_node',
+            interface: {
+              required: ['type'],
+              fields: {
+                type: { type: 'string', description: 'Node type' },
+              },
+            },
+          },
+        },
+        // renderers key omitted entirely
+      };
+
+      const result = validateFeature(feature as unknown as Parameters<typeof validateFeature>[0], { production: true });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.code === 'renderers-required-production')).toBe(true);
+    });
+
     it('suggests providing tests in production mode', () => {
       const feature = {
         metadata: {

@@ -1526,17 +1526,17 @@ export function validateFeature<TNode extends SupramarkNode = SupramarkNode>(
       });
     }
 
-    // In production mode, at least one renderer should be defined
-    if ('renderers' in feature) {
-      const renderers = feature.renderers as RendererDefinitions<SupramarkNode>;
-      const hasRenderer = renderers && (renderers.rn || renderers.web || renderers.cli);
-      if (!hasRenderer) {
-        errors.push({
-          code: 'renderers-required-production',
-          message: 'A production Feature must define at least one platform renderer (rn, web, or cli)',
-          severity: 'error',
-        });
-      }
+    // In production mode, at least one renderer should be defined.
+    // Absence is treated as a defect (mirroring the `testing` check below) so that a
+    // Partial feature omitting `renderers` cannot slip through the production gate.
+    const renderers = feature.renderers as RendererDefinitions<SupramarkNode> | undefined;
+    const hasRenderer = !!renderers && (renderers.rn || renderers.web || renderers.cli);
+    if (!hasRenderer) {
+      errors.push({
+        code: 'renderers-required-production',
+        message: 'A production Feature must define at least one platform renderer (rn, web, or cli)',
+        severity: 'error',
+      });
     }
 
     // In production mode, tests are recommended
