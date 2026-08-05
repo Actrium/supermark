@@ -1250,9 +1250,26 @@ export class FeatureRegistry {
    */
   static register<TNode extends SupramarkNode>(feature: SupramarkFeature<TNode>): void {
     const id = feature.metadata.id;
+    const existing = this.features.get(id);
 
-    if (this.features.get(id) === (feature as unknown)) {
+    if (existing === (feature as unknown)) {
+      // Re-importing the exact same module (e.g. a no-op HMR update)
+      // yields the same object reference — nothing to do.
       return;
+    }
+
+    if (existing !== undefined) {
+      // A different object under an existing id usually means a duplicated
+      // @supramark/* package in node_modules (two versions side by side), each
+      // evaluating its own top-level `register()`. Warn so the collision is
+      // observable in production without breaking HMR or the no-throw contract.
+      // Intentionally not gated on `import.meta.hot`: core is consumed under
+      // react-native / bun test / ts-jest where `import.meta` is unreliable.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Feature "${id}" is already registered; the previous entry is being replaced. ` +
+          `This is expected under Vite HMR, but in production usually means a duplicated package.`,
+      );
     }
 
     // A feature is registered for a specific node subtype (e.g. SupramarkDiagramNode),

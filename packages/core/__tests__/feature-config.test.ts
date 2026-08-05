@@ -80,22 +80,6 @@ describe('Feature configuration system', () => {
       });
     });
 
-    it('re-registering an existing id is idempotent and does not throw (HMR re-import)', () => {
-      const feature = createTestFeature('@test/feature-a', 'test-a');
-      FeatureRegistry.register(feature);
-
-      // Re-registering the same object reference is a no-op.
-      expect(() => FeatureRegistry.register(feature)).not.toThrow();
-
-      // A fresh object with the same id (what Vite HMR produces on hot
-      // update) replaces the previous entry instead of throwing.
-      const refreshed = createTestFeature('@test/feature-a', 'test-a-updated');
-      expect(() => FeatureRegistry.register(refreshed)).not.toThrow();
-
-      expect(FeatureRegistry.get('@test/feature-a')).toBe(refreshed);
-      expect(FeatureRegistry.list()).toHaveLength(1);
-    });
-
     it('supports disabling all Features by default', () => {
       FeatureRegistry.register(createTestFeature('@test/feature-a', 'test-a'));
 
@@ -103,6 +87,33 @@ describe('Feature configuration system', () => {
 
       expect(config.features).toHaveLength(1);
       expect(config.features?.[0].enabled).toBe(false);
+    });
+  });
+
+  describe('FeatureRegistry.register', () => {
+    it('re-registering an existing id is idempotent and does not throw (HMR re-import)', () => {
+      const feature = createTestFeature('@test/feature-a', 'test-a');
+      FeatureRegistry.register(feature);
+
+      // Re-registering the same object reference is a silent no-op.
+      const spy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(() => FeatureRegistry.register(feature)).not.toThrow();
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+
+      // A fresh object with the same id (what Vite HMR produces on hot
+      // update) replaces the previous entry instead of throwing, and warns
+      // so an accidental collision (e.g. duplicated package in node_modules)
+      // stays observable in production.
+      const refreshed = createTestFeature('@test/feature-a', 'test-a-updated');
+      const spy2 = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(() => FeatureRegistry.register(refreshed)).not.toThrow();
+      expect(spy2).toHaveBeenCalledTimes(1);
+      expect(spy2.mock.calls[0][0]).toContain('@test/feature-a');
+      spy2.mockRestore();
+
+      expect(FeatureRegistry.get('@test/feature-a')).toBe(refreshed);
+      expect(FeatureRegistry.list()).toHaveLength(1);
     });
   });
 
