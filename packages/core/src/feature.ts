@@ -1490,6 +1490,19 @@ export function validateFeature<TNode extends SupramarkNode = SupramarkNode>(
     });
   }
 
+  // renderers-required
+  // A Feature without any platform renderer cannot be rendered. Treat absence
+  // the same as an empty `renderers` object. Emitted as `warning` here so strict
+  // mode fails on it; production mode upgrades it to `error` below.
+  const renderers = feature.renderers as RendererDefinitions<SupramarkNode> | undefined;
+  if (!renderers || !(renderers.rn || renderers.web || renderers.cli)) {
+    errors.push({
+      code: 'renderers-required',
+      message: 'Feature must define at least one platform renderer (rn, web, or cli)',
+      severity: 'warning',
+    });
+  }
+
   // ============================================================================
   // Info Rules (info severity) - best practices
   // ============================================================================
@@ -1526,9 +1539,10 @@ export function validateFeature<TNode extends SupramarkNode = SupramarkNode>(
       });
     }
 
-    // In production mode, at least one renderer should be defined.
-    // Absence is treated as a defect (mirroring the `testing` check below) so that a
-    // Partial feature omitting `renderers` cannot slip through the production gate.
+    // In production mode, at least one renderer must be defined. Absence is a
+    // defect, not a skip — a Partial feature omitting `renderers` must not slip
+    // through the production gate. Structurally mirrors the `testing` check below,
+    // but emits `error` (vs `testing`'s `warning`) because renderers are required.
     const renderers = feature.renderers as RendererDefinitions<SupramarkNode> | undefined;
     const hasRenderer = Boolean(renderers && (renderers.rn || renderers.web || renderers.cli));
     if (!hasRenderer) {

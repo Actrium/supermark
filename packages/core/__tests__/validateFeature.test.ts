@@ -186,6 +186,27 @@ describe('validateFeature', () => {
       const result = validateFeature(feature as unknown as Parameters<typeof validateFeature>[0]);
       expect(result.errors.some(e => e.code === 'ast-interface-fields-defined')).toBe(true);
     });
+
+    it('warns when renderers is missing or has no platform renderer', () => {
+      const feature = {
+        metadata: {
+          id: '@supramark/feature-test',
+          name: 'Test Feature',
+          version: '1.0.0',
+        },
+        syntax: {
+          ast: {
+            type: 'test_node',
+          },
+        },
+        // renderers key omitted entirely
+      };
+
+      const result = validateFeature(feature as unknown as Parameters<typeof validateFeature>[0]);
+      expect(result.errors.some(e => e.code === 'renderers-required')).toBe(true);
+      // basic mode treats it as a warning, not a failure
+      expect(result.valid).toBe(true);
+    });
   });
 
   describe('info-level checks', () => {
@@ -264,6 +285,7 @@ describe('validateFeature', () => {
             type: 'test_node',
           },
         },
+        renderers: { rn: { Component: () => null } },
       };
 
       const result = validateFeature(feature as unknown as Parameters<typeof validateFeature>[0], { strict: true });
