@@ -30,7 +30,7 @@ class LocalDiagramEngine implements DiagramRenderService {
     const normalizedEngine = String(params.engine || '').toLowerCase();
     const timeoutMs = readRenderTimeout(params.options);
 
-    const run = () => this.renderUnsafe(params, id, normalizedEngine);
+    const run = () => this.renderInner(params, id, normalizedEngine);
 
     try {
       if (timeoutMs > 0) {
@@ -38,24 +38,22 @@ class LocalDiagramEngine implements DiagramRenderService {
       }
       return await run();
     } catch (error) {
-      const message =
-        error instanceof RenderTimeoutError
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : String(error);
+      const isTimeout = error instanceof RenderTimeoutError;
+      const message = error instanceof Error ? error.message : String(error);
       return this.error(
         id,
         normalizedEngine,
         message,
-        'render_error',
-        `${params.engine} rendering failed`,
+        isTimeout ? 'render_timeout' : 'render_error',
+        isTimeout
+          ? `${params.engine} render timed out`
+          : `${params.engine} rendering failed`,
         message
       );
     }
   }
 
-  private async renderUnsafe(
+  private async renderInner(
     params: {
       engine: DiagramEngineType;
       code: string;
