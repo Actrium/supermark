@@ -357,9 +357,10 @@ export function stableSerialize(value: unknown, seen = new Set<object | symbol>(
 /**
  * Drops every renderer cache (parsed-document + diagram namespaces). Call
  * from a host memory-warning handler (e.g. RN `AppState` 'warning') to
- * release cached SVGs and ASTs. In-flight renders are untouched — only
- * completed, retained entries are cleared. Safe to call when caching is
- * disabled (no-op).
+ * release cached SVGs and ASTs. In-flight renders still resolve to their
+ * callers but their results are discarded (the `.then` runs on the
+ * orphaned cache, not retained into a new one), so the next mount
+ * re-fetches. Safe to call when caching is disabled (no-op).
  */
 export function clearSupramarkRenderCache(): void {
   rendererCaches.clear();

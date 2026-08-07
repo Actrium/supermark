@@ -103,30 +103,42 @@ function estimateParsedDocumentBytes(document: ParsedDocument): number {
 }
 
 /**
- * Recursively freezes plain objects/arrays in dev mode so a host
- * `containerRenderers` annotating AST nodes in place cannot silently
- * cross-contaminate other rows sharing the cached snapshot. Production keeps
- * the freeze off the render path; the read-only contract still applies by
- * convention. Skips class instances, Maps, and other non-plain values.
+ * Recursively freezes plain objects/arrays reachable from a cached AST in dev
+ * mode so a host `containerRenderers` annotating AST nodes in place cannot
+ * silently cross-contaminate other rows sharing the cached snapshot. Production
+ * keeps the freeze off the render path; the read-only contract still applies by
+ * convention. Class instances, Maps, and other non-plain values are skipped
+ * (freezing them is unsafe or a no-op on their entries). Assumes AST nodes are
+ * plain object literals (Rust canonical parser output) — class-wrapped nodes
+ * would bypass the freeze silently.
  */
-function deepFreezeAst(node: SupramarkNode): void {
-  if (node === null || typeof node !== 'object') {
+function deepFreezeAst(value: unknown): void {
+  if (value === null || typeof value !== 'object') {
     return;
   }
-  // Object.getPrototypeOf is typed `any` in the ES5 lib, so assert the return
-  // to keep the type-aware lint (no-unsafe-assignment) happy.
-  const proto = Object.getPrototypeOf(node) as object | null;
-  if (proto === null || proto === Object.prototype) {
-    const child = node as { children?: SupramarkNode[] };
-    if (child.children) {
-      for (const descendant of child.children) {
-        deepFreezeAst(descendant);
-      }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      deepFreezeAst(item);
+    }
+  } else {
+    // Object.getPrototypeOf is typed `any` in the ES5 lib, so assert the return
+    // to keep the type-aware lint (no-unsafe-assignment) happy. Only recurse
+    // into plain objects; class instances, Maps, etc. are left untouched.
+    const proto = Object.getPrototypeOf(value) as object | null;
+    if (proto !== null && proto !== Object.prototype) {
+      return;
+    }
+    const record = value as Record<PropertyKey, unknown>;
+    for (const key of Object.keys(record)) {
+      deepFreezeAst(record[key]);
+    }
+    for (const sym of Object.getOwnPropertySymbols(record)) {
+      deepFreezeAst(record[sym]);
     }
   }
   // Object.freeze is idempotent and a no-op on non-objects; safe to call.
   try {
-    Object.freeze(node);
+    Object.freeze(value as object);
   } catch {
     // Some environments throw on exotic objects; the freeze is best-effort.
   }
