@@ -8,6 +8,7 @@ import type { SelectionStore } from '../../coordinator/state';
 mock.module('react-native', () => ({
   View: 'View',
   Text: 'Text',
+  ScrollView: 'ScrollView',
   TouchableOpacity: 'TouchableOpacity',
   PanResponder: {
     create: (config: Record<string, unknown>) => ({
@@ -32,6 +33,7 @@ mock.module('react-native', () => ({
   true;
 
 const { SelectionRoot } = await import('../../coordinator/SelectionRoot');
+const { SelectionViewport } = await import('../../coordinator/SelectionViewport');
 const { DEFAULT_LONG_PRESS_MS } = await import('../../coordinator/gesture');
 const { useSelectionContext } = await import('../../coordinator/useDocumentSelection');
 
@@ -123,18 +125,22 @@ function renderRootWithBlock(
 }
 
 describe('SelectionRoot responder negotiation', () => {
-  test('claims a handle touch at start before the gesture becomes active', () => {
+  test('leaves handle ownership to the dedicated knob responder', () => {
     const { root } = renderRootWithBlock();
 
-    expect(root.props.onStartShouldSetResponder(eventAt(10, 94))).toBe(true);
+    expect(root.props.onStartShouldSetResponder(eventAt(10, 94))).toBe(false);
     expect(root.props.onStartShouldSetResponderCapture(eventAt(10, 94))).toBe(false);
   });
 
-  test('claims a selectable block touch so Android delivers long-press responder events', () => {
+  test('observes a block press without claiming it from a nested scroller', () => {
     const { root } = renderRootWithBlock({ selected: false });
 
-    expect(root.props.onStartShouldSetResponder(eventAt(40, 110))).toBe(true);
+    act(() => {
+      root.props.onTouchStart(eventAt(40, 110, undefined, 1000));
+    });
+    expect(root.props.onStartShouldSetResponder(eventAt(40, 110))).toBe(false);
     expect(root.props.onStartShouldSetResponderCapture(eventAt(40, 110))).toBe(false);
+    expect(root.props.onShouldBlockNativeResponder()).toBe(false);
   });
 
   test('does not claim touches outside selectable blocks so nested scroll views can scroll', () => {
@@ -188,7 +194,13 @@ describe('SelectionRoot responder negotiation', () => {
 
     act(() => {
       renderer = create(
-        <SelectionRoot units={UNITS} overlay={false} handles={false} toolbar={false} longPressMs={1}>
+        <SelectionRoot
+          units={UNITS}
+          overlay={false}
+          handles={false}
+          toolbar={false}
+          longPressMs={1}
+        >
           <RegisterWideBlock />
         </SelectionRoot>
       );
@@ -328,22 +340,86 @@ describe('SelectionRoot responder negotiation', () => {
     expect(delays).toEqual([DEFAULT_LONG_PRESS_MS]);
   });
 
-  test('does not release a stationary pending long press to the enclosing scroll view', () => {
+  test('a pending press never blocks an enclosing scroll view', () => {
     const { root } = renderRootWithBlock({ selected: false });
 
     act(() => {
       root.props.onResponderGrant(eventAt(40, 110));
     });
 
-    expect(root.props.onResponderTerminationRequest(eventAt(40, 110), { dx: 1, dy: 1 })).toBe(
-      false
-    );
+    expect(root.props.onResponderTerminationRequest(eventAt(40, 110), { dx: 1, dy: 1 })).toBe(true);
     expect(root.props.onResponderTerminationRequest(eventAt(40, 130), { dx: 0, dy: 20 })).toBe(
       true
     );
   });
 
-  test('blocks native responders while a press is pending or a selection is active', async () => {
+  test('a nested Android touch cancel still completes a stationary long press', async () => {
+    const { root, store } = renderRootWithBlock({ selected: false, longPressMs: 1 });
+
+    act(() => {
+      root.props.onTouchStart(eventAt(40, 110));
+      root.props.onTouchCancel();
+    });
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    expect(store.getSnapshot().phase).toBe('selected');
+    expect(root.props.onShouldBlockNativeResponder()).toBe(false);
+  });
+
+  test('a viewport scroll cancels a pending long press after native touch cancellation', async () => {
+    let store: SelectionStore | null = null;
+
+    const RegisterBlock: React.FC = () => {
+      const ctx = useSelectionContext();
+      useEffect(() => {
+        store = ctx.store;
+        return ctx.registerBlock({
+          nodeId: 'p1',
+          unitIds: ['p1#0'],
+          kind: 'text',
+          rect: { x: 10, y: 100, w: 60, h: 20 },
+        });
+      }, [ctx]);
+      return null;
+    };
+
+    act(() => {
+      renderer = create(
+        <SelectionRoot
+          units={UNITS}
+          overlay={false}
+          handles={false}
+          toolbar={false}
+          longPressMs={1}
+        >
+          <SelectionViewport style={{ height: 80 }}>
+            {React.createElement('ScrollView', null, <RegisterBlock />)}
+          </SelectionViewport>
+        </SelectionRoot>
+      );
+    });
+    if (store === null) throw new Error('test did not capture the selection store');
+    const root = renderer.root.findAllByType('View' as unknown as React.ElementType)[0];
+    const scrollView = renderer.root.findByType('ScrollView' as unknown as React.ElementType);
+
+    act(() => {
+      root.props.onTouchStart(eventAt(40, 110));
+      root.props.onTouchCancel();
+      scrollView.props.onScroll({ nativeEvent: { contentOffset: { x: 0, y: 20 } } });
+    });
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    expect(store.getSnapshot().phase).toBe('idle');
+    expect(store.getSnapshot().range).toBeNull();
+  });
+
+  test('blocks native responders only after a long press becomes selection', async () => {
     const { root } = renderRootWithBlock({ selected: false, longPressMs: 1 });
 
     expect(root.props.onShouldBlockNativeResponder()).toBe(false);
@@ -351,7 +427,7 @@ describe('SelectionRoot responder negotiation', () => {
     act(() => {
       root.props.onResponderGrant(eventAt(40, 110));
     });
-    expect(root.props.onShouldBlockNativeResponder()).toBe(true);
+    expect(root.props.onShouldBlockNativeResponder()).toBe(false);
 
     await act(async () => {
       await new Promise(resolve => setTimeout(resolve, 5));
@@ -701,7 +777,11 @@ describe('SelectionRoot responder negotiation', () => {
     const handleKnobs = renderer.root
       .findAllByType('View' as unknown as React.ElementType)
       .filter(node => {
-        const style = node.props.style as { backgroundColor?: string; width?: number; height?: number };
+        const style = node.props.style as {
+          backgroundColor?: string;
+          width?: number;
+          height?: number;
+        };
         return style?.backgroundColor === '#3399ff' && style.width === 12 && style.height === 12;
       });
     expect(handleKnobs).toHaveLength(2);
@@ -718,5 +798,107 @@ describe('SelectionRoot responder negotiation', () => {
       anchor: { nodeId: 'p1', unitId: 'p1#0', offset: 0 },
       focus: { nodeId: 'p1', unitId: 'p1#0', offset: 2 },
     });
+  });
+
+  test('a selection viewport pauses its scroller for the lifetime of a handle drag', () => {
+    let store: SelectionStore | null = null;
+    const activity: boolean[] = [];
+
+    const RegisterBlock: React.FC = () => {
+      const ctx = useSelectionContext();
+      useEffect(() => {
+        store = ctx.store;
+        return ctx.registerBlock({
+          nodeId: 'p1',
+          unitIds: ['p1#0'],
+          kind: 'text',
+          rect: { x: 10, y: 100, w: 60, h: 20 },
+        });
+      }, [ctx]);
+      return null;
+    };
+
+    act(() => {
+      renderer = create(
+        <SelectionRoot
+          units={UNITS}
+          overlay={false}
+          toolbar={false}
+          onGestureActiveChange={active => activity.push(active)}
+        >
+          <SelectionViewport style={{ height: 80 }}>
+            {React.createElement('ScrollView', null, <RegisterBlock />)}
+          </SelectionViewport>
+        </SelectionRoot>
+      );
+    });
+    if (store === null) throw new Error('test did not capture the selection store');
+    act(() => {
+      store.beginAt({ nodeId: 'p1', unitId: 'p1#0', offset: 0 });
+      store.extendTo({ nodeId: 'p1', unitId: 'p1#0', offset: 5 });
+      store.commit();
+    });
+
+    const scrollView = () =>
+      renderer?.root.findByType('ScrollView' as unknown as React.ElementType);
+    expect(scrollView()?.props.scrollEnabled).toBe(true);
+
+    const knob = renderer.root.findAllByType('View' as unknown as React.ElementType).find(node => {
+      const style = node.props.style as { backgroundColor?: string; width?: number };
+      return style?.backgroundColor === '#3399ff' && style.width === 12;
+    });
+    if (knob === undefined) throw new Error('test did not find a handle knob');
+
+    act(() => {
+      knob.props.onResponderGrant(eventAt(10, 94));
+    });
+    expect(scrollView()?.props.scrollEnabled).toBe(false);
+    expect(activity).toEqual([true]);
+
+    act(() => {
+      knob.props.onResponderRelease(eventAt(10, 94), { dx: 0, dy: 0 });
+    });
+    expect(scrollView()?.props.scrollEnabled).toBe(true);
+    expect(activity).toEqual([true, false]);
+  });
+
+  test('a selection viewport locks only the enclosing scroller during its own touch', async () => {
+    const activity: boolean[] = [];
+
+    act(() => {
+      renderer = create(
+        <SelectionRoot
+          units={UNITS}
+          overlay={false}
+          handles={false}
+          toolbar={false}
+          onGestureActiveChange={active => activity.push(active)}
+        >
+          <SelectionViewport style={{ height: 80 }}>
+            {React.createElement('ScrollView')}
+          </SelectionViewport>
+        </SelectionRoot>
+      );
+    });
+
+    const viewport = renderer.root
+      .findAllByType('View' as unknown as React.ElementType)
+      .find(
+        node => typeof node.props.onTouchStart === 'function' && node.props.style !== undefined
+      );
+    const scrollView = renderer.root.findByType('ScrollView' as unknown as React.ElementType);
+    if (viewport === undefined) throw new Error('test did not find the selection viewport');
+
+    act(() => {
+      viewport.props.onTouchStart(eventAt(20, 120));
+    });
+    expect(activity).toEqual([true]);
+    expect(scrollView.props.scrollEnabled).toBe(true);
+
+    await act(async () => {
+      viewport.props.onTouchEnd(eventAt(20, 120));
+      await new Promise(resolve => setTimeout(resolve, 1));
+    });
+    expect(activity).toEqual([true, false]);
   });
 });

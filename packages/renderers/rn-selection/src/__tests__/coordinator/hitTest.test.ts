@@ -60,6 +60,18 @@ describe('hitTest primitives', () => {
       containingBlock([{ nodeId: 'A', unitIds: ['A#0'], kind: 'text' }], { x: 10, y: 10 })
     ).toBeNull();
   });
+
+  test('a nested viewport clips both visible hits and hidden blocks', () => {
+    const partial = blocks()[0];
+    partial.clipRect = { x: 0, y: 10, w: 100, h: 20 };
+    expect(containingBlock([partial], { x: 50, y: 15 })?.nodeId).toBe('A');
+    expect(containingBlock([partial], { x: 50, y: 5 })).toBeNull();
+
+    const hidden = blocks()[1];
+    hidden.clipRect = { x: 0, y: 100, w: 100, h: 20 };
+    expect(containingBlock([hidden], { x: 50, y: 40 })).toBeNull();
+    expect(chooseBlock([hidden], { x: 50, y: 40 })).toBeNull();
+  });
 });
 
 describe('resolvePointToSelection', () => {

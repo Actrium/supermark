@@ -60,32 +60,34 @@ export const SelectionHandles: React.FC<SelectionHandlesProps> = ({
   const touchSlop = HANDLE_TOUCH_RADIUS - HANDLE_KNOB_RADIUS;
   return (
     <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { zIndex }]}>
-      {[handles.start, handles.end].map(handle => (
-        <React.Fragment key={handle.edge}>
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: handle.x - barWidth / 2,
-              top: handle.y,
-              width: barWidth,
-              height: handle.h,
-              backgroundColor: color,
-            }}
-          />
-          <HandleKnob
-            color={color}
-            diameter={diameter}
-            handle={handle}
-            hitSlop={touchSlop}
-            onHandleCancel={onHandleCancel}
-            onHandleGrant={onHandleGrant}
-            onHandleMove={onHandleMove}
-            onHandleRelease={onHandleRelease}
-            toRootPoint={toRootPoint}
-          />
-        </React.Fragment>
-      ))}
+      {[handles.start, handles.end]
+        .filter(handle => handle.visible)
+        .map(handle => (
+          <React.Fragment key={handle.edge}>
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                left: handle.x - barWidth / 2,
+                top: handle.y,
+                width: barWidth,
+                height: handle.h,
+                backgroundColor: color,
+              }}
+            />
+            <HandleKnob
+              color={color}
+              diameter={diameter}
+              handle={handle}
+              hitSlop={touchSlop}
+              onHandleCancel={onHandleCancel}
+              onHandleGrant={onHandleGrant}
+              onHandleMove={onHandleMove}
+              onHandleRelease={onHandleRelease}
+              toRootPoint={toRootPoint}
+            />
+          </React.Fragment>
+        ))}
     </View>
   );
 };
@@ -134,14 +136,7 @@ const HandleKnob: React.FC<{
         onPanResponderTerminationRequest: () => false,
         onShouldBlockNativeResponder: () => true,
       }),
-    [
-      handle,
-      onHandleCancel,
-      onHandleGrant,
-      onHandleMove,
-      onHandleRelease,
-      toRootPoint,
-    ]
+    [handle, onHandleCancel, onHandleGrant, onHandleMove, onHandleRelease, toRootPoint]
   );
 
   return (

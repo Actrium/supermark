@@ -3,9 +3,21 @@ import { rectsForRange } from '../metrics';
 import type { SelectionRange, SelectionUnit } from '../model';
 import { buildSegmentSpans, rangeToSegmentSelection } from '../native/segmentAdapter';
 import type { SelectionUnitIndex } from '../resolve';
-import type { LayoutRect, RegisteredBlock } from './registry';
+import { HANDLE_KNOB_RADIUS, HANDLE_TOUCH_RADIUS } from './handles';
+import { intersectLayoutRects, type LayoutRect, type RegisteredBlock } from './registry';
 
-export type OverlayRect = LayoutRect; // {x,y,w,h} in SelectionRoot coordinate space
+export interface OverlayRect extends LayoutRect {
+  /** True only when the real range start and its touch target fit in the clip. */
+  startHandleVisible?: boolean;
+  /** True only when the real range end and its touch target fit in the clip. */
+  endHandleVisible?: boolean;
+}
+
+interface RectCandidate {
+  raw: LayoutRect;
+  visible: LayoutRect | null;
+  block: RegisteredBlock;
+}
 
 /**
  * Selection highlight geometry.
@@ -44,6 +56,26 @@ function translate(rect: LocalRect, block: RegisteredBlock): OverlayRect {
   };
 }
 
+/** Clip a root-space highlight to its nested scroll viewport, when present. */
+function visibleRect(rect: OverlayRect, block: RegisteredBlock): OverlayRect | null {
+  if (block.clipRect === undefined) return rect;
+  return intersectLayoutRects(rect, block.clipRect);
+}
+
+function handleFitsClip(rect: LayoutRect, block: RegisteredBlock, edge: 'start' | 'end'): boolean {
+  const clip = block.clipRect;
+  if (clip === undefined) return true;
+  const x = edge === 'start' ? rect.x : rect.x + rect.w;
+  const knobY =
+    edge === 'start' ? rect.y - HANDLE_KNOB_RADIUS : rect.y + rect.h + HANDLE_KNOB_RADIUS;
+  return (
+    x - HANDLE_TOUCH_RADIUS >= clip.x &&
+    x + HANDLE_TOUCH_RADIUS <= clip.x + clip.w &&
+    knobY - HANDLE_TOUCH_RADIUS >= clip.y &&
+    knobY + HANDLE_TOUCH_RADIUS <= clip.y + clip.h
+  );
+}
+
 /**
  * Highlight rectangles for the current selection, in document order.
  *
@@ -65,7 +97,11 @@ function translate(rect: LocalRect, block: RegisteredBlock): OverlayRect {
 export function computeSelectionRects(input: SelectionRectsInput): OverlayRect[] {
   const { blocks, range, units, index } = input;
   const covered = new Set(units.map(u => u.unitId));
-  const rects: OverlayRect[] = [];
+  const candidates: RectCandidate[] = [];
+
+  const addCandidate = (raw: LayoutRect, block: RegisteredBlock) => {
+    candidates.push({ raw, visible: visibleRect(raw, block), block });
+  };
 
   for (const block of blocks) {
     if (!block.rect) continue;
@@ -78,13 +114,36 @@ export function computeSelectionRects(input: SelectionRectsInput): OverlayRect[]
       if (segment !== null) {
         const lineRects = rectsForRange(metrics, segment.startUtf16, segment.endUtf16);
         if (lineRects.length > 0) {
-          for (const rect of lineRects) rects.push(translate(rect, block));
+          for (const rect of lineRects) {
+            addCandidate(translate(rect, block), block);
+          }
           continue;
         }
       }
     }
     // Copy so a consumer can never mutate a block's live registry rect.
-    rects.push({ ...block.rect });
+    addCandidate({ ...block.rect }, block);
+  }
+
+  const visibleCandidates = candidates.filter(
+    (candidate): candidate is RectCandidate & { visible: LayoutRect } => candidate.visible !== null
+  );
+  const rects: OverlayRect[] = visibleCandidates.map(candidate => ({ ...candidate.visible }));
+  if (rects.length === 0) return rects;
+
+  const firstVisible = visibleCandidates[0];
+  const firstCandidate = candidates[0];
+  if (
+    firstVisible !== firstCandidate ||
+    !handleFitsClip(firstVisible.raw, firstVisible.block, 'start')
+  ) {
+    rects[0].startHandleVisible = false;
+  }
+
+  const lastVisible = visibleCandidates[visibleCandidates.length - 1];
+  const lastCandidate = candidates[candidates.length - 1];
+  if (lastVisible !== lastCandidate || !handleFitsClip(lastVisible.raw, lastVisible.block, 'end')) {
+    rects[rects.length - 1].endHandleVisible = false;
   }
   return rects;
 }

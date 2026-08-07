@@ -18,4 +18,5 @@ env:
     duration: 900
 - waitForAnimationToEnd
 - assertVisible: selected 4 units
+- assertVisible: page offset 0
 - takeScreenshot: selection-gesture

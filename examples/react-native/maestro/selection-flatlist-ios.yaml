@@ -17,5 +17,17 @@ env:
 - longPressOn: Flat row 08 selection target.
 - waitForAnimationToEnd
 - assertVisible: selected 1 units
+- assertVisible: visible selection rects 1
 - assertVisible: Copy
 - takeScreenshot: selection-flatlist
+- swipe:
+    start: 86%,45%
+    end: 86%,23%
+    duration: 700
+- swipe:
+    start: 86%,45%
+    end: 86%,23%
+    duration: 700
+- waitForAnimationToEnd
+- assertVisible: selected 1 units
+- assertVisible: visible selection rects 0

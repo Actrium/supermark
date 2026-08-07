@@ -33,9 +33,43 @@ export interface RegisteredBlock {
   rect?: LayoutRect;
   metrics?: SegmentTextMetrics;
   contentOffset?: ContentOffset;
+  /** Nearest nested scroll viewport that owns this block, when any. */
+  viewportId?: string;
+  /** Visible clip in SelectionRoot coordinates, supplied by the viewport. */
+  clipRect?: LayoutRect;
+  /** Viewport offset at which `rect` was last measured or translated. */
+  viewportOffset?: ContentOffset;
 }
 
-export type RegistryChange = 'register' | 'unregister' | 'layout' | 'units' | 'metrics';
+interface RegisteredViewport {
+  rect?: LayoutRect;
+  offset: ContentOffset;
+}
+
+export type RegistryChange =
+  | 'register'
+  | 'unregister'
+  | 'layout'
+  | 'units'
+  | 'metrics'
+  | 'viewport';
+
+/** Intersection in root coordinates, or null when the rectangles do not overlap. */
+export function intersectLayoutRects(a: LayoutRect, b: LayoutRect): LayoutRect | null {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.w, b.x + b.w);
+  const bottom = Math.min(a.y + a.h, b.y + b.h);
+  if (right <= x || bottom <= y) return null;
+  return { x, y, w: right - x, h: bottom - y };
+}
+
+/** The part of a block that can currently receive touches or be painted. */
+export function visibleBlockRect(block: RegisteredBlock): LayoutRect | null {
+  if (block.rect === undefined) return null;
+  if (block.clipRect === undefined) return block.rect;
+  return intersectLayoutRects(block.rect, block.clipRect);
+}
 
 /** Blocks whose units are absent from the index sort after every indexed one. */
 const ORDER_LAST = Number.MAX_SAFE_INTEGER;
@@ -62,6 +96,7 @@ export function orderKey(block: RegisteredBlock, index: SelectionUnitIndex): num
 export class SelectionRegistry {
   private _index: SelectionUnitIndex;
   private blocks = new Map<SelectionNodeId, RegisteredBlock>();
+  private viewports = new Map<string, RegisteredViewport>();
   private listeners = new Set<(change: RegistryChange, nodeId: SelectionNodeId) => void>();
   private orderCache: RegisteredBlock[] | null = null;
   private unitToNode: Map<SelectionNodeId, SelectionNodeId> | null = null;
@@ -132,9 +167,22 @@ export class SelectionRegistry {
     const existing = this.blocks.get(block.nodeId);
     const next = { ...block };
     if (existing !== undefined) {
-      if (next.rect === undefined) next.rect = existing.rect;
+      if (next.rect === undefined && next.viewportId === existing.viewportId) {
+        next.rect = existing.rect;
+        next.viewportOffset = existing.viewportOffset;
+      }
       if (next.metrics === undefined) next.metrics = existing.metrics;
       if (next.contentOffset === undefined) next.contentOffset = existing.contentOffset;
+    }
+    if (next.viewportId !== undefined) {
+      const viewport = this.viewports.get(next.viewportId);
+      next.clipRect = viewport?.rect;
+      if (next.viewportOffset === undefined && viewport !== undefined) {
+        next.viewportOffset = { ...viewport.offset };
+      }
+    } else {
+      next.clipRect = undefined;
+      next.viewportOffset = undefined;
     }
     this.blocks.set(block.nodeId, next);
     this.orderCache = null;
@@ -182,7 +230,71 @@ export class SelectionRegistry {
     const block = this.blocks.get(nodeId);
     if (!block) return;
     block.rect = rect;
+    if (block.viewportId !== undefined) {
+      const viewport = this.viewports.get(block.viewportId);
+      block.viewportOffset = viewport === undefined ? undefined : { ...viewport.offset };
+      block.clipRect = viewport?.rect;
+    }
     this.notify('layout', nodeId);
+  }
+
+  /** Register a nested scroll viewport and attach any already-mounted blocks. */
+  registerViewport(viewportId: string, initialOffset: ContentOffset = { x: 0, y: 0 }): () => void {
+    const viewport: RegisteredViewport = { offset: { ...initialOffset } };
+    this.viewports.set(viewportId, viewport);
+    for (const block of this.blocks.values()) {
+      if (block.viewportId !== viewportId) continue;
+      block.clipRect = viewport.rect;
+      block.viewportOffset = { ...viewport.offset };
+    }
+    this.notify('viewport', viewportId);
+    return () => {
+      if (this.viewports.get(viewportId) !== viewport) return;
+      this.viewports.delete(viewportId);
+      for (const block of this.blocks.values()) {
+        if (block.viewportId !== viewportId) continue;
+        block.clipRect = undefined;
+        block.viewportOffset = undefined;
+      }
+      this.notify('viewport', viewportId);
+    };
+  }
+
+  /** Update the viewport's visible bounds in SelectionRoot coordinates. */
+  updateViewportLayout(viewportId: string, rect: LayoutRect): void {
+    const viewport = this.viewports.get(viewportId);
+    if (viewport === undefined) return;
+    viewport.rect = rect;
+    for (const block of this.blocks.values()) {
+      if (block.viewportId === viewportId) block.clipRect = rect;
+    }
+    this.notify('viewport', viewportId);
+  }
+
+  /**
+   * Move all mounted blocks synchronously with their scroll viewport.
+   *
+   * Native measurement is asynchronous and one callback per FlatList cell can
+   * arrive several frames late. A scroll offset is already the exact movement,
+   * so translate each cached root-space rect by its delta and publish once.
+   */
+  updateViewportScroll(viewportId: string, offset: ContentOffset): void {
+    const viewport = this.viewports.get(viewportId);
+    if (viewport === undefined) return;
+    if (viewport.offset.x === offset.x && viewport.offset.y === offset.y) return;
+    viewport.offset = { ...offset };
+    for (const block of this.blocks.values()) {
+      if (block.viewportId !== viewportId || block.rect === undefined) continue;
+      const previous = block.viewportOffset ?? offset;
+      block.rect = {
+        ...block.rect,
+        x: block.rect.x + previous.x - offset.x,
+        y: block.rect.y + previous.y - offset.y,
+      };
+      block.viewportOffset = { ...offset };
+      block.clipRect = viewport.rect;
+    }
+    this.notify('viewport', viewportId);
   }
 
   /**

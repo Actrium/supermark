@@ -32,6 +32,8 @@ export interface HandleGeometry {
   /** Centre of the round knob, placed clear of the text line. */
   knobX: number;
   knobY: number;
+  /** False when the real range edge is outside a nested viewport clip. */
+  visible: boolean;
 }
 
 export interface SelectionHandles {
@@ -49,7 +51,12 @@ export interface SelectionHandles {
  *
  * Returns null when there is nothing to hold on to.
  */
-export function computeHandles(rects: readonly LocalRect[]): SelectionHandles | null {
+interface HandleSourceRect extends LocalRect {
+  startHandleVisible?: boolean;
+  endHandleVisible?: boolean;
+}
+
+export function computeHandles(rects: readonly HandleSourceRect[]): SelectionHandles | null {
   if (rects.length === 0) return null;
   const first = rects[0];
   const last = rects[rects.length - 1];
@@ -61,6 +68,7 @@ export function computeHandles(rects: readonly LocalRect[]): SelectionHandles | 
       h: first.h,
       knobX: first.x,
       knobY: first.y - HANDLE_KNOB_RADIUS,
+      visible: first.startHandleVisible !== false,
     },
     end: {
       edge: 'end',
@@ -69,6 +77,7 @@ export function computeHandles(rects: readonly LocalRect[]): SelectionHandles | 
       h: last.h,
       knobX: last.x + last.w,
       knobY: last.y + last.h + HANDLE_KNOB_RADIUS,
+      visible: last.endHandleVisible !== false,
     },
   };
 }
@@ -90,8 +99,8 @@ export function hitTestHandle(
     const dy = point.y - handle.knobY;
     return dx * dx + dy * dy;
   };
-  const toStart = distanceTo(handles.start);
-  const toEnd = distanceTo(handles.end);
+  const toStart = handles.start.visible ? distanceTo(handles.start) : Infinity;
+  const toEnd = handles.end.visible ? distanceTo(handles.end) : Infinity;
   if (toEnd <= limit && toEnd <= toStart) return 'end';
   if (toStart <= limit) return 'start';
   return null;

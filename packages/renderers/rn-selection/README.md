@@ -14,7 +14,7 @@ metrics through `onTextLayout`.
 - Linearize selectable AST content into text, breaks, atoms, and boundaries.
 - Let features provide custom payloads for nodes such as diagrams, math, tables,
   code blocks, and containers.
-- Treat a rendered text block as a *metrics source*, not as a selection owner.
+- Treat a rendered text block as a _metrics source_, not as a selection owner.
 - Own the whole interaction — gestures, highlight, handles, action bar and
   payload serialization — so behavior is identical across platforms and the
   product controls the bar.
@@ -51,13 +51,13 @@ or combining marks, on engines with `Intl.Segmenter` and on Hermes alike.
 ### Markdown copy: known limitations
 
 Reproduced through `linearize -> resolve -> serialize`. None of these lose text;
-they lose or invent *markup*, so a copied fragment may not re-parse to the same
+they lose or invent _markup_, so a copied fragment may not re-parse to the same
 AST it came from.
 
 - **Text is never re-escaped.** AST text is decoded on the way in and emitted
   verbatim, so `a * b _c_ [d] \ #` round-trips into emphasis and a heading.
 - **Fixed code fences.** Inline code always uses a single backtick, so
-  `` a ` b `` breaks; fenced code always uses three, so an embedded ``` breaks.
+  ``a ` b`` breaks; fenced code always uses three, so an embedded ``` breaks.
 - **Hard breaks flatten.** A `break` unit emits a bare `\n`, which re-parses as
   a space rather than a hard break.
 - **Link titles and URLs are not escaped**, so a URL containing spaces breaks.
@@ -70,7 +70,8 @@ AST it came from.
 The coordinator layer (`SelectionRoot`, `useDocumentSelection`, registry /
 hit-testing / selection state) and the self-drawn UI (highlight, handles,
 toolbar, gesture machine) are in place as pure tested modules. On-device gesture
-verification is still pending — see the plan's Status section.
+flows cover iOS and Android long press, handle drag, nested-list scrolling,
+viewport clipping, and ordinary page scrolling.
 
 ## Selection UI
 
@@ -84,7 +85,9 @@ verification is still pending — see the plan's Status section.
     { id: 'quote', title: 'Quote' },
   ]}
 >
-  <SelectableBlock nodeId="p1" unitIds={['p1#0']}>Hello world</SelectableBlock>
+  <SelectableBlock nodeId="p1" unitIds={['p1#0']}>
+    Hello world
+  </SelectableBlock>
 </SelectionRoot>
 ```
 
@@ -97,11 +100,47 @@ the serialized payload and the host decides what to do with it.
 component, and `overlay` / `handles` / `toolbar` / `gestures` booleans for hosts
 that want to drive parts of the layer themselves.
 
+### Nested scrollers
+
+Wrap a nested `ScrollView` or `FlatList` in `SelectionViewport`. It composes the
+child's `onScroll`, moves mounted block geometry from the native content-offset
+delta in the same frame, clips selection UI to the visible box, and pauses the
+nested scroller during a selection drag:
+
+```tsx
+<SelectionViewport style={{ height: 240 }}>
+  <FlatList
+    data={rows}
+    renderItem={({ item }) => (
+      <SelectableBlock nodeId={item.id} unitIds={item.unitIds}>
+        {item.text}
+      </SelectableBlock>
+    )}
+  />
+</SelectionViewport>
+```
+
+When `SelectionRoot` itself sits inside a host `ScrollView`, use
+`onGestureActiveChange` to pause that enclosing scroller while selection owns a
+drag or a nested `SelectionViewport` owns a touch/scroll. The nested scroller
+stays enabled for its own interaction; ordinary touches outside it are never
+claimed by the root:
+
+```tsx
+const [selectionScrollLocked, setSelectionScrollLocked] = useState(false);
+
+<ScrollView scrollEnabled={!selectionScrollLocked}>
+  <SelectionRoot units={units} onGestureActiveChange={setSelectionScrollLocked}>
+    {/* selectable document */}
+  </SelectionRoot>
+</ScrollView>;
+```
+
 ### Text precision depends on metrics
 
 `SelectableBlock` publishes the line table React Native reports through
 `onTextLayout`: one entry per laid-out line, with its own text and box. Position
-*within* a line is then interpolated across the line's advance width — exact for
+_within_ a line is then interpolated across the line's advance width — exact for
 monospaced text, and off by up to about half a character in proportional text.
 That is accurate enough to place a highlight edge and a drag handle, and the
 metrics contract carries a `charXs` slot for a provider that reports exact

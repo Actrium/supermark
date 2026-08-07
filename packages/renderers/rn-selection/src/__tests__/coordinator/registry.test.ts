@@ -308,3 +308,58 @@ describe('SelectionRegistry metrics', () => {
     expect(reg.getBlock('a')?.metrics?.textLength).toBe(2);
   });
 });
+
+describe('SelectionRegistry nested viewports', () => {
+  test('moves mounted blocks by the exact scroll delta and publishes once', () => {
+    const reg = new SelectionRegistry(baseUnits());
+    reg.registerViewport('list');
+    reg.updateViewportLayout('list', { x: 0, y: 100, w: 200, h: 80 });
+    reg.register({ ...blockA, viewportId: 'list' });
+    reg.updateLayout('a', { x: 10, y: 120, w: 60, h: 20 });
+    const before = reg.getVersion();
+
+    reg.updateViewportScroll('list', { x: 0, y: 25 });
+
+    expect(reg.getBlock('a')?.rect).toEqual({ x: 10, y: 95, w: 60, h: 20 });
+    expect(reg.getBlock('a')?.clipRect).toEqual({ x: 0, y: 100, w: 200, h: 80 });
+    expect(reg.getVersion()).toBe(before + 1);
+  });
+
+  test('a fresh native measurement becomes the next scroll baseline', () => {
+    const reg = new SelectionRegistry(baseUnits());
+    reg.registerViewport('list');
+    reg.register({ ...blockA, viewportId: 'list' });
+    reg.updateViewportScroll('list', { x: 0, y: 25 });
+    reg.updateLayout('a', { x: 10, y: 110, w: 60, h: 20 });
+
+    reg.updateViewportScroll('list', { x: 0, y: 35 });
+
+    expect(reg.getBlock('a')?.rect?.y).toBe(100);
+  });
+
+  test('an initial non-zero offset does not translate already-positioned blocks', () => {
+    const reg = new SelectionRegistry(baseUnits());
+    reg.register({
+      ...blockA,
+      viewportId: 'list',
+      rect: { x: 10, y: 110, w: 60, h: 20 },
+    });
+    reg.registerViewport('list', { x: 0, y: 40 });
+
+    reg.updateViewportScroll('list', { x: 0, y: 40 });
+
+    expect(reg.getBlock('a')?.rect?.y).toBe(110);
+  });
+
+  test('disposing a viewport removes its clip from surviving blocks', () => {
+    const reg = new SelectionRegistry(baseUnits());
+    const dispose = reg.registerViewport('list');
+    reg.updateViewportLayout('list', { x: 0, y: 100, w: 200, h: 80 });
+    reg.register({ ...blockA, viewportId: 'list' });
+    expect(reg.getBlock('a')?.clipRect).toBeDefined();
+
+    dispose();
+
+    expect(reg.getBlock('a')?.clipRect).toBeUndefined();
+  });
+});

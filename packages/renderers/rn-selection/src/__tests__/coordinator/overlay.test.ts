@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { SupramarkTextNode } from '@supramark/core';
 import { buildTextMetrics } from '../../metrics';
-import type { SelectionBreakUnit, SelectionRange, SelectionTextUnit, SelectionUnit } from '../../model';
+import type {
+  SelectionBreakUnit,
+  SelectionRange,
+  SelectionTextUnit,
+  SelectionUnit,
+} from '../../model';
 import { buildUnitIndex, resolveSelectionRange } from '../../resolve';
 import type { LayoutRect, RegisteredBlock } from '../../coordinator/registry';
 import { computeSelectionRects } from '../../coordinator/overlay';
@@ -159,6 +164,35 @@ describe('computeSelectionRects text precision', () => {
       focus: { nodeId: 'p', unitId: 'p#0', offset: 11 },
     });
     expect(rects).toEqual([{ x: 0, y: 20, w: 50, h: 20 }]);
+  });
+
+  test('clips a partially visible line to its nested scroll viewport', () => {
+    const block = measured();
+    block.clipRect = { x: 0, y: 110, w: 200, h: 30 };
+    const rects = rectsFor([block], units, {
+      anchor: { nodeId: 'p', unitId: 'p#0', offset: 0 },
+      focus: { nodeId: 'p', unitId: 'p#0', offset: 5 },
+    });
+    expect(rects).toEqual([
+      {
+        x: 10,
+        y: 110,
+        w: 50,
+        h: 10,
+        startHandleVisible: false,
+        endHandleVisible: false,
+      },
+    ]);
+  });
+
+  test('does not paint a selected block outside its nested viewport', () => {
+    const block = measured();
+    block.clipRect = { x: 0, y: 200, w: 200, h: 30 };
+    const rects = rectsFor([block], units, {
+      anchor: { nodeId: 'p', unitId: 'p#0', offset: 0 },
+      focus: { nodeId: 'p', unitId: 'p#0', offset: 5 },
+    });
+    expect(rects).toEqual([]);
   });
 });
 

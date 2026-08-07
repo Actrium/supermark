@@ -37,6 +37,16 @@ describe('computeHandles', () => {
     expect(handles.start).toMatchObject({ x: 30, y: 100 });
     expect(handles.end).toMatchObject({ x: 40, y: 140 });
   });
+
+  test('keeps clipped range edges out of drawing and hit-testing', () => {
+    const handles = computeHandles([
+      { x: 10, y: 100, w: 60, h: 20, startHandleVisible: false },
+    ]) as SelectionHandles;
+    expect(handles.start.visible).toBe(false);
+    expect(handles.end.visible).toBe(true);
+    expect(hitTestHandle({ x: 10, y: 94 }, handles)).toBeNull();
+    expect(hitTestHandle({ x: 70, y: 126 }, handles)).toBe('end');
+  });
 });
 
 describe('hitTestHandle', () => {

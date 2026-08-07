@@ -189,7 +189,9 @@ async function main() {
     assertScreenshot('cjk', cjkScreenshot);
 
     runMaestro(maestro, udid, flatListFlowFile);
-    assertScreenshot('gesture', flatListScreenshot);
+    // A range edge near a viewport boundary may intentionally hide its handle
+    // when the full touch target would escape the clip.
+    assertScreenshot('viewport', flatListScreenshot);
 
     runMaestro(maestro, udid, scrollFlowFile);
   } finally {

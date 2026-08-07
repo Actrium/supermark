@@ -6,8 +6,10 @@ const { PNG } = createRequire(import.meta.url)('pngjs');
 
 const [mode, file] = process.argv.slice(2);
 
-if (!mode || !file || !['gesture', 'cjk'].includes(mode)) {
-  console.error('Usage: node scripts/assert-selection-visual.mjs <gesture|cjk> <screenshot.png>');
+if (!mode || !file || !['gesture', 'viewport', 'cjk'].includes(mode)) {
+  console.error(
+    'Usage: node scripts/assert-selection-visual.mjs <gesture|viewport|cjk> <screenshot.png>'
+  );
   process.exit(2);
 }
 
@@ -173,7 +175,7 @@ function summarize(box) {
   return `${boxWidth(box)}x${boxHeight(box)}@${box.x0},${box.y0}`;
 }
 
-function assertGestureVisual() {
+function assertGestureVisual(minimumHandles = 2) {
   const highlights = findComponents(isHighlightBlue).filter(component => component.area > 150);
   const handles = findComponents(isHandleBlue).filter(component => component.area > 80);
   const darks = findComponents(isDark).filter(
@@ -181,12 +183,15 @@ function assertGestureVisual() {
   );
 
   assert(highlights.length > 0, 'expected visible selection highlight pixels');
-  assert(handles.length >= 2, `expected two visible selection handles, found ${handles.length}`);
+  assert(
+    handles.length >= minimumHandles,
+    `expected at least ${minimumHandles} visible selection handle(s), found ${handles.length}`
+  );
   assert(darks.length > 0, 'expected visible toolbar background pixels');
 
   const scale = estimateScale(handles.slice(0, 4));
   const pad = Math.max(4, Math.round(scale * 8));
-  const visibleHandles = handles.slice(0, 2);
+  const visibleHandles = handles.slice(0, Math.max(2, minimumHandles));
   const handlesUnion = unionBoxes(visibleHandles);
   const toolbar = darks
     .filter(component => boxDistance(component, handlesUnion) < image.height * 0.35)
@@ -275,6 +280,7 @@ function assertCjkVisual() {
 
 try {
   if (mode === 'gesture') assertGestureVisual();
+  else if (mode === 'viewport') assertGestureVisual(1);
   else assertCjkVisual();
 } catch (err) {
   console.error(`[selection-visual] ${err instanceof Error ? err.message : String(err)}`);

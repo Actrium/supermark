@@ -4,7 +4,6 @@ import {
   View,
   type GestureResponderEvent,
   type LayoutChangeEvent,
-  type PanResponderGestureState,
 } from 'react-native';
 import { lineAtY, offsetInsideLineX } from '../metrics';
 import type { SelectionNodeId, SelectionRange, SelectionUnit } from '../model';
@@ -15,13 +14,12 @@ import {
 } from '../native/segmentAdapter';
 import { buildCopyRequest, type SelectionCopyRequest } from './actions';
 import { wordBoundsAt } from '../words';
-import { SelectionContext, type SelectionContextValue } from './SelectionContext';
 import {
-  createSelectionGesture,
-  DEFAULT_LONG_PRESS_MS,
-  DEFAULT_MOVE_TOLERANCE,
-  type SelectionGesture,
-} from './gesture';
+  SelectionContext,
+  SelectionGestureActivityContext,
+  type SelectionContextValue,
+} from './SelectionContext';
+import { createSelectionGesture, DEFAULT_LONG_PRESS_MS, type SelectionGesture } from './gesture';
 import { computeHandles, hitTestHandle, type HandleEdge } from './handles';
 import { containingBlock, resolvePointToSelection, type Point } from './hitTest';
 import { computeSelectionRects, type OverlayRect } from './overlay';
@@ -65,16 +63,6 @@ function eventTime(e: GestureResponderEvent): number {
   return Number.isFinite(timestamp) ? Number(timestamp) : Date.now();
 }
 
-function movedBeyondTolerance(
-  gestureState: PanResponderGestureState,
-  moveTolerance: number
-): boolean {
-  const dx = Number(gestureState.dx);
-  const dy = Number(gestureState.dy);
-  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
-  return dx * dx + dy * dy > moveTolerance * moveTolerance;
-}
-
 /** What a host `renderToolbar` receives; enough to place and drive its own bar. */
 export interface SelectionToolbarRenderProps {
   visible: boolean;
@@ -102,6 +90,8 @@ export interface SelectionRootProps {
   gestures?: boolean;
   longPressMs?: number;
   moveTolerance?: number;
+  /** Notifies an enclosing host scroller while selection or a nested viewport owns the drag. */
+  onGestureActiveChange?(active: boolean): void;
 }
 
 /**
@@ -142,6 +132,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   gestures,
   longPressMs,
   moveTolerance,
+  onGestureActiveChange,
 }) => {
   // Latest units are read lazily by the store so streaming updates are visible.
   const unitsRef = useRef(units);
@@ -158,6 +149,9 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   const onCopyRef = useRef(onCopy);
   onCopyRef.current = onCopy;
 
+  const onGestureActiveChangeRef = useRef(onGestureActiveChange);
+  onGestureActiveChangeRef.current = onGestureActiveChange;
+
   const items = useMemo(() => toolbarItems ?? DEFAULT_TOOLBAR_ITEMS, [toolbarItems]);
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -166,6 +160,43 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   const originRef = useRef<Point>({ x: 0, y: 0 });
   const layoutTargetsRef = useRef(new Map<SelectionNodeId, LayoutTarget>());
   const [viewport, setViewport] = useState<Size>({ w: 0, h: 0 });
+  const [gestureActive, setGestureActive] = useState(false);
+  const gestureActiveRef = useRef(false);
+  const viewportInteractionsRef = useRef(new Set<string>());
+  const hostScrollLockedRef = useRef(false);
+
+  const publishHostScrollLock = useCallback(() => {
+    const locked = gestureActiveRef.current || viewportInteractionsRef.current.size > 0;
+    if (hostScrollLockedRef.current === locked) return;
+    hostScrollLockedRef.current = locked;
+    onGestureActiveChangeRef.current?.(locked);
+  }, []);
+
+  const publishGestureActivity = useCallback(
+    (active: boolean) => {
+      if (gestureActiveRef.current === active) return;
+      gestureActiveRef.current = active;
+      setGestureActive(active);
+      publishHostScrollLock();
+    },
+    [publishHostScrollLock]
+  );
+
+  const setViewportInteractionActive = useCallback(
+    (viewportId: string, active: boolean) => {
+      if (active) viewportInteractionsRef.current.add(viewportId);
+      else viewportInteractionsRef.current.delete(viewportId);
+      publishHostScrollLock();
+    },
+    [publishHostScrollLock]
+  );
+
+  useEffect(
+    () => () => {
+      if (hostScrollLockedRef.current) onGestureActiveChangeRef.current?.(false);
+    },
+    []
+  );
 
   // Re-index when the unit stream changes (streaming markdown).
   useEffect(() => {
@@ -257,15 +288,17 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
         pointAt,
         wordAt,
         handleAt,
+        onPhaseChange: phase => publishGestureActivity(phase === 'extending' || phase === 'handle'),
         config: { longPressMs, moveTolerance },
       }),
-    [store, pointAt, wordAt, handleAt, longPressMs, moveTolerance]
+    [store, pointAt, wordAt, handleAt, publishGestureActivity, longPressMs, moveTolerance]
   );
 
   // The long-press threshold has to fire while the finger is still, i.e. with
   // no further touch events to hang it off. The gesture machine stays free of
   // timers; this is the one place a real clock enters.
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTouchCancelledRef = useRef(false);
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
@@ -307,13 +340,13 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
 
   const enabled = gestures !== false;
   const longPressDelay = longPressMs ?? DEFAULT_LONG_PRESS_MS;
-  const activeMoveTolerance = moveTolerance ?? DEFAULT_MOVE_TOLERANCE;
 
-  const onResponderGrant = useCallback(
+  const onTouchStart = useCallback(
     (e: GestureResponderEvent) => {
       if (!enabled) return;
       refreshRootOrigin();
-      if (gesture.isActive()) return;
+      if (gesture.isActive() || gesture.isPending()) return;
+      pendingTouchCancelledRef.current = false;
       const point = toRootSpace(e);
       gesture.touchStart(point, eventTime(e));
       clearTimer();
@@ -321,11 +354,21 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
         timerRef.current = setTimeout(() => {
           timerRef.current = null;
           gesture.tick(Date.now());
+          // A nested Android ScrollView can cancel the bubbling JS touch even
+          // while a stationary long press remains inside it. If no onScroll
+          // followed, keep the selection created by the timer but release
+          // gesture ownership because the matching touch-end was swallowed.
+          if (pendingTouchCancelledRef.current) {
+            pendingTouchCancelledRef.current = false;
+            gesture.cancel();
+          }
         }, longPressDelay);
       }
     },
     [enabled, refreshRootOrigin, gesture, toRootSpace, clearTimer, longPressDelay]
   );
+
+  const onResponderGrant = onTouchStart;
 
   const onResponderMove = useCallback(
     (e: GestureResponderEvent) => {
@@ -343,6 +386,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       if (!enabled) return;
       refreshRootOrigin();
       clearTimer();
+      pendingTouchCancelledRef.current = false;
       const point = toRootSpace(e);
       gesture.touchEnd(point, eventTime(e));
     },
@@ -351,16 +395,59 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
 
   const onResponderTerminate = useCallback(() => {
     clearTimer();
+    pendingTouchCancelledRef.current = false;
     gesture.cancel();
   }, [clearTimer, gesture]);
+
+  const onTouchCancel = useCallback(() => {
+    if (gesture.isPending()) {
+      pendingTouchCancelledRef.current = true;
+      return;
+    }
+    onResponderTerminate();
+  }, [gesture, onResponderTerminate]);
+
+  const cancelPendingGesture = useCallback(() => {
+    if (!gesture.isPending()) return;
+    clearTimer();
+    pendingTouchCancelledRef.current = false;
+    gesture.cancel();
+  }, [clearTimer, gesture]);
+
+  const selectWordInBlock = useCallback(
+    (nodeId: SelectionNodeId, localPoint: Point) => {
+      const block = registry.getBlock(nodeId);
+      if (block?.rect === undefined) return;
+      const contentOffset = block.contentOffset ?? { x: 0, y: 0 };
+      const point = {
+        x: block.rect.x + contentOffset.x + localPoint.x,
+        y: block.rect.y + contentOffset.y + localPoint.y,
+      };
+      const range = wordAt(point);
+      if (range === null) return;
+
+      // Android can let Text's native long-press responder fire while its
+      // nested ScrollView swallows the root touch end/cancel. Finish any root
+      // gesture first, then publish the same committed range directly so the
+      // nested scroller never remains locked after the finger lifts.
+      clearTimer();
+      pendingTouchCancelledRef.current = false;
+      gesture.cancel();
+      store.beginAt(range.anchor);
+      store.extendTo(range.focus);
+      store.commit();
+    },
+    [clearTimer, gesture, registry, store, wordAt]
+  );
 
   const onHandleGrant = useCallback(
     (edge: HandleEdge) => {
       if (!enabled) return;
+      refreshRootOrigin();
       clearTimer();
       gesture.handleStart(edge, Date.now());
     },
-    [enabled, clearTimer, gesture]
+    [enabled, refreshRootOrigin, clearTimer, gesture]
   );
 
   const onHandleMove = useCallback(
@@ -399,23 +486,13 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   );
 
   const onStartShouldSetResponder = useCallback(
-    (e: GestureResponderEvent) => {
-      if (!enabled) return false;
-      const point = toRootSpace(e);
-      if (handleAt(point) !== null) return true;
-      return containingBlock(registry.getBlocks(), point) !== null;
-    },
-    [enabled, handleAt, registry, toRootSpace]
+    () => enabled && gesture.isActive(),
+    [enabled, gesture]
   );
 
   const onResponderTerminationRequest = useCallback(
-    (_e: GestureResponderEvent, gestureState: PanResponderGestureState) => {
-      if (!enabled) return true;
-      if (gesture.isActive()) return false;
-      const release = movedBeyondTolerance(gestureState, activeMoveTolerance);
-      return release;
-    },
-    [activeMoveTolerance, enabled, gesture]
+    () => !enabled || !gesture.isActive(),
+    [enabled, gesture]
   );
 
   const rootPanResponder = useMemo(
@@ -430,7 +507,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
         onPanResponderRelease: onResponderRelease,
         onPanResponderTerminate: onResponderTerminate,
         onPanResponderTerminationRequest: onResponderTerminationRequest,
-        onShouldBlockNativeResponder: () => gesture.isPending() || gesture.isActive(),
+        onShouldBlockNativeResponder: () => gesture.isActive(),
       }),
     [
       enabled,
@@ -445,11 +522,11 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
     ]
   );
 
-  const measureBlockLayout = useCallback(
-    (nodeId: SelectionNodeId, node: unknown, fallback: LayoutRect) => {
+  const measureTargetLayout = useCallback(
+    (node: unknown, fallback: LayoutRect, update: (rect: LayoutRect) => void) => {
       const target = node as NativeViewHandle | null;
       const root = rootRef.current as NativeViewHandle | null;
-      const updateFallback = () => registry.updateLayout(nodeId, fallback);
+      const updateFallback = () => update(fallback);
       const updateMeasured = (x: number, y: number, width: number, height: number) => {
         if (
           Number.isFinite(x) &&
@@ -457,7 +534,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
           Number.isFinite(width) &&
           Number.isFinite(height)
         ) {
-          registry.updateLayout(nodeId, { x, y, w: width, h: height });
+          update({ x, y, w: width, h: height });
         } else {
           updateFallback();
         }
@@ -502,14 +579,19 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
         return;
       }
       if (canMeasureTargetInWindow && root?.measure) {
-        root.measure((_x, _y, _width, _height, pageX, pageY) =>
-          afterRootMeasured(pageX, pageY)
-        );
+        root.measure((_x, _y, _width, _height, pageX, pageY) => afterRootMeasured(pageX, pageY));
         return;
       }
       if (!measureAgainstRoot()) updateFallback();
     },
-    [registry]
+    []
+  );
+
+  const measureBlockLayout = useCallback(
+    (nodeId: SelectionNodeId, node: unknown, fallback: LayoutRect) => {
+      measureTargetLayout(node, fallback, rect => registry.updateLayout(nodeId, rect));
+    },
+    [measureTargetLayout, registry]
   );
 
   const measureLayout = useCallback(
@@ -526,6 +608,13 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       measureBlockLayout(nodeId, target.node, target.fallback);
     }
   }, [measureBlockLayout, refreshRootOrigin]);
+
+  const measureViewportLayout = useCallback(
+    (viewportId: string, node: unknown, fallback: LayoutRect) => {
+      measureTargetLayout(node, fallback, rect => registry.updateViewportLayout(viewportId, rect));
+    },
+    [measureTargetLayout, registry]
+  );
 
   // Reference-stable: depends only on the memoized registry + store.
   const ctx = useMemo<SelectionContextValue>(
@@ -547,6 +636,14 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       updateLayout: (nodeId, rect) => registry.updateLayout(nodeId, rect),
       measureLayout,
       refreshLayouts,
+      registerViewport: (viewportId, initialOffset) =>
+        registry.registerViewport(viewportId, initialOffset),
+      measureViewportLayout,
+      updateViewportScroll: (viewportId, offset) =>
+        registry.updateViewportScroll(viewportId, offset),
+      setViewportInteractionActive,
+      cancelPendingGesture,
+      selectWordInBlock,
       updateUnits: (nodeId, unitIds) => registry.updateUnits(nodeId, unitIds),
       setMetrics: (nodeId, metrics) => registry.setMetrics(nodeId, metrics),
       setContentOffset: (nodeId, offset) => registry.setContentOffset(nodeId, offset),
@@ -555,7 +652,17 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       },
       runToolbarItem,
     }),
-    [registry, store, runToolbarItem, measureLayout, refreshLayouts]
+    [
+      registry,
+      store,
+      runToolbarItem,
+      measureLayout,
+      refreshLayouts,
+      measureViewportLayout,
+      setViewportInteractionActive,
+      cancelPendingGesture,
+      selectWordInBlock,
+    ]
   );
 
   return (
@@ -563,32 +670,36 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       ref={rootRef}
       collapsable={false}
       onLayout={onLayout}
+      onTouchStart={onTouchStart}
+      onTouchMove={onResponderMove}
       onTouchEnd={onResponderRelease}
-      onTouchCancel={onResponderTerminate}
-      // Claim touches that can become a selection so Android sends us the whole
-      // responder stream. A pending press still lets ScrollView take over on
-      // movement; active selection/handle drags keep ownership.
+      onTouchCancel={onTouchCancel}
+      // Observe a pending press through bubbling touch events. PanResponder
+      // claims only after the long press becomes a selection, leaving an inner
+      // ScrollView / FlatList free to own ordinary swipes from the first frame.
       {...rootPanResponder.panHandlers}
     >
-      <SelectionContext.Provider value={ctx}>
-        {children}
-        {overlay !== false && <SelectionOverlay />}
-        {handles !== false && (
-          <SelectionHandles
-            onHandleGrant={onHandleGrant}
-            onHandleMove={onHandleMove}
-            onHandleRelease={onHandleRelease}
-            onHandleCancel={() => gesture.cancel()}
-            toRootPoint={pointFromPage}
-          />
-        )}
-        {toolbar !== false &&
-          (renderToolbar ? (
-            <ToolbarSlot viewport={viewport} render={renderToolbar} />
-          ) : (
-            <SelectionToolbar viewport={viewport} />
-          ))}
-      </SelectionContext.Provider>
+      <SelectionGestureActivityContext.Provider value={gestureActive}>
+        <SelectionContext.Provider value={ctx}>
+          {children}
+          {overlay !== false && <SelectionOverlay />}
+          {handles !== false && (
+            <SelectionHandles
+              onHandleGrant={onHandleGrant}
+              onHandleMove={onHandleMove}
+              onHandleRelease={onHandleRelease}
+              onHandleCancel={() => gesture.cancel()}
+              toRootPoint={pointFromPage}
+            />
+          )}
+          {toolbar !== false &&
+            (renderToolbar ? (
+              <ToolbarSlot viewport={viewport} render={renderToolbar} />
+            ) : (
+              <SelectionToolbar viewport={viewport} />
+            ))}
+        </SelectionContext.Provider>
+      </SelectionGestureActivityContext.Provider>
     </View>
   );
 };

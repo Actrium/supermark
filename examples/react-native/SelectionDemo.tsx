@@ -29,8 +29,10 @@ import {
 
 import {
   SelectionRoot,
+  SelectionViewport,
   SelectableBlock,
-  useSelectionLayoutRefresh,
+  useSelectionRects,
+  useSelectionContext,
   useSelectionStore,
   serializeSelectionUnits,
   type SelectionUnit,
@@ -110,6 +112,8 @@ export default function SelectionDemo({
   flatList = false,
 }: SelectionDemoProps) {
   const [status, setStatus] = useState('idle');
+  const [selectionGestureActive, setSelectionGestureActive] = useState(false);
+  const [pageOffset, setPageOffset] = useState(0);
 
   const onCopy = (req: SelectionCopyRequest) => {
     setStatus(`${req.id} (${req.format}): ${req.text}`);
@@ -120,8 +124,22 @@ export default function SelectionDemo({
       <TouchableOpacity onPress={onBack}>
         <Text style={s.back}>back</Text>
       </TouchableOpacity>
-      <ScrollView nestedScrollEnabled contentContainerStyle={s.body}>
-        <SelectionRoot units={UNITS} onCopy={onCopy} toolbarItems={TOOLBAR_ITEMS}>
+      <ScrollView
+        nestedScrollEnabled
+        scrollEnabled={!selectionGestureActive}
+        scrollEventThrottle={16}
+        onScroll={event => {
+          const next = Math.round(event.nativeEvent.contentOffset.y);
+          setPageOffset(prev => (prev === next ? prev : next));
+        }}
+        contentContainerStyle={s.body}
+      >
+        <SelectionRoot
+          units={UNITS}
+          onCopy={onCopy}
+          toolbarItems={TOOLBAR_ITEMS}
+          onGestureActiveChange={setSelectionGestureActive}
+        >
           <SelectableBlock nodeId="h" unitIds={['h#0']} style={s.h1}>
             Selection Demo
           </SelectableBlock>
@@ -137,6 +155,11 @@ export default function SelectionDemo({
             {CJK_TEXT}
           </SelectableBlock>
           <SelectionControls e2e={e2e} onStatus={setStatus} />
+          {e2e && (
+            <Text testID="selection-page-offset" style={s.e2eStatus}>
+              page offset {pageOffset}
+            </Text>
+          )}
           {flatList && <FlatListSelectionFixture />}
         </SelectionRoot>
         <View style={s.statusPanel}>
@@ -153,13 +176,14 @@ export default function SelectionDemo({
 }
 
 function FlatListSelectionFixture() {
-  const refreshSelectionLayouts = useSelectionLayoutRefresh();
   const [offset, setOffset] = useState(0);
-  const refreshSelectionLayoutsSoon = useCallback(() => {
-    refreshSelectionLayouts();
-    requestAnimationFrame(refreshSelectionLayouts);
-    setTimeout(refreshSelectionLayouts, 0);
-  }, [refreshSelectionLayouts]);
+  const ctx = useSelectionContext();
+  const subscribeRegistry = useCallback(
+    (onChange: () => void) => ctx.registry.subscribe(() => onChange()),
+    [ctx.registry]
+  );
+  useSyncExternalStore(subscribeRegistry, ctx.registry.getVersion, ctx.registry.getVersion);
+  const row03Measured = ctx.registry.getBlock('flat-03')?.rect !== undefined;
 
   return (
     <View style={s.flatPanel}>
@@ -167,33 +191,35 @@ function FlatListSelectionFixture() {
       <Text testID="selection-flat-offset" style={s.e2eStatus}>
         flat offset {offset}
       </Text>
-      <FlatList
-        testID="selection-flat-list"
-        data={FLAT_ROWS}
-        keyExtractor={item => item.nodeId}
-        nestedScrollEnabled
-        style={s.flatList}
-        contentContainerStyle={s.flatContent}
-        scrollEventThrottle={16}
-        onLayout={refreshSelectionLayoutsSoon}
-        onContentSizeChange={refreshSelectionLayoutsSoon}
-        onScroll={e => {
-          const next = Math.round(e.nativeEvent.contentOffset.y);
-          setOffset(prev => (prev === next ? prev : next));
-          refreshSelectionLayoutsSoon();
-        }}
-        renderItem={({ item }) => (
-          <SelectableBlock
-            nodeId={item.nodeId}
-            unitIds={[item.unitId]}
-            style={s.flatRowText}
-            containerStyle={s.flatRow}
-          >
-            {item.text}
-          </SelectableBlock>
-        )}
-        ItemSeparatorComponent={() => <View style={s.flatSeparator} />}
-      />
+      <Text testID="selection-flat-row-03-measure" style={s.e2eStatus}>
+        flat row 03 {row03Measured ? 'measured' : 'pending'}
+      </Text>
+      <SelectionViewport style={s.flatList}>
+        <FlatList
+          testID="selection-flat-list"
+          data={FLAT_ROWS}
+          keyExtractor={item => item.nodeId}
+          nestedScrollEnabled
+          style={s.flatScroller}
+          contentContainerStyle={s.flatContent}
+          scrollEventThrottle={16}
+          onScroll={e => {
+            const next = Math.round(e.nativeEvent.contentOffset.y);
+            setOffset(prev => (prev === next ? prev : next));
+          }}
+          renderItem={({ item }) => (
+            <SelectableBlock
+              nodeId={item.nodeId}
+              unitIds={[item.unitId]}
+              style={s.flatRowText}
+              containerStyle={s.flatRow}
+            >
+              {item.text}
+            </SelectableBlock>
+          )}
+          ItemSeparatorComponent={() => <View style={s.flatSeparator} />}
+        />
+      </SelectionViewport>
     </View>
   );
 }
@@ -207,6 +233,7 @@ function SelectionControls({
 }) {
   const store = useSelectionStore();
   const snap = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const visibleRects = useSelectionRects();
   const afterControlTap = (select: () => void) => {
     setTimeout(select, 0);
   };
@@ -272,9 +299,14 @@ function SelectionControls({
         {snap.phase} · {snap.units.length} units
       </Text>
       {e2e && (
-        <Text testID="selection-phase-ascii" style={s.e2eStatus}>
-          {snap.phase} {snap.units.length} units
-        </Text>
+        <>
+          <Text testID="selection-phase-ascii" style={s.e2eStatus}>
+            {snap.phase} {snap.units.length} units
+          </Text>
+          <Text testID="selection-visible-rects" style={s.e2eStatus}>
+            visible selection rects {visibleRects.length}
+          </Text>
+        </>
       )}
     </View>
   );
@@ -307,6 +339,7 @@ const s = StyleSheet.create({
     borderColor: '#d9d9d9',
     borderRadius: 4,
   },
+  flatScroller: { flex: 1 },
   flatContent: { padding: 8 },
   flatRow: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 8 },
   flatRowText: { fontSize: 16, lineHeight: 22 },

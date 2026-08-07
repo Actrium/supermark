@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useContext, useEffect, useRef } from 'react';
 import {
   Text,
   View,
+  type GestureResponderEvent,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
   type StyleProp,
@@ -12,6 +13,7 @@ import {
 import { buildTextMetrics, type SegmentTextMetrics } from '../metrics';
 import type { SelectionNodeId } from '../model';
 import type { ContentOffset, LayoutRect } from './registry';
+import { SelectionViewportContext } from './SelectionContext';
 import { useSelectionContext } from './useDocumentSelection';
 
 declare const __DEV__: boolean | undefined;
@@ -82,6 +84,7 @@ export const SelectableBlock: React.FC<SelectableBlockProps> = ({
   containerStyle,
 }) => {
   const ctx = useSelectionContext();
+  const viewportId = useContext(SelectionViewportContext);
   const blockRef = useRef<View | null>(null);
   const layoutRef = useRef<LayoutRect | null>(null);
   const metricsRef = useRef<SegmentTextMetrics | null>(null);
@@ -97,13 +100,24 @@ export const SelectableBlock: React.FC<SelectableBlockProps> = ({
       nodeId,
       unitIds: [...unitIdsRef.current],
       kind: 'text',
-      rect: layoutRef.current ?? undefined,
+      // Nested onLayout coordinates are local to a FlatList cell, not to the
+      // SelectionRoot. Preserve/await the native root-space measurement there.
+      rect: viewportId === undefined ? (layoutRef.current ?? undefined) : undefined,
       metrics: metricsRef.current ?? undefined,
       contentOffset: contentOffsetRef.current ?? undefined,
+      viewportId,
     });
+    // Android can deliver the native onLayout before this passive effect has
+    // registered the block. In that ordering the first root-space measurement
+    // is correctly computed but registry.updateLayout has nowhere to store it.
+    // Measure once more after registration whenever onLayout already ran.
+    const layout = layoutRef.current;
+    if (layout !== null && ctx.measureLayout) {
+      ctx.measureLayout(nodeId, blockRef.current, layout);
+    }
     return dispose;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctx, nodeId]);
+  }, [ctx, nodeId, viewportId]);
 
   // Push unitId changes in place (streaming markdown grows a paragraph) without
   // re-registering, so the measured rect and line table survive. Keyed on the
@@ -149,7 +163,13 @@ export const SelectableBlock: React.FC<SelectableBlockProps> = ({
     const { x, y, width, height } = e.nativeEvent.layout;
     const fallback = { x, y, w: width, h: height };
     layoutRef.current = fallback;
-    ctx.updateLayout(nodeId, fallback);
+    // A nested cell may re-fire onLayout during virtualization or scrolling.
+    // Publishing that cell-local fallback would overwrite the synchronously
+    // translated root-space rect and make the highlight jump toward y=0 until
+    // the asynchronous native measure arrives.
+    if (viewportId === undefined || !ctx.measureLayout) {
+      ctx.updateLayout(nodeId, fallback);
+    }
     if (ctx.measureLayout) {
       ctx.measureLayout(nodeId, blockRef.current, fallback);
     }
@@ -168,9 +188,22 @@ export const SelectableBlock: React.FC<SelectableBlockProps> = ({
     ctx.setMetrics(nodeId, metrics);
   };
 
+  const onNestedLongPress =
+    viewportId === undefined
+      ? undefined
+      : (e: GestureResponderEvent) => {
+          const { locationX, locationY } = e.nativeEvent;
+          ctx.selectWordInBlock(nodeId, { x: locationX, y: locationY });
+        };
+
   return (
     <View ref={blockRef} collapsable={false} style={containerStyle} onLayout={onBlockLayout}>
-      <Text style={style} onLayout={onTextBoxLayout} onTextLayout={onTextLayout}>
+      <Text
+        style={style}
+        onLayout={onTextBoxLayout}
+        onTextLayout={onTextLayout}
+        onLongPress={onNestedLongPress}
+      >
         {/* Cast: react-native resolves its own copy of @types/react, whose
             ReactNode differs from ours by `bigint`. Structurally identical for
             everything a text block can hold. */}

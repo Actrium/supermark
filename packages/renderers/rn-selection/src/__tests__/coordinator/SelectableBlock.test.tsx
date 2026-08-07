@@ -34,7 +34,8 @@ mock.module('react-native', () => ({
   true;
 
 const { SelectableBlock } = await import('../../coordinator/SelectableBlock');
-const { SelectionContext } = await import('../../coordinator/SelectionContext');
+const { SelectionContext, SelectionViewportContext } =
+  await import('../../coordinator/SelectionContext');
 const { SelectionRegistry } = await import('../../coordinator/registry');
 
 type ContextValue = React.ContextType<typeof SelectionContext>;
@@ -61,6 +62,13 @@ function makeContext(units: SelectionUnitLike[]): NonNullable<ContextValue> {
     },
     updateLayout: (nodeId, rect) => registry.updateLayout(nodeId, rect),
     refreshLayouts: () => {},
+    registerViewport: (viewportId, offset) => registry.registerViewport(viewportId, offset),
+    measureViewportLayout: (viewportId, _node, rect) =>
+      registry.updateViewportLayout(viewportId, rect),
+    updateViewportScroll: (viewportId, offset) => registry.updateViewportScroll(viewportId, offset),
+    setViewportInteractionActive: () => {},
+    cancelPendingGesture: () => {},
+    selectWordInBlock: () => {},
     updateUnits: (nodeId, unitIds) => registry.updateUnits(nodeId, unitIds),
     setMetrics: (nodeId, metrics) => registry.setMetrics(nodeId, metrics),
     setContentOffset: (nodeId, offset) => registry.setContentOffset(nodeId, offset),
@@ -167,6 +175,106 @@ describe('SelectableBlock rendering', () => {
     });
 
     expect(ctx.registry.getBlock('p1')?.rect).toEqual({ x: 8, y: 13, w: 55, h: 21 });
+  });
+
+  test('nested text forwards its native long press in text-local coordinates', () => {
+    const calls: unknown[] = [];
+    const ctx = {
+      ...makeContext([textUnit('p1#0', 'hello')]),
+      selectWordInBlock: (...args: unknown[]) => calls.push(args),
+    };
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <SelectionContext.Provider value={ctx}>
+          <SelectionViewportContext.Provider value="list">
+            <SelectableBlock nodeId="p1" unitIds={['p1#0']}>
+              hello
+            </SelectableBlock>
+          </SelectionViewportContext.Provider>
+        </SelectionContext.Provider>
+      );
+    });
+    renderer = r;
+    const text = r.root.findByType('Text' as unknown as React.ElementType);
+
+    act(() => {
+      text.props.onLongPress({ nativeEvent: { locationX: 17, locationY: 9 } });
+    });
+
+    expect(calls).toEqual([['p1', { x: 17, y: 9 }]]);
+  });
+
+  test('nested onLayout never publishes a cell-local rect over root-space geometry', () => {
+    const measured: unknown[][] = [];
+    const ctx = {
+      ...makeContext([textUnit('p1#0', 'hello')]),
+      measureLayout: (...args: unknown[]) => measured.push(args),
+    };
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <SelectionContext.Provider value={ctx}>
+          <SelectionViewportContext.Provider value="list">
+            <SelectableBlock nodeId="p1" unitIds={['p1#0']}>
+              hello
+            </SelectableBlock>
+          </SelectionViewportContext.Provider>
+        </SelectionContext.Provider>
+      );
+    });
+    renderer = r;
+    const view = r.root.findByType('View' as unknown as React.ElementType);
+
+    act(() => {
+      view.props.onLayout({ nativeEvent: { layout: { x: 8, y: 96, width: 55, height: 21 } } });
+    });
+
+    expect(ctx.registry.getBlock('p1')?.rect).toBeUndefined();
+    expect(measured).toHaveLength(1);
+    expect(measured[0]?.[2]).toEqual({ x: 8, y: 96, w: 55, h: 21 });
+  });
+
+  test('remeasures a captured nested layout after block registration changes', () => {
+    const measured: unknown[][] = [];
+    const ctx = {
+      ...makeContext([textUnit('p1#0', 'hello')]),
+      measureLayout: (...args: unknown[]) => measured.push(args),
+    };
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <SelectionContext.Provider value={ctx}>
+          <SelectionViewportContext.Provider value={undefined}>
+            <SelectableBlock nodeId="p1" unitIds={['p1#0']}>
+              hello
+            </SelectableBlock>
+          </SelectionViewportContext.Provider>
+        </SelectionContext.Provider>
+      );
+    });
+    renderer = r;
+    const view = r.root.findByType('View' as unknown as React.ElementType);
+
+    act(() => {
+      view.props.onLayout({ nativeEvent: { layout: { x: 8, y: 96, width: 55, height: 21 } } });
+    });
+    expect(measured).toHaveLength(1);
+
+    act(() => {
+      r.update(
+        <SelectionContext.Provider value={ctx}>
+          <SelectionViewportContext.Provider value="list">
+            <SelectableBlock nodeId="p1" unitIds={['p1#0']}>
+              hello
+            </SelectableBlock>
+          </SelectionViewportContext.Provider>
+        </SelectionContext.Provider>
+      );
+    });
+
+    expect(measured).toHaveLength(2);
+    expect(measured[1]?.[2]).toEqual({ x: 8, y: 96, w: 55, h: 21 });
   });
 });
 

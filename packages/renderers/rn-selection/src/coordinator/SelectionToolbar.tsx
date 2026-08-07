@@ -18,12 +18,14 @@ function handleTouchAvoidRects(rects: readonly LocalRect[]): LocalRect[] {
   const handles = computeHandles(rects);
   if (handles === null) return [];
   const diameter = HANDLE_TOUCH_RADIUS * 2;
-  return [handles.start, handles.end].map(handle => ({
-    x: handle.knobX - HANDLE_TOUCH_RADIUS,
-    y: handle.knobY - HANDLE_TOUCH_RADIUS,
-    w: diameter,
-    h: diameter,
-  }));
+  return [handles.start, handles.end]
+    .filter(handle => handle.visible)
+    .map(handle => ({
+      x: handle.knobX - HANDLE_TOUCH_RADIUS,
+      y: handle.knobY - HANDLE_TOUCH_RADIUS,
+      w: diameter,
+      h: diameter,
+    }));
 }
 
 /**

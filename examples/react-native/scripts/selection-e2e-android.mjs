@@ -137,7 +137,10 @@ function adbArgs(serial, args) {
 }
 
 function sanitizeArtifactName(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 function escapeXmlAttribute(value) {
@@ -299,7 +302,8 @@ function adbReverse(serial) {
 
 function screenSize(serial) {
   const out = capture(adb, adbArgs(serial, ['shell', 'wm', 'size']));
-  const match = out.match(/Physical size:\s*(\d+)x(\d+)/) ?? out.match(/Override size:\s*(\d+)x(\d+)/);
+  const match =
+    out.match(/Physical size:\s*(\d+)x(\d+)/) ?? out.match(/Override size:\s*(\d+)x(\d+)/);
   if (!match) throw new Error(`Could not read Android screen size from: ${out.trim()}`);
   return { w: Number(match[1]), h: Number(match[2]) };
 }
@@ -317,7 +321,12 @@ function adbTap(serial, screen, x, y) {
 }
 
 function adbSwipe(serial, screen, start, end, durationMs) {
-  adbSwipeRaw(serial, scalePoint(screen, start.x, start.y), scalePoint(screen, end.x, end.y), durationMs);
+  adbSwipeRaw(
+    serial,
+    scalePoint(screen, start.x, start.y),
+    scalePoint(screen, end.x, end.y),
+    durationMs
+  );
 }
 
 function adbSwipeRaw(serial, start, end, durationMs) {
@@ -596,7 +605,7 @@ function findComponents(image, predicate) {
   return components.sort((a, b) => b.area - a.area);
 }
 
-function findEndHandlePoint(file) {
+function selectionHandles(file) {
   const image = readPng(file);
   const handles = findComponents(image, isHandleBlue).filter(
     component => component.area > 80 && boxWidth(component) >= 4 && boxHeight(component) >= 4
@@ -608,17 +617,38 @@ function findEndHandlePoint(file) {
         .join(' ')}`
     );
   }
-  const visible = handles
-    .slice(0, 4)
-    .sort((a, b) => b.x1 - a.x1 || b.y1 - a.y1 || b.area - a.area);
+  return handles.slice(0, 4);
+}
+
+function findEndHandlePoint(file) {
+  const visible = selectionHandles(file).sort(
+    (a, b) => b.x1 - a.x1 || b.y1 - a.y1 || b.area - a.area
+  );
   const handle = visible[0];
+  const fixed = [...visible].sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)[0];
   const point = endKnobCenter(handle);
   console.log(
     `[selection-e2e-android] dragging detected end handle ${summarizeBox(
       handle
     )} from ${point.x},${point.y}; candidates ${visible.map(summarizeBox).join(' ')}`
   );
-  return point;
+  return { point, fixed };
+}
+
+function assertFixedHandleStayedPut(file, expected) {
+  const nearest = selectionHandles(file)
+    .map(handle => ({
+      handle,
+      distance: Math.hypot(handle.x0 - expected.x0, handle.y0 - expected.y0),
+    }))
+    .sort((a, b) => a.distance - b.distance)[0];
+  if (nearest.distance > 24) {
+    throw new Error(
+      `Fixed selection handle drifted: before ${summarizeBox(expected)}, after ${summarizeBox(
+        nearest.handle
+      )}, distance ${nearest.distance.toFixed(1)}px`
+    );
+  }
 }
 
 function assertHighlightTracksText(file, bounds, label) {
@@ -651,7 +681,7 @@ function runGestureFlow(serial, screen) {
   waitForUiText(serial, 'selected 1 units');
   waitForUiText(serial, 'Copy');
   takeScreenshot(serial, gestureStartScreenshot);
-  const dragStart = findEndHandlePoint(gestureStartScreenshot);
+  const { point: dragStart, fixed: fixedHandle } = findEndHandlePoint(gestureStartScreenshot);
   const xml = waitForUiText(serial, 'Second paragraph for range selection.');
   const targetNode = nodeWithText(xml, 'Second paragraph for range selection.');
   const target = targetNode === null ? null : nodeBounds(targetNode);
@@ -666,7 +696,9 @@ function runGestureFlow(serial, screen) {
     900
   );
   waitForSelectedUnits(serial, 2);
+  waitForUiText(serial, 'page offset 0');
   takeScreenshot(serial, gestureScreenshot);
+  assertFixedHandleStayedPut(gestureScreenshot, fixedHandle);
   assertScreenshot('gesture', gestureScreenshot);
 }
 
@@ -689,6 +721,7 @@ function runGapFlow(serial, screen) {
 function runFlatListFlow(serial, screen) {
   launchApp(serial);
   sleepMs(1000);
+  waitForUiText(serial, 'flat row 03 measured');
   const rowText = 'Flat row 03 selection target.';
   let rowBounds = boundsForText(serial, rowText);
   const press = {
@@ -699,20 +732,37 @@ function runFlatListFlow(serial, screen) {
   waitForUiText(serial, 'selected 1 units');
   waitForUiText(serial, 'Copy');
 
-  const scrollX = Math.round(screen.w * 0.86);
+  // Start inside an actual row rather than the FlatList's blank cross-axis
+  // space. Android's same-axis nested scrolling routes that stream to the
+  // child reliably; keep it shorter than the long-press threshold as a real
+  // scroll gesture would be.
+  const scrollX = Math.round((rowBounds.left + rowBounds.right) / 2);
   const scrollStartY = Math.min(screen.h - 200, rowBounds.bottom + 100);
   adbDragRaw(
     serial,
     { x: scrollX, y: scrollStartY },
     { x: scrollX, y: Math.max(0, scrollStartY - 140) },
-    550
+    300
   );
   waitForFlatOffset(serial, 40);
+  waitForUiText(serial, 'page offset 0');
   sleepMs(750);
   rowBounds = boundsForText(serial, rowText);
   takeScreenshot(serial, flatListScreenshot);
   assertHighlightTracksText(flatListScreenshot, rowBounds, rowText);
-  tapText(serial, screen, 'Copy');
+
+  adbDragRaw(
+    serial,
+    { x: scrollX, y: scrollStartY },
+    { x: scrollX, y: Math.max(0, scrollStartY - 420) },
+    300
+  );
+  waitForUiText(serial, 'visible selection rects 0');
+  waitForUiText(serial, 'selected 1 units');
+  // The toolbar is intentionally clipped with the offscreen selection. Clear
+  // through the always-visible fixture control and verify the range can still
+  // be dismissed without bringing leaked overlay UI back onscreen.
+  tapText(serial, screen, 'Clear');
   waitForUiText(serial, 'idle 0 units');
 }
 
