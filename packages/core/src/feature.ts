@@ -1235,6 +1235,12 @@ export class FeatureRegistry {
   // via SupramarkNode.
   private static features = new Map<string, SupramarkFeature<SupramarkNode>>();
 
+  // IDs we have already warned about for being replaced. Keeps HMR dev loop
+  // quiet: every feature edit yields a fresh module instance, and without
+  // dedup the warn would fire on every single save. Reset in `clear()` so
+  // watch-mode test re-runs stay deterministic.
+  private static warnedDuplicateIds = new Set<string>();
+
   /**
    * Register a Feature.
    *
@@ -1265,11 +1271,16 @@ export class FeatureRegistry {
       // observable in production without breaking HMR or the no-throw contract.
       // Intentionally not gated on `import.meta.hot`: core is consumed under
       // react-native / bun test / ts-jest where `import.meta` is unreliable.
-      // eslint-disable-next-line no-console
-      console.warn(
-        `Feature "${id}" is already registered; the previous entry is being replaced. ` +
-          `This is expected under Vite HMR, but in production usually means a duplicated package.`,
-      );
+      // Dedup per id: HMR re-fires this branch on every save, but the signal
+      // only needs to land once per session.
+      if (!this.warnedDuplicateIds.has(id)) {
+        this.warnedDuplicateIds.add(id);
+        // eslint-disable-next-line no-console
+        console.warn(
+          `Feature "${id}" is already registered; the previous entry is being replaced. ` +
+            `This is expected under Vite HMR, but in production usually means a duplicated package.`,
+        );
+      }
     }
 
     // A feature is registered for a specific node subtype (e.g. SupramarkDiagramNode),
@@ -1338,6 +1349,7 @@ export class FeatureRegistry {
    */
   static clear(): void {
     this.features.clear();
+    this.warnedDuplicateIds.clear();
   }
 }
 

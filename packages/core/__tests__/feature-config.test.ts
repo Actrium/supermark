@@ -114,6 +114,17 @@ describe('Feature configuration system', () => {
 
       expect(FeatureRegistry.get('@test/feature-a')).toBe(refreshed);
       expect(FeatureRegistry.list()).toHaveLength(1);
+
+      // Subsequent HMR-style re-registrations of the same id stay quiet: the
+      // duplicate-id warning fires once per session, not once per save.
+      const refreshedAgain = createTestFeature('@test/feature-a', 'test-a-updated-2');
+      const spy3 = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(() => FeatureRegistry.register(refreshedAgain)).not.toThrow();
+      expect(spy3).not.toHaveBeenCalled();
+      spy3.mockRestore();
+
+      expect(FeatureRegistry.get('@test/feature-a')).toBe(refreshedAgain);
+      expect(FeatureRegistry.list()).toHaveLength(1);
     });
   });
 
