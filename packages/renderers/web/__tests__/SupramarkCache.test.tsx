@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 import React from 'react';
 import { Window } from 'happy-dom';
 import { createRoot, type Root } from 'react-dom/client';
@@ -40,6 +40,8 @@ afterEach(async () => {
     root = null;
   }
   browser.document.body.replaceChildren();
+  // Reset any mocked system time so it can't leak into the next test.
+  setSystemTime();
 });
 
 function createContainer(): TestContainer {
@@ -103,17 +105,35 @@ async function renderDocument(config: unknown): Promise<void> {
         })
       )
     );
-    // Let the async effect (expandOpaqueContainers + preRenderAll) settle.
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
   });
+  // Let the async effect (expandOpaqueContainers + preRenderAll) settle.
+  await settle();
 }
 
 async function unmount(): Promise<void> {
   if (root) {
     await act(async () => root?.unmount());
     root = null;
+  }
+}
+
+// Flush microtasks until engineState.renderCalls has been stable for a few
+// consecutive ticks. Covers both the cache-miss path (count increments once
+// then settles) and the cache-hit path (count never moves) without depending
+// on a fixed number of awaits — robust to the effect gaining an extra async
+// tick. Uses a tick counter rather than Date.now() so mocked time can't hang
+// the loop.
+async function settle(stableTicks = 3, maxTicks = 1000): Promise<void> {
+  let last = engineState.renderCalls;
+  let stable = 0;
+  for (let i = 0; i < maxTicks; i++) {
+    await Promise.resolve();
+    if (engineState.renderCalls === last) {
+      if (++stable >= stableTicks) return;
+    } else {
+      last = engineState.renderCalls;
+      stable = 0;
+    }
   }
 }
 
@@ -203,10 +223,8 @@ describe('Supramark web diagram cache', () => {
           })
         )
       );
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
     });
+    await settle();
     expect(engineState.renderCalls).toBe(1);
     await unmount();
 
@@ -224,11 +242,34 @@ describe('Supramark web diagram cache', () => {
           })
         )
       );
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
     });
+    await settle();
     expect(engineState.renderCalls).toBe(2);
     await unmount();
+  });
+
+  test('re-renders after the cache entry ttl expires', async () => {
+    // LRUCache expires entries by Date.now() - timestamp > ttl, so advancing
+    // the mocked clock past the ttl window must invalidate the prior render
+    // and force a fresh engine.render call on the next mount.
+    const config = {
+      diagram: { defaultCache: { enabled: true, maxSize: 10, ttl: 1000 } },
+    };
+
+    setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    await renderDocument(config);
+    expect(engineState.renderCalls).toBe(1);
+
+    await unmount();
+    // Advance 2s — past the 1s ttl — then remount: the cached entry is stale.
+    setSystemTime(new Date('2026-01-01T00:00:02Z'));
+    await renderDocument(config);
+    expect(engineState.renderCalls).toBe(2);
+
+    await unmount();
+    // Without further time advancing, the freshly cached entry is still live
+    // and a third mount is a cache hit again.
+    await renderDocument(config);
+    expect(engineState.renderCalls).toBe(2);
   });
 });
