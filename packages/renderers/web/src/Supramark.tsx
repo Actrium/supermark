@@ -1776,8 +1776,10 @@ async function preRenderAll(
       const diagramCache = getRendererCache<DiagramRenderResult>('diagram', cachePolicy);
       // Include the engine identity and the full resolved options so a cached
       // result cannot cross engine instances or option variants (e.g. a
-      // different PlantUML server URL).
-      const cacheKey = `${engineId} ${task.engine} ${task.code} ${stableSerialize(task.options)}`;
+      // different PlantUML server URL). Serialize the tuple as an array so
+      // task.code — arbitrary diagram text that may contain spaces or braces —
+      // can't collide with another (code, options) pair on the delimiter.
+      const cacheKey = stableSerialize([engineId, task.engine, task.code, task.options]);
 
       const render = () =>
         engine.render({ engine: task.engine, code: task.code, options: task.options });

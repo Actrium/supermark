@@ -210,6 +210,11 @@ export function stableSerialize(value: unknown, seen = new Set<object>()): strin
       .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableSerialize(entryValue, nextSeen)}`)
       .join(',')}}`;
   }
+  if (typeof value === 'function') {
+    // Source text isn't a stable key (engines may reorder params, truncate
+    // bodies); treat functions like non-plain objects — identity-stable.
+    return nonPlainIdentity(value);
+  }
   if (typeof value === 'string') {
     return `string:${JSON.stringify(value)}`;
   }

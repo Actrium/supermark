@@ -65,6 +65,13 @@ describe('stableSerialize', () => {
     expect(stableSerialize([1, [2, 3]])).toBe(stableSerialize([1, [2, 3]]));
     expect(stableSerialize([1, [2, 3]])).not.toBe(stableSerialize([1, [2, 4]]));
   });
+
+  it('a function value uses identity, not source text', () => {
+    const f1 = () => 1;
+    const f2 = () => 1;
+    expect(stableSerialize({ fn: f1 })).not.toBe(stableSerialize({ fn: f2 }));
+    expect(stableSerialize({ fn: f1 })).toBe(stableSerialize({ fn: f1 }));
+  });
 });
 
 describe('resolveRendererCachePolicy', () => {
