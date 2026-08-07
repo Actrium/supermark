@@ -118,8 +118,11 @@ class LocalDiagramEngine implements DiagramRenderService {
    * load failure (chunk 404, wasm init error) is retried on the next render
    * instead of permanently bricking the engine — `defaultDiagramEngine` is a
    * module-level singleton, so a pinned rejection is unrecoverable without a
-   * full page reload. The identity guard avoids clobbering a newer promise if
-   * a retry already replaced the slot. See #161.
+   * full page reload. The `current() === promise` guard is a no-op invariant
+   * today — the `.catch` below is the only code that nulls the slot and it
+   * fires exactly once, so no retry can replace the slot before it runs. It
+   * stays as a load-bearing check for a future `dispose()`/`reset()` that
+   * could null the slot out from under a still-pending rejection. See #161.
    */
   private cacheRetryableLoad<T>(
     current: () => Promise<T> | null,
