@@ -113,90 +113,97 @@ class LocalDiagramEngine implements DiagramRenderService {
     }
   }
 
+  /**
+   * Cache a lazily-loaded promise, dropping it on rejection so a transient
+   * load failure (chunk 404, wasm init error) is retried on the next render
+   * instead of permanently bricking the engine — `defaultDiagramEngine` is a
+   * module-level singleton, so a pinned rejection is unrecoverable without a
+   * full page reload. The identity guard avoids clobbering a newer promise if
+   * a retry already replaced the slot. See #161.
+   */
+  private cacheRetryableLoad<T>(
+    current: () => Promise<T> | null,
+    store: (p: Promise<T> | null) => void,
+    load: () => Promise<T>
+  ): Promise<T> {
+    const cached = current();
+    if (cached) return cached;
+    const promise = load();
+    promise.catch(() => {
+      if (current() === promise) store(null);
+    });
+    store(promise);
+    return promise;
+  }
+
   private async getGraphvizAdapter() {
-    if (this.options.graphviz?.adapter) {
-      return this.options.graphviz.adapter;
-    }
-
-    if (!this.options.graphviz?.loadAdapter) {
-      return null;
-    }
-
-    if (!this.graphvizAdapterPromise) {
-      // Drop the cached promise on rejection so a transient load failure
-      // (chunk 404, wasm init error) is retried on the next render instead
-      // of permanently bricking the engine. Same pattern in every loader
-      // getter below. See #161.
-      const promise = this.options.graphviz.loadAdapter();
-      promise.catch(() => {
-        if (this.graphvizAdapterPromise === promise) {
-          this.graphvizAdapterPromise = null;
-        }
-      });
-      this.graphvizAdapterPromise = promise;
-    }
-
-    return this.graphvizAdapterPromise;
+    const adapter = this.options.graphviz?.adapter;
+    if (adapter) return adapter;
+    const loadAdapter = this.options.graphviz?.loadAdapter;
+    if (!loadAdapter) return null;
+    return this.cacheRetryableLoad(
+      () => this.graphvizAdapterPromise,
+      p => {
+        this.graphvizAdapterPromise = p;
+      },
+      loadAdapter
+    );
   }
 
   private async getEchartsRender(): Promise<DiagramRenderFn | null> {
-    if (this.options.echarts?.render) return this.options.echarts.render;
-    if (!this.options.echarts?.loadRender) return null;
-    if (!this.echartsRenderPromise) {
-      const promise = this.options.echarts.loadRender();
-      promise.catch(() => {
-        if (this.echartsRenderPromise === promise) {
-          this.echartsRenderPromise = null;
-        }
-      });
-      this.echartsRenderPromise = promise;
-    }
-    return this.echartsRenderPromise;
+    const render = this.options.echarts?.render;
+    if (render) return render;
+    const loadRender = this.options.echarts?.loadRender;
+    if (!loadRender) return null;
+    return this.cacheRetryableLoad(
+      () => this.echartsRenderPromise,
+      p => {
+        this.echartsRenderPromise = p;
+      },
+      loadRender
+    );
   }
 
   private async getVegaLiteRender(): Promise<DiagramRenderFn | null> {
-    if (this.options.vegaLite?.render) return this.options.vegaLite.render;
-    if (!this.options.vegaLite?.loadRender) return null;
-    if (!this.vegaLiteRenderPromise) {
-      const promise = this.options.vegaLite.loadRender();
-      promise.catch(() => {
-        if (this.vegaLiteRenderPromise === promise) {
-          this.vegaLiteRenderPromise = null;
-        }
-      });
-      this.vegaLiteRenderPromise = promise;
-    }
-    return this.vegaLiteRenderPromise;
+    const render = this.options.vegaLite?.render;
+    if (render) return render;
+    const loadRender = this.options.vegaLite?.loadRender;
+    if (!loadRender) return null;
+    return this.cacheRetryableLoad(
+      () => this.vegaLiteRenderPromise,
+      p => {
+        this.vegaLiteRenderPromise = p;
+      },
+      loadRender
+    );
   }
 
   private async getPlantumlRender(): Promise<DiagramRenderFn | null> {
-    if (this.options.plantuml?.render) return this.options.plantuml.render;
-    if (!this.options.plantuml?.loadRender) return null;
-    if (!this.plantumlRenderPromise) {
-      const promise = this.options.plantuml.loadRender();
-      promise.catch(() => {
-        if (this.plantumlRenderPromise === promise) {
-          this.plantumlRenderPromise = null;
-        }
-      });
-      this.plantumlRenderPromise = promise;
-    }
-    return this.plantumlRenderPromise;
+    const render = this.options.plantuml?.render;
+    if (render) return render;
+    const loadRender = this.options.plantuml?.loadRender;
+    if (!loadRender) return null;
+    return this.cacheRetryableLoad(
+      () => this.plantumlRenderPromise,
+      p => {
+        this.plantumlRenderPromise = p;
+      },
+      loadRender
+    );
   }
 
   private async getD2Render(): Promise<DiagramRenderFn | null> {
-    if (this.options.d2?.render) return this.options.d2.render;
-    if (!this.options.d2?.loadRender) return null;
-    if (!this.d2RenderPromise) {
-      const promise = this.options.d2.loadRender();
-      promise.catch(() => {
-        if (this.d2RenderPromise === promise) {
-          this.d2RenderPromise = null;
-        }
-      });
-      this.d2RenderPromise = promise;
-    }
-    return this.d2RenderPromise;
+    const render = this.options.d2?.render;
+    if (render) return render;
+    const loadRender = this.options.d2?.loadRender;
+    if (!loadRender) return null;
+    return this.cacheRetryableLoad(
+      () => this.d2RenderPromise,
+      p => {
+        this.d2RenderPromise = p;
+      },
+      loadRender
+    );
   }
 
   private svg(id: string, engine: string, payload: string): DiagramRenderResult {
