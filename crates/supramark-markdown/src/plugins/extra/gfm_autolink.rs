@@ -8,7 +8,7 @@
 //! images and other inline constructs apply first, then URLs inside the
 //! resulting text are linkified (matching cmark-gfm's own postprocess pass).
 use crate::common::sourcemap::SourcePos;
-use crate::parser::core::CoreRule;
+use crate::parser::core::{CoreRule, Root};
 use crate::parser::inline::{Text, TextSpecial};
 use crate::supramark::{AstV2Ctx, SupramarkNode};
 use crate::{MarkdownParser, Node, NodeValue, Renderer};
@@ -49,12 +49,18 @@ pub fn add(md: &mut MarkdownParser) {
 pub struct GfmAutolinkPostprocess;
 impl CoreRule for GfmAutolinkPostprocess {
     fn run(root: &mut Node, md: &MarkdownParser) {
-        process_node(root, false, md);
+        let (root_value, children) = root
+            .cast_and_children_mut::<Root>()
+            .expect("GFM autolink postprocess requires the parser root");
+        let source = &root_value.content;
+        for child in children {
+            process_node(child, false, md, source);
+        }
     }
 }
 
 /// Walk the tree, linkifying text nodes that are not inside a link/image.
-fn process_node(node: &mut Node, in_link: bool, md: &MarkdownParser) {
+fn process_node(node: &mut Node, in_link: bool, md: &MarkdownParser, source: &str) {
     let is_link = node.name().ends_with("Link") || node.name().ends_with("Autolink");
     // Image alt text is collected as a plain string attribute, so URLs inside
     // it must stay literal — cmark-gfm does not linkify inside images either.
@@ -73,7 +79,7 @@ fn process_node(node: &mut Node, in_link: bool, md: &MarkdownParser) {
             let orig_srcmap = node.children[i].srcmap;
             if let Some(text) = node.children[i].cast::<Text>() {
                 let content = text.content.clone();
-                if let Some(splice) = autolink_split(&content, orig_srcmap, md) {
+                if let Some(splice) = autolink_split(&content, orig_srcmap, md, source) {
                     node.children.splice(i..=i, splice);
                     // Re-scan from the new node at index i (the trailing text
                     // fragment, if any) so consecutive URLs are linkified.
@@ -82,7 +88,7 @@ fn process_node(node: &mut Node, in_link: bool, md: &MarkdownParser) {
             }
         }
         if !is_code {
-            process_node(&mut node.children[i], child_in_link, md);
+            process_node(&mut node.children[i], child_in_link, md, source);
         }
         i += 1;
     }
@@ -96,24 +102,22 @@ fn is_code_node(node: &Node) -> bool {
 /// Outcome of scanning one text node: a list of replacement nodes (text +
 /// link fragments) that splice in place of the original.
 ///
-/// `base_start` is the original text node's source byte offset (start of its
-/// `srcmap`), if any. When present, each split fragment and autolink node
-/// carries a `srcmap` derived as `base_start + fragment_byte_range`, so
-/// source positions survive the split instead of all dropping to `None`.
-/// The text node's content is a contiguous run of the source
-/// (`srcmap.end - srcmap.start == content.len()`), so byte offsets in
-/// `content` map 1:1 onto source byte offsets — the same invariant
-/// `map_inline_text` relies on.
+/// Each split fragment and autolink node carries a `srcmap` derived from the
+/// original text node. Most text maps linearly. Escaped pipes inside GFM table
+/// cells need a discontinuous mapping because the table scanner removes the
+/// backslash before inline parsing.
 fn autolink_split(
     content: &str,
     orig_srcmap: Option<SourcePos>,
     md: &MarkdownParser,
+    source: &str,
 ) -> Option<Vec<Node>> {
     let bytes = content.as_bytes();
-    let base_start = orig_srcmap.map(|p| p.get_byte_offsets().0);
-    // For a content slice [lo..hi], the source span [base_start+lo, base_start+hi).
+    let source_offsets = fragment_source_offsets(content, orig_srcmap, source);
     let pos = |lo: usize, hi: usize| -> Option<SourcePos> {
-        base_start.map(|b| SourcePos::new(b + lo, b + hi))
+        source_offsets
+            .as_ref()
+            .and_then(|offsets| offsets.position(lo, hi))
     };
     let mut out: Vec<Node> = Vec::new();
     let mut text_start = 0usize;
@@ -160,6 +164,91 @@ fn autolink_split(
     // Drop empty trailing/leading text nodes that cmark-gfm would also drop.
     out.retain(|n| !(n.cast::<Text>().is_some_and(|t| t.content.is_empty())));
     Some(out)
+}
+
+/// Maps content byte boundaries back to the original Markdown source.
+///
+/// The common case is a contiguous source slice and remains allocation-free.
+/// GFM table cells are the important exception: their block scanner removes
+/// the backslash from an escaped `\|` before inline parsing. Reconstruct that
+/// transformation from the source slice. If another transformation violates
+/// these invariants, omit fragment positions instead of publishing incorrect
+/// offsets.
+enum FragmentSourceOffsets {
+    Linear { base: usize, len: usize },
+    Mapped {
+        base: usize,
+        len: usize,
+        removed_backslashes: Vec<usize>,
+    },
+}
+
+impl FragmentSourceOffsets {
+    fn position(&self, lo: usize, hi: usize) -> Option<SourcePos> {
+        if lo > hi {
+            return None;
+        }
+        match self {
+            Self::Linear { base, len } if hi <= *len => Some(SourcePos::new(base + lo, base + hi)),
+            Self::Mapped {
+                base,
+                len,
+                removed_backslashes,
+            } if hi <= *len => {
+                let source_offset = |offset: usize| {
+                    base + offset + removed_backslashes.partition_point(|removed| *removed < offset)
+                };
+                Some(SourcePos::new(source_offset(lo), source_offset(hi)))
+            }
+            Self::Linear { .. } => None,
+            Self::Mapped { .. } => None,
+        }
+    }
+}
+
+fn fragment_source_offsets(
+    content: &str,
+    orig_srcmap: Option<SourcePos>,
+    source: &str,
+) -> Option<FragmentSourceOffsets> {
+    let (start, end) = orig_srcmap?.get_byte_offsets();
+    let source_slice = source.get(start..end)?;
+    if source_slice == content {
+        return Some(FragmentSourceOffsets::Linear {
+            base: start,
+            len: content.len(),
+        });
+    }
+
+    let content_bytes = content.as_bytes();
+    let source_bytes = source_slice.as_bytes();
+    let mut content_pos = 0usize;
+    let mut source_pos = 0usize;
+    let mut removed_backslashes = Vec::new();
+
+    while content_pos < content_bytes.len() {
+        // TableScanner consumes exactly one backslash before an escaped pipe.
+        // Keep it inside the preceding fragment's source span, then map the
+        // literal pipe and all following bytes at their true source offsets.
+        if source_bytes.get(source_pos) == Some(&b'\\')
+            && source_bytes.get(source_pos + 1) == Some(&b'|')
+            && content_bytes.get(content_pos) == Some(&b'|')
+        {
+            removed_backslashes.push(content_pos);
+            source_pos += 1;
+        }
+        if source_bytes.get(source_pos) != content_bytes.get(content_pos) {
+            return None;
+        }
+        source_pos += 1;
+        content_pos += 1;
+    }
+
+    (source_pos == source_bytes.len()).then_some(FragmentSourceOffsets::Mapped {
+        base: start,
+        len: content.len(),
+        removed_backslashes,
+    })
 }
 
 struct Match {

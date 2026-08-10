@@ -296,8 +296,8 @@ pub struct ParseOptions {
     pub gfm_tables: bool,
     pub gfm_strikethrough: bool,
     /// GFM bare-URL/email autolink extension. On by default to match the
-    /// cmark-gfm profile; the CommonMark conformance suite disables it so
-    /// bare URLs stay literal (CommonMark spec has no bare-URL autolink).
+    /// product's GFM profile. Set this to `false` for strict CommonMark,
+    /// where bare URLs stay literal.
     pub gfm_autolink: bool,
 }
 
@@ -2072,6 +2072,52 @@ mod tests {
                 ("www.example.com".to_owned(), Some((3, 18))),
                 (" here".to_owned(), Some((18, 23))),
             ]
+        );
+    }
+
+    #[test]
+    fn table_autolink_after_escaped_pipe_preserves_exact_source_positions() {
+        let source = "| a |\n| - |\n| x\\| www.example.com |\n";
+        let ast = parse(source);
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root");
+        };
+        let SupramarkNode::Table { children: rows, .. } = &children[0] else {
+            panic!("expected table");
+        };
+        let SupramarkNode::TableRow {
+            children: cells, ..
+        } = &rows[1]
+        else {
+            panic!("expected body row");
+        };
+        let SupramarkNode::TableCell { children, .. } = &cells[0] else {
+            panic!("expected body cell");
+        };
+
+        let SupramarkNode::Text {
+            value,
+            position: Some(text_position),
+        } = &children[0]
+        else {
+            panic!("expected positioned text before the link");
+        };
+        assert_eq!(value, "x| ");
+        assert_eq!(
+            &source[text_position.start.byte_offset..text_position.end.byte_offset],
+            "x\\| "
+        );
+
+        let SupramarkNode::Link {
+            position: Some(link_position),
+            ..
+        } = &children[1]
+        else {
+            panic!("expected positioned autolink");
+        };
+        assert_eq!(
+            &source[link_position.start.byte_offset..link_position.end.byte_offset],
+            "www.example.com"
         );
     }
 
