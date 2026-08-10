@@ -33,7 +33,7 @@ tests/cases/_fixtures/commonmark/
 
 从仓库根目录执行：
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/import.mjs commonmark
 node tests/markdown-conformance/scripts/validate.mjs commonmark
 ```
@@ -55,7 +55,7 @@ tests/cases/_fixtures/cmark-gfm/
   NOTICE.md
 ```
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/import.mjs cmark-gfm
 node tests/markdown-conformance/scripts/validate.mjs cmark-gfm
 ```
@@ -66,7 +66,7 @@ micromark 适配器从固定 commit 的 `test/io/**/*.js` 自动发现核心 Mar
 仅聚合模块、流测试和常量表测试，在隔离捕获环境中保留 Markdown、期望 HTML、上游选项、
 测试名称及源码行号，共生成 1151 条统一用例。新增匹配文件无需修改导入入口或逐项配置路径。
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/import.mjs micromark
 node tests/markdown-conformance/scripts/validate.mjs micromark
 ```
@@ -78,14 +78,14 @@ node tests/markdown-conformance/scripts/validate.mjs micromark
 
 安装隔离依赖和 Chromium：
 
-```powershell
+```console
 pnpm --dir tests/markdown-conformance install --frozen-lockfile
 node tests/markdown-conformance/node_modules/playwright/cli.js install chromium
 ```
 
 构建 Parser 后执行快速语义对照：
 
-```powershell
+```console
 cargo build -p supramark-markdown --bin supramark-markdown
 node tests/markdown-conformance/scripts/run.mjs <source-name>
 node tests/markdown-conformance/scripts/run-visual.mjs <source-name>
@@ -93,7 +93,7 @@ node tests/markdown-conformance/scripts/run-visual.mjs <source-name>
 
 当前可直接运行 `commonmark`、`cmark-gfm` 和 `micromark`。例如：
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/run.mjs micromark
 node tests/markdown-conformance/scripts/run-visual.mjs micromark
 ```
@@ -158,7 +158,7 @@ Pull Request 始终不会自动创建 Issue，即使 `COMMONMARK_AUTO_ISSUE=true
 
 批准基线按数据源位于 `tests/markdown-conformance/baselines/<source-name>.json`，用于在 Issue 中区分新增失败、已恢复和持续失败。只有完整运行该数据源的全部用例、视觉测试已执行且语义与视觉执行错误均为 0 时，才允许更新：
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/update-baseline.mjs <source-name>
 ```
 

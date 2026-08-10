@@ -45,6 +45,8 @@ export function renderConformanceIssue({
     semanticFailures,
     visualFailures
   );
+  const representativeId =
+    representatives[0]?.id ?? semanticFailures[0]?.id ?? visualFailures[0]?.id ?? sourceName;
   const lines = [
     metadata.marker,
     `# CommonMark ${comparisonScope} conformance test failures`,
@@ -105,8 +107,20 @@ export function renderConformanceIssue({
     '',
     '### Reproducing a single case (does not overwrite the full report)',
     '',
+    '**Bash (Linux/macOS):**',
+    '',
     fencedCode([
-      `$env:CASE_IDS = "${representatives[0]?.id ?? semanticFailures[0]?.id ?? visualFailures[0]?.id ?? sourceName}"`,
+      `export CASE_IDS="${representativeId}"`,
+      'export FAIL_ON_FAILURES="0"',
+      'export ARTIFACT_DIR="tests/markdown-conformance/artifacts/manual/$CASE_IDS"',
+      runCommand,
+      'unset CASE_IDS FAIL_ON_FAILURES ARTIFACT_DIR',
+    ].join('\n'), 'bash'),
+    '',
+    '**PowerShell (Windows):**',
+    '',
+    fencedCode([
+      `$env:CASE_IDS = "${representativeId}"`,
       '$env:FAIL_ON_FAILURES = "0"',
       '$env:ARTIFACT_DIR = "tests/markdown-conformance/artifacts/manual/$env:CASE_IDS"',
       runCommand,

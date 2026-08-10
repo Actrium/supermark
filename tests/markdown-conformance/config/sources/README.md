@@ -36,7 +36,7 @@ can reuse `importers/spec-examples.mjs`; Markdown/HTML file pairs can reuse
 
 From the repository root:
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/import.mjs <source-name>
 node tests/markdown-conformance/scripts/validate.mjs <source-name>
 ```

@@ -132,6 +132,10 @@ jobs:
         working-directory: tests/markdown-conformance
         run: pnpm install --frozen-lockfile
 
+      - name: Run conformance harness unit tests
+        working-directory: tests/markdown-conformance
+        run: pnpm test:unit
+
       - name: Install Playwright Chromium
         if: env.RUN_VISUAL == 'true'
         working-directory: tests/markdown-conformance
@@ -139,6 +143,11 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@1.97.0
+
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: markdown-conformance
 
       - name: Import locked data sources
         run: node tests/markdown-conformance/scripts/import.mjs "$SOURCE_NAME"
@@ -246,7 +255,7 @@ jobs:
             gh issue list \
               --repo "$GH_REPO" \
               --state open \
-              --limit 100 \
+              --limit 1000 \
               --json number,title,body \
               | jq -r \
                   --arg title "$issue_title" \

@@ -31,7 +31,7 @@ tests/cases/_fixtures/commonmark/
 
 Run from the repository root:
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/import.mjs commonmark
 node tests/markdown-conformance/scripts/validate.mjs commonmark
 ```
@@ -50,7 +50,7 @@ tests/cases/_fixtures/cmark-gfm/
   NOTICE.md
 ```
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/import.mjs cmark-gfm
 node tests/markdown-conformance/scripts/validate.mjs cmark-gfm
 ```
@@ -59,7 +59,7 @@ node tests/markdown-conformance/scripts/validate.mjs cmark-gfm
 
 The micromark adapter discovers core Markdown-to-HTML assertions from `test/io/**/*.js` at the pinned commit. It excludes aggregation-only modules, stream tests, and constant-table tests. In an isolated capture environment it preserves Markdown input, expected HTML, upstream options, test names, and source line numbers, producing 1,151 normalized cases. Newly matching files require no changes to the import entry point or explicit path list.
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/import.mjs micromark
 node tests/markdown-conformance/scripts/validate.mjs micromark
 ```
@@ -70,14 +70,14 @@ To add another source, provide a source configuration and adapter. The generic e
 
 Install the isolated dependencies and Chromium:
 
-```powershell
+```console
 pnpm --dir tests/markdown-conformance install --frozen-lockfile
 node tests/markdown-conformance/node_modules/playwright/cli.js install chromium
 ```
 
 Build the parser, then run semantic or visual comparison:
 
-```powershell
+```console
 cargo build -p supramark-markdown --bin supramark-markdown
 node tests/markdown-conformance/scripts/run.mjs <source-name>
 node tests/markdown-conformance/scripts/run-visual.mjs <source-name>
@@ -85,7 +85,7 @@ node tests/markdown-conformance/scripts/run-visual.mjs <source-name>
 
 The directly supported source names are `commonmark`, `cmark-gfm`, and `micromark`. For example:
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/run.mjs micromark
 node tests/markdown-conformance/scripts/run-visual.mjs micromark
 ```
@@ -145,7 +145,7 @@ The default `github.token` can create issues when the target repository is the r
 
 Approved baselines are stored per source at `tests/markdown-conformance/baselines/<source-name>.json`. Reports use them to distinguish new, resolved, and persistent failures. A baseline can only be updated after a complete run of every case for that source, with visual testing enabled and zero semantic or visual execution errors:
 
-```powershell
+```console
 node tests/markdown-conformance/scripts/update-baseline.mjs <source-name>
 ```
 
