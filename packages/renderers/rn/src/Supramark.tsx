@@ -138,7 +138,7 @@ function deepFreezeAst(value: unknown): void {
   }
   // Object.freeze is idempotent and a no-op on non-objects; safe to call.
   try {
-    Object.freeze(value as object);
+    Object.freeze(value);
   } catch {
     // Some environments throw on exotic objects; the freeze is best-effort.
   }
