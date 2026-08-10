@@ -188,6 +188,8 @@ export interface SupramarkDiagramEngineConfig {
   cache?: {
     enabled?: boolean;
     maxSize?: number;
+    /** Maximum estimated resident bytes for this engine's runtime cache. */
+    maxBytes?: number;
     ttl?: number;
   };
 }
@@ -207,6 +209,8 @@ export interface SupramarkDiagramConfig {
   defaultCache?: {
     enabled?: boolean;
     maxSize?: number;
+    /** Maximum estimated resident bytes for a runtime cache. */
+    maxBytes?: number;
     ttl?: number;
   };
 

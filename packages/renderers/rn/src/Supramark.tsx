@@ -28,13 +28,10 @@ import {
 import { DiagramNode } from './DiagramNode';
 import { MathBlock } from './MathBlock';
 import { MathInline } from './MathInline';
-import {
-  type SupramarkStyles,
-  mergeStyles,
-  darkThemeStyles,
-} from './styles';
+import { type SupramarkStyles, mergeStyles, darkThemeStyles } from './styles';
 import { ErrorBoundary, type ErrorInfo, ErrorDisplay } from './ErrorBoundary';
 import { SourceStateContext } from './SourceStateContext';
+import { resolveDevelopmentMode } from './devMode';
 import {
   getRendererCache,
   resolveDiagramCachePolicy,
@@ -44,11 +41,96 @@ import {
 
 type RenderedNode = React.ComponentProps<typeof Text>['children'];
 
+// Dev mode: __DEV__ in React Native bundles, NODE_ENV elsewhere (web/tests).
+// Deep-freeze of the shared cached AST only runs in dev so production keeps
+// the freeze cost off the render path while the read-only contract holds.
+const isDevMode = resolveDevelopmentMode();
+
 interface ParsedDocument {
   /** Immutable after expansion; cached snapshots may be shared by multiple renderer instances. */
   readonly root: SupramarkRootNode;
   readonly highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>;
   readonly sourceState: SupramarkSourceState;
+}
+
+/**
+ * Estimates the byte footprint of a cached parsed document for the
+ * byte-aware cache cap. Walks the AST summing string `value`/`code`/`text`
+ * lengths plus a small fixed overhead per node; ignores the highlighted Map
+ * (its entries are keyed by source slice and bounded by the AST size).
+ * Runs only on a cache miss (one `set()`), so an O(nodes) walk is acceptable.
+ */
+function estimateParsedDocumentBytes(document: ParsedDocument): number {
+  let bytes = 0;
+  const stack: SupramarkNode[] = [...document.root.children];
+  while (stack.length > 0) {
+    const node = stack.pop() as SupramarkNode & {
+      value?: unknown;
+      code?: unknown;
+      text?: unknown;
+      children?: SupramarkNode[];
+    };
+    bytes += 64; // node object overhead (fields, prototype, refs).
+    const text =
+      typeof node.value === 'string'
+        ? node.value
+        : typeof node.code === 'string'
+          ? node.code
+          : typeof node.text === 'string'
+            ? node.text
+            : undefined;
+    if (text !== undefined) {
+      bytes += text.length;
+    }
+    if (node.children) {
+      for (const child of node.children) {
+        stack.push(child);
+      }
+    }
+  }
+  return Math.max(bytes, 1);
+}
+
+/**
+ * Recursively freezes plain objects/arrays reachable from a cached AST in dev
+ * mode so a host `containerRenderers` annotating AST nodes in place cannot
+ * silently cross-contaminate other rows sharing the cached snapshot. Production
+ * keeps the freeze off the render path; the read-only contract still applies by
+ * convention. Class instances, Maps, and other non-plain values are skipped
+ * (freezing them is unsafe or a no-op on their entries). Assumes AST nodes are
+ * plain object literals (Rust canonical parser output) — class-wrapped nodes
+ * would bypass the freeze silently.
+ */
+function deepFreezeAst(value: unknown): void {
+  if (value === null || typeof value !== 'object') {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      deepFreezeAst(item);
+    }
+  } else {
+    // Object.getPrototypeOf is typed `any` in the ES5 lib, so assert the return
+    // to keep the type-aware lint (no-unsafe-assignment) happy. Only recurse
+    // into plain objects; class instances, Maps, etc. are left untouched.
+    const proto = Object.getPrototypeOf(value) as object | null;
+    if (proto !== null && proto !== Object.prototype) {
+      return;
+    }
+    const record = value as Record<PropertyKey, unknown>;
+    for (const key of Object.keys(record)) {
+      deepFreezeAst(record[key]);
+    }
+    for (const sym of Object.getOwnPropertySymbols(record)) {
+      deepFreezeAst(record[sym]);
+    }
+  }
+  // Object.freeze is idempotent and a no-op on non-objects; safe to call.
+  try {
+    Object.freeze(value);
+  } catch {
+    // Some environments throw on exotic objects; the freeze is best-effort.
+  }
 }
 
 // Highlighter identities keep parsed-document cache entries separated when a host swaps services.
@@ -94,10 +176,14 @@ function resolveDocumentCachePolicy(config?: SupramarkConfig): RendererCachePoli
   const finiteTtls = enabledEnginePolicies
     .map(policy => policy.ttl)
     .filter((ttl): ttl is number => ttl !== undefined);
+  const finiteMaxBytes = enabledEnginePolicies
+    .map(policy => policy.maxBytes)
+    .filter((maxBytes): maxBytes is number => maxBytes !== undefined);
   return {
     enabled: true,
     maxSize: Math.min(...enabledEnginePolicies.map(policy => policy.maxSize)),
     ttl: finiteTtls.length > 0 ? Math.min(...finiteTtls) : undefined,
+    maxBytes: finiteMaxBytes.length > 0 ? Math.min(...finiteMaxBytes) : undefined,
   };
 }
 
@@ -118,8 +204,7 @@ function getDefinitionDescriptions(
   item: SupramarkDefinitionItemNode
 ): SupramarkDefinitionDescriptionNode[] {
   return item.children.filter(
-    (child): child is SupramarkDefinitionDescriptionNode =>
-      child.type === 'definition_description'
+    (child): child is SupramarkDefinitionDescriptionNode => child.type === 'definition_description'
   );
 }
 
@@ -214,7 +299,11 @@ export const Supramark: React.FC<SupramarkProps> = ({
 }) => {
   // Global options.cache provides the least-specific cache default.
   const documentCachePolicy = useMemo(() => resolveDocumentCachePolicy(config), [config]);
-  const documentCache = getRendererCache<ParsedDocument>('parsed-document', documentCachePolicy);
+  const documentCache = getRendererCache<ParsedDocument>(
+    'parsed-document',
+    documentCachePolicy,
+    estimateParsedDocumentBytes
+  );
   const codeHighlightEnabled = isFeatureGroupEnabled(config, ['@supramark/feature-code-highlight']);
   // Completed documents can share parsing/highlighting only when every input is equivalent.
   // Config is intentionally omitted because parse currently derives no plugins or AST transforms
@@ -313,6 +402,12 @@ export const Supramark: React.FC<SupramarkProps> = ({
               )
             : await buildParsedDocument();
         if (!cancelled) {
+          // Dev-only deep freeze enforces the read-only AST contract on the
+          // shared cached snapshot; see deepFreezeAst. containerRenderers that
+          // annotate in place would otherwise cross-contaminate sibling rows.
+          if (isDevMode) {
+            deepFreezeAst(nextDocument.root);
+          }
           setParsedDocument(nextDocument);
           setParseError(null);
         }
@@ -467,7 +562,7 @@ function renderNode(
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-math'])) {
         return renderDisabledMathBlock(mathBlock, key, styles);
       }
-      return <MathBlock key={key} node={mathBlock} />;
+      return <MathBlock key={key} node={mathBlock} timeoutMs={config?.diagram?.defaultTimeoutMs} />;
     }
     case 'list': {
       const list = node;
@@ -483,7 +578,7 @@ function renderNode(
               config,
               onOpenHtmlPage,
               containerRenderers,
-              list.ordered ? `${startIndex + index}.` : '•',
+              list.ordered ? `${startIndex + index}.` : '•'
             )
           )}
         </View>
@@ -517,7 +612,7 @@ function renderNode(
             highlighted,
             config,
             onOpenHtmlPage,
-            containerRenderers,
+            containerRenderers
           )}
         </View>
       );
@@ -585,7 +680,8 @@ function renderNode(
           <View style={blockContainerStyle}>
             <Text style={{ fontWeight: '600', lineHeight: 20 }}>{title}</Text>
             <Text style={{ lineHeight: 20 }}>
-              Tap the card to open the HTML page in a standalone container (requires the host to implement the onOpenHtmlPage callback).
+              Tap the card to open the HTML page in a standalone container (requires the host to
+              implement the onOpenHtmlPage callback).
             </Text>
           </View>
         );
@@ -617,7 +713,15 @@ function renderNode(
 
         const renderAdmonitionContent = () =>
           container.children.map((child, index) =>
-            renderNode(child, index, styles, highlighted, config, onOpenHtmlPage, containerRenderers)
+            renderNode(
+              child,
+              index,
+              styles,
+              highlighted,
+              config,
+              onOpenHtmlPage,
+              containerRenderers
+            )
           );
 
         if (!isFeatureGroupEnabled(config, ['@supramark/feature-admonition'])) {
@@ -766,7 +870,15 @@ function renderNode(
       // renderInlineNodes doesn't skip block nodes.
       const renderFootnoteContent = () =>
         def.children.map((child, childIndex) =>
-          renderNode(child, childIndex, styles, highlighted, config, onOpenHtmlPage, containerRenderers)
+          renderNode(
+            child,
+            childIndex,
+            styles,
+            highlighted,
+            config,
+            onOpenHtmlPage,
+            containerRenderers
+          )
         );
       // Phase one: simply append as "[n] content" at the end of the text
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-footnote'])) {
@@ -822,6 +934,19 @@ function renderNode(
           </Text>
         </View>
       );
+    }
+    case 'blockquote': {
+      const quote = node;
+      return (
+        <View key={key} style={styles.blockquote}>
+          {quote.children.map((child, i) =>
+            renderNode(child, i, styles, highlighted, config, onOpenHtmlPage, containerRenderers)
+          )}
+        </View>
+      );
+    }
+    case 'thematic_break': {
+      return <View key={key} style={styles.thematicBreak} />;
     }
     case 'text':
       return (
@@ -885,10 +1010,32 @@ function codeTokenTextStyle(token: {
   };
 }
 
+// Block node types handled by renderNode's switch below. Keep in sync with the
+// switch: every case must be listed here, or the parse-smoke test will flag a
+// shape drift between the real parser output and what the renderer renders.
+export const BLOCK_NODE_TYPES: ReadonlySet<string> = new Set([
+  'paragraph',
+  'heading',
+  'code',
+  'math_block',
+  'list',
+  'list_item',
+  'diagram',
+  'container',
+  'definition_list',
+  'footnote_definition',
+  'table',
+  'table_row',
+  'table_cell',
+  'blockquote',
+  'thematic_break',
+  'text',
+]);
+
 // Inline node types — keep in sync with renderInlineNode's switch below: any
 // inline type handled there must be listed here, or list_item will mistake it
 // for a block and route it through renderNode.
-const INLINE_NODE_TYPES: ReadonlySet<string> = new Set([
+export const INLINE_NODE_TYPES: ReadonlySet<string> = new Set([
   'text',
   'strong',
   'emphasis',
@@ -899,6 +1046,7 @@ const INLINE_NODE_TYPES: ReadonlySet<string> = new Set([
   'break',
   'delete',
   'footnote_reference',
+  'raw',
 ]);
 
 function isInlineNode(node: SupramarkNode): boolean {
@@ -916,7 +1064,7 @@ function renderListItemBody(
   highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
   config: SupramarkConfig | undefined,
   onOpenHtmlPage: ((node: SupramarkContainerNode) => void) | undefined,
-  containerRenderers: Record<string, ContainerRendererRN> | undefined,
+  containerRenderers: Record<string, ContainerRendererRN> | undefined
 ): RenderedNode[] {
   const out: RenderedNode[] = [];
   let inlineBuf: SupramarkNode[] = [];
@@ -930,7 +1078,7 @@ function renderListItemBody(
       <Text key={`li-${seq}`} style={styles.paragraph}>
         {prefix}
         {inlineBuf.map((n, i) => renderInlineNode(n, i, styles, highlighted, config))}
-      </Text>,
+      </Text>
     );
     seq += 1;
     inlineBuf = [];
@@ -949,7 +1097,7 @@ function renderListItemBody(
         <Text key={`li-${seq}`} style={styles.paragraph}>
           {marker}
           {renderInlineNodes(child.children, styles, highlighted, config)}
-        </Text>,
+        </Text>
       );
       seq += 1;
       markerPending = false;
@@ -961,7 +1109,7 @@ function renderListItemBody(
     out.push(
       <View key={`li-${seq}`} style={styles.listItemIndent}>
         {renderNode(child, 0, styles, highlighted, config, onOpenHtmlPage, containerRenderers)}
-      </View>,
+      </View>
     );
     seq += 1;
   }
@@ -973,9 +1121,12 @@ function renderInlineNodes(
   nodes: SupramarkNode[],
   styles: ReturnType<typeof mergeStyles>,
   highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
-  config?: SupramarkConfig
+  config?: SupramarkConfig,
+  parentType?: string
 ): RenderedNode {
-  return nodes.map((node, index) => renderInlineNode(node, index, styles, highlighted, config));
+  return nodes.map((node, index) =>
+    renderInlineNode(node, index, styles, highlighted, config, parentType)
+  );
 }
 
 function renderInlineNode(
@@ -983,7 +1134,8 @@ function renderInlineNode(
   key: number,
   styles: ReturnType<typeof mergeStyles>,
   highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
-  config?: SupramarkConfig
+  config?: SupramarkConfig,
+  parentType?: string
 ): RenderedNode {
   switch (node.type) {
     case 'text': {
@@ -992,9 +1144,25 @@ function renderInlineNode(
     }
     case 'strong': {
       const strongNode = node;
+      // cmark-gfm 0.29 flattens a strong whose parent is strong; CommonMark
+      // 0.31 keeps the nesting. The two references diverge, so flattening is
+      // opt-in via `options.flattenNestedStrong` (mirrors the web renderer).
+      // RN nested <Text style={strong}> renders bold-on-bold (= bold) either
+      // way, so this is a behavioral-consistency no-op visually, but it keeps
+      // the same config from yielding structurally different output per
+      // platform.
+      if (parentType === 'strong' && config?.options?.flattenNestedStrong === true) {
+        return renderInlineNodes(
+          strongNode.children,
+          styles,
+          highlighted,
+          config,
+          'strong'
+        );
+      }
       return (
         <Text key={key} style={styles.strong}>
-          {renderInlineNodes(strongNode.children, styles, highlighted, config)}
+          {renderInlineNodes(strongNode.children, styles, highlighted, config, 'strong')}
         </Text>
       );
     }
@@ -1019,7 +1187,14 @@ function renderInlineNode(
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-math'])) {
         return mathNode.value;
       }
-      return <MathInline key={key} value={mathNode.value} textStyle={styles.paragraph} />;
+      return (
+        <MathInline
+          key={key}
+          value={mathNode.value}
+          textStyle={styles.paragraph}
+          timeoutMs={config?.diagram?.defaultTimeoutMs}
+        />
+      );
     }
     case 'link': {
       const linkNode = node;
@@ -1066,6 +1241,12 @@ function renderInlineNode(
           [{label}]
         </Text>
       );
+    }
+    case 'raw': {
+      // Inline HTML (e.g. `<span>`). RN can't render arbitrary HTML inline, and
+      // dropping the tag keeps the surrounding text in one <Text> flow — see
+      // issue #125. Block-level raw HTML falls through renderNode's default.
+      return null;
     }
     default:
       return null;
@@ -1333,7 +1514,9 @@ function renderMapNodeFromContainer(
       <View key={key} style={styles.mapCard}>
         <View style={styles.mapCardHeader}>
           <Text style={styles.mapCardTitle}>🗺️ Smart Map Card</Text>
-          <Text style={styles.mapCardSubtitle}>Visual placeholder (react-native-maps not ready)</Text>
+          <Text style={styles.mapCardSubtitle}>
+            Visual placeholder (react-native-maps not ready)
+          </Text>
         </View>
 
         {/* Smart map placeholder area */}

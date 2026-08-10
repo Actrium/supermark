@@ -133,6 +133,29 @@ export function locateSelectionPoint(
 }
 
 /**
+ * Return a range's endpoints in document order without changing their values.
+ *
+ * `anchor` and `focus` preserve gesture direction, so after a handle crosses
+ * the opposite edge the anchor may follow the focus. Geometry, however, labels
+ * the two visible handles as `start` / `end`. Keeping this normalization in one
+ * place prevents a visual start handle from accidentally pinning itself when
+ * the stored range is reversed.
+ */
+export function orderSelectionRange(
+  index: SelectionUnitIndex,
+  range: SelectionRange
+): { start: SelectionPoint; end: SelectionPoint } {
+  const anchor = locateSelectionPoint(index, range.anchor);
+  const focus = locateSelectionPoint(index, range.focus);
+  const anchorAfterFocus =
+    anchor.unitIndex > focus.unitIndex ||
+    (anchor.unitIndex === focus.unitIndex && anchor.intraOffset > focus.intraOffset);
+  return anchorAfterFocus
+    ? { start: range.focus, end: range.anchor }
+    : { start: range.anchor, end: range.focus };
+}
+
+/**
  * Slice a text unit to `[from, to)` while preserving identity.
  *
  * `from`/`to` are first widened outward to the nearest grapheme-cluster
