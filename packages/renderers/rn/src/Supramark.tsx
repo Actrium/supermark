@@ -28,11 +28,7 @@ import {
 import { DiagramNode } from './DiagramNode';
 import { MathBlock } from './MathBlock';
 import { MathInline } from './MathInline';
-import {
-  type SupramarkStyles,
-  mergeStyles,
-  darkThemeStyles,
-} from './styles';
+import { type SupramarkStyles, mergeStyles, darkThemeStyles } from './styles';
 import { ErrorBoundary, type ErrorInfo, ErrorDisplay } from './ErrorBoundary';
 import { SourceStateContext } from './SourceStateContext';
 import { resolveDevelopmentMode } from './devMode';
@@ -208,8 +204,7 @@ function getDefinitionDescriptions(
   item: SupramarkDefinitionItemNode
 ): SupramarkDefinitionDescriptionNode[] {
   return item.children.filter(
-    (child): child is SupramarkDefinitionDescriptionNode =>
-      child.type === 'definition_description'
+    (child): child is SupramarkDefinitionDescriptionNode => child.type === 'definition_description'
   );
 }
 
@@ -583,7 +578,7 @@ function renderNode(
               config,
               onOpenHtmlPage,
               containerRenderers,
-              list.ordered ? `${startIndex + index}.` : '•',
+              list.ordered ? `${startIndex + index}.` : '•'
             )
           )}
         </View>
@@ -617,7 +612,7 @@ function renderNode(
             highlighted,
             config,
             onOpenHtmlPage,
-            containerRenderers,
+            containerRenderers
           )}
         </View>
       );
@@ -685,7 +680,8 @@ function renderNode(
           <View style={blockContainerStyle}>
             <Text style={{ fontWeight: '600', lineHeight: 20 }}>{title}</Text>
             <Text style={{ lineHeight: 20 }}>
-              Tap the card to open the HTML page in a standalone container (requires the host to implement the onOpenHtmlPage callback).
+              Tap the card to open the HTML page in a standalone container (requires the host to
+              implement the onOpenHtmlPage callback).
             </Text>
           </View>
         );
@@ -717,7 +713,15 @@ function renderNode(
 
         const renderAdmonitionContent = () =>
           container.children.map((child, index) =>
-            renderNode(child, index, styles, highlighted, config, onOpenHtmlPage, containerRenderers)
+            renderNode(
+              child,
+              index,
+              styles,
+              highlighted,
+              config,
+              onOpenHtmlPage,
+              containerRenderers
+            )
           );
 
         if (!isFeatureGroupEnabled(config, ['@supramark/feature-admonition'])) {
@@ -796,7 +800,10 @@ function renderNode(
               return (
                 <View key={index} style={defItemStyle}>
                   {terms.map((term, termIndex) => (
-                    <Text key={`term-${termIndex}`} style={[styles.listItemText, { fontWeight: '600' }]}>
+                    <Text
+                      key={`term-${termIndex}`}
+                      style={[styles.listItemText, { fontWeight: '600' }]}
+                    >
                       {renderInlineNodes(term.children, styles, highlighted, config)}
                     </Text>
                   ))}
@@ -830,7 +837,10 @@ function renderNode(
             return (
               <View key={index} style={defItemStyle}>
                 {terms.map((term, termIndex) => (
-                  <Text key={`term-${termIndex}`} style={[styles.listItemText, { fontWeight: '600' }]}>
+                  <Text
+                    key={`term-${termIndex}`}
+                    style={[styles.listItemText, { fontWeight: '600' }]}
+                  >
                     {renderInlineNodes(term.children, styles, highlighted, config)}
                   </Text>
                 ))}
@@ -863,7 +873,15 @@ function renderNode(
       // renderInlineNodes doesn't skip block nodes.
       const renderFootnoteContent = () =>
         def.children.map((child, childIndex) =>
-          renderNode(child, childIndex, styles, highlighted, config, onOpenHtmlPage, containerRenderers)
+          renderNode(
+            child,
+            childIndex,
+            styles,
+            highlighted,
+            config,
+            onOpenHtmlPage,
+            containerRenderers
+          )
         );
       // Phase one: simply append as "[n] content" at the end of the text
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-footnote'])) {
@@ -1049,7 +1067,7 @@ function renderListItemBody(
   highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
   config: SupramarkConfig | undefined,
   onOpenHtmlPage: ((node: SupramarkContainerNode) => void) | undefined,
-  containerRenderers: Record<string, ContainerRendererRN> | undefined,
+  containerRenderers: Record<string, ContainerRendererRN> | undefined
 ): RenderedNode[] {
   const out: RenderedNode[] = [];
   let inlineBuf: SupramarkNode[] = [];
@@ -1063,7 +1081,7 @@ function renderListItemBody(
       <Text key={`li-${seq}`} style={styles.paragraph}>
         {prefix}
         {inlineBuf.map((n, i) => renderInlineNode(n, i, styles, highlighted, config))}
-      </Text>,
+      </Text>
     );
     seq += 1;
     inlineBuf = [];
@@ -1082,7 +1100,7 @@ function renderListItemBody(
         <Text key={`li-${seq}`} style={styles.paragraph}>
           {marker}
           {renderInlineNodes(child.children, styles, highlighted, config)}
-        </Text>,
+        </Text>
       );
       seq += 1;
       markerPending = false;
@@ -1094,7 +1112,7 @@ function renderListItemBody(
     out.push(
       <View key={`li-${seq}`} style={styles.listItemIndent}>
         {renderNode(child, 0, styles, highlighted, config, onOpenHtmlPage, containerRenderers)}
-      </View>,
+      </View>
     );
     seq += 1;
   }
@@ -1152,7 +1170,14 @@ function renderInlineNode(
       if (!isFeatureGroupEnabled(config, ['@supramark/feature-math'])) {
         return mathNode.value;
       }
-      return <MathInline key={key} value={mathNode.value} textStyle={styles.paragraph} timeoutMs={config?.diagram?.defaultTimeoutMs} />;
+      return (
+        <MathInline
+          key={key}
+          value={mathNode.value}
+          textStyle={styles.paragraph}
+          timeoutMs={config?.diagram?.defaultTimeoutMs}
+        />
+      );
     }
     case 'link': {
       const linkNode = node;
@@ -1472,7 +1497,9 @@ function renderMapNodeFromContainer(
       <View key={key} style={styles.mapCard}>
         <View style={styles.mapCardHeader}>
           <Text style={styles.mapCardTitle}>🗺️ Smart Map Card</Text>
-          <Text style={styles.mapCardSubtitle}>Visual placeholder (react-native-maps not ready)</Text>
+          <Text style={styles.mapCardSubtitle}>
+            Visual placeholder (react-native-maps not ready)
+          </Text>
         </View>
 
         {/* Smart map placeholder area */}

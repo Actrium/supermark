@@ -17,9 +17,7 @@ import './support/mock-renderer';
 // load the wasm artifact directly by dist path — a specifier no other file
 // mocks — and parse the fixture ourselves. This is the same artifact core's
 // parse() drives under Node, so the AST shape is identical.
-const realParser = await import(
-  '../../../../crates/supramark-markdown/packages/web/dist/node.js'
-);
+const realParser = await import('../../../../crates/supramark-markdown/packages/web/dist/node.js');
 
 // react-test-renderer needs the act environment to flush effects synchronously.
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
