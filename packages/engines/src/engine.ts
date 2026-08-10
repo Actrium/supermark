@@ -45,9 +45,7 @@ class LocalDiagramEngine implements DiagramRenderService {
         normalizedEngine,
         message,
         isTimeout ? 'render_timeout' : 'render_error',
-        isTimeout
-          ? `${params.engine} render timed out`
-          : `${params.engine} rendering failed`,
+        isTimeout ? `${params.engine} render timed out` : `${params.engine} rendering failed`,
         message
       );
     }
