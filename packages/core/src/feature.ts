@@ -1658,12 +1658,11 @@ export interface SupramarkConfig {
  * remounts. This cache is bounded by default (both entry count and a total-byte cap)
  * and can be adjusted or disabled via `diagram.defaultCache` / `diagram.engines[engine].cache`.
  *
- * Note: the web runtime (@supramark/web) does NOT maintain a document or diagram
- * result cache of its own — it only forwards `engineConfig.cache` into engine
- * options. The runtime cache described here is an RN-only facility (see #124).
- * Hosts built on {@link createConfigFromRegistry} therefore get this caching behavior
- * by default; to disable it, pass a config that explicitly overrides
- * `options.cache: false`.
+ * The RN runtime caches parsed documents and normalized diagram SVGs. The Web
+ * runtime maintains a process-level diagram-result cache, but no parsed-document
+ * cache. Hosts built on {@link createConfigFromRegistry} therefore get the RN
+ * document cache by default; to disable it, pass a config that explicitly
+ * overrides `options.cache: false`. See #124 and #170.
  */
 export function createConfigFromRegistry(enabledByDefault = true): SupramarkConfig {
   const features = FeatureRegistry.list().map(feature => ({

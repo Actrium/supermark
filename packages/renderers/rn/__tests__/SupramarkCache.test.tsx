@@ -18,7 +18,7 @@ const parserState = {
 const markdownParserModule = {
   parse: async (markdown: string): Promise<SupramarkRootNode> => {
     parserState.calls += 1;
-    if (markdown === 'diagram document') {
+    if (markdown.startsWith('diagram document')) {
       return {
         type: 'root',
         children: [
@@ -293,6 +293,32 @@ describe('Supramark completed-document cache', () => {
 
     expect(parserState.calls).toBe(1);
     await unmount(secondRenderer);
+  });
+
+  test('uses the strictest engine maxBytes for the shared parsed-document cache', async () => {
+    const config = {
+      features: [{ id: '@supramark/feature-mermaid', enabled: false }],
+      diagram: {
+        engines: {
+          mermaid: {
+            cache: { enabled: true, maxSize: 10, maxBytes: 100 },
+          },
+          dot: {
+            cache: { enabled: true, maxSize: 10, maxBytes: 1_000 },
+          },
+        },
+      },
+    };
+
+    const first = await renderDocument('diagram document one', 'complete', config);
+    await unmount(first);
+    const second = await renderDocument('diagram document two', 'complete', config);
+    await unmount(second);
+    expect(parserState.calls).toBe(2);
+
+    const firstAgain = await renderDocument('diagram document one', 'complete', config);
+    expect(parserState.calls).toBe(3);
+    await unmount(firstAgain);
   });
 
   test('does not retain parsed documents when caching is disabled', async () => {

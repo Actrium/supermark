@@ -35,6 +35,7 @@ import {
 } from './styles';
 import { ErrorBoundary, type ErrorInfo, ErrorDisplay } from './ErrorBoundary';
 import { SourceStateContext } from './SourceStateContext';
+import { resolveDevelopmentMode } from './devMode';
 import {
   getRendererCache,
   resolveDiagramCachePolicy,
@@ -47,15 +48,7 @@ type RenderedNode = React.ComponentProps<typeof Text>['children'];
 // Dev mode: __DEV__ in React Native bundles, NODE_ENV elsewhere (web/tests).
 // Deep-freeze of the shared cached AST only runs in dev so production keeps
 // the freeze cost off the render path while the read-only contract holds.
-const globalRecord = globalThis as Record<string, unknown> & {
-  process?: { env?: Record<string, string | undefined> };
-};
-const isDevMode: boolean =
-  (typeof globalRecord.__DEV__ !== 'undefined' && globalRecord.__DEV__ === true) ||
-  (typeof globalRecord.process !== 'undefined' &&
-    typeof globalRecord.process.env !== 'undefined' &&
-    globalRecord.process.env.NODE_ENV !== 'production');
-
+const isDevMode = resolveDevelopmentMode();
 
 interface ParsedDocument {
   /** Immutable after expansion; cached snapshots may be shared by multiple renderer instances. */
@@ -187,10 +180,14 @@ function resolveDocumentCachePolicy(config?: SupramarkConfig): RendererCachePoli
   const finiteTtls = enabledEnginePolicies
     .map(policy => policy.ttl)
     .filter((ttl): ttl is number => ttl !== undefined);
+  const finiteMaxBytes = enabledEnginePolicies
+    .map(policy => policy.maxBytes)
+    .filter((maxBytes): maxBytes is number => maxBytes !== undefined);
   return {
     enabled: true,
     maxSize: Math.min(...enabledEnginePolicies.map(policy => policy.maxSize)),
     ttl: finiteTtls.length > 0 ? Math.min(...finiteTtls) : undefined,
+    maxBytes: finiteMaxBytes.length > 0 ? Math.min(...finiteMaxBytes) : undefined,
   };
 }
 

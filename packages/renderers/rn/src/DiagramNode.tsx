@@ -79,7 +79,7 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
     [diagramConfig, globalCache, node.engine]
   );
   const diagramCache = getRendererCache<CachedDiagramResult>(
-    'diagram',
+    `diagram:${normalizedEngine}`,
     cachePolicy,
     value => value.svg.length
   );

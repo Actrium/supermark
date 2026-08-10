@@ -224,6 +224,28 @@ describe('getRendererCache policy reconfiguration (#124 #3)', () => {
     expect(diagram).not.toBe(document);
   });
 
+  it('keeps different diagram-engine policies isolated', async () => {
+    clearReactNativeRendererCaches();
+    const mermaid = getRendererCache<string>(
+      'diagram:mermaid',
+      resolveRendererCachePolicy({ enabled: true, maxSize: 5 }),
+      () => 1
+    )!;
+    await mermaid.getOrCreate('mermaid-svg', async () => '<svg>mermaid</svg>');
+
+    const dot = getRendererCache<string>(
+      'diagram:dot',
+      resolveRendererCachePolicy({ enabled: true, maxSize: 1 }),
+      () => 1
+    )!;
+    await dot.getOrCreate('dot-svg', async () => '<svg>dot</svg>');
+
+    expect(dot).not.toBe(mermaid);
+    expect(dot.getStats().maxSize).toBe(1);
+    expect(mermaid.getStats().maxSize).toBe(5);
+    expect(mermaid.get('mermaid-svg')).toBe('<svg>mermaid</svg>');
+  });
+
   it('clearSupramarkRenderCache drops all namespaces (public API alias)', () => {
     clearReactNativeRendererCaches();
     const policy = resolveRendererCachePolicy({ enabled: true, maxSize: 5 });

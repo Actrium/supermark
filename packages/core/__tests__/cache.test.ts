@@ -111,6 +111,18 @@ describe('LRUCache', () => {
   });
 
   describe('byte-aware eviction (#124)', () => {
+    it('does not let byte oversize protection bypass maxSize: 0', () => {
+      const cache = new LRUCache<string>({
+        maxSize: 0,
+        maxBytes: 100,
+        sizeCalculator: () => 1,
+      });
+      cache.set('k', 'v');
+      expect(cache.size).toBe(0);
+      expect(cache.get('k')).toBeUndefined();
+      expect(cache.getStats().totalSize).toBe(0);
+    });
+
     it('evicts oldest entries once totalSize exceeds maxBytes', () => {
       const cache = new LRUCache<string>({
         maxSize: 100,

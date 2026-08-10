@@ -189,6 +189,13 @@ export class LRUCache<T> {
       this.cache.delete(key);
     }
 
+    // maxSize: 0 is a documented zero-capacity cache. The freshly inserted
+    // key is protected below only so one byte-oversized value can be retained;
+    // it must not bypass the independent entry-count bound.
+    if (this.maxSize === 0) {
+      return;
+    }
+
     const size = this.sizeCalculator(value);
     const entry: CacheEntry<T> = {
       value,
@@ -201,8 +208,9 @@ export class LRUCache<T> {
     this.totalSize += size;
 
     // Evict oldest entries until both the count and byte bounds hold. The
-    // freshly inserted entry is protected: an item larger than maxBytes is
-    // retained alone rather than evicted to make room for itself.
+    // freshly inserted entry is protected from byte eviction: an item larger
+    // than maxBytes is retained alone rather than evicted to make room for
+    // itself. The zero-capacity count case returns before insertion above.
     this.evictToFit(key);
   }
 
