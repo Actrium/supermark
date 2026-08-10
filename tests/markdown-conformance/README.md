@@ -115,7 +115,7 @@ Reports are written to `tests/markdown-conformance/artifacts/<source-name>/`:
 
 Visual tests use the repository's default Rust Supramark parser AST and the production React renderer at `packages/renderers/web/src/Supramark.tsx`. The browser host isolates diagram engines and the browser WASM parser to avoid parsing twice; the final DOM comes from the production renderer.
 
-The GitHub Actions workflow is `.github/workflows/commonmark-conformance.yml`. It validates the selected sources, creates a dynamic matrix, imports and validates each source independently, runs comparison, uploads reports, and maintains an aggregate issue. Failed runs upload the complete report and generate `issue.md` and `issue-metadata.json`. When issue creation is enabled, the workflow creates or updates the aggregate issue. Pull requests only validate and upload artifacts.
+The GitHub Actions workflow is `.github/workflows/markdown-conformance.yml`. It validates the selected sources, creates a dynamic matrix, imports and validates each source independently, runs comparison, uploads reports, and maintains an aggregate issue. Failed runs upload the complete report and generate `issue.md` and `issue-metadata.json`. When issue creation is enabled, the workflow creates or updates the aggregate issue. Pull requests only validate and upload artifacts.
 
 Issue titles use the format `[<source display name>] Conformance failure: cases did not pass`. The workflow applies the `bug` label and uses a stable marker to update the existing aggregate issue for the same source.
 
