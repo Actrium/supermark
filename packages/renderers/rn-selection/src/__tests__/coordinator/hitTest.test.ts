@@ -10,6 +10,7 @@ import {
   localizePoint,
   pointInRect,
   resolvePointToSelection,
+  resolvePointToSelectionInViewport,
   verticalGap,
 } from '../../coordinator/hitTest';
 
@@ -119,6 +120,25 @@ describe('resolvePointToSelection', () => {
   test('point after the last block clamps to document end', () => {
     // The whole of C#0, not its first character.
     expect(resolvePointToSelection(blocks(), { x: 50, y: 200 }, index)).toEqual({
+      nodeId: 'C',
+      unitId: 'C#0',
+      offset: 5,
+    });
+  });
+
+  test('a viewport drag clamps to its own visible blocks', () => {
+    const scoped = blocks();
+    scoped[1].viewportId = 'list';
+    scoped[1].clipRect = { x: 0, y: 30, w: 100, h: 50 };
+    scoped[2].viewportId = 'list';
+    scoped[2].clipRect = { x: 0, y: 30, w: 100, h: 50 };
+
+    expect(resolvePointToSelectionInViewport(scoped, { x: 50, y: -500 }, index, 'list')).toEqual({
+      nodeId: 'B',
+      unitId: 'B#0',
+      offset: 0,
+    });
+    expect(resolvePointToSelectionInViewport(scoped, { x: 50, y: 500 }, index, 'list')).toEqual({
       nodeId: 'C',
       unitId: 'C#0',
       offset: 5,

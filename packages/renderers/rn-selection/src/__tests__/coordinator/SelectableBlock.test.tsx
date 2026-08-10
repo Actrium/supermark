@@ -2,12 +2,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { create, act, type ReactTestRenderer } from 'react-test-renderer';
 
+const mockPlatform = { OS: 'android' };
+
 // react-native's JS entry contains Flow syntax bun cannot load, so its
 // components are mocked as host strings: react-test-renderer can then render
 // the tree and we can read props off it and invoke them. bun's `mock.module`
 // registry is process-wide, so the mock lives here, in the only file that
 // renders React.
 mock.module('react-native', () => ({
+  Platform: mockPlatform,
   View: 'View',
   Text: 'Text',
   TouchableOpacity: 'TouchableOpacity',
@@ -81,6 +84,7 @@ let renderer: ReactTestRenderer | null = null;
 
 beforeEach(() => {
   renderer = null;
+  mockPlatform.OS = 'android';
 });
 
 function renderBlock(
@@ -203,6 +207,27 @@ describe('SelectableBlock rendering', () => {
     });
 
     expect(calls).toEqual([['p1', { x: 17, y: 9 }]]);
+  });
+
+  test('does not attach the Android fallback on iOS', () => {
+    mockPlatform.OS = 'ios';
+    const ctx = makeContext([textUnit('p1#0', 'hello')]);
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <SelectionContext.Provider value={ctx}>
+          <SelectionViewportContext.Provider value="list">
+            <SelectableBlock nodeId="p1" unitIds={['p1#0']}>
+              hello
+            </SelectableBlock>
+          </SelectionViewportContext.Provider>
+        </SelectionContext.Provider>
+      );
+    });
+    renderer = r;
+    expect(
+      r.root.findByType('Text' as unknown as React.ElementType).props.onLongPress
+    ).toBeUndefined();
   });
 
   test('nested onLayout never publishes a cell-local rect over root-space geometry', () => {

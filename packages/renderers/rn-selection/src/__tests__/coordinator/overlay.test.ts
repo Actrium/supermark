@@ -180,9 +180,18 @@ describe('computeSelectionRects text precision', () => {
         w: 50,
         h: 10,
         startHandleVisible: false,
-        endHandleVisible: false,
       },
     ]);
+  });
+
+  test('keeps handles visible when their real edges touch viewport sides', () => {
+    const block = measured();
+    block.clipRect = { x: 10, y: 90, w: 50, h: 50 };
+    const rects = rectsFor([block], units, {
+      anchor: { nodeId: 'p', unitId: 'p#0', offset: 0 },
+      focus: { nodeId: 'p', unitId: 'p#0', offset: 5 },
+    });
+    expect(rects).toEqual([{ x: 10, y: 100, w: 50, h: 20 }]);
   });
 
   test('does not paint a selected block outside its nested viewport', () => {

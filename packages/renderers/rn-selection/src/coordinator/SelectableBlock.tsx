@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useRef } from 'react';
 import {
+  Platform,
   Text,
   View,
   type GestureResponderEvent,
@@ -188,8 +189,12 @@ export const SelectableBlock: React.FC<SelectableBlockProps> = ({
     ctx.setMetrics(nodeId, metrics);
   };
 
+  // Android can hand a nested ScrollView the native responder before the
+  // bubbling root timer fires, so Text supplies a local fallback there. iOS
+  // does not need it, and attaching `onLongPress` to Text produces an unwanted
+  // grey pressed-state flash in a FlatList cell.
   const onNestedLongPress =
-    viewportId === undefined
+    viewportId === undefined || Platform.OS !== 'android'
       ? undefined
       : (e: GestureResponderEvent) => {
           const { locationX, locationY } = e.nativeEvent;

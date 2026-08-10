@@ -189,8 +189,8 @@ async function main() {
     assertScreenshot('cjk', cjkScreenshot);
 
     runMaestro(maestro, udid, flatListFlowFile);
-    // A range edge near a viewport boundary may intentionally hide its handle
-    // when the full touch target would escape the clip.
+    // A range edge remains visible while its drawn knob intersects the clip;
+    // the larger invisible touch target may extend beyond the viewport.
     assertScreenshot('viewport', flatListScreenshot);
 
     runMaestro(maestro, udid, scrollFlowFile);

@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { lineAtY, offsetInsideLineX } from '../metrics';
 import type { SelectionNodeId, SelectionRange, SelectionUnit } from '../model';
+import { orderSelectionRange } from '../resolve';
 import {
   buildSegmentSpans,
   segmentSelectionToRange,
@@ -21,7 +22,12 @@ import {
 } from './SelectionContext';
 import { createSelectionGesture, DEFAULT_LONG_PRESS_MS, type SelectionGesture } from './gesture';
 import { computeHandles, hitTestHandle, type HandleEdge } from './handles';
-import { containingBlock, resolvePointToSelection, type Point } from './hitTest';
+import {
+  containingBlock,
+  resolvePointToSelection,
+  resolvePointToSelectionInViewport,
+  type Point,
+} from './hitTest';
 import { computeSelectionRects, type OverlayRect } from './overlay';
 import { SelectionRegistry, type LayoutRect } from './registry';
 import { SelectionHandles } from './SelectionHandles';
@@ -164,6 +170,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   const gestureActiveRef = useRef(false);
   const viewportInteractionsRef = useRef(new Set<string>());
   const hostScrollLockedRef = useRef(false);
+  const gestureViewportIdRef = useRef<string | undefined>(undefined);
 
   const publishHostScrollLock = useCallback(() => {
     const locked = gestureActiveRef.current || viewportInteractionsRef.current.size > 0;
@@ -277,8 +284,40 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   );
 
   const pointAt = useCallback(
-    (point: Point) => resolvePointToSelection(registry.getBlocks(), point, registry.index),
+    (point: Point) => {
+      const blocks = registry.getBlocks();
+      const viewportId = gestureViewportIdRef.current;
+      return viewportId === undefined
+        ? resolvePointToSelection(blocks, point, registry.index)
+        : resolvePointToSelectionInViewport(blocks, point, registry.index, viewportId);
+    },
     [registry]
+  );
+
+  const fixedPointForHandle = useCallback(
+    (edge: HandleEdge, range: SelectionRange) => {
+      const ordered = orderSelectionRange(registry.index, range);
+      return edge === 'start' ? ordered.end : ordered.start;
+    },
+    [registry]
+  );
+
+  const scopeGestureToHandle = useCallback(
+    (edge: HandleEdge) => {
+      const range = store.getSnapshot().range;
+      if (range === null) {
+        gestureViewportIdRef.current = undefined;
+        return;
+      }
+      const ordered = orderSelectionRange(registry.index, range);
+      const moving = edge === 'start' ? ordered.start : ordered.end;
+      const block =
+        moving.unitId === undefined
+          ? registry.getBlock(moving.nodeId)
+          : registry.getBlockForUnit(moving.unitId);
+      gestureViewportIdRef.current = block?.viewportId;
+    },
+    [registry, store]
   );
 
   const gesture = useMemo<SelectionGesture>(
@@ -288,11 +327,26 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
         pointAt,
         wordAt,
         handleAt,
+        fixedPointForHandle,
         onPhaseChange: phase => publishGestureActivity(phase === 'extending' || phase === 'handle'),
         config: { longPressMs, moveTolerance },
       }),
-    [store, pointAt, wordAt, handleAt, publishGestureActivity, longPressMs, moveTolerance]
+    [
+      store,
+      pointAt,
+      wordAt,
+      handleAt,
+      fixedPointForHandle,
+      publishGestureActivity,
+      longPressMs,
+      moveTolerance,
+    ]
   );
+
+  const cancelGesture = useCallback(() => {
+    gesture.cancel();
+    gestureViewportIdRef.current = undefined;
+  }, [gesture]);
 
   // The long-press threshold has to fire while the finger is still, i.e. with
   // no further touch events to hang it off. The gesture machine stays free of
@@ -348,6 +402,12 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       if (gesture.isActive() || gesture.isPending()) return;
       pendingTouchCancelledRef.current = false;
       const point = toRootSpace(e);
+      const edge = handleAt(point);
+      if (edge === null) {
+        gestureViewportIdRef.current = containingBlock(registry.getBlocks(), point)?.viewportId;
+      } else {
+        scopeGestureToHandle(edge);
+      }
       gesture.touchStart(point, eventTime(e));
       clearTimer();
       if (gesture.isPending()) {
@@ -360,12 +420,23 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
           // gesture ownership because the matching touch-end was swallowed.
           if (pendingTouchCancelledRef.current) {
             pendingTouchCancelledRef.current = false;
-            gesture.cancel();
+            cancelGesture();
           }
         }, longPressDelay);
       }
     },
-    [enabled, refreshRootOrigin, gesture, toRootSpace, clearTimer, longPressDelay]
+    [
+      enabled,
+      refreshRootOrigin,
+      gesture,
+      toRootSpace,
+      handleAt,
+      registry,
+      scopeGestureToHandle,
+      clearTimer,
+      cancelGesture,
+      longPressDelay,
+    ]
   );
 
   const onResponderGrant = onTouchStart;
@@ -389,6 +460,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       pendingTouchCancelledRef.current = false;
       const point = toRootSpace(e);
       gesture.touchEnd(point, eventTime(e));
+      gestureViewportIdRef.current = undefined;
     },
     [enabled, refreshRootOrigin, gesture, toRootSpace, clearTimer]
   );
@@ -396,8 +468,8 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
   const onResponderTerminate = useCallback(() => {
     clearTimer();
     pendingTouchCancelledRef.current = false;
-    gesture.cancel();
-  }, [clearTimer, gesture]);
+    cancelGesture();
+  }, [clearTimer, cancelGesture]);
 
   const onTouchCancel = useCallback(() => {
     if (gesture.isPending()) {
@@ -411,8 +483,8 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
     if (!gesture.isPending()) return;
     clearTimer();
     pendingTouchCancelledRef.current = false;
-    gesture.cancel();
-  }, [clearTimer, gesture]);
+    cancelGesture();
+  }, [clearTimer, cancelGesture, gesture]);
 
   const selectWordInBlock = useCallback(
     (nodeId: SelectionNodeId, localPoint: Point) => {
@@ -432,12 +504,12 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       // nested scroller never remains locked after the finger lifts.
       clearTimer();
       pendingTouchCancelledRef.current = false;
-      gesture.cancel();
+      cancelGesture();
       store.beginAt(range.anchor);
       store.extendTo(range.focus);
       store.commit();
     },
-    [clearTimer, gesture, registry, store, wordAt]
+    [cancelGesture, clearTimer, registry, store, wordAt]
   );
 
   const onHandleGrant = useCallback(
@@ -445,9 +517,10 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
       if (!enabled) return;
       refreshRootOrigin();
       clearTimer();
+      scopeGestureToHandle(edge);
       gesture.handleStart(edge, Date.now());
     },
-    [enabled, refreshRootOrigin, clearTimer, gesture]
+    [enabled, refreshRootOrigin, clearTimer, scopeGestureToHandle, gesture]
   );
 
   const onHandleMove = useCallback(
@@ -462,6 +535,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
     (point: Point) => {
       if (!enabled) return;
       gesture.touchEnd(point, Date.now());
+      gestureViewportIdRef.current = undefined;
     },
     [enabled, gesture]
   );
@@ -479,7 +553,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
     (e: GestureResponderEvent) => {
       if (!enabled) return false;
       const point = toRootSpace(e);
-      if (handleAt(point) !== null) return false;
+      if (handleAt(point) !== null) return true;
       return gesture.isActive();
     },
     [enabled, gesture, handleAt, toRootSpace]
@@ -688,7 +762,7 @@ export const SelectionRoot: React.FC<SelectionRootProps> = ({
               onHandleGrant={onHandleGrant}
               onHandleMove={onHandleMove}
               onHandleRelease={onHandleRelease}
-              onHandleCancel={() => gesture.cancel()}
+              onHandleCancel={cancelGesture}
               toRootPoint={pointFromPage}
             />
           )}

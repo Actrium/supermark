@@ -3,13 +3,13 @@ import { rectsForRange } from '../metrics';
 import type { SelectionRange, SelectionUnit } from '../model';
 import { buildSegmentSpans, rangeToSegmentSelection } from '../native/segmentAdapter';
 import type { SelectionUnitIndex } from '../resolve';
-import { HANDLE_KNOB_RADIUS, HANDLE_TOUCH_RADIUS } from './handles';
+import { HANDLE_KNOB_RADIUS } from './handles';
 import { intersectLayoutRects, type LayoutRect, type RegisteredBlock } from './registry';
 
 export interface OverlayRect extends LayoutRect {
-  /** True only when the real range start and its touch target fit in the clip. */
+  /** True only when the real range start lies inside the clip. */
   startHandleVisible?: boolean;
-  /** True only when the real range end and its touch target fit in the clip. */
+  /** True only when the real range end lies inside the clip. */
   endHandleVisible?: boolean;
 }
 
@@ -69,10 +69,10 @@ function handleFitsClip(rect: LayoutRect, block: RegisteredBlock, edge: 'start' 
   const knobY =
     edge === 'start' ? rect.y - HANDLE_KNOB_RADIUS : rect.y + rect.h + HANDLE_KNOB_RADIUS;
   return (
-    x - HANDLE_TOUCH_RADIUS >= clip.x &&
-    x + HANDLE_TOUCH_RADIUS <= clip.x + clip.w &&
-    knobY - HANDLE_TOUCH_RADIUS >= clip.y &&
-    knobY + HANDLE_TOUCH_RADIUS <= clip.y + clip.h
+    x >= clip.x &&
+    x <= clip.x + clip.w &&
+    knobY + HANDLE_KNOB_RADIUS >= clip.y &&
+    knobY - HANDLE_KNOB_RADIUS <= clip.y + clip.h
   );
 }
 

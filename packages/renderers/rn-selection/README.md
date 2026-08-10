@@ -103,9 +103,11 @@ that want to drive parts of the layer themselves.
 ### Nested scrollers
 
 Wrap a nested `ScrollView` or `FlatList` in `SelectionViewport`. It composes the
-child's `onScroll`, moves mounted block geometry from the native content-offset
+child’s `onScroll`, moves mounted block geometry from the native content-offset
 delta in the same frame, clips selection UI to the visible box, and pauses the
-nested scroller during a selection drag:
+nested scroller during a selection drag. A handle may cross blocks inside the
+same viewport, but dragging past its visible edge clamps the endpoint there;
+the range does not escape into unrelated content outside the nested scroller:
 
 ```tsx
 <SelectionViewport style={{ height: 240 }}>
@@ -122,9 +124,10 @@ nested scroller during a selection drag:
 
 When `SelectionRoot` itself sits inside a host `ScrollView`, use
 `onGestureActiveChange` to pause that enclosing scroller while selection owns a
-drag or a nested `SelectionViewport` owns a touch/scroll. The nested scroller
-stays enabled for its own interaction; ordinary touches outside it are never
-claimed by the root:
+drag or a nested `SelectionViewport` owns an active touch/drag. Momentum after
+the finger lifts does not keep the host locked. The nested scroller stays
+enabled for its own interaction; ordinary touches outside it are never claimed
+by the root:
 
 ```tsx
 const [selectionScrollLocked, setSelectionScrollLocked] = useState(false);

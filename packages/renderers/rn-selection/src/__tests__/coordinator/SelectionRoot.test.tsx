@@ -6,6 +6,7 @@ import type { SelectionUnit } from '../../model';
 import type { SelectionStore } from '../../coordinator/state';
 
 mock.module('react-native', () => ({
+  Platform: { OS: 'android' },
   View: 'View',
   Text: 'Text',
   ScrollView: 'ScrollView',
@@ -125,11 +126,11 @@ function renderRootWithBlock(
 }
 
 describe('SelectionRoot responder negotiation', () => {
-  test('leaves handle ownership to the dedicated knob responder', () => {
+  test('captures handle touches before a nested native scroller can take them', () => {
     const { root } = renderRootWithBlock();
 
     expect(root.props.onStartShouldSetResponder(eventAt(10, 94))).toBe(false);
-    expect(root.props.onStartShouldSetResponderCapture(eventAt(10, 94))).toBe(false);
+    expect(root.props.onStartShouldSetResponderCapture(eventAt(10, 94))).toBe(true);
   });
 
   test('observes a block press without claiming it from a nested scroller', () => {
@@ -898,6 +899,12 @@ describe('SelectionRoot responder negotiation', () => {
     await act(async () => {
       viewport.props.onTouchEnd(eventAt(20, 120));
       await new Promise(resolve => setTimeout(resolve, 1));
+    });
+    expect(activity).toEqual([true, false]);
+
+    act(() => {
+      scrollView.props.onMomentumScrollBegin(eventAt(20, 120));
+      scrollView.props.onMomentumScrollEnd(eventAt(20, 120));
     });
     expect(activity).toEqual([true, false]);
   });

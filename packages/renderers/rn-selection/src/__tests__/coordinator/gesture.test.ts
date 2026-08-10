@@ -55,6 +55,11 @@ function harness(overrides: Partial<SelectionGestureDeps> = {}): Harness {
     pointAt: (p: Point) => point(p.x),
     wordAt: (p: Point) => ({ anchor: point(p.x), focus: point(p.x + 5) }),
     handleAt: () => null,
+    fixedPointForHandle: (edge, range) => {
+      const start = range.anchor.offset <= range.focus.offset ? range.anchor : range.focus;
+      const end = start === range.anchor ? range.focus : range.anchor;
+      return edge === 'start' ? end : start;
+    },
     onPhaseChange: phase => phases.push(phase),
     ...overrides,
   });
@@ -275,6 +280,14 @@ describe('handle drag', () => {
     gesture.touchMove({ x: 30, y: 0 }, 20);
     gesture.touchMove({ x: 50, y: 0 }, 40);
     expect(store.calls).toEqual(['beginAt:4', 'extendTo:30', 'beginAt:4', 'extendTo:50']);
+  });
+
+  test('a reversed range still pins the edge opposite the visual handle', () => {
+    const { store, gesture } = harness({ handleAt: () => 'start' });
+    store.setRange({ anchor: point(9), focus: point(4) });
+    gesture.touchStart({ x: 4, y: 0 }, 0);
+    gesture.touchMove({ x: 2, y: 0 }, 20);
+    expect(store.calls).toEqual(['beginAt:9', 'extendTo:2']);
   });
 
   test('releasing commits', () => {

@@ -186,3 +186,30 @@ export function resolvePointToSelection(
   }
   return localizePoint(block, p, index);
 }
+
+/**
+ * Resolve a drag inside one nested selection viewport.
+ *
+ * Cross-block selection remains available across every mounted block owned by
+ * that viewport. A point leaving its visible box is clamped to the nearest
+ * edge, so the range cannot escape into unrelated content outside the nested
+ * scroller and a FlatList handle always retains an in-viewport endpoint.
+ */
+export function resolvePointToSelectionInViewport(
+  blocks: readonly RegisteredBlock[],
+  p: Point,
+  index: SelectionUnitIndex,
+  viewportId: string
+): SelectionPoint | null {
+  const scoped = blocks.filter(block => block.viewportId === viewportId);
+  if (scoped.length === 0) return null;
+  const clip = scoped.find(block => block.clipRect !== undefined)?.clipRect;
+  const point =
+    clip === undefined
+      ? p
+      : {
+          x: Math.max(clip.x, Math.min(p.x, clip.x + clip.w)),
+          y: Math.max(clip.y, Math.min(p.y, clip.y + clip.h)),
+        };
+  return resolvePointToSelection(scoped, point, index);
+}

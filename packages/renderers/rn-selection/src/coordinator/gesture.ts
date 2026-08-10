@@ -50,6 +50,8 @@ export interface SelectionGestureDeps {
   wordAt(point: Point): SelectionRange | null;
   /** Which handle a touch grabs, if any. */
   handleAt(point: Point): HandleEdge | null;
+  /** The endpoint that must stay fixed while the visible handle moves. */
+  fixedPointForHandle(edge: HandleEdge, range: SelectionRange): SelectionPoint;
   /** Notified whenever the phase changes, so React can re-render. */
   onPhaseChange?(phase: GesturePhase): void;
   config?: SelectionGestureConfig;
@@ -139,9 +141,11 @@ export function createSelectionGesture(deps: SelectionGestureDeps): SelectionGes
 
   const beginHandleDrag = (edge: HandleEdge): void => {
     const range = deps.store.getSnapshot().range;
-    // Grabbing the start handle drags the range's leading edge, so the focus
-    // becomes the anchor and vice versa.
-    fixedPoint = range === null ? null : edge === 'start' ? range.focus : range.anchor;
+    // `anchor` / `focus` preserve gesture direction and may be reversed after
+    // one handle crosses the other. Ask the document-aware dependency for the
+    // endpoint opposite the VISUAL start/end handle instead of assuming anchor
+    // is always the leading edge.
+    fixedPoint = range === null ? null : deps.fixedPointForHandle(edge, range);
     if (fixedPoint === null) {
       reset();
       return;

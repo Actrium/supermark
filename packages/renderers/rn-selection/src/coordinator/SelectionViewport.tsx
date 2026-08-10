@@ -47,7 +47,6 @@ export const SelectionViewport: React.FC<SelectionViewportProps> = ({ children, 
   const offsetRef = useRef<ContentOffset>({ x: 0, y: 0 });
   const touchingRef = useRef(false);
   const draggingRef = useRef(false);
-  const momentumRef = useRef(false);
   const releaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearReleaseTimer = useCallback(() => {
@@ -62,7 +61,7 @@ export const SelectionViewport: React.FC<SelectionViewportProps> = ({ children, 
   }, [clearReleaseTimer, ctx, viewportId]);
 
   const releaseIfIdle = useCallback(() => {
-    if (touchingRef.current || draggingRef.current || momentumRef.current) return;
+    if (touchingRef.current || draggingRef.current) return;
     ctx.setViewportInteractionActive(viewportId, false);
   }, [ctx, viewportId]);
 
@@ -152,21 +151,17 @@ export const SelectionViewport: React.FC<SelectionViewportProps> = ({ children, 
   const childOnMomentumScrollBegin = children.props.onMomentumScrollBegin;
   const onMomentumScrollBegin = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      momentumRef.current = true;
-      activateInteraction();
       childOnMomentumScrollBegin?.(event);
     },
-    [activateInteraction, childOnMomentumScrollBegin]
+    [childOnMomentumScrollBegin]
   );
 
   const childOnMomentumScrollEnd = children.props.onMomentumScrollEnd;
   const onMomentumScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      momentumRef.current = false;
-      scheduleReleaseIfIdle();
       childOnMomentumScrollEnd?.(event);
     },
-    [childOnMomentumScrollEnd, scheduleReleaseIfIdle]
+    [childOnMomentumScrollEnd]
   );
 
   const child = React.cloneElement(children, {
