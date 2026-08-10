@@ -47,6 +47,11 @@ import { DiagramEngineContext } from './DiagramEngineProvider.js';
 import { ErrorBoundary, type ErrorInfo, ErrorDisplay } from './ErrorBoundary.js';
 import { MathBlockWeb, MathInlineWeb } from './MathBlockWeb.js';
 import { SourceStateContext } from './SourceStateContext.js';
+import {
+  getRendererCache,
+  resolveDiagramCachePolicy,
+  stableSerialize,
+} from './renderCache.js';
 
 export interface ContainerRendererWeb {
   (args: {
@@ -86,6 +91,7 @@ export interface SupramarkRenderState {
 type RenderTask = {
   key: string;
   engine: string;
+  rawEngine: string;
   code: string;
   options?: Record<string, unknown>;
 };
@@ -120,6 +126,21 @@ function getDefinitionDescriptions(
 }
 
 const defaultDiagramEngine = createWebDiagramEngine();
+
+// Engine identities prevent an injected renderer from reading another engine's
+// cached result, and isolate cache entries when a host swaps engine instances.
+const diagramEngineIds = new WeakMap<DiagramRenderService, number>();
+let nextDiagramEngineId = 1;
+
+function getDiagramEngineId(engine: DiagramRenderService): number {
+  const existing = diagramEngineIds.get(engine);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const next = nextDiagramEngineId++;
+  diagramEngineIds.set(engine, next);
+  return next;
+}
 
 interface WebDiagramNodeProps {
   node: SupramarkDiagramNode;
@@ -256,7 +277,12 @@ export const Supramark: React.FC<SupramarkWebProps> = ({
           });
         }
 
-        const renderedMap = await preRenderAll(renderTasks, diagramEngine);
+        const renderedMap = await preRenderAll(
+          renderTasks,
+          diagramEngine,
+          config?.diagram,
+          config?.options?.cache
+        );
         const highlightedMap = await preHighlightAll(highlightTasks, codeHighlighter);
 
         if (!cancelled) {
@@ -2167,6 +2193,7 @@ function collectRenderTasks(
           tasks.push({
             key: buildRenderKey(diagram.engine, diagram.code, diagram.meta),
             engine: normalizeRenderEngine(diagram.engine),
+            rawEngine: diagram.engine,
             code: diagram.code,
             options: buildDiagramRenderOptions(diagram.engine, diagram.meta, config?.diagram),
           });
@@ -2177,8 +2204,9 @@ function collectRenderTasks(
           tasks.push({
             key: buildRenderKey('math', mathBlock.value, { displayMode: true }),
             engine: 'math',
+            rawEngine: 'math',
             code: mathBlock.value,
-            options: { displayMode: true },
+            options: buildMathRenderOptions(true, config?.diagram?.defaultTimeoutMs),
           });
         }
       } else if (node.type === 'math_inline') {
@@ -2187,8 +2215,9 @@ function collectRenderTasks(
           tasks.push({
             key: buildRenderKey('math', mathInline.value, { displayMode: false }),
             engine: 'math',
+            rawEngine: 'math',
             code: mathInline.value,
-            options: { displayMode: false },
+            options: buildMathRenderOptions(false, config?.diagram?.defaultTimeoutMs),
           });
         }
       }
@@ -2239,7 +2268,9 @@ function collectCodeHighlightTasks(
 
 async function preRenderAll(
   tasks: RenderTask[],
-  engine: DiagramRenderService
+  engine: DiagramRenderService,
+  diagramConfig?: SupramarkDiagramConfig,
+  globalCache?: boolean
 ): Promise<Map<string, DiagramRenderResult>> {
   if (tasks.length === 0) {
     return new Map();
@@ -2253,14 +2284,35 @@ async function preRenderAll(
   }
 
   const taskList = [...unique.values()];
+  const engineId = getDiagramEngineId(engine);
   const results = await Promise.all(
-    taskList.map(task =>
-      engine.render({
-        engine: task.engine,
-        code: task.code,
-        options: task.options,
-      })
-    )
+    taskList.map(task => {
+      // Resolve the cache policy the same way the RN renderer does: engine
+      // override > diagram.defaultCache > global options.cache. Without this,
+      // engineConfig.cache is a silent no-op on web (issue #163).
+      const cachePolicy = resolveDiagramCachePolicy(
+        diagramConfig?.engines?.[task.rawEngine]?.cache,
+        diagramConfig?.defaultCache,
+        globalCache
+      );
+      const diagramCache = getRendererCache<DiagramRenderResult>('diagram', cachePolicy);
+      // Include the engine identity and the full resolved options so a cached
+      // result cannot cross engine instances or option variants (e.g. a
+      // different PlantUML server URL). Serialize the tuple as an array so
+      // task.code — arbitrary diagram text that may contain spaces or braces —
+      // can't collide with another (code, options) pair on the delimiter.
+      const cacheKey = stableSerialize([engineId, task.engine, task.code, task.options]);
+
+      const render = () =>
+        engine.render({ engine: task.engine, code: task.code, options: task.options });
+
+      if (!diagramCache) {
+        return render();
+      }
+      // Retain only successful results so a transient engine error can be retried
+      // on the next mount instead of being served from cache.
+      return diagramCache.getOrCreate(cacheKey, render, result => result.success);
+    })
   );
 
   return new Map(taskList.map((task, index) => [task.key, results[index]]));
@@ -2367,6 +2419,13 @@ function buildDiagramRenderOptions(
     }
   }
 
+  if (base.timeout === undefined) {
+    const fallback = diagramConfig?.defaultTimeoutMs;
+    if (typeof fallback === 'number' && fallback > 0 && Number.isFinite(fallback)) {
+      base.timeout = fallback;
+    }
+  }
+
   if (!meta) {
     return Object.keys(base).length > 0 ? base : undefined;
   }
@@ -2374,20 +2433,19 @@ function buildDiagramRenderOptions(
   return { ...base, ...meta };
 }
 
-function stableSerialize(value: unknown): string {
-  if (value === null || value === undefined) {
-    return '';
+function buildMathRenderOptions(
+  displayMode: boolean,
+  defaultTimeoutMs?: number
+): Record<string, unknown> {
+  const options: Record<string, unknown> = { displayMode };
+  if (
+    typeof defaultTimeoutMs === 'number' &&
+    defaultTimeoutMs > 0 &&
+    Number.isFinite(defaultTimeoutMs)
+  ) {
+    options.timeout = defaultTimeoutMs;
   }
-  if (Array.isArray(value)) {
-    return `[${value.map(stableSerialize).join(',')}]`;
-  }
-  if (typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entryValue]) => `${key}:${stableSerialize(entryValue)}`)
-      .join(',')}}`;
-  }
-  return String(value);
+  return options;
 }
 
 function renderDisabledDiagram(

@@ -1,12 +1,9 @@
 /*
- * GraphvizModule.m (macOS)
+ * GraphvizModule.m
  *
- * React Native native module implementation for macOS.
+ * React Native native module implementation for iOS / macOS.
  * Manages a singleton Graphviz context and dispatches rendering
  * to a background queue to keep the JS thread responsive.
- *
- * This is functionally identical to the iOS implementation, built
- * separately to allow platform-specific podspec configuration.
  *
  * Licensed under the Apache License, Version 2.0
  */
@@ -156,7 +153,7 @@ RCT_EXPORT_METHOD(getVersion:(RCTPromiseResolveBlock)resolve
 #ifdef RCT_NEW_ARCH_ENABLED
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params {
-    return std::make_shared<facebook::react::NativeGraphvizNativeSpecJSI>(params);
+    return std::make_shared<facebook::react::NativeGraphvizSpecJSI>(params);
 }
 #endif
 

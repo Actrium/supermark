@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import type { SupramarkHeadingNode, SupramarkNode, SupramarkParagraphNode, SupramarkTextNode } from '@supramark/core';
+import type {
+  SupramarkHeadingNode,
+  SupramarkNode,
+  SupramarkParagraphNode,
+  SupramarkTextNode,
+} from '@supramark/core';
 import { linearizeForSelection } from '../linearize';
 import type {
   SelectionBoundaryUnit,
@@ -8,7 +13,12 @@ import type {
   SelectionTextUnit,
   SelectionUnit,
 } from '../model';
-import { buildUnitIndex, locateSelectionPoint, resolveSelectionRange } from '../resolve';
+import {
+  buildUnitIndex,
+  locateSelectionPoint,
+  orderSelectionRange,
+  resolveSelectionRange,
+} from '../resolve';
 import { serializeSelectionUnits } from '../serialize';
 
 // A throwaway AST node — resolve.ts copies `node` but never inspects it.
@@ -39,10 +49,24 @@ const bound = (unitId: string, nodeId: string): SelectionBoundaryUnit => ({
 const text = (value: string): SupramarkTextNode => ({ type: 'text', value }) as SupramarkTextNode;
 const paragraph = (...children: SupramarkNode[]): SupramarkParagraphNode =>
   ({ type: 'paragraph', children }) as SupramarkParagraphNode;
-const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6, ...children: SupramarkNode[]): SupramarkHeadingNode =>
-  ({ type: 'heading', depth, children }) as SupramarkHeadingNode;
+const heading = (
+  depth: 1 | 2 | 3 | 4 | 5 | 6,
+  ...children: SupramarkNode[]
+): SupramarkHeadingNode => ({ type: 'heading', depth, children }) as SupramarkHeadingNode;
 
 describe('resolveSelectionRange', () => {
+  test('orders visual endpoints without discarding gesture direction', () => {
+    const units: SelectionUnit[] = [tUnit('u#0', 'u', 'HelloWorld')];
+    const range = {
+      anchor: { nodeId: 'u', unitId: 'u#0', offset: 8 },
+      focus: { nodeId: 'u', unitId: 'u#0', offset: 2 },
+    };
+    expect(orderSelectionRange(buildUnitIndex(units), range)).toEqual({
+      start: range.focus,
+      end: range.anchor,
+    });
+  });
+
   test('selecting the whole stream serializes identically to the full stream', () => {
     const units = linearizeForSelection([heading(1, text('Hello')), paragraph(text('world'))]);
     const first = units[0];
@@ -118,7 +142,11 @@ describe('resolveSelectionRange', () => {
   test('an edge boundary is included only when fully covered', () => {
     // nodeId "b0"/"b2" hold a single zero-text boundary each, so the nodeId walk
     // encodes before (offset 0) / after (offset > 0) as intraOffset 0 / 1.
-    const units: SelectionUnit[] = [bound('b0#0', 'b0'), tUnit('t1#0', 't1', 'MID'), bound('b2#0', 'b2')];
+    const units: SelectionUnit[] = [
+      bound('b0#0', 'b0'),
+      tUnit('t1#0', 't1', 'MID'),
+      bound('b2#0', 'b2'),
+    ];
 
     // Head boundary fully covered (selection starts before it) -> included.
     const headCovered = resolveSelectionRange(units, {

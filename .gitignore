@@ -5,6 +5,7 @@ node_modules/
 
 # Testing
 coverage/
+examples/react-native/maestro/artifacts/
 
 # Production
 dist/
@@ -63,3 +64,4 @@ docs/.vitepress/dist
 docs/.vitepress/cache
 docs/public/typedoc
 docs/public/preview
+docs/public/playground

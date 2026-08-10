@@ -78,7 +78,11 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
       ),
     [diagramConfig, globalCache, node.engine]
   );
-  const diagramCache = getRendererCache<CachedDiagramResult>('diagram', cachePolicy);
+  const diagramCache = getRendererCache<CachedDiagramResult>(
+    `diagram:${normalizedEngine}`,
+    cachePolicy,
+    value => value.svg.length
+  );
   // Include every render-affecting input so cached SVG cannot cross option variants.
   const diagramCacheKey = useMemo(
     () =>
@@ -308,6 +312,13 @@ function buildRenderOptions(
       if (value === undefined) continue;
       if (key === 'enabled' || key === 'timeoutMs' || key === 'server' || key === 'cache') continue;
       base[key] = value;
+    }
+  }
+
+  if (base.timeout === undefined) {
+    const fallback = diagramConfig?.defaultTimeoutMs;
+    if (typeof fallback === 'number' && fallback > 0 && Number.isFinite(fallback)) {
+      base.timeout = fallback;
     }
   }
 

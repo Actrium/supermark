@@ -9,7 +9,7 @@
 #
 #   1. uses the prebuilt Graphviz static lib produced by
 #      scripts/build-macos.sh (output/macos-universal/lib/libgraphviz_api.a),
-#   2. compiles the ObjC bridge (.m) + the ObjC++ XCTest (.mm) into a
+#   2. compiles the ObjC++ bridge (.mm) + the ObjC++ XCTest (.mm) into a
 #      macOS .xctest bundle against the minimal RN header stubs in
 #      ios/__tests__/stubs,
 #   3. runs it with `xcrun xctest`.
@@ -54,12 +54,12 @@ BUNDLE="$OUT/GraphvizModuleTests.xctest"
 mkdir -p "$BUNDLE/Contents/MacOS"
 BIN="$BUNDLE/Contents/MacOS/GraphvizModuleTests"
 
-# The bridge is Objective-C (.m); the test is Objective-C++ (.mm). Compile
-# each TU to an object file with the right language, then link them.
-clang -g -O0 -fobjc-arc -x objective-c \
+# The bridge and the test are both Objective-C++ (.mm). Compile each TU
+# with clang++ -x objective-c++, then link them.
+clang++ -g -O0 -fobjc-arc -std=c++17 -x objective-c++ \
   -isysroot "$SDK" \
   -I"$IOS_DIR" -I"$NATIVE_INCLUDE" -I"$STUBS" \
-  -c "$IOS_DIR/GraphvizModule.m" \
+  -c "$IOS_DIR/GraphvizModule.mm" \
   -o "$OUT/GraphvizModule.o"
 
 clang++ -g -O0 -fobjc-arc -std=c++17 -x objective-c++ \

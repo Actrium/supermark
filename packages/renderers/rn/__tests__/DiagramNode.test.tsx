@@ -43,11 +43,15 @@ const enabledCacheConfig = {
   },
 };
 
-function createDiagramNode(fenceClosed: boolean): SupramarkDiagramNode {
+function createDiagramNode(
+  fenceClosed: boolean,
+  engine = 'mermaid',
+  code = 'graph TD; A-->B;'
+): SupramarkDiagramNode {
   return {
     type: 'diagram',
-    engine: 'mermaid',
-    code: 'graph TD; A-->B;',
+    engine,
+    code,
     fence_closed: fenceClosed,
   };
 }
@@ -308,5 +312,30 @@ describe('DiagramNode streaming defer/render', () => {
 
     await unmount(firstRenderer);
     await unmount(secondRenderer);
+  });
+
+  test('does not let one engine policy reconfigure and evict another engine cache', async () => {
+    const config = {
+      engines: {
+        mermaid: { cache: { enabled: true, maxSize: 5 } },
+        dot: { cache: { enabled: true, maxSize: 1 } },
+      },
+    };
+    const mermaid = createDiagramNode(true, 'mermaid', 'graph TD; A-->B;');
+    const dot = createDiagramNode(true, 'dot', 'digraph { a -> b }');
+
+    const mermaidRenderer = await renderWithState(mermaid, 'complete', config);
+    await resolveEngine(successfulResult());
+    await unmount(mermaidRenderer);
+
+    const dotRenderer = await renderWithState(dot, 'complete', config);
+    await resolveEngine({ ...successfulResult(), engine: 'dot' });
+    await unmount(dotRenderer);
+    expect(engineState.renderCalls).toBe(2);
+
+    const restoredMermaid = await renderWithState(mermaid, 'complete', config);
+    expect(engineState.renderCalls).toBe(2);
+    expect(hasTestId(restoredMermaid, 'supramark-diagram-svg')).toBe(true);
+    await unmount(restoredMermaid);
   });
 });
