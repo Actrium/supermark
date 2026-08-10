@@ -1684,7 +1684,7 @@ function collectRenderTasks(
             engine: 'math',
             rawEngine: 'math',
             code: mathBlock.value,
-            options: { displayMode: true },
+            options: buildMathRenderOptions(true, config?.diagram?.defaultTimeoutMs),
           });
         }
       } else if (node.type === 'math_inline') {
@@ -1695,7 +1695,7 @@ function collectRenderTasks(
             engine: 'math',
             rawEngine: 'math',
             code: mathInline.value,
-            options: { displayMode: false },
+            options: buildMathRenderOptions(false, config?.diagram?.defaultTimeoutMs),
           });
         }
       }
@@ -1897,11 +1897,33 @@ function buildDiagramRenderOptions(
     }
   }
 
+  if (base.timeout === undefined) {
+    const fallback = diagramConfig?.defaultTimeoutMs;
+    if (typeof fallback === 'number' && fallback > 0 && Number.isFinite(fallback)) {
+      base.timeout = fallback;
+    }
+  }
+
   if (!meta) {
     return Object.keys(base).length > 0 ? base : undefined;
   }
 
   return { ...base, ...meta };
+}
+
+function buildMathRenderOptions(
+  displayMode: boolean,
+  defaultTimeoutMs?: number
+): Record<string, unknown> {
+  const options: Record<string, unknown> = { displayMode };
+  if (
+    typeof defaultTimeoutMs === 'number' &&
+    defaultTimeoutMs > 0 &&
+    Number.isFinite(defaultTimeoutMs)
+  ) {
+    options.timeout = defaultTimeoutMs;
+  }
+  return options;
 }
 
 function renderDisabledDiagram(

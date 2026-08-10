@@ -1526,6 +1526,18 @@ export function validateFeature<TNode extends SupramarkNode = SupramarkNode>(
     });
   }
 
+  // renderers-required (basic + strict). Production mode skips this and emits
+  // the stricter `renderers-required-production` error below.
+  const renderers = feature.renderers as RendererDefinitions<SupramarkNode> | undefined;
+  const hasAnyRenderer = Boolean(renderers && (renderers.rn || renderers.web || renderers.cli));
+  if (!options.production && !hasAnyRenderer) {
+    errors.push({
+      code: 'renderers-required',
+      message: 'Feature must define at least one platform renderer (rn, web, or cli)',
+      severity: 'warning',
+    });
+  }
+
   // ============================================================================
   // Info Rules (info severity) - best practices
   // ============================================================================
@@ -1562,17 +1574,15 @@ export function validateFeature<TNode extends SupramarkNode = SupramarkNode>(
       });
     }
 
-    // In production mode, at least one renderer should be defined
-    if ('renderers' in feature) {
-      const renderers = feature.renderers as RendererDefinitions<SupramarkNode>;
-      const hasRenderer = renderers && (renderers.rn || renderers.web || renderers.cli);
-      if (!hasRenderer) {
-        errors.push({
-          code: 'renderers-required-production',
-          message: 'A production Feature must define at least one platform renderer (rn, web, or cli)',
-          severity: 'error',
-        });
-      }
+    // In production mode, at least one renderer must be defined. Absence is a
+    // defect, not a skip — a Partial feature omitting `renderers` must not slip
+    // through the production gate.
+    if (!hasAnyRenderer) {
+      errors.push({
+        code: 'renderers-required-production',
+        message: 'A production Feature must define at least one platform renderer (rn, web, or cli)',
+        severity: 'error',
+      });
     }
 
     // In production mode, tests are recommended
@@ -1689,13 +1699,16 @@ export interface SupramarkConfig {
  * @returns a Supramark configuration object
  *
  * Behavior note: the returned config always has `options.cache: true`, meaning the
- * host runtime (@supramark/rn / @supramark/web) enables a process-level runtime cache
- * — reused by parsed documents and normalized diagram SVGs across scenarios like
- * virtual-list remounts. This cache is bounded by default (by entry count) and can be
- * adjusted or disabled via `diagram.defaultCache` / `diagram.engines[engine].cache`.
- * Hosts built on {@link createConfigFromRegistry} therefore get this caching behavior
- * by default; to disable it, pass a config that explicitly overrides
- * `options.cache: false`.
+ * RN host runtime (@supramark/rn) enables a process-level runtime cache — reused by
+ * parsed documents and normalized diagram SVGs across scenarios like virtual-list
+ * remounts. This cache is bounded by default (both entry count and a total-byte cap)
+ * and can be adjusted or disabled via `diagram.defaultCache` / `diagram.engines[engine].cache`.
+ *
+ * The RN runtime caches parsed documents and normalized diagram SVGs. The Web
+ * runtime maintains a process-level diagram-result cache, but no parsed-document
+ * cache. Hosts built on {@link createConfigFromRegistry} therefore get the RN
+ * document cache by default; to disable it, pass a config that explicitly
+ * overrides `options.cache: false`. See #124 and #170.
  */
 export function createConfigFromRegistry(enabledByDefault = true): SupramarkConfig {
   const features = FeatureRegistry.list().map(feature => ({
