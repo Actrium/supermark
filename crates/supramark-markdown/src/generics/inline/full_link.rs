@@ -212,6 +212,16 @@ fn parse_link_label(state: &mut InlineState, start: usize, enable_nested: bool) 
     }
 
     if found {
+        // CommonMark §5.3: a link label can have at most 999 characters
+        // inside the square brackets. A longer run is not a valid label, so
+        // the bracket pair falls back to literal text.
+        let label_len = state.src[start + 1..state.pos].chars().count();
+        if label_len > 999 {
+            found = false;
+        }
+    }
+
+    if found {
         label_end = Some(state.pos);
     }
 
