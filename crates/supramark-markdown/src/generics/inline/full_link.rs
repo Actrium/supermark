@@ -264,7 +264,7 @@ pub fn parse_link_destination(
                     return Some(ParseLinkFragmentResult {
                         pos: pos + 1,
                         lines: 0,
-                        str: unescape_all(&str[start + 1..pos]).into_owned(),
+                        str: nul_to_replacement(unescape_all(&str[start + 1..pos])),
                     });
                 }
                 Some('\\') => match chars.next() {
@@ -280,8 +280,11 @@ pub fn parse_link_destination(
         let mut level: u32 = 0;
         loop {
             match chars.next() {
-                // space + ascii control characters
-                Some('\0'..=' ' | '\x7f') | None => break,
+                // CommonMark §2.3: NUL becomes U+FFFD, so it is part of the
+                // destination rather than a terminator. Other ASCII control
+                // characters and whitespace still end the bare-URL form.
+                Some('\0') => pos += 1,
+                Some('\x01'..=' ' | '\x7f') | None => break,
                 Some('\\') => match chars.next() {
                     Some(' ') | None => break,
                     Some(x) => pos += 1 + x.len_utf8(),
@@ -313,8 +316,23 @@ pub fn parse_link_destination(
         Some(ParseLinkFragmentResult {
             pos,
             lines: 0,
-            str: unescape_all(&str[start..pos]).into_owned(),
+            str: nul_to_replacement(unescape_all(&str[start..pos])),
         })
+    }
+}
+
+/// CommonMark §2.3: every NUL in a link destination is replaced with U+FFFD
+/// before the URL is normalized/percent-encoded (so `\u{0}` → `%EF%BF%BD`, not
+/// `%00`). NUL survives `unescape_all` because it is not an escape sequence.
+fn nul_to_replacement(cow: std::borrow::Cow<'_, str>) -> String {
+    match cow {
+        std::borrow::Cow::Borrowed(s) => s.replace('\0', "\u{FFFD}"),
+        std::borrow::Cow::Owned(mut s) => {
+            if s.contains('\0') {
+                s = s.replace('\0', "\u{FFFD}");
+            }
+            s
+        }
     }
 }
 
