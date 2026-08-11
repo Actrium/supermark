@@ -169,7 +169,15 @@ impl BlockRule for HtmlBlockScanner {
             }
         }
 
-        let (content, _) = state.get_lines(start_line, next_line, state.blk_indent, true);
+        // micromark includes a trailing line ending in an HTML block's raw
+        // content only when one is actually present in the source — i.e. when
+        // the block's last line is followed by more input, not when it sits at
+        // document EOF. `line_end` points at the line's newline byte (or at
+        // `src.len()` for the final, newline-less line), so `line_end < src.len()`
+        // distinguishes "newline present" from "EOF".
+        let last_line = next_line - 1;
+        let keep_last_lf = state.line_offsets[last_line].line_end < state.src.len();
+        let (content, _) = state.get_lines(start_line, next_line, state.blk_indent, keep_last_lf);
         let node = Node::new(HtmlBlock { content });
         Some((node, next_line - state.line))
     }
