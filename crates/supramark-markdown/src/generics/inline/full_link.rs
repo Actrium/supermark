@@ -336,7 +336,27 @@ fn nul_to_replacement(cow: std::borrow::Cow<'_, str>) -> String {
     }
 }
 
-/// Helper function used to parse `"title"` part of the links (with `'title'` or `(title)` alternative syntax).
+/// CommonMark §5.5 / micromark `factory-title`: a title can span multiple
+/// lines, and each continuation line's leading spaces and tabs are consumed
+/// as `linePrefix` (with no size limit) and dropped from the value, while the
+/// line ending itself is kept. The first line is not prefixed. So
+/// `"\n c"` becomes `"\nc"`.
+fn strip_title_line_prefixes(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut first = true;
+    for line in s.split('\n') {
+        if !first {
+            out.push('\n');
+            out.push_str(line.trim_start_matches([' ', '\t']));
+        } else {
+            out.push_str(line);
+            first = false;
+        }
+    }
+    out
+}
+
+
 pub fn parse_link_title(str: &str, start: usize, max: usize) -> Option<ParseLinkFragmentResult> {
     let mut chars = str[start..max].chars();
     let mut pos = start + 1;
@@ -355,7 +375,7 @@ pub fn parse_link_title(str: &str, start: usize, max: usize) -> Option<ParseLink
                 return Some(ParseLinkFragmentResult {
                     pos: pos + 1,
                     lines,
-                    str: unescape_all(&str[start + 1..pos]).into_owned(),
+                    str: strip_title_line_prefixes(unescape_all(&str[start + 1..pos]).as_ref()),
                 });
             }
             Some('(') if marker == ')' => {
