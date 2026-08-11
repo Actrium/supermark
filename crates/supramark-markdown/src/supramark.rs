@@ -1456,7 +1456,16 @@ fn map_document(
     md: &MarkdownParser,
     index: &OffsetIndex,
 ) -> (Vec<SupramarkNode>, Vec<Diagnostic>) {
-    let children = map_markdown_fragment(md, source, 0, source.len(), index);
+    // CommonMark: a single leading U+FEFF byte-order mark is ignored at the
+    // document start. Skip it from the slice fed to the parser; the base offset
+    // keeps source-map byte offsets aligned with the original input (the BOM's
+    // 3 UTF-8 bytes are accounted for, not erased).
+    let bom_len = if source.starts_with('\u{FEFF}') {
+        '\u{FEFF}'.len_utf8()
+    } else {
+        0
+    };
+    let children = map_markdown_fragment(md, source, bom_len, source.len(), index);
     let mut diagnostics = Vec::new();
     collect_diagnostics(&children, &mut diagnostics);
     (children, diagnostics)
