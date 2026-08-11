@@ -1593,7 +1593,7 @@ function renderInlineNode(
     case 'link': {
       const linkNode = node;
       return (
-        <a key={key} href={linkNode.url} title={linkNode.title} className={classNames.link}>
+        <a key={key} href={linkNode.url} title={linkNode.title || undefined} className={classNames.link}>
           {renderInlineNodes(linkNode.children, classNames, rendered, highlighted, config)}
         </a>
       );
