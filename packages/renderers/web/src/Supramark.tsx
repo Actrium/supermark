@@ -1600,12 +1600,25 @@ function renderInlineNode(
     }
     case 'image': {
       const imageNode = node;
+      // React drops an empty-string `src` attribute, but CommonMark requires
+      // `src=""` for an image with an empty destination — force it back via a
+      // ref callback (runs during commit, before the host reads innerHTML).
+      // Empty `title` is omitted to match micromark, which only renders it
+      // when it carries a value.
+      const forceEmptySrc = imageNode.url === '';
       return (
         <img
           key={key}
-          src={imageNode.url}
+          ref={
+            forceEmptySrc
+              ? (el: HTMLImageElement | null) => {
+                  if (el) el.setAttribute('src', '');
+                }
+              : undefined
+          }
+          src={imageNode.url || undefined}
           alt={imageNode.alt}
-          title={imageNode.title}
+          title={imageNode.title || undefined}
           className={classNames.image}
         />
       );
