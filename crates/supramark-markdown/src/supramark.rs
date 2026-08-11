@@ -820,8 +820,12 @@ fn push_text_slice(
 }
 
 fn replace_emoji_shortcodes(value: &str) -> String {
+    // CommonMark §2.3: U+0000 in the source becomes U+FFFD. Done here on the
+    // AST text value (not the source) so source-map byte offsets stay aligned
+    // with the original input — "\0".len() != "\u{FFFD}".len().
+    let value = value.replace('\0', "\u{FFFD}");
     if !value.contains(':') {
-        return value.to_owned();
+        return value;
     }
 
     let mut output = String::with_capacity(value.len());
