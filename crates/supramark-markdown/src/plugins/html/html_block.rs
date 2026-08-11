@@ -79,7 +79,7 @@ static HTML_SEQUENCES: Lazy<[HTMLSequence; 7]> = Lazy::new(|| {
             true,
         ),
         HTMLSequence::new(
-            Regex::new(r#"^<![A-Z]"#).unwrap(),
+            Regex::new(r#"^<![A-Za-z]"#).unwrap(),
             Regex::new(r#">"#).unwrap(),
             true,
         ),
