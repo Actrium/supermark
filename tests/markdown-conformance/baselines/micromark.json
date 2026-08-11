@@ -71,8 +71,6 @@
     "micromark-4.0.2-flow-html-0148",
     "micromark-4.0.2-flow-html-0149",
     "micromark-4.0.2-flow-thematic-break-0028",
-    "micromark-4.0.2-misc-bom-0001",
-    "micromark-4.0.2-misc-bom-0002",
     "micromark-4.0.2-misc-dangerous-html-0001",
     "micromark-4.0.2-misc-dangerous-html-0002",
     "micromark-4.0.2-misc-dangerous-html-0003",
@@ -88,7 +86,6 @@
     "micromark-4.0.2-misc-line-ending-0024",
     "micromark-4.0.2-misc-line-ending-0025",
     "micromark-4.0.2-misc-tab-0019",
-    "micromark-4.0.2-misc-url-0017",
     "micromark-4.0.2-text-autolink-0039",
     "micromark-4.0.2-text-character-escape-0008",
     "micromark-4.0.2-text-character-escape-0012",
@@ -111,17 +108,14 @@
     "micromark-4.0.2-text-html-0061",
     "micromark-4.0.2-text-html-0064",
     "micromark-4.0.2-text-html-0067",
-    "micromark-4.0.2-text-image-0029",
     "micromark-4.0.2-text-image-0031",
     "micromark-4.0.2-text-image-0032",
     "micromark-4.0.2-text-image-0033",
-    "micromark-4.0.2-text-link-reference-0055",
     "micromark-4.0.2-text-link-reference-0057",
     "micromark-4.0.2-text-link-reference-0058",
     "micromark-4.0.2-text-link-resource-0011",
     "micromark-4.0.2-text-link-resource-0052",
-    "micromark-4.0.2-text-link-resource-0073",
-    "micromark-4.0.2-text-link-resource-0075"
+    "micromark-4.0.2-text-link-resource-0073"
   ],
   "visualFailureIds": [
     "micromark-4.0.2-content-definition-0060",
@@ -145,7 +139,6 @@
     "micromark-4.0.2-flow-html-0097",
     "micromark-4.0.2-flow-html-0149",
     "micromark-4.0.2-flow-thematic-break-0028",
-    "micromark-4.0.2-misc-bom-0002",
     "micromark-4.0.2-misc-dangerous-html-0001",
     "micromark-4.0.2-misc-dangerous-html-0002",
     "micromark-4.0.2-misc-dangerous-protocols-0001",
@@ -158,14 +151,11 @@
     "micromark-4.0.2-text-hard-break-0024",
     "micromark-4.0.2-text-html-0064",
     "micromark-4.0.2-text-html-0067",
-    "micromark-4.0.2-text-image-0029",
     "micromark-4.0.2-text-image-0031",
     "micromark-4.0.2-text-image-0032",
     "micromark-4.0.2-text-image-0033",
-    "micromark-4.0.2-text-link-reference-0055",
     "micromark-4.0.2-text-link-reference-0057",
     "micromark-4.0.2-text-link-reference-0058",
-    "micromark-4.0.2-text-link-resource-0052",
-    "micromark-4.0.2-text-link-resource-0075"
+    "micromark-4.0.2-text-link-resource-0052"
   ]
 }
