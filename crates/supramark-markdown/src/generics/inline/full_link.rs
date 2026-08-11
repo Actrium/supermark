@@ -415,14 +415,20 @@ fn parse_link(state: &mut InlineState, pos: usize, enable_nested: bool) -> Optio
         //          ^^^^^^ parsing link destination
         if let Some(res) = parse_link_destination(&state.src, pos, state.pos_max) {
             let href_candidate = state.md.link_formatter.normalize_link(&res.str);
+            // Always advance past the destination so the closing ")" and an
+            // optional title can still be matched. micromark's "safe by
+            // default" keeps the link/image but empties the destination for an
+            // unsafe protocol, rather than failing the whole construct.
+            pos = res.pos;
             if state
                 .md
                 .link_formatter
                 .validate_link(&href_candidate)
                 .is_some()
             {
-                pos = res.pos;
                 href = Some(href_candidate);
+            } else {
+                href = Some(String::new());
             }
 
             // [link](  <href>  "title"  )
