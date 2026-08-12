@@ -727,7 +727,7 @@ function renderNode(
         if (!isFeatureGroupEnabled(config, ['@supramark/feature-admonition'])) {
           return (
             <View key={key} style={admonitionContainerStyle}>
-              {title ? <Text style={styles.listItemText}>{title}</Text> : null}
+              {title ? <Text style={styles.paragraph}>{title}</Text> : null}
               {renderAdmonitionContent()}
             </View>
           );
@@ -739,7 +739,7 @@ function renderNode(
           if (!adOptions.kinds.includes(kind)) {
             return (
               <View key={key} style={admonitionContainerStyle}>
-                {title ? <Text style={styles.listItemText}>{title}</Text> : null}
+                {title ? <Text style={styles.paragraph}>{title}</Text> : null}
                 {renderAdmonitionContent()}
               </View>
             );
@@ -749,7 +749,7 @@ function renderNode(
         return (
           <View key={key} style={admonitionContainerStyle}>
             {title ? (
-              <Text style={[styles.listItemText, { fontWeight: '600' }]}>{title}</Text>
+              <Text style={[styles.paragraph, { fontWeight: '600' }]}>{title}</Text>
             ) : null}
             {renderAdmonitionContent()}
           </View>
@@ -802,7 +802,7 @@ function renderNode(
                   {terms.map((term, termIndex) => (
                     <Text
                       key={`term-${termIndex}`}
-                      style={[styles.listItemText, { fontWeight: '600' }]}
+                      style={[styles.paragraph, { fontWeight: '600' }]}
                     >
                       {renderInlineNodes(term.children, styles, highlighted, config)}
                     </Text>
@@ -837,10 +837,7 @@ function renderNode(
             return (
               <View key={index} style={defItemStyle}>
                 {terms.map((term, termIndex) => (
-                  <Text
-                    key={`term-${termIndex}`}
-                    style={[styles.listItemText, { fontWeight: '600' }]}
-                  >
+                  <Text key={`term-${termIndex}`} style={[styles.paragraph, { fontWeight: '600' }]}>
                     {renderInlineNodes(term.children, styles, highlighted, config)}
                   </Text>
                 ))}
@@ -857,7 +854,7 @@ function renderNode(
                         containerRenderers
                       )
                     )}
-                    {isCompact ? null : <Text style={styles.listItemText}>{'\n'}</Text>}
+                    {isCompact ? null : <Text style={styles.paragraph}>{'\n'}</Text>}
                   </View>
                 ))}
               </View>
