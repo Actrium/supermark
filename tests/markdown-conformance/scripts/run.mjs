@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { astToHtml } from '../lib/semantic/ast-semantics.mjs';
+import { parserOptionsArgv } from '../lib/parse-options.mjs';
 import { renderConformanceHtmlReport } from '../lib/reports/html-report.mjs';
 import {
   buildConformanceIssueMetadata,
@@ -83,9 +84,21 @@ const parserBinary = path.resolve(process.env.SUPRAMARK_MARKDOWN_BIN ?? DEFAULT_
 // resolved the commonmark-source cases (0602/0608/0611/0612); issue #203
 // extends the same treatment to the cmark-gfm source's CommonMark-core
 // Autolinks section (spec-0610/0616/0619/0620).
-const parserProfile = sourceName === 'commonmark' ? 'supramark-commonmark' : 'supramark-default';
+//
+// The micromark source gets its own profile too: every micromark case is
+// parsed with upstream options forwarded per case (allowDangerousHtml off
+// unless the case opts in — see lib/parse-options.mjs), which is not the
+// parser's shipped default profile.
+const parserProfile =
+  sourceName === 'commonmark'
+    ? 'supramark-commonmark'
+    : sourceName === 'micromark'
+      ? 'supramark-micromark'
+      : 'supramark-default';
 function parserArgsFor(testCase) {
-  return isCommonMarkCoreCase(testCase) ? ['--no-gfm-autolink', '-'] : ['-'];
+  const args = ['-', ...parserOptionsArgv(testCase)];
+  if (isCommonMarkCoreCase(testCase)) args.unshift('--no-gfm-autolink');
+  return args;
 }
 // Whether a case is normative CommonMark (no GFM autolink extension). The
 // commonmark source is CommonMark-core throughout; cmark-gfm's spec.txt
@@ -101,6 +114,7 @@ function isCommonMarkCoreCase(testCase) {
     );
   }
   return false;
+}
 }
 const failOnFailures = process.env.FAIL_ON_FAILURES !== '0';
 // Gate mode decides what a non-zero exit means (see buildGate below).
