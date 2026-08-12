@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:unit": "node --test lib/semantic/html-semantics.test.mjs lib/reports/issue-report.test.mjs",
     "import:commonmark": "node scripts/import.mjs commonmark",
     "import:cmark-gfm": "node scripts/import.mjs cmark-gfm",
     "import:micromark": "node scripts/import.mjs micromark",
