@@ -1,5 +1,13 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Text, View, Image, Linking, TouchableOpacity, Dimensions } from 'react-native';
+import {
+  Text,
+  View,
+  Image,
+  Linking,
+  ScrollView,
+  TouchableOpacity,
+  Dimensions,
+} from 'react-native';
 import type {
   SupramarkRootNode,
   SupramarkNode,
@@ -563,22 +571,27 @@ function getBlockImageItems(node: SupramarkNode): BlockImageItem[] | null {
   return items.length > 0 ? items : null;
 }
 
-/** Renders a wrapping row of stable block-image containers. */
+/** Renders one horizontally scrollable row of stable block-image containers. */
 function renderImageGallery(
   items: BlockImageItem[],
   key: number,
   styles: ReturnType<typeof mergeStyles>
 ): RenderedNode {
   return (
-    <View key={key} style={styles.imageGallery}>
+    <ScrollView
+      key={key}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.imageGallery}
+    >
       {items.map((item, index) => (
         <MarkdownImage key={index} image={item.image} linkUrl={item.linkUrl} styles={styles} />
       ))}
-    </View>
+    </ScrollView>
   );
 }
 
-/** Groups consecutive top-level image-only paragraphs into one wrapping image flow. */
+/** Groups consecutive top-level image-only paragraphs into one horizontal image flow. */
 function renderRootNodes(
   nodes: SupramarkNode[],
   styles: ReturnType<typeof mergeStyles>,

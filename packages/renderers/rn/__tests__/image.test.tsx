@@ -42,9 +42,9 @@ async function renderAst(
   return renderer as unknown as ReactTestRenderer;
 }
 
-/** Finds the wrapping image-gallery host view by its row layout contract. */
+/** Finds the horizontal image-gallery scroll view. */
 function findImageGallery(renderer: ReactTestRenderer): ReactTestRenderer['root'] {
-  return renderer.root.findAllByType('View').find(view => view.props.style?.flexWrap === 'wrap')!;
+  return renderer.root.findByType('ScrollView');
 }
 
 describe('image rendering', () => {
@@ -90,11 +90,11 @@ describe('image rendering', () => {
     );
 
     const image = renderer.root.findByType('Image');
-    expect(findImageGallery(renderer).props.style).toMatchObject({ gap: 12 });
+    expect(findImageGallery(renderer).props.contentContainerStyle).toMatchObject({ gap: 12 });
     expect(image.parent?.props.style).toMatchObject({ borderRadius: 16 });
   });
 
-  it('lays out multiple images from one image-only paragraph in a wrapping row with a gap', async () => {
+  it('lays out multiple images from one image-only paragraph in a horizontally scrolling row', async () => {
     const renderer = await renderAst(
       imageAst([
         { type: 'image', url: 'https://example.com/a.jpg', alt: 'a' },
@@ -106,9 +106,10 @@ describe('image rendering', () => {
     const images = renderer.root.findAllByType('Image');
     const gallery = findImageGallery(renderer);
     expect(images).toHaveLength(2);
-    expect(gallery.props.style).toMatchObject({
+    expect(gallery.props.horizontal).toBe(true);
+    expect(gallery.props.showsHorizontalScrollIndicator).toBe(false);
+    expect(gallery.props.contentContainerStyle).toMatchObject({
       flexDirection: 'row',
-      flexWrap: 'wrap',
       gap: 8,
     });
   });
