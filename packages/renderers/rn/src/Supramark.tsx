@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Text, View, Linking, TouchableOpacity, Dimensions } from 'react-native';
+import { Text, View, Image, Linking, TouchableOpacity, Dimensions } from 'react-native';
 import type {
   SupramarkRootNode,
   SupramarkNode,
+  SupramarkImageNode,
   SupramarkHeadingNode,
   SupramarkCodeNode,
   SupramarkMathBlockNode,
@@ -527,6 +528,72 @@ function containsCacheableDiagramNode(
   return false;
 }
 
+interface StandaloneImage {
+  image: SupramarkImageNode;
+  linkUrl?: string;
+}
+
+/** Finds an image that owns the whole paragraph, including the image-as-link shape. */
+function getStandaloneImage(children: SupramarkNode[]): StandaloneImage | null {
+  // A mixed-content paragraph must stay in its existing inline Text flow.
+  if (children.length !== 1) {
+    return null;
+  }
+
+  const onlyChild = children[0];
+  // A direct image can be promoted out of the paragraph Text into a stable block container.
+  if (onlyChild.type === 'image') {
+    return { image: onlyChild };
+  }
+
+  // A link containing only one image is also a standalone image and keeps its link action.
+  if (
+    onlyChild.type === 'link' &&
+    onlyChild.children.length === 1 &&
+    onlyChild.children[0].type === 'image'
+  ) {
+    return { image: onlyChild.children[0], linkUrl: onlyChild.url };
+  }
+
+  return null;
+}
+
+/** Renders a block image without changing its measured size when the bitmap finishes loading. */
+function MarkdownImage({
+  image,
+  linkUrl,
+  styles,
+}: {
+  image: SupramarkImageNode;
+  linkUrl?: string;
+  styles: ReturnType<typeof mergeStyles>;
+}): RenderedNode {
+  const imageContent = (
+    <View style={styles.imageContainer}>
+      <Image
+        source={{ uri: image.url }}
+        accessibilityLabel={image.alt || undefined}
+        style={styles.image}
+      />
+    </View>
+  );
+
+  // A standalone image link wraps the fixed-size container without changing its layout.
+  if (linkUrl) {
+    return (
+      <TouchableOpacity
+        onPress={() => {
+          Linking.openURL(linkUrl).catch(err => console.error('Failed to open URL:', err));
+        }}
+      >
+        {imageContent}
+      </TouchableOpacity>
+    );
+  }
+
+  return imageContent;
+}
+
 function renderNode(
   node: SupramarkNode,
   key: number,
@@ -538,12 +605,25 @@ function renderNode(
   listMarker?: string
 ): RenderedNode {
   switch (node.type) {
-    case 'paragraph':
+    case 'paragraph': {
+      const standaloneImage = getStandaloneImage(node.children);
+      // Promote image-only paragraphs out of Text so the image can use a stable block container.
+      if (standaloneImage) {
+        return (
+          <MarkdownImage
+            key={key}
+            image={standaloneImage.image}
+            linkUrl={standaloneImage.linkUrl}
+            styles={styles}
+          />
+        );
+      }
       return (
         <Text key={key} style={styles.paragraph}>
           {renderInlineNodes(node.children, styles, highlighted, config)}
         </Text>
       );
+    }
     case 'heading': {
       const heading = node;
       return (
@@ -1212,11 +1292,13 @@ function renderInlineNode(
     }
     case 'image': {
       const imageNode = node;
-      // Show images as text for now in RN (could use the Image component in the future)
       return (
-        <Text key={key} style={styles.imageText}>
-          [Image: {imageNode.alt || imageNode.url}]
-        </Text>
+        <Image
+          key={key}
+          source={{ uri: imageNode.url }}
+          accessibilityLabel={imageNode.alt || undefined}
+          style={styles.inlineImage}
+        />
       );
     }
     case 'break': {

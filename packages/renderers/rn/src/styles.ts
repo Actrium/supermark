@@ -6,7 +6,7 @@
  * the styles prop.
  */
 
-import { StyleSheet, type TextStyle, type ViewStyle } from 'react-native';
+import { StyleSheet, type ImageStyle, type TextStyle, type ViewStyle } from 'react-native';
 
 /**
  * Supramark's customizable style keys
@@ -38,7 +38,12 @@ export interface SupramarkStyles {
   emphasis?: TextStyle;
   inlineCode?: TextStyle;
   link?: TextStyle;
-  imageText?: TextStyle;
+  /** Stable outer box used by an image-only paragraph. */
+  imageContainer?: ViewStyle;
+  /** Image content rendered inside imageContainer; resizeMode defaults to cover. */
+  image?: ImageStyle;
+  /** Fixed-size image used when an image is mixed with other inline content. */
+  inlineImage?: ImageStyle;
   delete?: TextStyle;
 
   // Tables
@@ -269,9 +274,23 @@ export const defaultStyles = StyleSheet.create({
     color: '#0366d6',
     textDecorationLine: 'underline',
   },
-  imageText: {
-    color: '#666',
-    fontStyle: 'italic',
+  // Reserve the complete block-image footprint before the network image loads.
+  imageContainer: {
+    width: 200,
+    height: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  inlineImage: {
+    width: 20,
+    height: 20,
+    resizeMode: 'cover',
   },
   delete: {
     textDecorationLine: 'line-through',
@@ -339,7 +358,7 @@ export function mergeStyles(customStyles?: SupramarkStyles): typeof defaultStyle
   }
 
   // Create a new object to avoid mutating defaultStyles
-  const merged: Record<string, TextStyle | ViewStyle> = {};
+  const merged: Record<string, ImageStyle | TextStyle | ViewStyle> = {};
 
   // First copy all default styles
   Object.keys(defaultStyles).forEach(key => {
@@ -395,9 +414,6 @@ export const darkThemeStyles: SupramarkStyles = {
   },
   link: {
     color: '#58a6ff',
-  },
-  imageText: {
-    color: '#8b949e',
   },
   table: {
     borderColor: '#444',
