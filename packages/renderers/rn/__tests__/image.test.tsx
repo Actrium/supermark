@@ -60,6 +60,11 @@ describe('image rendering', () => {
     expect(image.parent?.type).toBe('View');
     expect(image.parent?.props.style).toMatchObject({ width: 200, height: 200 });
     expect(image.parent?.props.style).toMatchObject({ borderRadius: 8, overflow: 'hidden' });
+    expect(findImageGallery(renderer).props.style).toMatchObject({
+      height: 200,
+      flexGrow: 0,
+      flexShrink: 0,
+    });
     expect(renderer.root.findAllByType('Text')).toHaveLength(0);
   });
 
@@ -71,6 +76,7 @@ describe('image rendering', () => {
 
     const image = renderer.root.findByType('Image');
     expect(image.parent?.props.style).toMatchObject({ width: 320, height: 180 });
+    expect(findImageGallery(renderer).props.style).toMatchObject({ height: 180 });
   });
 
   it('allows the host to override block-image sizing from cover to contain', async () => {

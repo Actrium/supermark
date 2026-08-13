@@ -42,6 +42,8 @@ export interface SupramarkStyles {
   imageContainer?: ViewStyle;
   /** Single-row content layout for adjacent horizontally scrolling block images. */
   imageGallery?: ViewStyle;
+  /** Non-growing viewport for the horizontal image gallery. */
+  imageGalleryViewport?: ViewStyle;
   /** Image content rendered inside imageContainer; resizeMode defaults to cover. */
   image?: ImageStyle;
   /** Fixed-size image used when an image is mixed with other inline content. */
@@ -289,6 +291,11 @@ export const defaultStyles = StyleSheet.create({
   imageGallery: {
     flexDirection: 'row',
     gap: 8,
+  },
+  // Prevent a horizontal ScrollView from consuming unused vertical flex space.
+  imageGalleryViewport: {
+    flexGrow: 0,
+    flexShrink: 0,
   },
   image: {
     width: '100%',

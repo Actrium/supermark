@@ -577,10 +577,16 @@ function renderImageGallery(
   key: number,
   styles: ReturnType<typeof mergeStyles>
 ): RenderedNode {
+  // Match the viewport to the reserved image height so a flex parent cannot create blank space.
+  const galleryViewportStyle = {
+    ...styles.imageGalleryViewport,
+    height: styles.imageContainer.height,
+  };
   return (
     <ScrollView
       key={key}
       horizontal
+      style={galleryViewportStyle}
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.imageGallery}
     >
