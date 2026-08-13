@@ -588,7 +588,7 @@ function renderNode(
       const item = node;
       const isTaskList = item.checked !== undefined;
       const checkSymbol = item.checked === true ? '☑' : '☐';
-      const marker = isTaskList ? `${checkSymbol} ` : `${listMarker ?? '•'} `;
+      const marker = `${listMarker ?? '•'} ${isTaskList ? `${checkSymbol} ` : ''}`;
 
       // Tight list (inline-only children): plain <Text>, width-safe (see #101).
       if (item.children.every(isInlineNode)) {
