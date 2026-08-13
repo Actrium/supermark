@@ -1,13 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import {
-  Text,
-  View,
-  Image,
-  Linking,
-  ScrollView,
-  TouchableOpacity,
-  Dimensions,
-} from 'react-native';
+import { Text, View, Image, Linking, TouchableOpacity, Dimensions } from 'react-native';
 import type {
   SupramarkRootNode,
   SupramarkNode,
@@ -35,6 +27,7 @@ import {
   SUPRAMARK_ADMONITION_KINDS,
 } from '@supramark/core';
 import { DiagramNode } from './DiagramNode';
+import { ImageGallery } from './ImageGallery';
 import { MathBlock } from './MathBlock';
 import { MathInline } from './MathInline';
 import { type SupramarkStyles, mergeStyles, darkThemeStyles } from './styles';
@@ -577,23 +570,23 @@ function renderImageGallery(
   key: number,
   styles: ReturnType<typeof mergeStyles>
 ): RenderedNode {
+  // One image needs no horizontal gesture surface, so outer scrolling stays completely direct.
+  if (items.length === 1) {
+    const item = items[0];
+    return <MarkdownImage key={key} image={item.image} linkUrl={item.linkUrl} styles={styles} />;
+  }
+
   // Match the viewport to the reserved image height so a flex parent cannot create blank space.
   const galleryViewportStyle = {
     ...styles.imageGalleryViewport,
     height: styles.imageContainer.height,
   };
   return (
-    <ScrollView
-      key={key}
-      horizontal
-      style={galleryViewportStyle}
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.imageGallery}
-    >
+    <ImageGallery key={key} viewportStyle={galleryViewportStyle} contentStyle={styles.imageGallery}>
       {items.map((item, index) => (
         <MarkdownImage key={index} image={item.image} linkUrl={item.linkUrl} styles={styles} />
       ))}
-    </ScrollView>
+    </ImageGallery>
   );
 }
 

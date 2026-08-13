@@ -42,9 +42,18 @@ async function renderAst(
   return renderer as unknown as ReactTestRenderer;
 }
 
-/** Finds the horizontal image-gallery scroll view. */
+/** Finds the image-gallery viewport that owns the directional pan responder. */
 function findImageGallery(renderer: ReactTestRenderer): ReactTestRenderer['root'] {
-  return renderer.root.findByType('ScrollView');
+  return renderer.root
+    .findAllByType('View')
+    .find(view => typeof view.props.onMoveShouldSetPanResponder === 'function')!;
+}
+
+/** Finds the single-row view that measures and lays out gallery images. */
+function findImageGalleryTrack(renderer: ReactTestRenderer): ReactTestRenderer['root'] {
+  return renderer.root
+    .findAllByType('View')
+    .find(view => view.props.style?.flexDirection === 'row')!;
 }
 
 describe('image rendering', () => {
@@ -60,11 +69,8 @@ describe('image rendering', () => {
     expect(image.parent?.type).toBe('View');
     expect(image.parent?.props.style).toMatchObject({ width: 200, height: 200 });
     expect(image.parent?.props.style).toMatchObject({ borderRadius: 8, overflow: 'hidden' });
-    expect(findImageGallery(renderer).props.style).toMatchObject({
-      height: 200,
-      flexGrow: 0,
-      flexShrink: 0,
-    });
+    expect(renderer.root.findAllByType('ScrollView')).toHaveLength(0);
+    expect(renderer.root.findAllByType('AnimatedView')).toHaveLength(0);
     expect(renderer.root.findAllByType('Text')).toHaveLength(0);
   });
 
@@ -76,7 +82,6 @@ describe('image rendering', () => {
 
     const image = renderer.root.findByType('Image');
     expect(image.parent?.props.style).toMatchObject({ width: 320, height: 180 });
-    expect(findImageGallery(renderer).props.style).toMatchObject({ height: 180 });
   });
 
   it('allows the host to override block-image sizing from cover to contain', async () => {
@@ -91,12 +96,19 @@ describe('image rendering', () => {
 
   it('allows the host to override the gallery gap and image corner radius', async () => {
     const renderer = await renderAst(
-      imageAst([{ type: 'image', url: 'https://example.com/photo.jpg', alt: 'photo' }]),
-      { imageGallery: { gap: 12 }, imageContainer: { borderRadius: 16 } }
+      imageAst([
+        { type: 'image', url: 'https://example.com/a.jpg', alt: 'a' },
+        { type: 'image', url: 'https://example.com/b.jpg', alt: 'b' },
+      ]),
+      {
+        imageGallery: { gap: 12 },
+        imageContainer: { height: 180, borderRadius: 16 },
+      }
     );
 
-    const image = renderer.root.findByType('Image');
-    expect(findImageGallery(renderer).props.contentContainerStyle).toMatchObject({ gap: 12 });
+    const image = renderer.root.findAllByType('Image')[0];
+    expect(findImageGallery(renderer).props.style).toMatchObject({ height: 180 });
+    expect(findImageGalleryTrack(renderer).props.style).toMatchObject({ gap: 12 });
     expect(image.parent?.props.style).toMatchObject({ borderRadius: 16 });
   });
 
@@ -112,12 +124,53 @@ describe('image rendering', () => {
     const images = renderer.root.findAllByType('Image');
     const gallery = findImageGallery(renderer);
     expect(images).toHaveLength(2);
-    expect(gallery.props.horizontal).toBe(true);
-    expect(gallery.props.showsHorizontalScrollIndicator).toBe(false);
-    expect(gallery.props.contentContainerStyle).toMatchObject({
+    expect(renderer.root.findAllByType('ScrollView')).toHaveLength(0);
+    expect(gallery.props.style).toMatchObject({ height: 200, overflow: 'hidden' });
+    expect(findImageGalleryTrack(renderer).props.style).toMatchObject({
       flexDirection: 'row',
       gap: 8,
+      alignSelf: 'flex-start',
+      flexShrink: 0,
     });
+  });
+
+  it('claims horizontal drags but leaves vertical drags to the outer list', async () => {
+    const renderer = await renderAst(
+      imageAst([
+        { type: 'image', url: 'https://example.com/a.jpg', alt: 'a' },
+        { type: 'image', url: 'https://example.com/b.jpg', alt: 'b' },
+      ])
+    );
+
+    const shouldClaim = findImageGallery(renderer).props.onMoveShouldSetPanResponder;
+    expect(shouldClaim({}, { dx: 20, dy: 4 })).toBe(true);
+    expect(shouldClaim({}, { dx: 4, dy: 20 })).toBe(false);
+    expect(shouldClaim({}, { dx: 3, dy: 1 })).toBe(false);
+    expect(findImageGallery(renderer).props.onPanResponderTerminationRequest()).toBe(false);
+  });
+
+  it('clamps horizontal dragging to the measured image-track boundaries', async () => {
+    const renderer = await renderAst(
+      imageAst([
+        { type: 'image', url: 'https://example.com/a.jpg', alt: 'a' },
+        { type: 'image', url: 'https://example.com/b.jpg', alt: 'b' },
+      ])
+    );
+
+    const gallery = findImageGallery(renderer);
+    const animatedTrack = renderer.root.findByType('AnimatedView');
+    const contentTrack = findImageGalleryTrack(renderer);
+    // A 408px track inside a 300px viewport can move at most 108px to the left.
+    gallery.props.onLayout({ nativeEvent: { layout: { width: 300 } } });
+    contentTrack.props.onLayout({ nativeEvent: { layout: { width: 408 } } });
+    gallery.props.onPanResponderGrant();
+    gallery.props.onPanResponderMove({}, { dx: -500, dy: 0 });
+    expect(animatedTrack.props.style.transform[0].translateX.value).toBe(-108);
+
+    // A new drag back to the right must stop at the track's zero offset.
+    gallery.props.onPanResponderGrant();
+    gallery.props.onPanResponderMove({}, { dx: 500, dy: 0 });
+    expect(animatedTrack.props.style.transform[0].translateX.value).toBe(0);
   });
 
   it('groups consecutive image-only paragraphs and stops before normal content', async () => {

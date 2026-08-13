@@ -291,11 +291,14 @@ export const defaultStyles = StyleSheet.create({
   imageGallery: {
     flexDirection: 'row',
     gap: 8,
+    alignSelf: 'flex-start',
+    flexShrink: 0,
   },
-  // Prevent a horizontal ScrollView from consuming unused vertical flex space.
+  // Keep the clipped image viewport at the reserved image height inside flex parents.
   imageGalleryViewport: {
     flexGrow: 0,
     flexShrink: 0,
+    overflow: 'hidden',
   },
   image: {
     width: '100%',

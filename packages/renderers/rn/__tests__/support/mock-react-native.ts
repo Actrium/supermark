@@ -1,5 +1,19 @@
 import { mock } from 'bun:test';
 
+/** Minimal animated value used to assert track transforms without loading native animation code. */
+class MockAnimatedValue {
+  value: number;
+
+  constructor(value: number) {
+    this.value = value;
+  }
+
+  /** Mirrors Animated.Value.setValue for gallery drag tests. */
+  setValue(value: number) {
+    this.value = value;
+  }
+}
+
 // react-native's JS entry contains Flow syntax (import typeof) that bun cannot load,
 // so tests always run against a mock. bun's mock.module registry is process-wide:
 // when multiple test files each register their own mock, a later narrow surface
@@ -19,6 +33,11 @@ mock.module('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
   Dimensions: { get: () => ({ width: 375, height: 812 }) },
   Linking: { openURL: async () => undefined },
+  Animated: { Value: MockAnimatedValue, View: 'AnimatedView' },
+  PanResponder: {
+    // Expose responder callbacks directly so unit tests can verify direction arbitration.
+    create: (handlers: Record<string, unknown>) => ({ panHandlers: handlers }),
+  },
   StyleSheet: { create: (s: unknown) => s },
 }));
 
