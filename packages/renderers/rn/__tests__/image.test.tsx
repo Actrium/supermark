@@ -22,6 +22,11 @@ function imageAst(children: SupramarkRootNode['children'][number][]): SupramarkR
   } as SupramarkRootNode;
 }
 
+/** Builds a document from explicit top-level nodes for consecutive-paragraph layout tests. */
+function documentAst(children: SupramarkRootNode['children']): SupramarkRootNode {
+  return { type: 'root', ast_version: 2, diagnostics: [], children };
+}
+
 /** Renders a pre-parsed AST and flushes the renderer's asynchronous document preparation. */
 async function renderAst(
   ast: SupramarkRootNode,
@@ -37,6 +42,11 @@ async function renderAst(
   return renderer as unknown as ReactTestRenderer;
 }
 
+/** Finds the wrapping image-gallery host view by its row layout contract. */
+function findImageGallery(renderer: ReactTestRenderer): ReactTestRenderer['root'] {
+  return renderer.root.findAllByType('View').find(view => view.props.style?.flexWrap === 'wrap')!;
+}
+
 describe('image rendering', () => {
   it('renders a standalone image in a stable 200x200 container with cover sizing', async () => {
     const renderer = await renderAst(
@@ -49,6 +59,7 @@ describe('image rendering', () => {
     expect(image.props.style).toMatchObject({ width: '100%', height: '100%', resizeMode: 'cover' });
     expect(image.parent?.type).toBe('View');
     expect(image.parent?.props.style).toMatchObject({ width: 200, height: 200 });
+    expect(image.parent?.props.style).toMatchObject({ borderRadius: 8, overflow: 'hidden' });
     expect(renderer.root.findAllByType('Text')).toHaveLength(0);
   });
 
@@ -70,6 +81,58 @@ describe('image rendering', () => {
 
     const image = renderer.root.findByType('Image');
     expect(image.props.style).toMatchObject({ resizeMode: 'contain' });
+  });
+
+  it('allows the host to override the gallery gap and image corner radius', async () => {
+    const renderer = await renderAst(
+      imageAst([{ type: 'image', url: 'https://example.com/photo.jpg', alt: 'photo' }]),
+      { imageGallery: { gap: 12 }, imageContainer: { borderRadius: 16 } }
+    );
+
+    const image = renderer.root.findByType('Image');
+    expect(findImageGallery(renderer).props.style).toMatchObject({ gap: 12 });
+    expect(image.parent?.props.style).toMatchObject({ borderRadius: 16 });
+  });
+
+  it('lays out multiple images from one image-only paragraph in a wrapping row with a gap', async () => {
+    const renderer = await renderAst(
+      imageAst([
+        { type: 'image', url: 'https://example.com/a.jpg', alt: 'a' },
+        { type: 'text', value: ' ' },
+        { type: 'image', url: 'https://example.com/b.jpg', alt: 'b' },
+      ])
+    );
+
+    const images = renderer.root.findAllByType('Image');
+    const gallery = findImageGallery(renderer);
+    expect(images).toHaveLength(2);
+    expect(gallery.props.style).toMatchObject({
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    });
+  });
+
+  it('groups consecutive image-only paragraphs and stops before normal content', async () => {
+    const renderer = await renderAst(
+      documentAst([
+        {
+          type: 'paragraph',
+          children: [{ type: 'image', url: 'https://example.com/a.jpg', alt: 'a' }],
+        },
+        {
+          type: 'paragraph',
+          children: [{ type: 'image', url: 'https://example.com/b.jpg', alt: 'b' }],
+        },
+        { type: 'paragraph', children: [{ type: 'text', value: 'after' }] },
+      ])
+    );
+
+    const images = renderer.root.findAllByType('Image');
+    const gallery = findImageGallery(renderer);
+    expect(images).toHaveLength(2);
+    expect(gallery.findAllByType('Image')).toHaveLength(2);
+    expect(renderer.root.findAllByType('Text')).toHaveLength(1);
   });
 
   it('keeps an image mixed with text inline without changing the paragraph structure', async () => {

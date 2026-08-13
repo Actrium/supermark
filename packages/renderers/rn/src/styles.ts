@@ -40,6 +40,8 @@ export interface SupramarkStyles {
   link?: TextStyle;
   /** Stable outer box used by an image-only paragraph. */
   imageContainer?: ViewStyle;
+  /** Wrapping row that groups adjacent block images. */
+  imageGallery?: ViewStyle;
   /** Image content rendered inside imageContainer; resizeMode defaults to cover. */
   image?: ImageStyle;
   /** Fixed-size image used when an image is mixed with other inline content. */
@@ -280,7 +282,14 @@ export const defaultStyles = StyleSheet.create({
     height: 200,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 8,
     overflow: 'hidden',
+  },
+  // Keep adjacent block images on the same row when space permits and wrap otherwise.
+  imageGallery: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   image: {
     width: '100%',

@@ -479,16 +479,13 @@ export const Supramark: React.FC<SupramarkProps> = ({
     <ErrorBoundary onError={onError} fallback={errorFallback}>
       <SourceStateContext.Provider value={parsedDocument.sourceState}>
         <View style={mergedStyles.root}>
-          {parsedDocument.root.children.map((node, index) =>
-            renderNode(
-              node,
-              index,
-              mergedStyles,
-              parsedDocument.highlighted,
-              config,
-              onOpenHtmlPage,
-              mergedContainerRenderers
-            )
+          {renderRootNodes(
+            parsedDocument.root.children,
+            mergedStyles,
+            parsedDocument.highlighted,
+            config,
+            onOpenHtmlPage,
+            mergedContainerRenderers
           )}
         </View>
       </SourceStateContext.Provider>
@@ -528,34 +525,101 @@ function containsCacheableDiagramNode(
   return false;
 }
 
-interface StandaloneImage {
+interface BlockImageItem {
   image: SupramarkImageNode;
   linkUrl?: string;
 }
 
-/** Finds an image that owns the whole paragraph, including the image-as-link shape. */
-function getStandaloneImage(children: SupramarkNode[]): StandaloneImage | null {
-  // A mixed-content paragraph must stay in its existing inline Text flow.
-  if (children.length !== 1) {
+/** Extracts images from a paragraph containing only images, image links, and whitespace. */
+function getBlockImageItems(node: SupramarkNode): BlockImageItem[] | null {
+  // Only paragraphs participate; other block types retain their existing layout.
+  if (node.type !== 'paragraph') {
     return null;
   }
 
-  const onlyChild = children[0];
-  // A direct image can be promoted out of the paragraph Text into a stable block container.
-  if (onlyChild.type === 'image') {
-    return { image: onlyChild };
+  const items: BlockImageItem[] = [];
+  for (const child of node.children) {
+    // Parser-produced spaces/newlines between images are layout separators, not mixed content.
+    if (child.type === 'text' && child.value.trim().length === 0) {
+      continue;
+    }
+    // A direct image participates in the wrapping block-image flow.
+    if (child.type === 'image') {
+      items.push({ image: child });
+      continue;
+    }
+    // An image-only link participates while retaining its navigation target.
+    if (
+      child.type === 'link' &&
+      child.children.length === 1 &&
+      child.children[0].type === 'image'
+    ) {
+      items.push({ image: child.children[0], linkUrl: child.url });
+      continue;
+    }
+    return null;
   }
 
-  // A link containing only one image is also a standalone image and keeps its link action.
-  if (
-    onlyChild.type === 'link' &&
-    onlyChild.children.length === 1 &&
-    onlyChild.children[0].type === 'image'
-  ) {
-    return { image: onlyChild.children[0], linkUrl: onlyChild.url };
-  }
+  return items.length > 0 ? items : null;
+}
 
-  return null;
+/** Renders a wrapping row of stable block-image containers. */
+function renderImageGallery(
+  items: BlockImageItem[],
+  key: number,
+  styles: ReturnType<typeof mergeStyles>
+): RenderedNode {
+  return (
+    <View key={key} style={styles.imageGallery}>
+      {items.map((item, index) => (
+        <MarkdownImage key={index} image={item.image} linkUrl={item.linkUrl} styles={styles} />
+      ))}
+    </View>
+  );
+}
+
+/** Groups consecutive top-level image-only paragraphs into one wrapping image flow. */
+function renderRootNodes(
+  nodes: SupramarkNode[],
+  styles: ReturnType<typeof mergeStyles>,
+  highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
+  config?: SupramarkConfig,
+  onOpenHtmlPage?: (node: SupramarkContainerNode) => void,
+  containerRenderers?: Record<string, ContainerRendererRN>
+): RenderedNode[] {
+  const rendered: RenderedNode[] = [];
+  let index = 0;
+  while (index < nodes.length) {
+    const firstItems = getBlockImageItems(nodes[index]);
+    if (!firstItems) {
+      rendered.push(
+        renderNode(
+          nodes[index],
+          index,
+          styles,
+          highlighted,
+          config,
+          onOpenHtmlPage,
+          containerRenderers
+        )
+      );
+      index += 1;
+      continue;
+    }
+
+    // Consume only the contiguous image-only run so ordinary blocks remain untouched.
+    const galleryItems = [...firstItems];
+    const galleryKey = index;
+    index += 1;
+    while (index < nodes.length) {
+      const nextItems = getBlockImageItems(nodes[index]);
+      if (!nextItems) break;
+      galleryItems.push(...nextItems);
+      index += 1;
+    }
+    rendered.push(renderImageGallery(galleryItems, galleryKey, styles));
+  }
+  return rendered;
 }
 
 /** Renders a block image without changing its measured size when the bitmap finishes loading. */
@@ -606,17 +670,10 @@ function renderNode(
 ): RenderedNode {
   switch (node.type) {
     case 'paragraph': {
-      const standaloneImage = getStandaloneImage(node.children);
-      // Promote image-only paragraphs out of Text so the image can use a stable block container.
-      if (standaloneImage) {
-        return (
-          <MarkdownImage
-            key={key}
-            image={standaloneImage.image}
-            linkUrl={standaloneImage.linkUrl}
-            styles={styles}
-          />
-        );
+      const blockImages = getBlockImageItems(node);
+      // Nested image-only paragraphs still receive the same local wrapping layout.
+      if (blockImages) {
+        return renderImageGallery(blockImages, key, styles);
       }
       return (
         <Text key={key} style={styles.paragraph}>
