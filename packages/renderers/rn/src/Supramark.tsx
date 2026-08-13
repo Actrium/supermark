@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Text, View, Image, Linking, TouchableOpacity, Dimensions } from 'react-native';
+import { Text, View, Image, Linking, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
 import type {
   SupramarkRootNode,
   SupramarkNode,
@@ -27,7 +27,6 @@ import {
   SUPRAMARK_ADMONITION_KINDS,
 } from '@supramark/core';
 import { DiagramNode } from './DiagramNode';
-import { ImageGallery } from './ImageGallery';
 import { MathBlock } from './MathBlock';
 import { MathInline } from './MathInline';
 import { type SupramarkStyles, mergeStyles, darkThemeStyles } from './styles';
@@ -582,11 +581,19 @@ function renderImageGallery(
     height: styles.imageContainer.height,
   };
   return (
-    <ImageGallery key={key} viewportStyle={galleryViewportStyle} contentStyle={styles.imageGallery}>
+    <ScrollView
+      key={key}
+      horizontal
+      directionalLockEnabled
+      nestedScrollEnabled
+      style={galleryViewportStyle}
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.imageGallery}
+    >
       {items.map((item, index) => (
         <MarkdownImage key={index} image={item.image} linkUrl={item.linkUrl} styles={styles} />
       ))}
-    </ImageGallery>
+    </ScrollView>
   );
 }
 
