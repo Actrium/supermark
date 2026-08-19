@@ -48,6 +48,10 @@ export interface SupramarkStyles {
   image?: ImageStyle;
   /** Fixed-size image used when an image is mixed with other inline content. */
   inlineImage?: ImageStyle;
+  /** Placeholder shown when an image fails to load or its URL is unusable. */
+  imagePlaceholder?: ViewStyle;
+  /** Placeholder text (alt/title) shown over a failed or unusable image. */
+  imagePlaceholderText?: TextStyle;
   delete?: TextStyle;
 
   // Tables
@@ -294,7 +298,8 @@ export const defaultStyles = StyleSheet.create({
     alignSelf: 'flex-start',
     flexShrink: 0,
   },
-  // Keep the clipped image viewport at the reserved image height inside flex parents.
+  // Clipped image viewport. Height falls back to imageContainer.height when the
+  // host has not set one, so a flex parent cannot create blank space.
   imageGalleryViewport: {
     flexGrow: 0,
     flexShrink: 0,
@@ -305,10 +310,25 @@ export const defaultStyles = StyleSheet.create({
     height: '100%',
     resizeMode: 'cover',
   },
+  // inlineImage is a separate key from `image` (block): hosts that set only
+  // image.resizeMode do not affect inline images. Both default to 'cover'.
   inlineImage: {
     width: 20,
     height: 20,
     resizeMode: 'cover',
+  },
+  // Placeholder shown when a block image fails to load or its URL is unusable.
+  imagePlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0f0f0',
+  },
+  imagePlaceholderText: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+    paddingHorizontal: 8,
   },
   delete: {
     textDecorationLine: 'line-through',
@@ -456,6 +476,12 @@ export const darkThemeStyles: SupramarkStyles = {
     backgroundColor: '#1a1a1a',
   },
   diagramPlaceholderText: {
+    color: '#8b949e',
+  },
+  imagePlaceholder: {
+    backgroundColor: '#1a1a1a',
+  },
+  imagePlaceholderText: {
     color: '#8b949e',
   },
   mapCard: {
