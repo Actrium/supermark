@@ -186,7 +186,7 @@ describe('image rendering', () => {
     expect(typeof image.parent?.parent?.props.onPress).toBe('function');
   });
 
-  // --- 应修1: list images must reach the stable block container, not 20×20 inlines ---
+  // Fix 1: list images must reach the stable block container, not 20x20 inlines
   it('renders a tight list image as a stable block gallery, not a 20×20 inline', async () => {
     const renderer = await renderAst({
       type: 'root',
@@ -241,7 +241,7 @@ describe('image rendering', () => {
     expect(image.parent?.props.style).toMatchObject({ width: 200, height: 200 });
   });
 
-  // --- 应修2: hard break must produce the same gallery as a soft break ---
+  // Fix 2: hard break must produce the same gallery as a soft break
   it('groups two images split by a hard break into one gallery (same as soft break)', async () => {
     const renderer = await renderAst(
       imageAst([
@@ -256,7 +256,7 @@ describe('image rendering', () => {
     expect(gallery.props.horizontal).toBe(true);
   });
 
-  // --- 应修3: disabled footnote must not nest a View under <Text> ---
+  // Fix 3: disabled footnote must not nest a View under <Text>
   it('does not nest a View under Text when footnote is disabled and content is image-only', async () => {
     const renderer = await renderAst(
       {
@@ -286,7 +286,7 @@ describe('image rendering', () => {
     expect(renderer.root.findAllByType('Text')).toHaveLength(0);
   });
 
-  // --- 应修4: load failure / unusable URL must show a placeholder, not a blank box ---
+  // Fix 4: load failure / unusable URL must show a placeholder, not a blank box
   it('shows a placeholder for an empty URL instead of a blank image source', async () => {
     const renderer = await renderAst(imageAst([{ type: 'image', url: '', alt: 'missing' }]));
 
