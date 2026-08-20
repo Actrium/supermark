@@ -242,7 +242,7 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
     const intrinsicWidth = svgWidth > 0
       ? svgWidth
       : (measuredWidth > 0 ? measuredWidth : maxChartWidth);
-    const chartWidth = Math.max(minChartWidth, Math.min(maxChartWidth, intrinsicWidth));
+    let chartWidth = Math.max(minChartWidth, Math.min(maxChartWidth, intrinsicWidth));
 
     let height = 300;
     if (svgWidth > 0 && svgHeight > 0) {
@@ -256,6 +256,38 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
         /<svg([^>]*)>/,
         `<svg$1 viewBox="0 0 ${svgWidth} ${svgHeight}">`
       );
+    }
+
+    // d2 v0.7.1 outputs nested svg: the outer viewBox dimensions are wrong
+    // (much smaller than the inner content), so only the top-left corner of
+    // the inner content is visible and most text falls outside the viewport
+    // (frame renders, text doesn't). Fix: detect the inner svg's viewBox,
+    // replace the outer viewBox with the inner content dimensions
+    // (w/h with negative offset removed). Only triggered when the outer
+    // viewBox and inner content size disagree significantly (>2x), to
+    // avoid breaking normal d2 v0.6 / mermaid output.
+    const innerSvgMatch = scalableSvg.match(/<svg[^>]*\bviewBox="([^"]+)"[^>]*>/g);
+    if (innerSvgMatch && innerSvgMatch.length >= 2) {
+      const innerViewBox = innerSvgMatch[1].match(/viewBox="([^"]+)"/);
+      if (innerViewBox) {
+        const ip = innerViewBox[1].split(/[\s,]+/);
+        if (ip.length === 4) {
+          const iw = parseFloat(ip[2]);
+          const ih = parseFloat(ip[3]);
+          // Outer viewBox and inner content size disagree by >2x → d2 v0.7.1
+          // outer-dimension bug.
+          if (svgWidth > 0 && svgHeight > 0 && (iw / svgWidth > 2 || ih / svgHeight > 2)) {
+            scalableSvg = scalableSvg.replace(
+              /viewBox="[^"]*"/,
+              `viewBox="0 0 ${iw} ${ih}"`
+            );
+            // Recompute chartWidth/height using the inner dimensions.
+            const newIntrinsic = iw;
+            chartWidth = Math.max(minChartWidth, Math.min(maxChartWidth, newIntrinsic));
+            height = Math.min((ih / iw) * chartWidth, 500);
+          }
+        }
+      }
     }
 
     scalableSvg = stripRootSvgSize(scalableSvg);

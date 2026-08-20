@@ -351,3 +351,118 @@ export function stripRootSvgSize(xml: string): string {
     .replace(/\s+height="[^"]*"/, '');
   return xml.replace(rootSvgMatch[0], () => `<svg${cleanedAttrs}>`);
 }
+
+/**
+ * Result of attempting to fix d2 v0.7.1's nested-svg outer-viewBox bug.
+ */
+export interface D2NestedViewBoxFix {
+  /**
+   * The SVG with the outer viewBox replaced by the inner content dimensions
+   * (when `applied` is true), or the input unchanged (when `applied` is false).
+   */
+  svg: string;
+  /** True iff the fix was applied. */
+  applied: boolean;
+  /**
+   * The inner content width (in user units). Use as the intrinsic width for
+   * chart width calculation when `applied` is true. Undefined otherwise.
+   */
+  intrinsicWidth: number;
+  /** The inner content height (in user units), valid only when `applied` is true. */
+  intrinsicHeight: number;
+}
+
+/**
+ * Conservative ratio above which the outer / inner viewBox dimension mismatch
+ * is treated as a d2 v0.7.1 output bug.
+ *
+ * Empirically, d2 v0.7.1 produces a ~28x mismatch between the outer (wrong)
+ * viewBox and the inner (correct) d2-svg content. 2x leaves a 14x safety
+ * margin against d2 v0.6 / mermaid output that legitimately have a different
+ * outer viewBox without being buggy.
+ */
+export const D2_NESTED_VIEWBOX_RATIO_THRESHOLD = 2;
+
+/**
+ * Fix d2 v0.7.1's nested-svg outer-viewBox bug.
+ *
+ * d2 v0.7.1 wraps its diagram in a second `<svg>` element. The outer
+ * `<svg viewBox="0 0 W H">` has dimensions much smaller than the inner
+ * d2-svg's actual content (which uses its own viewBox with the real size).
+ * The result: only the top-left corner of the diagram is visible and most
+ * text falls outside the viewport (frame renders, text doesn't).
+ *
+ * This function detects the pattern and, when the outer and inner
+ * dimensions disagree by more than `D2_NESTED_VIEWBOX_RATIO_THRESHOLD`,
+ * replaces the outer viewBox with the inner content dimensions and
+ * returns the new intrinsic width / height for the caller to use.
+ *
+ * The threshold guards against false positives on d2 v0.6 / mermaid
+ * output, which don't have this bug.
+ *
+ * Returns `{ applied: false }` when:
+ * - the input has fewer than 2 nested svgs with viewBox attributes
+ * - the inner viewBox is malformed
+ * - the outer dimensions are zero
+ * - the dimension mismatch is within the threshold
+ *
+ * Long-term: track upstream d2 for a fix. This is a workaround for the
+ * d2 v0.7.1 SVG output bug.
+ */
+export function fixD2NestedViewBox(
+  scalableSvg: string,
+  outerWidth: number,
+  outerHeight: number
+): D2NestedViewBoxFix {
+  const noop: D2NestedViewBoxFix = {
+    svg: scalableSvg,
+    applied: false,
+    intrinsicWidth: outerWidth,
+    intrinsicHeight: outerHeight,
+  };
+
+  // Find every <svg viewBox="...">. The first match is the outer svg; the
+  // second (if any) is the inner svg. We require at least 2 matches.
+  const viewBoxMatches = scalableSvg.match(/<svg[^>]*\bviewBox="([^"]+)"[^>]*>/g);
+  if (!viewBoxMatches || viewBoxMatches.length < 2) {
+    return noop;
+  }
+
+  // Parse the inner viewBox. Format: "minX minY width height".
+  const innerMatch = viewBoxMatches[1].match(/viewBox="([^"]+)"/);
+  if (!innerMatch) return noop;
+  const parts = innerMatch[1].split(/[\s,]+/);
+  if (parts.length !== 4) return noop;
+  const innerWidth = parseFloat(parts[2]);
+  const innerHeight = parseFloat(parts[3]);
+
+  // Guard against malformed viewBox values (NaN, negative, zero).
+  if (!(innerWidth > 0) || !(innerHeight > 0)) return noop;
+  if (!(outerWidth > 0) || !(outerHeight > 0)) return noop;
+
+  // The d2 v0.7.1 bug: outer viewBox is far smaller than the inner content.
+  // Trigger the fix when either dimension differs by more than the threshold.
+  const widthRatio = innerWidth / outerWidth;
+  const heightRatio = innerHeight / outerHeight;
+  if (
+    widthRatio <= D2_NESTED_VIEWBOX_RATIO_THRESHOLD &&
+    heightRatio <= D2_NESTED_VIEWBOX_RATIO_THRESHOLD
+  ) {
+    return noop;
+  }
+
+  // Replace the FIRST viewBox (the outer one) with the inner content
+  // dimensions, preserving the negative offset removal convention used
+  // elsewhere in the renderer (start at 0,0).
+  const fixedSvg = scalableSvg.replace(
+    /viewBox="[^"]*"/,
+    `viewBox="0 0 ${innerWidth} ${innerHeight}"`
+  );
+
+  return {
+    svg: fixedSvg,
+    applied: true,
+    intrinsicWidth: innerWidth,
+    intrinsicHeight: innerHeight,
+  };
+}
