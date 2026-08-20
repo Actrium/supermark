@@ -1,4 +1,5 @@
 use crate::plugins::cmark::block::fence::CodeFence;
+use crate::plugins::cmark::inline::escape::is_escapable_punct;
 use crate::plugins::extra::tables::{ColumnAlignment, TableBody, TableCell, TableHead, TableRow};
 use crate::{MarkdownParser, Node};
 use serde::{Deserialize, Serialize};
@@ -1117,7 +1118,7 @@ impl RawValueMap {
         let mut vi = 0usize;
         while ri < raw_b.len() {
             points[ri] = vi;
-            if raw_b[ri] == b'\\' && ri + 1 < raw_b.len() && is_escapable_byte(raw_b[ri + 1]) {
+            if raw_b[ri] == b'\\' && ri + 1 < raw_b.len() && is_escapable_punct(raw_b[ri + 1] as char) {
                 // cmark backslash escape: raw `\X` (2 bytes) → value `X` (1 byte).
                 if vi >= val_b.len() || val_b[vi] != raw_b[ri + 1] {
                     return None;
@@ -1151,20 +1152,6 @@ impl RawMap for RawValueMap {
         // `raw`, so it is always in range.
         self.points[raw_offset]
     }
-}
-
-/// Whether `byte` is a CommonMark backslash-escapable punctuation character
-/// (mirrors the set in `plugins/cmark/inline/escape.rs`). Only these produce
-/// a 2-byte raw `\X` → 1-byte value `X` contraction; `\` before any other
-/// byte is kept literally by cmark and stays 1:1.
-fn is_escapable_byte(byte: u8) -> bool {
-    matches!(
-        byte,
-        b'\\' | b'!' | b'"' | b'#' | b'$' | b'%' | b'&' | b'\''
-            | b'(' | b')' | b'*' | b'+' | b',' | b'-' | b'.' | b'/'
-            | b':' | b';' | b'<' | b'=' | b'>' | b'?' | b'@'
-            | b'[' | b']' | b'^' | b'_' | b'`' | b'{' | b'|' | b'}' | b'~'
-    )
 }
 
 fn push_text_slice(
