@@ -126,12 +126,16 @@ prepare_graphviz_source "${GV_PATCHED}"
 # htmllex.c fails with "Cannot open include file: 'expat.h'".)
 log_info "Configuring Graphviz..."
 mkdir -p "${BUILD_DIR}/graphviz"
-# MSVC 源码编码：中文 Windows（代码页 936/GBK）下 MSVC 默认按本地代码页解析源文件，
-# graphviz 源码/头文件中的 UTF-8 字符会触发 C4819 并连锁产生语法错（如 htmltable.c
-# 的「i 未声明」假错——多字节序列错读吞掉引号/分号）。强制 /utf-8 解析。
-# 仅加在 Windows 生成器调用上，不动 common.sh 的跨平台共享参数。
-# MSYS2_ARG_CONV_EXCL：Git Bash 会把值里的 /utf-8 当 Unix 路径转换成
-# C:/Program Files/Git/utf-8（见 CMakeCache 污染），需精确排除这两个参数。
+# MSVC source encoding: on Chinese Windows (code page 936/GBK), MSVC parses
+# source files with the local code page by default. UTF-8 bytes in graphviz
+# sources/headers trigger C4819 and cascade into syntax errors (e.g. the
+# bogus "undeclared i" in htmltable.c — a misread multibyte sequence swallows
+# quotes/semicolons). Force /utf-8 parsing.
+# Applied to the Windows generator invocation only; keep common.sh's shared
+# cross-platform flags untouched.
+# MSYS2_ARG_CONV_EXCL: Git Bash converts the /utf-8 value as a Unix path into
+# C:/Program Files/Git/utf-8 (see CMakeCache pollution), so exclude exactly
+# these two flags from path conversion.
 MSYS2_ARG_CONV_EXCL='-DCMAKE_C_FLAGS;-DCMAKE_CXX_FLAGS' \
 cmake -S "${GV_PATCHED}" -B "${BUILD_DIR}/graphviz" \
     -G "${VS_GENERATOR}" -A "${CMAKE_PLATFORM}" \
