@@ -126,10 +126,19 @@ prepare_graphviz_source "${GV_PATCHED}"
 # htmllex.c fails with "Cannot open include file: 'expat.h'".)
 log_info "Configuring Graphviz..."
 mkdir -p "${BUILD_DIR}/graphviz"
+# MSVC 源码编码：中文 Windows（代码页 936/GBK）下 MSVC 默认按本地代码页解析源文件，
+# graphviz 源码/头文件中的 UTF-8 字符会触发 C4819 并连锁产生语法错（如 htmltable.c
+# 的「i 未声明」假错——多字节序列错读吞掉引号/分号）。强制 /utf-8 解析。
+# 仅加在 Windows 生成器调用上，不动 common.sh 的跨平台共享参数。
+# MSYS2_ARG_CONV_EXCL：Git Bash 会把值里的 /utf-8 当 Unix 路径转换成
+# C:/Program Files/Git/utf-8（见 CMakeCache 污染），需精确排除这两个参数。
+MSYS2_ARG_CONV_EXCL='-DCMAKE_C_FLAGS;-DCMAKE_CXX_FLAGS' \
 cmake -S "${GV_PATCHED}" -B "${BUILD_DIR}/graphviz" \
     -G "${VS_GENERATOR}" -A "${CMAKE_PLATFORM}" \
     "${GV_CMAKE_COMMON_ARGS[@]}" \
     "${WINDOWS_ARCH_CMAKE_ARGS[@]}" \
+    -DCMAKE_C_FLAGS="/utf-8" \
+    -DCMAKE_CXX_FLAGS="/utf-8" \
     -DCMAKE_INSTALL_PREFIX="${BUILD_DIR}/graphviz-install"
 
 log_info "Building Graphviz library targets..."
@@ -176,12 +185,15 @@ install(TARGETS graphviz_api
 )
 CMAKE_EOF
 
+MSYS2_ARG_CONV_EXCL='-DCMAKE_C_FLAGS;-DCMAKE_CXX_FLAGS' \
 cmake -S "${BUILD_DIR}/wrapper" -B "${BUILD_DIR}/wrapper/build" \
     -G "${VS_GENERATOR}" -A "${CMAKE_PLATFORM}" \
     -DSRC_DIR="${WRAPPER_SRC}" \
     -DGV_BUILD_DIR="${BUILD_DIR}/graphviz" \
     -DGV_INSTALL_DIR="${GV_INSTALL}" \
     -DGV_VERSION="${GRAPHVIZ_VERSION}" \
+    -DCMAKE_C_FLAGS="/utf-8" \
+    -DCMAKE_CXX_FLAGS="/utf-8" \
     -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}"
 
 cmake --build "${BUILD_DIR}/wrapper/build" --config Release
