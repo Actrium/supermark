@@ -364,11 +364,14 @@ export interface D2NestedViewBoxFix {
   /** True iff the fix was applied. */
   applied: boolean;
   /**
-   * The inner content width (in user units). Use as the intrinsic width for
-   * chart width calculation when `applied` is true. Undefined otherwise.
+   * The inner content width (in user units) when `applied` is true; falls
+   * back to the passed-in `outerWidth` otherwise.
    */
   intrinsicWidth: number;
-  /** The inner content height (in user units), valid only when `applied` is true. */
+  /**
+   * The inner content height (in user units) when `applied` is true; falls
+   * back to the passed-in `outerHeight` otherwise.
+   */
   intrinsicHeight: number;
 }
 
@@ -451,12 +454,15 @@ export function fixD2NestedViewBox(
     return noop;
   }
 
-  // Replace the FIRST viewBox (the outer one) with the inner content
-  // dimensions, preserving the negative offset removal convention used
-  // elsewhere in the renderer (start at 0,0).
+  // Replace the outer svg tag's own viewBox (viewBoxMatches[0]) with the
+  // inner content dimensions, preserving the negative offset removal
+  // convention used elsewhere in the renderer (start at 0,0). Anchoring the
+  // replacement to the outer tag — instead of the first viewBox attribute in
+  // the whole string — keeps elements that legitimately carry a viewBox
+  // before the outer svg (e.g. a <pattern> in <defs>) untouched.
   const fixedSvg = scalableSvg.replace(
-    /viewBox="[^"]*"/,
-    `viewBox="0 0 ${innerWidth} ${innerHeight}"`
+    viewBoxMatches[0],
+    viewBoxMatches[0].replace(/viewBox="[^"]*"/, `viewBox="0 0 ${innerWidth} ${innerHeight}"`)
   );
 
   return {

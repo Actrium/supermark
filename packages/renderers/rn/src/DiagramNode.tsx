@@ -12,7 +12,7 @@ import type { SupramarkDiagramNode, SupramarkDiagramConfig } from '@supramark/co
 import { shouldDeferDiagramRender } from '@supramark/core';
 import { type DiagramRenderResult, type DiagramRenderService } from '@supramark/engines';
 import { createReactNativeDiagramEngine } from '@supramark/engines/rn';
-import { normalizeSvg, normalizeSvgLight, stripRootSvgSize } from './svgUtils';
+import { normalizeSvg, normalizeSvgLight, stripRootSvgSize, fixD2NestedViewBox } from './svgUtils';
 import { SourceStateContext } from './SourceStateContext';
 import { getRendererCache, resolveDiagramCachePolicy, stableSerialize } from './renderCache';
 
@@ -258,36 +258,15 @@ export const DiagramNode: React.FC<DiagramNodeProps> = ({
       );
     }
 
-    // d2 v0.7.1 outputs nested svg: the outer viewBox dimensions are wrong
-    // (much smaller than the inner content), so only the top-left corner of
-    // the inner content is visible and most text falls outside the viewport
-    // (frame renders, text doesn't). Fix: detect the inner svg's viewBox,
-    // replace the outer viewBox with the inner content dimensions
-    // (w/h with negative offset removed). Only triggered when the outer
-    // viewBox and inner content size disagree significantly (>2x), to
-    // avoid breaking normal d2 v0.6 / mermaid output.
-    const innerSvgMatch = scalableSvg.match(/<svg[^>]*\bviewBox="([^"]+)"[^>]*>/g);
-    if (innerSvgMatch && innerSvgMatch.length >= 2) {
-      const innerViewBox = innerSvgMatch[1].match(/viewBox="([^"]+)"/);
-      if (innerViewBox) {
-        const ip = innerViewBox[1].split(/[\s,]+/);
-        if (ip.length === 4) {
-          const iw = parseFloat(ip[2]);
-          const ih = parseFloat(ip[3]);
-          // Outer viewBox and inner content size disagree by >2x → d2 v0.7.1
-          // outer-dimension bug.
-          if (svgWidth > 0 && svgHeight > 0 && (iw / svgWidth > 2 || ih / svgHeight > 2)) {
-            scalableSvg = scalableSvg.replace(
-              /viewBox="[^"]*"/,
-              `viewBox="0 0 ${iw} ${ih}"`
-            );
-            // Recompute chartWidth/height using the inner dimensions.
-            const newIntrinsic = iw;
-            chartWidth = Math.max(minChartWidth, Math.min(maxChartWidth, newIntrinsic));
-            height = Math.min((ih / iw) * chartWidth, 500);
-          }
-        }
-      }
+    // d2 v0.7.1 outputs a nested svg whose outer viewBox is far smaller than
+    // the inner content (frame renders, text doesn't). Delegate to the tested
+    // helper; when it applies, recompute width/height from the inner
+    // dimensions so the whole diagram fits the viewport.
+    const d2Fix = fixD2NestedViewBox(scalableSvg, svgWidth, svgHeight);
+    if (d2Fix.applied) {
+      scalableSvg = d2Fix.svg;
+      chartWidth = Math.max(minChartWidth, Math.min(maxChartWidth, d2Fix.intrinsicWidth));
+      height = Math.min((d2Fix.intrinsicHeight / d2Fix.intrinsicWidth) * chartWidth, 500);
     }
 
     scalableSvg = stripRootSvgSize(scalableSvg);

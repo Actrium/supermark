@@ -1,5 +1,11 @@
 import { describe, test, expect } from 'bun:test';
-import { normalizeSvg, normalizeSvgLight, stripRootSvgSize } from '../src/svgUtils';
+import {
+  normalizeSvg,
+  normalizeSvgLight,
+  stripRootSvgSize,
+  fixD2NestedViewBox,
+  D2_NESTED_VIEWBOX_RATIO_THRESHOLD,
+} from '../src/svgUtils';
 
 // ============================================================================
 // normalizeSvgLight — lightweight cleanup (for already style-inlined SVG such as MathJax)
@@ -492,11 +498,6 @@ describe('stripRootSvgSize', () => {
 // fixD2NestedViewBox — d2 v0.7.1 nested-svg outer-viewBox bug
 // ============================================================================
 
-import {
-  fixD2NestedViewBox,
-  D2_NESTED_VIEWBOX_RATIO_THRESHOLD,
-} from '../src/svgUtils';
-
 describe('fixD2NestedViewBox', () => {
   // ----- d2 v0.7.1 nested case (the actual bug) -----
 
@@ -644,5 +645,26 @@ describe('fixD2NestedViewBox', () => {
     // Second match's viewBox is "0 0 20 20" — 2x ratio exactly, not above
     // threshold, so no fix.
     expect(result.applied).toBe(false);
+  });
+
+  // ----- replacement anchoring (regression guard) -----
+
+  test('replaces the outer svg viewBox, not a preceding pattern viewBox', () => {
+    // The root svg carries no viewBox, so viewBoxMatches[0] (the "outer" the
+    // function fixes) is the first nested svg. The <pattern> before it holds
+    // the first viewBox attribute in the whole string — the replacement must
+    // still target the outer svg tag and leave the pattern untouched.
+    const svg =
+      '<svg width="10" height="10">' +
+      '<defs><pattern id="p" viewBox="0 0 10 10"/></defs>' +
+      '<svg id="outer" viewBox="0 0 10 10"><g/></svg>' +
+      '<svg id="inner" viewBox="0 0 280 250"><g/></svg>' +
+      '</svg>';
+    const result = fixD2NestedViewBox(svg, 10, 10);
+    expect(result.applied).toBe(true);
+    // The pattern's viewBox is untouched.
+    expect(result.svg).toContain('<pattern id="p" viewBox="0 0 10 10"/>');
+    // The outer svg got the inner content dimensions.
+    expect(result.svg).toContain('<svg id="outer" viewBox="0 0 280 250">');
   });
 });
