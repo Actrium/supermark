@@ -296,11 +296,13 @@ pub enum SupramarkNode {
 /// that the conformance harness needs to forward (`disable`, `allowDangerousHtml`,
 /// `allowDangerousProtocol`).
 ///
-/// Defaults keep the parser's pre-option behaviour: raw HTML and dangerous
-/// protocols pass through (equivalent to micromark with both `allowDangerous*`
-/// enabled). The conformance harness selects the safe profile explicitly
-/// per case; callers that want micromark's safe-by-default can set
-/// `allow_dangerous_html: false` / `allow_dangerous_protocol: false`.
+/// Defaults follow the product profile: raw HTML passes through verbatim
+/// (`allow_dangerous_html: true`) but dangerous protocols are sanitized
+/// (`allow_dangerous_protocol: false`, micromark's safe default — an unsafe
+/// protocol in a link/image/autolink destination yields an empty URL rather
+/// than a live `javascript:`/`vbscript:`/… href). Callers that want full
+/// passthrough set `allow_dangerous_html: true` (already the default) and
+/// `allow_dangerous_protocol: true`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParseOptions {
@@ -321,12 +323,11 @@ pub struct ParseOptions {
     /// `allowDangerousHtml: false`. No effect on the parser's product default (true).
     #[serde(default = "default_dangerous_html")]
     pub allow_dangerous_html: bool,
-    /// Reserved for the conformance harness. The parser currently sanitizes
-    /// non-`http(s)`/relative URLs unconditionally (matching micromark's safe
-    /// default); setting this to `false` is accepted but has no additional effect.
-    /// Wiring `allowDangerousProtocol: true` (pass dangerous protocols through) is
-    /// deferred until a conformance case requires it.
-    #[serde(default = "default_dangerous_protocol")]
+    /// When false (default), an unsafe protocol (`javascript:`, `vbscript:`,
+    /// `data:`, …) in a link, image, or autolink destination collapses the URL
+    /// to empty — mirroring micromark's `allowDangerousProtocol: false` default.
+    /// Set true to pass dangerous protocols through verbatim.
+    #[serde(default)]
     pub allow_dangerous_protocol: bool,
     /// micromark deviation: a link reference definition indented 4+ spaces (or a
     /// tab) is still recognised when it immediately follows another link
@@ -344,9 +345,6 @@ fn default_true() -> bool {
 fn default_dangerous_html() -> bool {
     true
 }
-fn default_dangerous_protocol() -> bool {
-    true
-}
 
 impl Default for ParseOptions {
     fn default() -> Self {
@@ -356,7 +354,7 @@ impl Default for ParseOptions {
             gfm_autolink: true,
             disable: Vec::new(),
             allow_dangerous_html: true,
-            allow_dangerous_protocol: true,
+            allow_dangerous_protocol: false,
             subsequent_indented_definitions: false,
         }
     }
@@ -368,10 +366,23 @@ pub fn parse(source: &str) -> SupramarkNode {
 
 pub fn parse_with_options(source: &str, options: ParseOptions) -> SupramarkNode {
     let allow_dangerous_html = options.allow_dangerous_html;
-    let md = create_parser(options);
+    let (md, unknown_disabled) = create_parser(options);
     let index = OffsetIndex::new(source);
-    let (mut children, diagnostics) = map_document(source, &md, &index);
+    let (mut children, mut diagnostics) = map_document(source, &md, &index);
     assign_footnote_indices(&mut children);
+    // Unknown `disable` names must not be a silent no-op: surface each one as a
+    // warning diagnostic so the harness (and any caller) can see it was ignored.
+    for name in unknown_disabled {
+        diagnostics.push(Diagnostic {
+            code: "unknown_disabled_construct".to_owned(),
+            severity: DiagnosticSeverity::Warning,
+            message: format!(
+                "`disable: [\"{name}\"]` names a construct this parser does not know; nothing was disabled."
+            ),
+            position: None,
+            data: None,
+        });
+    }
     if !allow_dangerous_html {
         for child in &mut children {
             sanitize_raw_html(child);
@@ -449,7 +460,7 @@ fn children_mut(node: &mut SupramarkNode) -> Option<&mut Vec<SupramarkNode>> {
     }
 }
 
-fn create_parser(options: ParseOptions) -> MarkdownParser {
+fn create_parser(options: ParseOptions) -> (MarkdownParser, Vec<String>) {
     let mut md = MarkdownParser::new();
     crate::plugins::cmark::add(&mut md);
 
@@ -479,30 +490,34 @@ fn create_parser(options: ParseOptions) -> MarkdownParser {
         crate::plugins::extra::gfm_autolink::add(&mut md);
     }
     md.subsequent_indented_definitions = options.subsequent_indented_definitions;
+    md.allow_dangerous_protocol = options.allow_dangerous_protocol;
 
-    apply_disabled(&mut md, &options.disable);
+    let unknown_disabled = apply_disabled(&mut md, &options.disable);
 
-    md
+    (md, unknown_disabled)
 }
 
 /// Remove rules for constructs named in `disabled` (micromark construct names).
-/// Unknown names are ignored so future micromark constructs don't break us.
-fn apply_disabled(md: &mut MarkdownParser, disabled: &[String]) {
+/// Returns the names this parser does not know, so callers can surface them
+/// instead of silently dropping the request.
+fn apply_disabled(md: &mut MarkdownParser, disabled: &[String]) -> Vec<String> {
+    use crate::generics::inline::{
+        code_pair::CodePairScanner,
+        emph_pair::EmphPairScanner,
+        full_link::{LinkPrefixScanner, LinkScanner},
+    };
     use crate::plugins::cmark::block::{
         blockquote::BlockquoteScanner, code::CodeScanner, fence::FenceScanner,
         heading::HeadingScanner, hr::HrScanner, lheading::LHeadingScanner, list::ListScanner,
         reference::ReferenceScanner,
     };
-    use crate::plugins::cmark::inline::{autolink::AutolinkScanner};
+    use crate::plugins::cmark::inline::{autolink::AutolinkScanner, entity::EntityScanner};
     #[cfg(feature = "raw-html")]
     use crate::plugins::html::{html_block::HtmlBlockScanner, html_inline::HtmlInlineScanner};
-    use crate::generics::inline::{
-        code_pair::CodePairScanner, emph_pair::EmphPairScanner,
-        full_link::{LinkPrefixScanner, LinkScanner},
-    };
 
+    let mut unknown = Vec::new();
     for name in disabled {
-        match name.as_str() {
+        let known = match name.as_str() {
             // --- block constructs ---
             "codeIndented" => {
                 md.block.remove_rule::<CodeScanner>();
@@ -510,39 +525,97 @@ fn apply_disabled(md: &mut MarkdownParser, disabled: &[String]) {
                 // code disabled, restore the unconstrained indent so other block
                 // rules don't keep gating on 4-space indent.
                 md.max_indent = i32::MAX;
+                true
             }
-            "codeFenced" => md.block.remove_rule::<FenceScanner>(),
-            "headingAtx" => md.block.remove_rule::<HeadingScanner>(),
-            "setextUnderline" => md.block.remove_rule::<LHeadingScanner>(),
-            "thematicBreak" => md.block.remove_rule::<HrScanner>(),
-            "blockQuote" => md.block.remove_rule::<BlockquoteScanner>(),
-            "list" => md.block.remove_rule::<ListScanner>(),
+            "codeFenced" => {
+                md.block.remove_rule::<FenceScanner>();
+                true
+            }
+            "headingAtx" => {
+                md.block.remove_rule::<HeadingScanner>();
+                true
+            }
+            "setextUnderline" => {
+                md.block.remove_rule::<LHeadingScanner>();
+                true
+            }
+            "thematicBreak" => {
+                md.block.remove_rule::<HrScanner>();
+                true
+            }
+            "blockQuote" => {
+                md.block.remove_rule::<BlockquoteScanner>();
+                true
+            }
+            "list" => {
+                md.block.remove_rule::<ListScanner>();
+                true
+            }
             #[cfg(feature = "raw-html")]
-            "htmlFlow" => md.block.remove_rule::<HtmlBlockScanner>(),
-            "definition" => md.block.remove_rule::<ReferenceScanner>(),
+            "htmlFlow" => {
+                md.block.remove_rule::<HtmlBlockScanner>();
+                true
+            }
+            "definition" => {
+                md.block.remove_rule::<ReferenceScanner>();
+                true
+            }
             // --- inline constructs ---
-            "autolink" => md.inline.remove_rule::<AutolinkScanner>(),
+            "autolink" => {
+                md.inline.remove_rule::<AutolinkScanner>();
+                true
+            }
             // `characterEscape`/`hardBreakEscape` share `EscapeScanner`; gate
             // each branch at runtime so the two constructs disable independently.
-            "characterEscape" => md.disable_character_escape = true,
-            "codeText" => md.inline.remove_rule::<CodePairScanner<'`'>>(),
+            "characterEscape" => {
+                md.disable_character_escape = true;
+                true
+            }
+            "characterReference" => {
+                md.inline.remove_rule::<EntityScanner>();
+                true
+            }
+            "codeText" => {
+                md.inline.remove_rule::<CodePairScanner<'`'>>();
+                true
+            }
             "attention" => {
                 md.inline.remove_rule::<EmphPairScanner<'*', true>>();
                 md.inline.remove_rule::<EmphPairScanner<'_', false>>();
+                true
             }
-            "hardBreakEscape" => md.disable_hard_break_escape = true,
+            "hardBreakEscape" => {
+                md.disable_hard_break_escape = true;
+                true
+            }
             #[cfg(feature = "raw-html")]
-            "htmlText" => md.inline.remove_rule::<HtmlInlineScanner>(),
-            "labelStartLink" => md.inline.remove_rule::<LinkScanner<false>>(),
-            "labelStartImage" => md.inline.remove_rule::<LinkPrefixScanner<'!', true>>(),
+            "htmlText" => {
+                md.inline.remove_rule::<HtmlInlineScanner>();
+                true
+            }
+            "labelStartLink" => {
+                md.inline.remove_rule::<LinkScanner<false>>();
+                true
+            }
+            "labelStartImage" => {
+                md.inline.remove_rule::<LinkPrefixScanner<'!', true>>();
+                true
+            }
             // `labelEnd` can't be disabled by removing `LinkScannerEnd` —
             // `parse_link_label` finds `]` by raw char match, so the sentinel's
             // removal is a no-op for resolution. Gate the openers at runtime
             // instead; with resolution refused, `[x]()` stays literal.
-            "labelEnd" => md.disable_label_end = true,
-            _ => {}
+            "labelEnd" => {
+                md.disable_label_end = true;
+                true
+            }
+            _ => false,
+        };
+        if !known {
+            unknown.push(name.clone());
         }
     }
+    unknown
 }
 
 fn map_markdown_fragment(
@@ -606,7 +679,13 @@ impl<'a> AstV2Ctx<'a> {
         sections: &[Node],
         alignments: &[ColumnAlignment],
     ) -> Vec<SupramarkNode> {
-        map_table_sections(sections, alignments, self.index, self.base_offset, self.source)
+        map_table_sections(
+            sections,
+            alignments,
+            self.index,
+            self.base_offset,
+            self.source,
+        )
     }
 }
 
@@ -773,7 +852,11 @@ fn map_node(
     base_offset: usize,
     source: &str,
 ) -> Vec<SupramarkNode> {
-    let ctx = AstV2Ctx { index, base_offset, source };
+    let ctx = AstV2Ctx {
+        index,
+        base_offset,
+        source,
+    };
     if let Some(v2) = node.to_ast_v2(&ctx) {
         return v2;
     }
@@ -1055,7 +1138,12 @@ fn sub_text_position(
     hi: usize,
 ) -> Option<SourcePosition> {
     let parent = parent?;
-    if parent.end.byte_offset.saturating_sub(parent.start.byte_offset) != value_len {
+    if parent
+        .end
+        .byte_offset
+        .saturating_sub(parent.start.byte_offset)
+        != value_len
+    {
         return None;
     }
     Some(SourcePosition {
@@ -1080,7 +1168,12 @@ fn ref_position(
     if open.end.byte_offset.saturating_sub(open.start.byte_offset) != open_value_len {
         return None;
     }
-    if close.end.byte_offset.saturating_sub(close.start.byte_offset) != close_value_len {
+    if close
+        .end
+        .byte_offset
+        .saturating_sub(close.start.byte_offset)
+        != close_value_len
+    {
         return None;
     }
     Some(SourcePosition {
@@ -1297,7 +1390,10 @@ impl RawValueMap {
         let mut vi = 0usize;
         while ri < raw_b.len() {
             points[ri] = vi;
-            if raw_b[ri] == b'\\' && ri + 1 < raw_b.len() && is_escapable_punct(raw_b[ri + 1] as char) {
+            if raw_b[ri] == b'\\'
+                && ri + 1 < raw_b.len()
+                && is_escapable_punct(raw_b[ri + 1] as char)
+            {
                 // cmark backslash escape: raw `\X` (2 bytes) → value `X` (1 byte).
                 if vi >= val_b.len() || val_b[vi] != raw_b[ri + 1] {
                     return None;
@@ -2266,7 +2362,9 @@ mod tests {
         // footnote reference — the inline raw-HTML rule must not split it,
         // otherwise the embedded tag leaks into the output (XSS). cmark-gfm
         // treats the whole `[…]` as the label string and percent-encodes it.
-        let ast = parse("Hello[^\"><script>alert(1)</script>]\n\n[^\"><script>alert(1)</script>]: pwned\n");
+        let ast = parse(
+            "Hello[^\"><script>alert(1)</script>]\n\n[^\"><script>alert(1)</script>]: pwned\n",
+        );
         let SupramarkNode::Root { children, .. } = ast else {
             panic!("expected root");
         };
@@ -2384,7 +2482,9 @@ mod tests {
                 SupramarkNode::Text { value, position } => {
                     Some((value.clone(), byte_span(position)))
                 }
-                SupramarkNode::Link { children, position, .. } => {
+                SupramarkNode::Link {
+                    children, position, ..
+                } => {
                     let text = children
                         .iter()
                         .filter_map(|c| match c {
@@ -2500,7 +2600,8 @@ mod tests {
         // The `[^…<…>]` footnote reference is reassembled across an inline
         // raw-HTML split; the resulting FootnoteReference (and the text-before
         // / text-after fragments) must carry source positions, not None.
-        let ast = parse("Hi[^\"><script>alert(1)</script>]\n\n[^\"><script>alert(1)</script>]: x\n");
+        let ast =
+            parse("Hi[^\"><script>alert(1)</script>]\n\n[^\"><script>alert(1)</script>]: x\n");
         let SupramarkNode::Root { children, .. } = ast else {
             panic!("expected root");
         };
@@ -2614,7 +2715,10 @@ mod tests {
             let SupramarkNode::Root { children, .. } = ast else {
                 panic!("expected root for {input}");
             };
-            let SupramarkNode::List { children: items, .. } = &children[0] else {
+            let SupramarkNode::List {
+                children: items, ..
+            } = &children[0]
+            else {
                 panic!("expected list for {input}");
             };
             let SupramarkNode::ListItem { children, .. } = &items[0] else {
@@ -2640,10 +2744,16 @@ mod tests {
         let SupramarkNode::Root { children, .. } = ast else {
             panic!("expected root");
         };
-        let SupramarkNode::List { children: items, .. } = &children[0] else {
+        let SupramarkNode::List {
+            children: items, ..
+        } = &children[0]
+        else {
             panic!("expected list");
         };
-        let SupramarkNode::ListItem { checked, children, .. } = &items[0] else {
+        let SupramarkNode::ListItem {
+            checked, children, ..
+        } = &items[0]
+        else {
             panic!("expected list item");
         };
         assert!(checked.is_none(), "no-separator should not be a task item");
