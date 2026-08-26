@@ -1,4 +1,5 @@
 import { parse } from '../src/plugin';
+import type { SupramarkConfig } from '../src/feature';
 import { CJK_HEADING_SAMPLE } from './fixtures/cjk-samples';
 import type {
   SupramarkNode,
@@ -277,6 +278,41 @@ describe('parse', () => {
         (node: SupramarkNode) => node.type === 'inline_code'
       ) as { value: string };
       expect(inlineCode.value).toBe('[[code]]');
+    });
+
+    it('enables wikilink parsing via config.features (no explicit flag)', async () => {
+      const config: SupramarkConfig = {
+        features: [{ id: '@supramark/feature-wikilink', enabled: true, options: {} }],
+      };
+      const ast = await parse('See [[Project Plan#Roadmap|the plan]].', { config });
+      const paragraph = ast.children[0] as SupramarkParentNode;
+      expect(paragraph.children).toHaveLength(3);
+      const wikilink = paragraph.children[1] as SupramarkWikiLinkNode;
+      expect(wikilink.type).toBe('wiki_link');
+      expect(wikilink.target).toBe('Project Plan');
+      expect(wikilink.section).toBe('Roadmap');
+      expect(wikilink.label).toBe('the plan');
+    });
+
+    it('keeps wikilink off when the feature config is disabled', async () => {
+      const config: SupramarkConfig = {
+        features: [{ id: '@supramark/feature-wikilink', enabled: false }],
+      };
+      const ast = await parse('See [[Project Plan]].', { config });
+      const paragraph = ast.children[0] as SupramarkParentNode;
+      expect(paragraph.children.some((node: SupramarkNode) => node.type === 'wiki_link')).toBe(false);
+    });
+
+    it('defers to inline math: $[[foo]]$ stays one math_inline', async () => {
+      const ast = await parse('pre $[[foo]]$ post', { wikilink: true });
+      const paragraph = ast.children[0] as SupramarkParentNode;
+      const types = paragraph.children.map((node: SupramarkNode) => node.type);
+      expect(types).toContain('math_inline');
+      expect(types).not.toContain('wiki_link');
+      const math = paragraph.children.find(
+        (node: SupramarkNode) => node.type === 'math_inline'
+      ) as { value: string };
+      expect(math.value).toBe('[[foo]]');
     });
 
     it('expands wikilinks inside transparent container bodies', async () => {

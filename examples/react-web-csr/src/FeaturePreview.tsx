@@ -13,7 +13,7 @@ import {
   containerRenderers,
   type FeatureEntry,
 } from './feature-registry';
-import { wikilinkFeature, createWikilinkFeatureConfig } from '@supramark/feature-wikilink';
+import { createWikilinkFeatureConfig } from '@supramark/feature-wikilink';
 import './FeaturePreview.css';
 
 type MobilePane = 'preview' | 'editor';
@@ -50,12 +50,13 @@ function previewEnginesForFeature(shortName: string): string[] {
 
 // The wikilink parser option is off by default (not CommonMark/GFM syntax),
 // so the preview must pass a config enabling the feature — plus a demo
-// resolver so links are actually navigable.
+// resolver so links are actually navigable. SupramarkConfig.features takes
+// FeatureConfig entries ({ id, enabled, options }); the feature object itself
+// is not a FeatureConfig.
 function previewConfigForFeature(shortName: string) {
   if (shortName !== 'wikilink') return undefined;
   return {
-    features: [wikilinkFeature],
-    featureConfigs: [
+    features: [
       createWikilinkFeatureConfig(true, {
         resolveWikiLink: ({ target, section }) =>
           `#/notes/${encodeURIComponent(target)}${section ? `#${section}` : ''}`,

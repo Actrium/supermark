@@ -359,13 +359,16 @@ export const Supramark: React.FC<SupramarkProps> = ({
     estimateParsedDocumentBytes
   );
   const codeHighlightEnabled = isFeatureGroupEnabled(config, ['@supramark/feature-code-highlight']);
+  // Parse derives a parser flag from config: enabling @supramark/feature-wikilink
+  // turns on wikilink parsing and wiki_link nodes land in the cached AST, so the
+  // flag must fingerprint the cache key. Feature options (e.g. resolveWikiLink)
+  // only affect rendering, not the cached AST.
+  const wikilinkParseEnabled = config ? isFeatureEnabled(config, '@supramark/feature-wikilink') : false;
   // Completed documents can share parsing/highlighting only when every input is equivalent.
-  // Config is intentionally omitted because parse currently derives no plugins or AST transforms
-  // from it; add the relevant config fingerprint here if that parse contract ever changes.
   const documentCacheKey = useMemo(
     () =>
-      `${markdown}\u0000${codeHighlightEnabled ? 'highlight' : 'plain'}\u0000${codeHighlightTheme ?? ''}\u0000${getCodeHighlighterId(codeHighlighter)}`,
-    [markdown, codeHighlightEnabled, codeHighlighter, codeHighlightTheme]
+      `${markdown}\u0000${wikilinkParseEnabled ? 'wikilink' : 'plain'}\u0000${codeHighlightEnabled ? 'highlight' : 'plain'}\u0000${codeHighlightTheme ?? ''}\u0000${getCodeHighlighterId(codeHighlighter)}`,
+    [markdown, wikilinkParseEnabled, codeHighlightEnabled, codeHighlighter, codeHighlightTheme]
   );
   // The AST and its source state must advance together so a stale open fence
   // is never marked complete.

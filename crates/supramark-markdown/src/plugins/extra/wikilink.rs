@@ -21,11 +21,23 @@
 //! before this scanner runs. Code spans/fences can never contain a WikiLink
 //! because the backtick rule consumes those bytes first.
 //!
+//! Inline math (`$…$`) wins over WikiLink: `$[[foo]]$` stays one
+//! `math_inline` node. Math is claimed by the text post-pass
+//! (`supramark::map_inline_text`), which runs per text node after
+//! tokenization — if this scanner consumed the `[[`, the text run would split
+//! and the span would be lost. So the scanner defers to math semantics: it
+//! declines the `[[` when the current text run ends inside an open math span
+//! (a dangling `$` with no same-line closer inside the run) and an unescaped
+//! same-line `$` follows the `]]`. Degradation direction: when an inline
+//! token (e.g. emphasis) sits between the `]]` and the closing `$`, the
+//! post-pass would not claim the span but this scanner still declines, so
+//! the `[[…]]` renders as literal text instead of a WikiLink.
+//!
 //! Resolution to a file path or URL is intentionally not done here: the AST
 //! node carries the raw `target`/`section`/`label` and downstream hosts apply
 //! their own workspace rules.
 use crate::generics::inline::full_link::LinkScanner;
-use crate::parser::inline::{InlineRule, InlineState};
+use crate::parser::inline::{InlineRule, InlineState, Text};
 use crate::{MarkdownParser, Node, NodeValue, Renderer};
 
 #[derive(Debug)]
@@ -140,6 +152,10 @@ impl InlineRule for WikiLinkScanner {
             return None;
         }
 
+        if inside_math_span(state, close) {
+            return None;
+        }
+
         let node = Node::new(WikiLink {
             target: target.to_owned(),
             section: section.map(str::to_owned),
@@ -147,4 +163,80 @@ impl InlineRule for WikiLinkScanner {
         });
         Some((node, close + 2 - pos))
     }
+}
+
+/// True when the `[[` sits inside what the inline-math text post-pass would
+/// claim as a `$…$` span (see the module docs). Two conditions must hold:
+/// the current text run ends with a dangling math opener, and a same-line
+/// unescaped `$` follows the `]]` so the span actually closes.
+fn inside_math_span(state: &InlineState, close: usize) -> bool {
+    ends_inside_open_math_span(state) && math_closer_follows(state, close + 2)
+}
+
+/// Simulates the math post-pass pairing (`supramark::find_next_inline_extension`)
+/// over the current text run — the trailing `Text` child, whose content is raw
+/// source bytes ending exactly at `state.pos`. Returns true when the run ends
+/// with a dangling `$` opener (no same-line closer inside the run).
+///
+/// Text runs never contain `\` (the escape rule consumes backslashes into
+/// separate TextSpecial nodes), so every `$` in the run is unescaped.
+fn ends_inside_open_math_span(state: &InlineState) -> bool {
+    let Some(text) = state.node.children.last().and_then(|n| n.cast::<Text>()) else {
+        return false;
+    };
+    let bytes = text.content.as_bytes();
+    let mut i = 0;
+    while let Some(p) = (i..bytes.len()).find(|&k| bytes[k] == b'$') {
+        // Closer: the next `$` on the same line, mirroring
+        // find_closing_math_delimiter's no-newline rule. The search may run
+        // off the end of the run — in the full text value the run continues
+        // past the `[[`, so the closer can live beyond it.
+        let mut k = p + 1;
+        loop {
+            if k >= bytes.len() {
+                // Run ended with the span still open.
+                return true;
+            }
+            match bytes[k] {
+                // A closer across a line break is never valid; the next `$`
+                // after the newline is a fresh candidate.
+                b'\n' => i = p + 1,
+                // Non-empty span claimed; resume after the closer.
+                b'$' if k > p + 1 => i = k + 1,
+                // `$$` — empty content: the post-pass skips this opener and
+                // retries from the second `$`.
+                b'$' => i = p + 1,
+                _ => {
+                    k += 1;
+                    continue;
+                }
+            }
+            break;
+        }
+    }
+    false
+}
+
+/// True when an unescaped `$` appears between `from` and the next line break
+/// (or `pos_max`): a candidate closing delimiter for the open math span.
+fn math_closer_follows(state: &InlineState, from: usize) -> bool {
+    let bytes = state.src.as_bytes();
+    let mut i = from;
+    while i < state.pos_max && bytes[i] != b'\n' {
+        if bytes[i] == b'$' && !is_escaped_byte(bytes, i) {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+fn is_escaped_byte(bytes: &[u8], index: usize) -> bool {
+    let mut backslashes = 0;
+    let mut j = index;
+    while j > 0 && bytes[j - 1] == b'\\' {
+        backslashes += 1;
+        j -= 1;
+    }
+    backslashes % 2 == 1
 }

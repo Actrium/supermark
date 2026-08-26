@@ -25,6 +25,14 @@ import { makeFeatureConfigHelpers } from '@supramark/core';
  * `resolveWikiLink` callback in the feature options to map
  * `{ target, section }` to an href. Without a resolver (or when it returns
  * null/undefined) the wikilink renders as styled but non-navigable text.
+ *
+ * @example
+ * ```markdown
+ * Link to a note: [[Project Plan]].
+ * With a label: [[Project Plan|the plan]].
+ * With a section: [[Project Plan#Roadmap]].
+ * Same page: [[#Roadmap]].
+ * ```
  */
 export const wikilinkFeature: SupramarkFeature<SupramarkWikiLinkNode> = {
   metadata: {
@@ -113,6 +121,9 @@ export const wikilinkFeature: SupramarkFeature<SupramarkWikiLinkNode> = {
     },
     rn: {
       platform: 'rn',
+      // Renders wiki_link nodes fed via the `ast` prop, but end-to-end RN use
+      // is unavailable: the native parser ABI lacks parseJsonWithOptions, so
+      // parse() with the feature enabled throws until native FFI lands.
       infrastructure: {
         needsWorker: false,
         needsCache: false,
@@ -212,7 +223,9 @@ export const wikilinkFeature: SupramarkFeature<SupramarkWikiLinkNode> = {
               children.filter(c => (c as { type?: string }).type === 'wiki_link').length === 2
             );
           },
-          platforms: ['web', 'rn'],
+          // rn omitted: end-to-end requires parsing with the wikilink option,
+          // which the native parser ABI does not support yet (see renderers.rn).
+          platforms: ['web'],
         },
       ],
     },
@@ -240,16 +253,17 @@ Knowledge-base Markdown syntax support for Supramark.
 
 ## Usage
 
-WikiLink parsing is a parser option (off by default). Enable it by adding this
-feature to the config (which also enables the parser flag) and pass a resolver:
+WikiLink parsing is a parser option (off by default). Enable it by adding a
+feature config to the config — the enabled feature config turns on the parser
+flag. Note \`SupramarkConfig.features\` takes \`FeatureConfig\` entries
+(\`{ id, enabled, options }\`), not the feature object itself:
 
 \`\`\`tsx
-import { wikilinkFeature, createWikilinkFeatureConfig } from '@supramark/feature-wikilink';
+import { createWikilinkFeatureConfig } from '@supramark/feature-wikilink';
 
 <Supramark
   config={{
-    features: [wikilinkFeature],
-    featureConfigs: [
+    features: [
       createWikilinkFeatureConfig(true, {
         resolveWikiLink: ({ target, section }) =>
           \`/notes/\${encodeURIComponent(target)}\${section ? \`#\${section}\` : ''}\`,
@@ -258,6 +272,20 @@ import { wikilinkFeature, createWikilinkFeatureConfig } from '@supramark/feature
   }}
 />
 \`\`\`
+
+## Security
+
+The href returned by \`resolveWikiLink\` is written into \`<a href>\` verbatim.
+Unlike a CommonMark \`[js](javascript:…)\` link, a pass-through resolver
+(\`({ target }) => target\`) turns \`[[javascript:alert(1)]]\` into a live
+\`javascript:\` link — **hosts must sanitize resolver output** (e.g. allow only
+in-app routes or an \`https:\` prefix).
+
+## Platform support
+
+Web works today. React Native does **not**: the native parser ABI has no
+\`parseJsonWithOptions\`, so requesting wikilink on RN throws an explicit error
+until native FFI lands.
     `.trim(),
 
     api: {
@@ -270,7 +298,7 @@ import { wikilinkFeature, createWikilinkFeatureConfig } from '@supramark/feature
               name: 'resolveWikiLink',
               type: '(node: { target: string; section?: string; label?: string }) => string | null | undefined',
               description:
-                'Maps a wiki_link node to an href. Return null/undefined to render the link as non-navigable text.',
+                'Maps a wiki_link node to an href. Return null/undefined to render the link as non-navigable text. The returned href is used verbatim — sanitize it (a pass-through resolver would turn [[javascript:…]] into a live javascript: link).',
               required: false,
             },
           ],
@@ -368,6 +396,7 @@ const options = getWikilinkFeatureOptions(config);`,
     bestPractices: [
       'Enable the feature in SupramarkConfig.features so the parser flag turns on automatically (parse() with { wikilink: true } also works)',
       'Always provide resolveWikiLink — raw targets are workspace-relative names, not URLs',
+      'Sanitize the href your resolver returns — it is written into <a href> verbatim, so a pass-through resolver turns [[javascript:…]] into a live javascript: link',
       'Escape with \\[[ when literal [[...]] text is needed',
       'WikiLink-looking text inside code spans/fences stays literal automatically',
     ],

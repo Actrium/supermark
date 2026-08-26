@@ -2692,4 +2692,83 @@ mod tests {
             SupramarkNode::Code { value, .. } if value.contains("[[foo]]")
         ));
     }
+
+    #[test]
+    fn wikilink_defers_to_inline_math() {
+        // The math post-pass claims `$…$` per text node; WikiLinkScanner must
+        // not split the run when the `[[` sits inside a math span.
+        for input in [
+            "$[[foo]]$",
+            "pre $[[foo]]$ post",
+            "$a$ then $[[foo]]$",
+            // Dangling `$$`: the post-pass skips the adjacent pair and the
+            // second `$` opens the span containing the wikilink.
+            "$$[[foo]]$",
+        ] {
+            let ast = parse_with_wikilink(input);
+            let paragraph = first_paragraph(&ast);
+            assert!(
+                paragraph
+                    .iter()
+                    .any(|n| matches!(n, SupramarkNode::MathInline { .. })),
+                "math_inline must survive for {input}: {paragraph:?}"
+            );
+            assert!(
+                !paragraph
+                    .iter()
+                    .any(|n| matches!(n, SupramarkNode::WikiLink { .. })),
+                "no wiki_link inside a math span for {input}: {paragraph:?}"
+            );
+        }
+
+        // No closing `$` after the `]]`: no math span, so the wikilink wins.
+        let ast = parse_with_wikilink("$a [[foo]]");
+        let paragraph = first_paragraph(&ast);
+        assert!(
+            paragraph
+                .iter()
+                .any(|n| matches!(n, SupramarkNode::WikiLink { target, .. } if target == "foo")),
+            "unclosed math span must not eat the wikilink: {paragraph:?}"
+        );
+
+        // The closer must be on the same line as the opener: a `$` before a
+        // line break cannot open, so the next line's wikilink is claimed.
+        let ast = parse_with_wikilink("broken $\n[[foo]]");
+        let paragraph = first_paragraph(&ast);
+        assert!(
+            paragraph
+                .iter()
+                .any(|n| matches!(n, SupramarkNode::WikiLink { target, .. } if target == "foo")),
+            "line-crossing math span is not math: {paragraph:?}"
+        );
+
+        // Math spans do not nest across inline tokens: an intervening strong
+        // splits the text run, so the math post-pass would not claim the span
+        // either — the scanner declines and the brackets stay literal (the
+        // documented conservative degradation).
+        let ast = parse_with_wikilink("$[[foo]]**b**$");
+        let paragraph = first_paragraph(&ast);
+        assert!(
+            !paragraph
+                .iter()
+                .any(|n| matches!(n, SupramarkNode::WikiLink { .. })),
+            "intervening token keeps the span unclaimed: {paragraph:?}"
+        );
+    }
+
+    #[test]
+    fn wikilink_after_escaped_dollar_still_wins() {
+        // `\$` becomes a separate TextSpecial (its decoded value diverges from
+        // the raw slice, so the math post-pass never scans it as a delimiter);
+        // the following text run has no dangling opener and the wikilink is
+        // claimed.
+        let ast = parse_with_wikilink("\\$[[foo]]");
+        let paragraph = first_paragraph(&ast);
+        assert!(
+            paragraph
+                .iter()
+                .any(|n| matches!(n, SupramarkNode::WikiLink { target, .. } if target == "foo")),
+            "escaped dollar is not a math opener: {paragraph:?}"
+        );
+    }
 }

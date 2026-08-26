@@ -385,6 +385,36 @@ fn wikilink_serializes_tagged_node_omitting_absent_fields() {
     );
 }
 
+#[test]
+fn wikilink_option_defers_to_inline_math() {
+    // Regression for the PR-208 review: with the wikilink option on, `$[[foo]]$`
+    // must stay one math_inline — the WikiLink scanner declines a `[[` that
+    // sits inside an open math span so the text post-pass still claims `$…$`.
+    let mut options = ParseOptions::default();
+    options.wikilink = true;
+    let ast = parse_with_options("pre $[[foo]]$ post\n", options);
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    let math = children
+        .iter()
+        .find_map(|n| match n {
+            SupramarkNode::MathInline { value, .. } => Some(value.clone()),
+            _ => None,
+        })
+        .expect("math_inline must survive the wikilink option");
+    assert_eq!(math, "[[foo]]");
+    assert!(
+        children
+            .iter()
+            .all(|n| !matches!(n, SupramarkNode::WikiLink { .. })),
+        "no wiki_link inside a math span: {children:?}"
+    );
+}
+
 // GFM strikethrough (cmark-gfm 0.29 conformance, extensions-0018). Both `~x~`
 // and `~~x~~` produce a single <del>; runs of 3+ tildes and mismatched lengths
 // stay literal. See issue #144.

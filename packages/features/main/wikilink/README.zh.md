@@ -50,13 +50,14 @@ interface SupramarkWikiLinkNode {
 
 ## 使用
 
+`SupramarkConfig.features` 接受 `FeatureConfig`（`{ id, enabled, options }`）数组——直接传 feature 对象（如 `features: [wikilinkFeature]`）或 `featureConfigs` 字段**都是无效的**，flag 不会开启：
+
 ```tsx
-import { wikilinkFeature, createWikilinkFeatureConfig } from '@supramark/feature-wikilink';
+import { createWikilinkFeatureConfig } from '@supramark/feature-wikilink';
 
 <Supramark
   config={{
-    features: [wikilinkFeature],
-    featureConfigs: [
+    features: [
       createWikilinkFeatureConfig(true, {
         resolveWikiLink: ({ target, section }) =>
           `/notes/${encodeURIComponent(target)}${section ? `#${section}` : ''}`,
@@ -67,6 +68,7 @@ import { wikilinkFeature, createWikilinkFeatureConfig } from '@supramark/feature
 ```
 
 - resolver 缺失或返回 `null`/`undefined` 时，渲染为**样式化但不可导航**的文本（不产出 `href="#"` 假链接）；
+- **resolver 返回的 href 会原样写入 `<a href>`**：与 CommonMark `[js](javascript:…)` 链接不同，`[[javascript:alert(1)]]` 经一个直通 resolver（`({ target }) => target`）会产出可点击的 `javascript:` 链接。宿主必须对 resolver 输出做白名单校验/消毒（例如仅允许应用内路由或 `https:` 前缀）；
 - 仅在 `parse()` 层使用时也可显式传 `{ wikilink: true }`。
 
 ## 行为变化说明（选项开启时）
