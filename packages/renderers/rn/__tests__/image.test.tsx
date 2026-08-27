@@ -501,7 +501,11 @@ describe('image rendering', () => {
     expect(renderer.root.findByType('Image').props.accessible).toBe(false);
   });
 
-  it('hides a decorative image from screen readers on the wrapper too', async () => {
+  // The link wrapper is the actionable control (opens the article), so it
+  // must stay in the accessibility tree even for a decorative image —
+  // hiding it would make the link unreachable. The link URL becomes the
+  // fallback accessible name.
+  it('keeps a decorative linked image wrapper reachable, labeled by the link URL', async () => {
     const renderer = await renderAst(
       imageAst([
         {
@@ -513,8 +517,21 @@ describe('image rendering', () => {
     );
 
     const touchable = renderer.root.findByType('TouchableOpacity');
-    expect(touchable.props.accessibilityElementsHidden).toBe(true);
-    expect(touchable.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(touchable.props.accessibilityElementsHidden).toBe(false);
+    expect(touchable.props.importantForAccessibility).toBe('yes');
+    expect(touchable.props.accessibilityLabel).toBe('https://example.com/article');
+    // The inner image is still not individually focusable.
+    expect(renderer.root.findByType('Image').props.accessible).toBe(false);
+  });
+
+  it('hides an unwrapped decorative image from screen readers', async () => {
+    const renderer = await renderAst(
+      imageAst([{ type: 'image', url: 'https://example.com/photo.jpg', alt: '' }])
+    );
+
+    const image = renderer.root.findByType('Image');
+    expect(image.props.accessibilityElementsHidden).toBe(true);
+    expect(image.props.importantForAccessibility).toBe('no-hide-descendants');
   });
 
   // --- #217: gallery images are keyed by index, so a URL change at the same
