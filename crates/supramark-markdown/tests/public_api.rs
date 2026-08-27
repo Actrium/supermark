@@ -886,6 +886,76 @@ fn public_api_inline_math_escaped_dollar_stays_text_219() {
 }
 
 #[test]
+fn public_api_inline_math_after_entity_decoding_219() {
+    // An HTML entity in the run must not sink the whole run to plain text:
+    // RawValueMap models `&name;` / `&#NN;` / `&#xHH;` → decoded-width. A
+    // literal `&` with no decodable entity stays 1:1.
+    for (input, expected_text, expected_math) in [
+        ("a &amp; b $x$", "a & b ", "x"),
+        ("&copy; $\\{0\\}$", "© ", "\\{0\\}"),
+        ("&#65;$x$", "A", "x"),
+        ("&unknown; $x$", "&unknown; ", "x"),
+    ] {
+        let ast = parse(input);
+        let SupramarkNode::Root { children, .. } = ast else {
+            panic!("expected root for {input}");
+        };
+        let SupramarkNode::Paragraph { children: paragraph, .. } = &children[0] else {
+            panic!("expected paragraph for {input}");
+        };
+        assert!(
+            matches!(
+                paragraph.first(),
+                Some(SupramarkNode::Text { value, .. }) if value == expected_text
+            ),
+            "leading text for {input}: {paragraph:?}"
+        );
+        assert!(
+            matches!(
+                paragraph.get(1),
+                Some(SupramarkNode::MathInline { value, .. }) if value == expected_math
+            ),
+            "math for {input}: {paragraph:?}"
+        );
+    }
+}
+
+#[test]
+fn public_api_inline_math_with_crlf_line_endings_219() {
+    // CRLF sources: the `\r` bytes are raw-only (value normalizes to `\n`),
+    // including the run's trailing CRLF after the value is exhausted. Math
+    // must still parse — as it did before the scan was deferred to whole runs.
+    let ast = parse("a $x$\r\nb $y$\r\n");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children: paragraph, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    let math: Vec<&str> = paragraph
+        .iter()
+        .filter_map(|n| match n {
+            SupramarkNode::MathInline { value, .. } => Some(value.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(math, vec!["x", "y"]);
+
+    // CRLF + stripped continuation-line indentation + escaped braces.
+    let ast = parse("hello\r\n  $\\{0\\}$");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children: paragraph, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(matches!(
+        &paragraph[1],
+        SupramarkNode::MathInline { value, .. } if value == "\\{0\\}"
+    ));
+}
+
+#[test]
 fn public_api_maps_footnotes() {
     let ast = parse("Text[^a].\n\n[^a]: Footnote.");
     let SupramarkNode::Root { children, .. } = ast else {

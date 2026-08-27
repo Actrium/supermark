@@ -1,3 +1,4 @@
+use crate::common::utils::decode_entity_at_start;
 use crate::plugins::cmark::block::fence::CodeFence;
 use crate::plugins::cmark::inline::escape::is_escapable_punct;
 use crate::plugins::extra::tables::{ColumnAlignment, TableBody, TableCell, TableHead, TableRow};
@@ -1111,12 +1112,13 @@ impl RawMap for IdentityMap {
 
 /// Offset map for the slow path, built by lock-stepping the raw source bytes
 /// against the decoded value bytes. A backslash escape `\X` (where `X` is a
-/// cmark-escapable punctuation byte) consumes 2 raw bytes → 1 value byte;
-/// whitespace that cmark dropped (continuation-line indentation, trailing
-/// spaces before a newline) consumes 1+ raw bytes → 0 value bytes; every
-/// other byte is 1:1. Any other mismatch (e.g. an HTML entity `&amp;` → `&`,
-/// whose decoded width does not align byte-for-byte) returns `None` so the
-/// caller falls back to a plain text node.
+/// cmark-escapable punctuation byte) consumes 2 raw bytes → 1 value byte; an
+/// HTML entity / numeric char ref consumes its raw width → decoded width;
+/// CR / CRLF line endings consume the extra raw byte(s); whitespace that
+/// cmark dropped (continuation-line indentation, trailing spaces before a
+/// newline) consumes 1+ raw bytes → 0 value bytes; every other byte is 1:1.
+/// Any other mismatch returns `None` so the caller falls back to a plain
+/// text node.
 struct RawValueMap {
     /// `points[raw_offset] = value_offset`, for `raw_offset` in `0..=raw.len()`.
     points: Vec<usize>,
@@ -1135,9 +1137,24 @@ impl RawValueMap {
         let mut vi = 0usize;
         while ri < raw_b.len() {
             points[ri] = vi;
+            if vi >= val_b.len() {
+                // Value exhausted: anything left must be trailing whitespace
+                // / line endings the parser stripped from the value (e.g. a
+                // paragraph run's final CRLF). Map it all to `vi`.
+                if !raw_b[ri..]
+                    .iter()
+                    .all(|&b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+                {
+                    return None;
+                }
+                for point in &mut points[ri + 1..] {
+                    *point = vi;
+                }
+                break;
+            }
             if raw_b[ri] == b'\\' && ri + 1 < raw_b.len() && is_escapable_punct(raw_b[ri + 1] as char) {
                 // cmark backslash escape: raw `\X` (2 bytes) → value `X` (1 byte).
-                if vi >= val_b.len() || val_b[vi] != raw_b[ri + 1] {
+                if val_b[vi] != raw_b[ri + 1] {
                     return None;
                 }
                 // The backslash byte and the escaped byte both precede value
@@ -1145,20 +1162,38 @@ impl RawValueMap {
                 points[ri + 1] = vi;
                 ri += 2;
                 vi += 1;
-            } else if (raw_b[ri] == b' ' || raw_b[ri] == b'\t')
-                && vi < val_b.len()
+            } else if raw_b[ri] == b'&' {
+                // HTML entity / numeric char ref: variable raw width →
+                // variable decoded width. A literal `&` (not a decodable
+                // entity) is handled 1:1 below.
+                if let Some((decoded, entity_len)) = decode_entity_at_start(&raw[ri..]) {
+                    if !value[vi..].starts_with(&decoded) {
+                        return None;
+                    }
+                    let vi_end = vi + decoded.len();
+                    for point in &mut points[ri..ri + entity_len] {
+                        *point = vi;
+                    }
+                    ri += entity_len;
+                    vi = vi_end;
+                } else if raw_b[ri] != val_b[vi] {
+                    return None;
+                } else {
+                    ri += 1;
+                    vi += 1;
+                }
+            } else if (raw_b[ri] == b' ' || raw_b[ri] == b'\t' || raw_b[ri] == b'\r')
                 && raw_b[ri] != val_b[vi]
             {
-                // Whitespace stripped from the value but present in the
+                // Whitespace / CR stripped from the value but present in the
                 // source span (continuation-line indentation, trailing
-                // spaces): consume it as 0-width. If the strings are
-                // genuinely misaligned, the next non-whitespace byte still
-                // bails below.
+                // spaces, the `\r` of a CRLF): consume as 0-width. Genuine
+                // misalignment still bails at the next byte.
                 ri += 1;
             } else {
-                // 1:1. A variable-width decoding (HTML entity, numeric char
-                // ref) diverges here or on the next byte and bails to None.
-                if vi >= val_b.len() || raw_b[ri] != val_b[vi] {
+                // 1:1. A variable-width decoding diverges here or on the
+                // next byte and bails to None.
+                if raw_b[ri] != val_b[vi] {
                     return None;
                 }
                 ri += 1;

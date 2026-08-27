@@ -13,6 +13,8 @@ static DIGITAL_ENTITY_TEST_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"(?i)^&#(x[a-f0-9]{1,8}|[0-9]{1,8});$"#).unwrap());
 static UNESCAPE_ALL_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(&format!("{UNESCAPE_MD_RE}|{ENTITY_RE}")).unwrap());
+static ANCHORED_ENTITY_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(&format!("^{ENTITY_RE}")).unwrap());
 
 #[allow(clippy::manual_range_contains)]
 /// Return true if a `code` you got from `&#xHHHH;` entity is a valid charcode.
@@ -97,6 +99,16 @@ fn replace_entity_pattern(str: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Decode a valid HTML entity / numeric character reference that starts at
+/// the beginning of `raw` (`&amp;`, `&#65;`, `&#x41;`), returning the decoded
+/// replacement and the raw byte length consumed. Returns `None` when `raw`
+/// does not start with a decodable entity.
+pub(crate) fn decode_entity_at_start(raw: &str) -> Option<(String, usize)> {
+    let matched = ANCHORED_ENTITY_RE.find(raw)?;
+    let replacement = replace_entity_pattern(matched.as_str())?;
+    Some((replacement, matched.as_str().len()))
 }
 
 /// Unescape both entities (`&quot; -> "`) and backslash escapes (`\" -> "`).
