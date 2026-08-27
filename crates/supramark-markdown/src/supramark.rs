@@ -1,4 +1,4 @@
-use crate::common::utils::decode_entity_at_start;
+use crate::common::utils::{decode_entities, decode_entity_at_start};
 use crate::plugins::cmark::block::fence::CodeFence;
 use crate::plugins::cmark::inline::escape::is_escapable_punct;
 use crate::plugins::extra::tables::{ColumnAlignment, TableBody, TableCell, TableHead, TableRow};
@@ -443,7 +443,13 @@ impl<'a> AstV2Ctx<'a> {
         sections: &[Node],
         alignments: &[ColumnAlignment],
     ) -> Vec<SupramarkNode> {
-        map_table_sections(sections, alignments, self.index, self.base_offset, self.source)
+        map_table_sections(
+            sections,
+            alignments,
+            self.index,
+            self.base_offset,
+            self.source,
+        )
     }
 }
 
@@ -610,7 +616,11 @@ fn map_node(
     base_offset: usize,
     source: &str,
 ) -> Vec<SupramarkNode> {
-    let ctx = AstV2Ctx { index, base_offset, source };
+    let ctx = AstV2Ctx {
+        index,
+        base_offset,
+        source,
+    };
     if let Some(v2) = node.to_ast_v2(&ctx) {
         return v2;
     }
@@ -718,9 +728,19 @@ fn scan_inline_extensions<M: RawMap>(
             InlineExtensionKind::Math { content_start, end } => {
                 // Take math content from the scan string: on the slow path
                 // that is the raw source, preserving `\{` / `\}` so the TeX
-                // engine receives exactly what the author wrote.
+                // engine receives exactly what the author wrote. Entities are
+                // the exception — the parser decodes them everywhere else in
+                // the run, so `$&lt;$` carries the math `<`, not the literal
+                // bytes `&lt;` (footnote labels below slice from the decoded
+                // value for the same reason). Backslash escapes stay raw:
+                // TeX needs `\{` verbatim.
+                let math_value = if scan.len() == value.len() {
+                    scan[content_start..end].to_owned()
+                } else {
+                    decode_entities(&scan[content_start..end])
+                };
                 nodes.push(SupramarkNode::MathInline {
-                    value: scan[content_start..end].to_owned(),
+                    value: math_value,
                     position: Some(position_from_abs(
                         index,
                         source_start + next.start,
@@ -892,7 +912,12 @@ fn sub_text_position(
     hi: usize,
 ) -> Option<SourcePosition> {
     let parent = parent?;
-    if parent.end.byte_offset.saturating_sub(parent.start.byte_offset) != value_len {
+    if parent
+        .end
+        .byte_offset
+        .saturating_sub(parent.start.byte_offset)
+        != value_len
+    {
         return None;
     }
     Some(SourcePosition {
@@ -917,7 +942,12 @@ fn ref_position(
     if open.end.byte_offset.saturating_sub(open.start.byte_offset) != open_value_len {
         return None;
     }
-    if close.end.byte_offset.saturating_sub(close.start.byte_offset) != close_value_len {
+    if close
+        .end
+        .byte_offset
+        .saturating_sub(close.start.byte_offset)
+        != close_value_len
+    {
         return None;
     }
     Some(SourcePosition {
@@ -1140,19 +1170,20 @@ impl RawValueMap {
             if vi >= val_b.len() {
                 // Value exhausted: anything left must be trailing whitespace
                 // / line endings the parser stripped from the value (e.g. a
-                // paragraph run's final CRLF). Map it all to `vi`.
+                // paragraph run's final CRLF). The post-loop fill below maps
+                // the whole tail to `vi`.
                 if !raw_b[ri..]
                     .iter()
                     .all(|&b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
                 {
                     return None;
                 }
-                for point in &mut points[ri + 1..] {
-                    *point = vi;
-                }
                 break;
             }
-            if raw_b[ri] == b'\\' && ri + 1 < raw_b.len() && is_escapable_punct(raw_b[ri + 1] as char) {
+            if raw_b[ri] == b'\\'
+                && ri + 1 < raw_b.len()
+                && is_escapable_punct(raw_b[ri + 1] as char)
+            {
                 // cmark backslash escape: raw `\X` (2 bytes) → value `X` (1 byte).
                 if val_b[vi] != raw_b[ri + 1] {
                     return None;
@@ -1200,7 +1231,11 @@ impl RawValueMap {
                 vi += 1;
             }
         }
-        points[raw_b.len()] = vi;
+        // Single trailing fill: on normal exit `ri == raw.len()` so this
+        // writes only the sentinel `points[raw.len()]`; on the
+        // value-exhausted break it maps the stripped tail to `vi`
+        // (idempotent for `points[ri]`, written at the loop top).
+        points[ri..].fill(vi);
         if vi != val_b.len() {
             return None;
         }
@@ -2136,7 +2171,9 @@ mod tests {
         // footnote reference — the inline raw-HTML rule must not split it,
         // otherwise the embedded tag leaks into the output (XSS). cmark-gfm
         // treats the whole `[…]` as the label string and percent-encodes it.
-        let ast = parse("Hello[^\"><script>alert(1)</script>]\n\n[^\"><script>alert(1)</script>]: pwned\n");
+        let ast = parse(
+            "Hello[^\"><script>alert(1)</script>]\n\n[^\"><script>alert(1)</script>]: pwned\n",
+        );
         let SupramarkNode::Root { children, .. } = ast else {
             panic!("expected root");
         };
@@ -2254,7 +2291,9 @@ mod tests {
                 SupramarkNode::Text { value, position } => {
                     Some((value.clone(), byte_span(position)))
                 }
-                SupramarkNode::Link { children, position, .. } => {
+                SupramarkNode::Link {
+                    children, position, ..
+                } => {
                     let text = children
                         .iter()
                         .filter_map(|c| match c {
@@ -2370,7 +2409,8 @@ mod tests {
         // The `[^…<…>]` footnote reference is reassembled across an inline
         // raw-HTML split; the resulting FootnoteReference (and the text-before
         // / text-after fragments) must carry source positions, not None.
-        let ast = parse("Hi[^\"><script>alert(1)</script>]\n\n[^\"><script>alert(1)</script>]: x\n");
+        let ast =
+            parse("Hi[^\"><script>alert(1)</script>]\n\n[^\"><script>alert(1)</script>]: x\n");
         let SupramarkNode::Root { children, .. } = ast else {
             panic!("expected root");
         };
@@ -2484,7 +2524,10 @@ mod tests {
             let SupramarkNode::Root { children, .. } = ast else {
                 panic!("expected root for {input}");
             };
-            let SupramarkNode::List { children: items, .. } = &children[0] else {
+            let SupramarkNode::List {
+                children: items, ..
+            } = &children[0]
+            else {
                 panic!("expected list for {input}");
             };
             let SupramarkNode::ListItem { children, .. } = &items[0] else {
@@ -2510,10 +2553,16 @@ mod tests {
         let SupramarkNode::Root { children, .. } = ast else {
             panic!("expected root");
         };
-        let SupramarkNode::List { children: items, .. } = &children[0] else {
+        let SupramarkNode::List {
+            children: items, ..
+        } = &children[0]
+        else {
             panic!("expected list");
         };
-        let SupramarkNode::ListItem { checked, children, .. } = &items[0] else {
+        let SupramarkNode::ListItem {
+            checked, children, ..
+        } = &items[0]
+        else {
             panic!("expected list item");
         };
         assert!(checked.is_none(), "no-separator should not be a task item");
