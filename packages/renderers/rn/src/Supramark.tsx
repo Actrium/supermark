@@ -768,30 +768,42 @@ function MarkdownImage({
   // An empty or relative URL cannot be loaded as a remote source; show the
   // placeholder up front instead of a blank 200×200 hole.
   const loadable = hasLoadableImageUrl(image.url);
-  const [failed, setFailed] = useState(false);
+  // Failure is tracked per-URL: galleries key images by index, so the same
+  // component instance can receive a different image.url on re-render. A
+  // boolean flag would keep showing the placeholder for a URL that never
+  // failed; binding the failure to the URL that produced it resets for free.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const failed = failedUrl === image.url;
 
   // Empty alt + no title marks the image as decorative for screen readers.
   const isDecorative = !image.alt && !image.title;
   const accessibilityLabel = image.alt || image.title || undefined;
+  const accessibilityProps: {
+    accessibilityLabel?: string;
+    accessibilityElementsHidden: boolean;
+    importantForAccessibility: 'yes' | 'no-hide-descendants';
+  } = {
+    accessibilityLabel,
+    accessibilityElementsHidden: isDecorative,
+    importantForAccessibility: isDecorative ? 'no-hide-descendants' : 'yes',
+  };
+  // A TouchableOpacity becomes the accessible element for its subtree, so the
+  // label must live on the wrapper or it is easy to lose. When wrapped, the
+  // inner image/placeholder stops being individually focusable instead.
+  const wrapped = Boolean(linkUrl || onImagePress);
+  const innerAccessibilityProps = wrapped ? { accessible: false } : accessibilityProps;
 
   const imageContent = (
     <View style={styles.imageContainer}>
       {loadable && !failed ? (
         <Image
           source={{ uri: image.url }}
-          accessibilityLabel={accessibilityLabel}
-          accessibilityElementsHidden={isDecorative}
-          importantForAccessibility={isDecorative ? 'no-hide-descendants' : 'yes'}
+          {...innerAccessibilityProps}
           style={styles.image}
-          onError={() => setFailed(true)}
+          onError={() => setFailedUrl(image.url)}
         />
       ) : (
-        <View
-          style={styles.imagePlaceholder}
-          accessibilityLabel={accessibilityLabel}
-          accessibilityElementsHidden={isDecorative}
-          importantForAccessibility={isDecorative ? 'no-hide-descendants' : 'yes'}
-        >
+        <View style={styles.imagePlaceholder} {...innerAccessibilityProps}>
           <Text style={styles.imagePlaceholderText}>
             {image.alt || image.title || '[image]'}
           </Text>
@@ -822,6 +834,7 @@ function MarkdownImage({
           }
           Linking.openURL(linkUrl).catch(err => console.error('Failed to open URL:', err));
         }}
+        {...accessibilityProps}
       >
         {imageContent}
       </TouchableOpacity>
@@ -830,7 +843,11 @@ function MarkdownImage({
 
   // A standalone image is tappable only when the host supplied a press handler.
   if (onImagePress) {
-    return <TouchableOpacity onPress={handlePress}>{imageContent}</TouchableOpacity>;
+    return (
+      <TouchableOpacity onPress={handlePress} {...accessibilityProps}>
+        {imageContent}
+      </TouchableOpacity>
+    );
   }
 
   return imageContent;
@@ -1557,6 +1574,14 @@ function renderInlineNode(
       const imageNode = node;
       // Empty alt + no title marks the image as decorative for screen readers.
       const isDecorative = !imageNode.alt && !imageNode.title;
+      // Mixed-content / table / heading images go through here; the same
+      // loadability rule as the block path applies — an empty or relative src
+      // would render as a blank 20×20 hole, so show the alt text instead.
+      if (!hasLoadableImageUrl(imageNode.url)) {
+        // Inherits the surrounding Text style; mirrors the block placeholder
+        // text (alt/title or '[image]') without breaking the inline flow.
+        return <Text key={key}>{imageNode.alt || imageNode.title || '[image]'}</Text>;
+      }
       return (
         <Image
           key={key}
