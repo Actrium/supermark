@@ -1,0 +1,196 @@
+/**
+ * Video React Native renderer
+ *
+ * Implements the ContainerRNRenderer interface
+ *
+ * React Native has no built-in video component, so the default renderer shows
+ * a poster (or a neutral placeholder) with a play affordance that opens the
+ * source in the system player via Linking. Hosts that want inline playback
+ * (react-native-video / expo-av) can pass their own renderer through the
+ * Supramark `containerRenderers` prop instead of this one.
+ *
+ * @packageDocumentation
+ */
+
+import React from 'react';
+import {
+  Appearance,
+  View,
+  Text,
+  Image,
+  Pressable,
+  Linking,
+  StyleSheet,
+  type DimensionValue,
+} from 'react-native';
+import type { ContainerRNRenderArgs } from '@supramark/core';
+import type { VideoData } from './feature.js';
+
+const localStyles = StyleSheet.create({
+  container: {
+    width: '100%',
+    marginVertical: 12,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  poster: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+  },
+  playBadge: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholder: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderMeta: {
+    marginTop: 6,
+    fontSize: 13,
+  },
+  error: {
+    borderWidth: 1,
+    borderColor: '#f5c6cb',
+    backgroundColor: '#f8d7da',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 12,
+  },
+  errorTitle: {
+    fontWeight: 'bold',
+    color: '#721c24',
+    marginBottom: 4,
+  },
+  errorText: {
+    color: '#721c24',
+  },
+  errorCode: {
+    marginTop: 6,
+    fontFamily: 'monospace' as const,
+    fontSize: 12,
+    color: '#721c24',
+  },
+});
+
+/**
+ * Clamp the configured width (percent) to a safe RN style value.
+ */
+function playerWidth(width: number | undefined): DimensionValue | undefined {
+  if (typeof width !== 'number' || !Number.isFinite(width) || width <= 0) {
+    return undefined;
+  }
+  return `${Math.min(width, 100)}%`;
+}
+
+/** Opens the video source in the system player; failures surface via console. */
+function openVideo(src: string): void {
+  Linking.openURL(src).catch((error: unknown) => {
+    console.error('Failed to open video URL:', error);
+  });
+}
+
+/** Last path segment of the source URL, shown on the no-poster placeholder. */
+function videoFileName(src: string): string {
+  const segment = src.split('?')[0].split('/').filter(Boolean).pop() ?? src;
+  return segment.length > 40 ? `${segment.slice(0, 37)}...` : segment;
+}
+
+/**
+ * Neutral (light/dark aware) placeholder palette. Commanded imperatively via
+ * Appearance because container renderers are plain render functions invoked
+ * inside renderNode — not React components, so hooks are unavailable.
+ */
+function placeholderPalette(): { background: string; icon: string; meta: string } {
+  return Appearance.getColorScheme() === 'dark'
+    ? { background: '#2c2c2e', icon: '#98989d', meta: '#8e8e93' }
+    : { background: '#f2f2f7', icon: '#8e8e93', meta: '#8e8e93' };
+}
+
+/**
+ * RN renderer for :::video (poster + play fallback; see module docs)
+ */
+export function renderVideoContainerRN({
+  node,
+  key,
+  onVideoPress,
+}: ContainerRNRenderArgs): React.ReactNode {
+  // The JSON body is user input: Rust copies fields verbatim without type
+  // validation, so guard every field before use — a non-string src must
+  // degrade to an error card instead of crashing the whole document.
+  const data = (node?.data ?? {}) as unknown as VideoData;
+  const src = typeof data.src === 'string' ? data.src : undefined;
+  const poster = typeof data.poster === 'string' ? data.poster : undefined;
+  const title = typeof data.title === 'string' ? data.title : undefined;
+  const width = typeof data.width === 'number' ? data.width : undefined;
+  const { parseError, rawConfig } = data;
+
+  // Show an error message when parsing failed
+  if (parseError) {
+    return (
+      <View key={key} style={localStyles.error}>
+        <Text style={localStyles.errorTitle}>⚠️ Video config error</Text>
+        <Text style={localStyles.errorText}>{parseError}</Text>
+        {rawConfig && <Text style={localStyles.errorCode}>{rawConfig}</Text>}
+      </View>
+    );
+  }
+
+  // Missing required config
+  if (!src) {
+    return (
+      <View key={key} style={localStyles.error}>
+        <Text style={localStyles.errorTitle}>⚠️ Missing src config</Text>
+        <Text style={localStyles.errorText}>Please specify the src field with the video URL</Text>
+      </View>
+    );
+  }
+
+  const palette = placeholderPalette();
+  const widthStyle = playerWidth(width);
+
+  return (
+    <View
+      key={key}
+      style={widthStyle ? { ...localStyles.container, width: widthStyle } : localStyles.container}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={title ?? `Play video: ${src}`}
+        onPress={() => {
+          if (onVideoPress) {
+            onVideoPress({ src, poster, title });
+            return;
+          }
+          openVideo(src);
+        }}
+      >
+        {poster ? (
+          <View>
+            <Image
+              source={{ uri: poster }}
+              // Neutral underlay so a loading/failed poster shows the placeholder
+              // tone instead of a black band.
+              style={{ ...localStyles.poster, backgroundColor: palette.background }}
+              resizeMode="cover"
+            />
+            {/* Centered play affordance on the poster, matching the placeholder card. */}
+            <View style={localStyles.playBadge} pointerEvents="none">
+              <Text style={{ fontSize: 40, color: '#ffffff' }}>▶</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={{ ...localStyles.placeholder, backgroundColor: palette.background }}>
+            <Text style={{ fontSize: 40, color: palette.icon }}>▶</Text>
+            <Text style={{ ...localStyles.placeholderMeta, color: palette.meta }}>
+              {videoFileName(src)}
+            </Text>
+          </View>
+        )}
+      </Pressable>
+    </View>
+  );
+}

@@ -17,6 +17,7 @@ import type {
   SupramarkCodeHighlightResult,
   SupramarkCodeHighlighter,
   SupramarkSourceState,
+  SupramarkVideoPressEvent,
 } from '@supramark/core';
 import {
   parse,
@@ -216,6 +217,7 @@ export interface ContainerRendererRN {
     styles: ReturnType<typeof mergeStyles>;
     config?: SupramarkConfig;
     onOpenHtmlPage?: (node: SupramarkContainerNode) => void;
+    onVideoPress?: SupramarkVideoPressHandler;
     renderNode: (node: SupramarkNode, key: number) => RenderedNode;
     renderChildren: (children: SupramarkNode[]) => RenderedNode;
   }): RenderedNode;
@@ -252,6 +254,9 @@ export interface SupramarkImagePressEvent {
 
 /** Host handler invoked when the user taps a block image. */
 export type SupramarkImagePressHandler = (event: SupramarkImagePressEvent) => void;
+
+/** Host handler invoked when the user taps a :::video card. */
+export type SupramarkVideoPressHandler = (event: SupramarkVideoPressEvent) => void;
 
 /**
  * Context pipe for the image-press handler. Carries the host callback from the
@@ -322,6 +327,7 @@ export interface SupramarkProps {
    * - the host may open a new page / modal / external browser from the callback.
    */
   onOpenHtmlPage?: (node: SupramarkContainerNode) => void;
+  onVideoPress?: SupramarkVideoPressHandler;
 
   /**
    * Callback invoked when the user taps a block image.
@@ -345,6 +351,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
   onError,
   errorFallback,
   onOpenHtmlPage,
+  onVideoPress,
   onImagePress,
   containerRenderers,
   codeHighlighter,
@@ -544,6 +551,7 @@ export const Supramark: React.FC<SupramarkProps> = ({
               parsedDocument.highlighted,
               config,
               onOpenHtmlPage,
+              onVideoPress,
               mergedContainerRenderers
             )}
           </View>
@@ -713,6 +721,7 @@ function renderRootNodes(
   highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
   config?: SupramarkConfig,
   onOpenHtmlPage?: (node: SupramarkContainerNode) => void,
+  onVideoPress?: SupramarkVideoPressHandler,
   containerRenderers?: Record<string, ContainerRendererRN>
 ): RenderedNode[] {
   const rendered: RenderedNode[] = [];
@@ -728,6 +737,7 @@ function renderRootNodes(
           highlighted,
           config,
           onOpenHtmlPage,
+          onVideoPress,
           containerRenderers
         )
       );
@@ -792,9 +802,7 @@ function MarkdownImage({
           accessibilityElementsHidden={isDecorative}
           importantForAccessibility={isDecorative ? 'no-hide-descendants' : 'yes'}
         >
-          <Text style={styles.imagePlaceholderText}>
-            {image.alt || image.title || '[image]'}
-          </Text>
+          <Text style={styles.imagePlaceholderText}>{image.alt || image.title || '[image]'}</Text>
         </View>
       )}
     </View>
@@ -843,6 +851,7 @@ function renderNode(
   highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
   config?: SupramarkConfig,
   onOpenHtmlPage?: (node: SupramarkContainerNode) => void,
+  onVideoPress?: SupramarkVideoPressHandler,
   containerRenderers?: Record<string, ContainerRendererRN>,
   listMarker?: string
 ): RenderedNode {
@@ -893,6 +902,7 @@ function renderNode(
               highlighted,
               config,
               onOpenHtmlPage,
+              onVideoPress,
               containerRenderers,
               list.ordered ? `${startIndex + index}.` : '•'
             )
@@ -941,6 +951,7 @@ function renderNode(
             highlighted,
             config,
             onOpenHtmlPage,
+            onVideoPress,
             containerRenderers
           )}
         </View>
@@ -979,8 +990,18 @@ function renderNode(
           styles,
           config,
           onOpenHtmlPage,
+          onVideoPress,
           renderNode: (n, k) =>
-            renderNode(n, k, styles, highlighted, config, onOpenHtmlPage, containerRenderers),
+            renderNode(
+              n,
+              k,
+              styles,
+              highlighted,
+              config,
+              onOpenHtmlPage,
+              onVideoPress,
+              containerRenderers
+            ),
           renderChildren: children =>
             children.map((child, index) =>
               renderNode(
@@ -990,6 +1011,7 @@ function renderNode(
                 highlighted,
                 config,
                 onOpenHtmlPage,
+                onVideoPress,
                 containerRenderers
               )
             ),
@@ -1049,6 +1071,7 @@ function renderNode(
               highlighted,
               config,
               onOpenHtmlPage,
+              onVideoPress,
               containerRenderers
             )
           );
@@ -1077,9 +1100,7 @@ function renderNode(
 
         return (
           <View key={key} style={admonitionContainerStyle}>
-            {title ? (
-              <Text style={[styles.paragraph, { fontWeight: '600' }]}>{title}</Text>
-            ) : null}
+            {title ? <Text style={[styles.paragraph, { fontWeight: '600' }]}>{title}</Text> : null}
             {renderAdmonitionContent()}
           </View>
         );
@@ -1101,6 +1122,7 @@ function renderNode(
               highlighted,
               config,
               onOpenHtmlPage,
+              onVideoPress,
               containerRenderers
             )
           )}
@@ -1146,6 +1168,7 @@ function renderNode(
                           highlighted,
                           config,
                           onOpenHtmlPage,
+                          onVideoPress,
                           containerRenderers
                         )
                       )}
@@ -1180,6 +1203,7 @@ function renderNode(
                         highlighted,
                         config,
                         onOpenHtmlPage,
+                        onVideoPress,
                         containerRenderers
                       )
                     )}
@@ -1206,6 +1230,7 @@ function renderNode(
             highlighted,
             config,
             onOpenHtmlPage,
+            onVideoPress,
             containerRenderers
           )
         );
@@ -1233,7 +1258,16 @@ function renderNode(
       return (
         <View key={key} style={[styles.table, { width: screenWidth }]}>
           {table.children.map((row, index) =>
-            renderNode(row, index, styles, highlighted, config, onOpenHtmlPage, containerRenderers)
+            renderNode(
+              row,
+              index,
+              styles,
+              highlighted,
+              config,
+              onOpenHtmlPage,
+              onVideoPress,
+              containerRenderers
+            )
           )}
         </View>
       );
@@ -1243,7 +1277,16 @@ function renderNode(
       return (
         <View key={key} style={styles.tableRow}>
           {row.children.map((cell, index) =>
-            renderNode(cell, index, styles, highlighted, config, onOpenHtmlPage, containerRenderers)
+            renderNode(
+              cell,
+              index,
+              styles,
+              highlighted,
+              config,
+              onOpenHtmlPage,
+              onVideoPress,
+              containerRenderers
+            )
           )}
         </View>
       );
@@ -1271,7 +1314,16 @@ function renderNode(
       return (
         <View key={key} style={styles.blockquote}>
           {quote.children.map((child, i) =>
-            renderNode(child, i, styles, highlighted, config, onOpenHtmlPage, containerRenderers)
+            renderNode(
+              child,
+              i,
+              styles,
+              highlighted,
+              config,
+              onOpenHtmlPage,
+              onVideoPress,
+              containerRenderers
+            )
           )}
         </View>
       );
@@ -1395,6 +1447,7 @@ function renderListItemBody(
   highlighted: ReadonlyMap<string, SupramarkCodeHighlightResult>,
   config: SupramarkConfig | undefined,
   onOpenHtmlPage: ((node: SupramarkContainerNode) => void) | undefined,
+  onVideoPress: SupramarkVideoPressHandler | undefined,
   containerRenderers: Record<string, ContainerRendererRN> | undefined
 ): RenderedNode[] {
   const out: RenderedNode[] = [];
@@ -1451,7 +1504,16 @@ function renderListItemBody(
     flushInline();
     out.push(
       <View key={`li-${seq}`} style={styles.listItemIndent}>
-        {renderNode(child, 0, styles, highlighted, config, onOpenHtmlPage, containerRenderers)}
+        {renderNode(
+          child,
+          0,
+          styles,
+          highlighted,
+          config,
+          onOpenHtmlPage,
+          onVideoPress,
+          containerRenderers
+        )}
       </View>
     );
     seq += 1;
@@ -1495,13 +1557,7 @@ function renderInlineNode(
       // the same config from yielding structurally different output per
       // platform.
       if (parentType === 'strong' && config?.options?.flattenNestedStrong === true) {
-        return renderInlineNodes(
-          strongNode.children,
-          styles,
-          highlighted,
-          config,
-          'strong'
-        );
+        return renderInlineNodes(strongNode.children, styles, highlighted, config, 'strong');
       }
       return (
         <Text key={key} style={styles.strong}>
