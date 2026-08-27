@@ -85,6 +85,71 @@ else
     echo "WARNING: C header not found at ${HEADER_SRC}"
 fi
 
+# Fallback for when rustc did not emit an import library next to the DLL:
+# locate lib.exe (vswhere, then PATH) and generate one from a minimal export
+# list. Uses the ARCH / BUILD_DIR globals from the main flow.
+generate_import_lib_fallback() {
+    local lib_out="$1"
+    local libexe=""
+    local vswhere="C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+    if [[ -f "${vswhere}" ]]; then
+        local vs_install
+        vs_install="$("${vswhere}" -latest -products '*' -property installationPath 2>/dev/null | tr -d '\r')"
+        if [[ -n "${vs_install}" ]]; then
+            local vc_ver_file="${vs_install}/VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt"
+            if [[ -f "${vc_ver_file}" ]]; then
+                local vc_ver
+                vc_ver="$(tr -d '[:space:]' < "${vc_ver_file}")"
+                local host_tool_dirs
+                case "$ARCH" in
+                    x86_64) host_tool_dirs=("Hostx64/x64" "Hostarm64/x64" "Hostx86/x64") ;;
+                    arm64)  host_tool_dirs=("Hostarm64/arm64" "Hostx64/arm64" "Hostx86/arm64") ;;
+                esac
+                local candidate
+                for host_dir in "${host_tool_dirs[@]}"; do
+                    candidate="${vs_install}/VC/Tools/MSVC/${vc_ver}/bin/${host_dir}/lib.exe"
+                    if [[ -f "${candidate}" ]]; then
+                        libexe="${candidate}"
+                        break
+                    fi
+                done
+            fi
+        fi
+    fi
+    # Fallback: rely on PATH (works when vcvarsall.bat has been sourced)
+    if [[ -z "${libexe}" ]]; then
+        libexe="$(command -v lib.exe 2>/dev/null || command -v lib 2>/dev/null || true)"
+    fi
+    if [[ -z "${libexe}" ]]; then
+        echo "  WARNING: lib.exe not found; skipping import library generation."
+        echo "       Consumers will need to link directly against the DLL."
+        return 0
+    fi
+
+    echo "  Generating import library from a minimal export list..."
+    local lib_machine
+    case "$ARCH" in
+        x86_64) lib_machine="X64" ;;
+        arm64)  lib_machine="ARM64" ;;
+    esac
+    local def_file="${BUILD_DIR}/supramark_markdown_native.def"
+    mkdir -p "${BUILD_DIR}"
+    cat > "${def_file}" << 'DEF_EOF'
+LIBRARY supramark_markdown_native
+EXPORTS
+    supramark_markdown_parse_json
+    supramark_markdown_free
+    supramark_markdown_version
+DEF_EOF
+    local lib_out_win def_win
+    lib_out_win="$(cygpath -w "${lib_out}" 2>/dev/null || echo "${lib_out}")"
+    def_win="$(cygpath -w "${def_file}" 2>/dev/null || echo "${def_file}")"
+    MSYS2_ARG_CONV_EXCL='*' "${libexe}" /NOLOGO \
+        "/MACHINE:${lib_machine}" \
+        "/DEF:${def_win}" \
+        "/OUT:${lib_out_win}" || echo "WARNING: import lib generation failed; DLL-only linking will be used"
+}
+
 # Stage an import library (.lib) so consumers can link against the DLL at
 # build time. rustc already emits one next to the cdylib
 # (<name>.dll.lib, exactly matching the real exports) — prefer copying it.
@@ -98,58 +163,7 @@ if [[ -f "${RUST_IMPLIB_SRC}" ]]; then
     echo "[4/4] Staged rustc import library ${LIB_OUT}"
 else
     echo "[4/4] rustc import library not found (${RUST_IMPLIB_SRC}); falling back to lib.exe."
-    LIBEXE=""
-    VSWHERE="C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
-    if [[ -f "${VSWHERE}" ]]; then
-        VS_INSTALL="$("${VSWHERE}" -latest -products '*' -property installationPath 2>/dev/null | tr -d '\r')"
-        if [[ -n "${VS_INSTALL}" ]]; then
-            VC_VER_FILE="${VS_INSTALL}/VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt"
-            if [[ -f "${VC_VER_FILE}" ]]; then
-                VC_VER="$(cat "${VC_VER_FILE}" | tr -d '[:space:]')"
-                case "$ARCH" in
-                    x86_64) HOST_TOOL_DIRS=("Hostx64/x64" "Hostarm64/x64" "Hostx86/x64") ;;
-                    arm64)  HOST_TOOL_DIRS=("Hostarm64/arm64" "Hostx64/arm64" "Hostx86/arm64") ;;
-                esac
-                for host_dir in "${HOST_TOOL_DIRS[@]}"; do
-                    CANDIDATE="${VS_INSTALL}/VC/Tools/MSVC/${VC_VER}/bin/${host_dir}/lib.exe"
-                    if [[ -f "${CANDIDATE}" ]]; then
-                        LIBEXE="${CANDIDATE}"
-                        break
-                    fi
-                done
-            fi
-        fi
-    fi
-    # Fallback: rely on PATH (works when vcvarsall.bat has been sourced)
-    if [[ -z "${LIBEXE}" ]]; then
-        LIBEXE="$(command -v lib.exe 2>/dev/null || command -v lib 2>/dev/null || true)"
-    fi
-
-    if [[ -n "${LIBEXE}" ]]; then
-        echo "  Generating import library from a minimal export list..."
-        case "$ARCH" in
-            x86_64) LIB_MACHINE="X64" ;;
-            arm64)  LIB_MACHINE="ARM64" ;;
-        esac
-        DEF_FILE="${BUILD_DIR}/supramark_markdown_native.def"
-        mkdir -p "${BUILD_DIR}"
-        cat > "${DEF_FILE}" << 'DEF_EOF'
-LIBRARY supramark_markdown_native
-EXPORTS
-    supramark_markdown_parse_json
-    supramark_markdown_free
-    supramark_markdown_version
-DEF_EOF
-        LIB_OUT_WIN="$(cygpath -w "${LIB_OUT}" 2>/dev/null || echo "${LIB_OUT}")"
-        DEF_WIN="$(cygpath -w "${DEF_FILE}" 2>/dev/null || echo "${DEF_FILE}")"
-        MSYS2_ARG_CONV_EXCL='*' "${LIBEXE}" /NOLOGO \
-            "/MACHINE:${LIB_MACHINE}" \
-            "/DEF:${DEF_WIN}" \
-            "/OUT:${LIB_OUT_WIN}" || echo "WARNING: import lib generation failed; DLL-only linking will be used"
-    else
-        echo "  WARNING: lib.exe not found; skipping import library generation."
-        echo "       Consumers will need to link directly against the DLL."
-    fi
+    generate_import_lib_fallback "${LIB_OUT}"
 fi
 
 echo ""
