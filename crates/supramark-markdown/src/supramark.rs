@@ -387,7 +387,8 @@ fn map_markdown_fragment(
 /// document source so a node's `to_ast_v2` impl can compute positions and
 /// recurse into children without re-plumbing those arguments by hand.
 ///
-/// `source` is needed by [`map_inline_text`]: when a text run was decoded by
+/// `source` is needed by the text-run pipeline: `map_text_fragment` records
+/// each fragment's source span, and when a reassembled run was decoded by
 /// cmark (backslash escapes like `\{` → `{`), the decoded `value` no longer
 /// matches the source byte-for-byte, so math/footnote delimiter scanning must
 /// run against the raw source slice instead, where `is_escaped` and `$`
@@ -407,8 +408,22 @@ impl<'a> AstV2Ctx<'a> {
         map_children(children, self.index, self.base_offset, self.source)
     }
 
-    pub(crate) fn map_inline_text(&self, value: &str, node: &Node) -> Vec<SupramarkNode> {
-        map_inline_text(value, self.position(node), self.index, self.source)
+    /// First-pass mapping for a raw text fragment (TextScanner output).
+    ///
+    /// Deliberately does NOT scan for inline math/footnote extensions or
+    /// expand emoji shortcodes: the TextScanner splits runs at special
+    /// characters, so an escaped-punctuation run arrives as several
+    /// fragments (`see $`, `\{`, `0`, `\}`, `$ and $x$`). Scanning a
+    /// fragment in isolation pairs `$` delimiters that belong to different
+    /// spans (issue #219) and emoji expansion would desynchronize the
+    /// value↔raw byte alignment the deferred scan relies on. Fragments are
+    /// emitted as plain `Text` and scanned once, after
+    /// `rescan_adjacent_text_runs` has reassembled each contiguous run.
+    pub(crate) fn map_text_fragment(&self, value: &str, node: &Node) -> Vec<SupramarkNode> {
+        vec![SupramarkNode::Text {
+            value: value.to_owned(),
+            position: self.position(node),
+        }]
     }
 
     pub(crate) fn map_fence(&self, fence: &CodeFence, node: &Node) -> SupramarkNode {
@@ -983,7 +998,7 @@ fn flush_text_run(
         out.extend(map_inline_text(&value_out, position_out, index, source));
     } else {
         out.push(SupramarkNode::Text {
-            value: value_out,
+            value: replace_emoji_shortcodes(&value_out),
             position: position_out,
         });
     }
@@ -1097,7 +1112,9 @@ impl RawMap for IdentityMap {
 /// Offset map for the slow path, built by lock-stepping the raw source bytes
 /// against the decoded value bytes. A backslash escape `\X` (where `X` is a
 /// cmark-escapable punctuation byte) consumes 2 raw bytes → 1 value byte;
-/// every other byte is 1:1. Any mismatch (e.g. an HTML entity `&amp;` → `&`,
+/// whitespace that cmark dropped (continuation-line indentation, trailing
+/// spaces before a newline) consumes 1+ raw bytes → 0 value bytes; every
+/// other byte is 1:1. Any other mismatch (e.g. an HTML entity `&amp;` → `&`,
 /// whose decoded width does not align byte-for-byte) returns `None` so the
 /// caller falls back to a plain text node.
 struct RawValueMap {
@@ -1128,6 +1145,16 @@ impl RawValueMap {
                 points[ri + 1] = vi;
                 ri += 2;
                 vi += 1;
+            } else if (raw_b[ri] == b' ' || raw_b[ri] == b'\t')
+                && vi < val_b.len()
+                && raw_b[ri] != val_b[vi]
+            {
+                // Whitespace stripped from the value but present in the
+                // source span (continuation-line indentation, trailing
+                // spaces): consume it as 0-width. If the strings are
+                // genuinely misaligned, the next non-whitespace byte still
+                // bails below.
+                ri += 1;
             } else {
                 // 1:1. A variable-width decoding (HTML entity, numeric char
                 // ref) diverges here or on the next byte and bails to None.

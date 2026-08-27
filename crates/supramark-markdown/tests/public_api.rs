@@ -765,6 +765,127 @@ fn public_api_inline_math_widehat_escaped_braces_207() {
 }
 
 #[test]
+fn public_api_inline_math_after_adjacent_text_reassembly_219() {
+    // Regression for #219: the TextScanner splits an escaped-punctuation run
+    // into several fragments (`see $`, `\{`, `0`, `\}`, `$ and $x$`). The old
+    // first-pass scan ran per fragment, so a length-aligned trailing fragment
+    // paired its `$` with the opening `$` of a *different* span (or collapsed
+    // everything to text). Scanning must happen once, after adjacent fragments
+    // are reassembled into a single run.
+    let ast = parse("see $\\{0\\}$ and $x$");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children: paragraph, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    let math: Vec<&str> = paragraph
+        .iter()
+        .filter_map(|n| match n {
+            SupramarkNode::MathInline { value, .. } => Some(value.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(math, vec!["\\{0\\}", "x"], "math values for the escaped-brace run");
+    assert!(
+        !paragraph.iter().any(|n| matches!(n, SupramarkNode::Text { value, .. } if value.contains('$'))),
+        "no stray `$` may leak into text: {paragraph:?}"
+    );
+
+    // Two escaped-brace spans in one paragraph — the case where the old scan
+    // produced fake math from the ` and ` fragment between the spans.
+    let ast = parse("$\\{1\\}$ and $\\{2\\}$");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children: paragraph, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    let math: Vec<&str> = paragraph
+        .iter()
+        .filter_map(|n| match n {
+            SupramarkNode::MathInline { value, .. } => Some(value.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(math, vec!["\\{1\\}", "\\{2\\}"]);
+    assert!(matches!(
+        &paragraph[1],
+        SupramarkNode::Text { value, .. } if value == " and "
+    ));
+}
+
+#[test]
+fn public_api_inline_math_after_emoji_expansion_219() {
+    // Emoji expansion used to happen before the adjacent-run rescan, so the
+    // reassembled value (`😄 $\{0\}$`) no longer aligned with the raw source
+    // (`:smile: $\{0\}$`) and the RawValueMap fallback collapsed the run to
+    // plain text. Emoji must expand after the math scan, on the emitted text
+    // slices only.
+    let ast = parse(":smile: $\\{0\\}$");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children: paragraph, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(matches!(
+        &paragraph[0],
+        SupramarkNode::Text { value, .. } if value.contains('\u{1F604}') && !value.contains('$')
+    ));
+    assert!(matches!(
+        &paragraph[1],
+        SupramarkNode::MathInline { value, .. } if value == "\\{0\\}"
+    ));
+}
+
+#[test]
+fn public_api_inline_math_lazy_continuation_219() {
+    // A text run reassembled across a (lazy) line continuation must scan as
+    // one unit: text on line 1 joins the math span sitting on line 2, and the
+    // leading indentation must not desynchronize the raw↔value alignment.
+    // (`$…$` itself may not contain a newline, so the math stays on one line.)
+    let ast = parse("hello\n  $\\{0\\}$");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children: paragraph, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(matches!(
+        &paragraph[1],
+        SupramarkNode::MathInline { value, .. } if value == "\\{0\\}"
+    ));
+    assert!(
+        !paragraph.iter().any(|n| matches!(n, SupramarkNode::Text { value, .. } if value.contains('$'))),
+        "no stray `$` may leak into text: {paragraph:?}"
+    );
+}
+
+#[test]
+fn public_api_inline_math_escaped_dollar_stays_text_219() {
+    // Negative control: `\$` is an escaped dollar, never a math delimiter,
+    // even when other `$`s appear later in the reassembled run.
+    let ast = parse("\\$not math here");
+    let SupramarkNode::Root { children, .. } = ast else {
+        panic!("expected root");
+    };
+    let SupramarkNode::Paragraph { children: paragraph, .. } = &children[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(
+        !paragraph
+            .iter()
+            .any(|n| matches!(n, SupramarkNode::MathInline { .. })),
+        "escaped `$` must not open math: {paragraph:?}"
+    );
+    assert!(matches!(
+        &paragraph[0],
+        SupramarkNode::Text { value, .. } if value == "$not math here"
+    ));
+}
+
+#[test]
 fn public_api_maps_footnotes() {
     let ast = parse("Text[^a].\n\n[^a]: Footnote.");
     let SupramarkNode::Root { children, .. } = ast else {
