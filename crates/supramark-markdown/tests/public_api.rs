@@ -934,13 +934,23 @@ fn public_api_inline_math_with_invalid_numeric_char_refs_219() {
 }
 
 #[test]
-fn public_api_inline_math_decodes_entities_in_math_content_219() {
-    // Entities inside the math span decode for the TeX engine too — `$&lt;$`
-    // carries the math `<`, not the literal bytes `&lt;` — while backslash
-    // escapes stay raw (`$\{` stays `\{`). The delimiter scan runs on the
-    // raw slice; the carved content decodes entities exactly once.
+fn public_api_inline_math_keeps_math_content_raw_219() {
+    // Math content is carved from the raw slice and nothing is decoded:
+    // backslash escapes stay raw because TeX needs `\{`, and entities stay
+    // raw to match micromark-extension-math (mathText is one token, never
+    // sub-tokenized) and MathBlock in this crate.
     let paragraph = paragraph_children(parse("$a &lt; b$ and $\\{0\\}$"));
-    assert_eq!(math_values(&paragraph), vec!["a < b", "\\{0\\}"]);
+    assert_eq!(math_values(&paragraph), vec!["a &lt; b", "\\{0\\}"]);
+
+    // The delimiter scan runs on the raw slice and rejects a newline inside
+    // `$…$`. Entities must not be able to smuggle one in behind that guard,
+    // nor an unescaped `$` into the value.
+    assert!(math_values(&paragraph_children(parse("$a\nb$"))).is_empty());
+    let paragraph = paragraph_children(parse("$a&#10;b$ and $c&#13;d$ and $e&dollar;f$"));
+    assert_eq!(
+        math_values(&paragraph),
+        vec!["a&#10;b", "c&#13;d", "e&dollar;f"]
+    );
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use crate::common::utils::{decode_entities, decode_entity_at_start};
+use crate::common::utils::decode_entity_at_start;
 use crate::plugins::cmark::block::fence::CodeFence;
 use crate::plugins::cmark::inline::escape::is_escapable_punct;
 use crate::plugins::extra::tables::{ColumnAlignment, TableBody, TableCell, TableHead, TableRow};
@@ -726,19 +726,22 @@ fn scan_inline_extensions<M: RawMap>(
 
         match next.kind {
             InlineExtensionKind::Math { content_start, end } => {
-                // Take math content from the scan string: on the slow path
-                // that is the raw source, preserving `\{` / `\}` so the TeX
-                // engine receives exactly what the author wrote. Entities are
-                // the exception — the parser decodes them everywhere else in
-                // the run, so `$&lt;$` carries the math `<`, not the literal
-                // bytes `&lt;` (footnote labels below slice from the decoded
-                // value for the same reason). Backslash escapes stay raw:
-                // TeX needs `\{` verbatim.
-                let math_value = if scan.len() == value.len() {
-                    scan[content_start..end].to_owned()
-                } else {
-                    decode_entities(&scan[content_start..end])
-                };
+                // Math content is taken verbatim from the scan string: on
+                // the slow path that is the raw source, so the TeX engine
+                // receives exactly what the author wrote. Nothing is decoded
+                // here — neither backslash escapes (TeX needs `\{`) nor
+                // entities, matching micromark-extension-math, which swallows
+                // everything between the delimiters as a single mathTextData
+                // token without sub-tokenizing it, and matching MathBlock in
+                // this crate. Decoding would also let `&#10;` / `&#13;` /
+                // `&dollar;` slip past the scanner's own rules: the delimiter
+                // scan runs on the raw slice and rejects a newline inside
+                // `$…$`, so an entity that decodes to one would smuggle it in
+                // behind the guard, along with an unescaped `$`.
+                // (Footnote labels below do slice from the decoded value —
+                // they match definitions by decoded form, which is a
+                // different contract.)
+                let math_value = scan[content_start..end].to_owned();
                 nodes.push(SupramarkNode::MathInline {
                     value: math_value,
                     position: Some(position_from_abs(

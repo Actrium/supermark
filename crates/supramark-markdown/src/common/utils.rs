@@ -141,29 +141,6 @@ pub(crate) fn decode_entity_at_start(raw: &str) -> Option<(String, usize)> {
     Some((decoded.to_string(), matched.as_str().len()))
 }
 
-/// Decode every entity in `raw` that the inline entity scanner would have
-/// consumed (one level, matching the parser). Used for inline-math content
-/// carved from the raw source: backslash escapes must stay raw for TeX, but
-/// an entity the parser already decoded in surrounding text should reach the
-/// math engine decoded too (`$&lt;$` is the math `<`, not the four bytes
-/// `&lt;`).
-pub(crate) fn decode_entities(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    let mut rest = raw;
-    while let Some(amp) = rest.find('&') {
-        if let Some((decoded, len)) = decode_entity_at_start(&rest[amp..]) {
-            out.push_str(&rest[..amp]);
-            out.push_str(&decoded);
-            rest = &rest[amp + len..];
-        } else {
-            out.push_str(&rest[..=amp]);
-            rest = &rest[amp + 1..];
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
 /// Unescape both entities (`&quot; -> "`) and backslash escapes (`\" -> "`).
 /// ```
 /// # use supramark_markdown::common::utils::unescape_all;
