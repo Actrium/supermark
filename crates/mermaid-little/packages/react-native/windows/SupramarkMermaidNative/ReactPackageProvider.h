@@ -3,7 +3,7 @@
  *
  * Registers the SupramarkMermaidModule with the React Native Windows runtime.
  *
- * SPDX-License-Identifier: MPL-2.0
+ * SPDX-License-Identifier: MIT
  */
 
 #pragma once
